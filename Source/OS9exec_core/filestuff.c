@@ -357,7 +357,7 @@ static void disp_line( ushort pid, ushort sp, char* ups, syspath_typ* spP,
                     else { 
                       n= Pipe_NReady( p );
                       if (p->size>=1000) sprintf( szs, "%1.0fk", (float)(p->size/1024) );
-                      else               sprintf( szs, "%3d",            p->size       );
+                      else               sprintf( szs, "%3lu",           p->size       );
 
                                sprintf( aa, "%c>%d:%s", p->broken? '/':'-', p->sp_lock, szs );
                       if (n>0) sprintf( aa, "%s:%d",    aa, n );
@@ -570,7 +570,10 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
     char         *p,*p2,*p3,*op;
     static char  pathbuf[OS9PATHLEN]; /* static buffer to allow path display in error tracebacks */
     char             tmp[OS9PATHLEN];
-    Boolean      firstElemChar,firstElem;
+    Boolean      firstElemChar;
+    #ifdef MACOS9
+    Boolean      firstElem;  /* used only in MACOS9 path */
+    #endif
     process_typ* cp= &procs[pid];
     int          k;
 
@@ -752,9 +755,9 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
     op= pathbuf; /* intermediate buffer */
     p = *inp;
     trigcheck( "parsepathext (full path)",p );
-    firstElem= true;
+//  firstElem= true;  /* used only in MACOS9 path */
     *ispath  = false;
-    
+
     absolute= (*p=='/');
     #ifdef windows32
       if (!absolute)
@@ -824,10 +827,10 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
                 }
                 else p+= 2; /* skip "dd" "hx" part */
                 
-                firstElem= false; /* after substitution, don't count this as "first" elem any more */
+//              firstElem= false; /* used only in MACOS9 path */
             }
         }
-        
+
         if (p3!=NULL)
             debugprintf(dbgFiles,dbgNorm,( "# parsepathext (subs): '%s' '%s'\n", p,p3 ));
 
@@ -869,8 +872,8 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
                     /* path continues */
                     p= p3+1;
                     firstElemChar= true; /* it's the first char of the next element! */
-                    firstElem    = false; /* we need no more additional colons */
- 
+//                  firstElem    = false; /* used only in MACOS9 path */
+
                     while (k-- >1) {
                         /* for each period more than 1 append one '..\' or '../' sequence */
                         *op++= '.'; 
@@ -896,7 +899,7 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
         /* normal copy */
         if (*p== '/') {
             *op= PATHDELIM;
-            firstElem    = false; /* not first element any more */
+//          firstElem    = false; /* used only in MACOS9 path */
             firstElemChar= true;  /* next character is first of an element */
         } 
         else {
@@ -1020,7 +1023,6 @@ os9err pSCFnam( _pid_, syspath_typ* spP, char* volname )
 /* initialize system paths */
 void init_syspaths()
 {
-    int           err;
     syspath_typ*  spP;
     process_typ*  cp= &procs[0];
         
@@ -1054,8 +1056,8 @@ void init_syspaths()
     #endif
 
     spP->term_id= 0;
-    err= pSCFnam( 0, spP,         spP->name );
-    err= pSCFopt( 0, spP, (byte*)&spP->opt  );
+    pSCFnam( 0, spP,         spP->name );
+    pSCFopt( 0, spP, (byte*)&spP->opt  );
     
     #ifdef MPW
       spP->linkcount= 1;
@@ -1079,8 +1081,8 @@ void init_syspaths()
       spP->type   =      fCons;
       spP->stream =     stdout;
       spP->term_id= 0;
-      err= pSCFnam( 0, spP,         spP->name );
-      err= pSCFopt( 0, spP, (byte*)&spP->opt  );
+      pSCFnam( 0, spP,         spP->name );
+      pSCFopt( 0, spP, (byte*)&spP->opt  );
       spP->linkcount= 1;
 
       /* stderr */
@@ -1089,8 +1091,8 @@ void init_syspaths()
       spP->type   =      fCons;
       spP->stream =     stderr;
       spP->term_id= 0;
-      err= pSCFnam( 0, spP,         spP->name );
-      err= pSCFopt( 0, spP, (byte*)&spP->opt  );
+      pSCFnam( 0, spP,         spP->name );
+      pSCFopt( 0, spP, (byte*)&spP->opt  );
       spP->linkcount= 1;
     #endif
     
@@ -1098,14 +1100,14 @@ void init_syspaths()
     spP= &syspaths[sysStdnil];
     spP->nr     =  sysStdnil;  
     spP->type   = fNIL;  
-    err= pSCFnam  ( 0, spP,  spP->name );
+    pSCFnam  ( 0, spP,  spP->name );
     spP->linkcount= 1;
 
     /* vmod */
     spP= &syspaths[sysVMod];
     spP->nr     =  sysVMod;  
     spP->type   = fVMod;  
-    err= pSCFnam  ( 0, spP,  spP->name );
+    pSCFnam  ( 0, spP,  spP->name );
     spP->linkcount= 1;
 
 
@@ -1627,7 +1629,7 @@ void copyright(void)
 /* read from a syspath */
 os9err syspath_read( ushort pid,ushort spnum, ulong *len, void* buffer, Boolean rdln )
 {
-    os9err         err, cer;
+    os9err         err;
     procid*        pd= &procs[pid].pd;
     int            prev;
     fmgr_typ*      f;
@@ -1651,7 +1653,7 @@ os9err syspath_read( ushort pid,ushort spnum, ulong *len, void* buffer, Boolean 
     }
 
     if (spP->set_evId && *len>0) 
-        cer= evSet( spP->set_evId, 1, &prev );
+        evSet( spP->set_evId, 1, &prev );
              
     return err;
 } /* syspath_read */

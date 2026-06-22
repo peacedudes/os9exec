@@ -666,8 +666,8 @@ os9err exec_syscall( ushort func, ushort pid, regs_type* rp, Boolean withinIntUt
   process_typ* cp= &procs[ pid ];
   procid* pd= &cp->pd;
   const   funcdispatch_entry* fdeP= getfuncentry(func);
-  char*   fName= fdeP->name; /* allows much easier debugging, because function name is visible */
-  char*   fSS  = "";
+//char*   fName= fdeP->name; /* debug aid: function name visible in debugger */
+//char*   fSS  = "";
   
   cp->lastsyscall= func; // remember for error tracking (for process)
   
@@ -686,8 +686,8 @@ os9err exec_syscall( ushort func, ushort pid, regs_type* rp, Boolean withinIntUt
   if (logtiming) {
     os9_to_xxx( pid );
         
-    if (fdeP->inregs & SFUNC_STATCALL) /* get the getstat/setstat code as name for debugging */
-      fSS= get_stat_name(loword(rp->d[1]));
+//  if (fdeP->inregs & SFUNC_STATCALL) /* get the getstat/setstat code as name for debugging */
+//    fSS= get_stat_name(loword(rp->d[1]));
   } /* if (logtiming) */
 
 
@@ -834,9 +834,8 @@ ulong GetSystemTick(void)
 
     #elif defined UNIX
       struct timeval  tv;
-      struct timezone tz;
-      
-      gettimeofday( &tv, &tz );
+
+      gettimeofday( &tv, NULL );
       if (sec0==0) sec0= tv.tv_sec;
       t=         tv.tv_sec - sec0;
       t= 100*t + tv.tv_usec/10000;
@@ -903,8 +902,8 @@ static char *time_disp(ulong t)
     
     if (ms==0) sprintf( tbuf, "" );
     else {
-        if (mins==0) sprintf( tbuf,      "%2d.%03d\"",       secs % 60, ms % 1000 );
-        else         sprintf( tbuf, "%0d'%02d.%03d\"", mins, secs % 60, ms % 1000 );
+        if (mins==0) sprintf( tbuf,       "%2lu.%03lu\"",        secs % 60, ms % 1000 );
+        else         sprintf( tbuf, "%0lu'%02lu.%03lu\"", mins, secs % 60, ms % 1000 );
     }
 
     return tbuf;

@@ -417,7 +417,7 @@ ulong DatMod_Size( ulong namsize, ulong datsize )
 void FillTemplate( mod_exec *m, short access, short tylan, short attrev )
 /* default values for data module */
 {
-    m->_mh._msync  = os9_word(0x4AFC);  /* sync bytes ($4afc) */
+    m->_mh._msync  = (short)os9_word(0x4AFC);  /* sync bytes ($4afc) */
     m->_mh._msysrev= os9_word(1);       /* system revision check value */
     m->_mh._msize  = 0;                 /* module size */
     m->_mh._mowner = 0;                 /* owner id */
@@ -800,12 +800,12 @@ static void adapt_inetdb( mod_exec* mh, ulong inetAddr, ulong dns1, ulong dns2, 
     
                                   d= os9_long( dns1 );
                                   h= (byte*) &d;
-    sprintf( bp, "%d.%d.%d.%d\0", h[0],h[1],h[2],h[3] ); /* fill in DNS IP address */
+    sprintf( bp, "%d.%d.%d.%d",   h[0],h[1],h[2],h[3] ); /* fill in DNS IP address */
     bp=  bp + strlen( bp )+1;
 
     if (dns2!=0) {                d= os9_long( dns2);
                                   h= (byte*) &d;
-        sprintf( bp, "%d.%d.%d.%d\0", h[0],h[1],h[2],h[3] ); /* fill in DNS IP address */
+        sprintf( bp, "%d.%d.%d.%d",   h[0],h[1],h[2],h[3] ); /* fill in DNS IP address */
         bp=  bp + strlen( bp )+1;
     }
                         
@@ -1298,29 +1298,28 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
 
 os9err load_module( ushort pid, char* name, ushort* midP, Boolean exedir )
 {
-  Boolean isNative= false;
-  void*   modBase = NULL;
-  
+  void* modBase = NULL;
   #ifdef INT_CMD
+  Boolean isNative= false;
     isintcommand( name, &isNative, &modBase );
   #endif
-  
+
   return load_module_local( pid, name, midP, exedir, false, modBase, 0,0,0 );
 } // load_module
 
 
 
 os9err link_module( ushort pid, const char* name, ushort* midP )
-{   
+{
   os9err  err;
   Boolean isInt   = false;
-  Boolean isNative= false;
   void*   modBase = NULL;
-  
+
   char    lName[OS9PATHLEN];
   strcpy( lName, name );
-	
+
   #ifdef INT_CMD
+  Boolean isNative= false;
         isInt= isintcommand( lName, &isNative, &modBase )>=0 && !isNative;
     if (isInt) {
       debugprintf(dbgModules,dbgNorm,

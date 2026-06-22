@@ -742,7 +742,7 @@ void os9_main( int argc, char **argv, char **envp )
                         case 'm' : *ulp *=1024; /* fall into Kbytes */
                         case 'k' : *ulp *=1024;
                         case  0  : break;
-                        default  : printf("# Error in modifier: '%c', must be 'k', 'M' or none\n");
+                        default  : printf("# Error in modifier: '%c', must be 'k', 'M' or none\n", modifier);
                                    exit( 1 );
                       } // switch                                                
                       break;

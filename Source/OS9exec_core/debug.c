@@ -264,7 +264,7 @@ void _debugprintf(char *format, ...)
     va_end                (vp);
     
     if (cp->isIntUtil &&
-       !cp->isNative) printf( buffer );
+       !cp->isNative) printf( "%s", buffer );
     else          upe_printf( buffer );
 
     /* look if also halt enabled for that class */
@@ -594,7 +594,8 @@ static void dumpmem(ulong *memptrP,int numlines)
 } /* dumpmem */
 
 
-/* show regs in debugger */
+/* show regs in debugger — called only from MACOS9 context */
+#ifdef MACOS9
 static void regs_in_debugger( regs_type *rp )
 {
     #ifdef MACOS9
@@ -610,9 +611,10 @@ static void regs_in_debugger( regs_type *rp )
       #pragma unused(rp)
       #endif
     
-      uphe_printf("Non-Macintosh: No low level debugger\n");  
+      uphe_printf("Non-Macintosh: No low level debugger\n");
     #endif
 } /* regs_in_debugger */
+#endif /* MACOS9 */
 
 
 #ifdef USE_UAEMU
@@ -634,7 +636,7 @@ ushort debugwait( void )
     ushort temp,temp2;
     int    numitems;
     ushort extra= false;
-    ushort k= 0;
+//  ushort k= 0;  /* was used by commented-out Change_DbgPath call */
     
     #ifdef USE_UAEMU
       m68k_os9trace=false;

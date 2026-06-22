@@ -237,10 +237,8 @@ void init_SCF( fmgr_typ* f )
 
 
 
-/* standard output write. This routine calls the external function writeline
- * which may contain application-specific filtering to
- * convert error messages into MPW format
- */
+/* standard output write. Used only when TERMINAL_CONSOLE is not defined. */
+#ifndef TERMINAL_CONSOLE
 static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
 {
     /* %%% not soooo nice stuff here, but will change with new filters anyway */
@@ -282,6 +280,7 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
    
    return cnt;
 } /* stdwrite */
+#endif /* TERMINAL_CONSOLE */
 
 
 
@@ -544,7 +543,6 @@ static Boolean ConsId( char* name, char* family, int range, int offs, int *resul
 os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
 /* routine for opening serial devices */
 {
-    os9err err; 
     int    id;
 
     while (true) {
@@ -567,13 +565,13 @@ os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
     /* for tty/pty pairs with the same name, the same pipe must be used */
     #ifdef PIP_SUPPORT
       if (spP->type==fTTY) {
-          err= ConnectPTY_TTY( pid,spP );
-          InstallTTY             ( spP,id );
+          ConnectPTY_TTY( pid,spP );
+          InstallTTY    ( spP,id );
       }
     #endif
-    
+
     /* get the initialised path option table */
-    err= pSCFopt( pid,spP, (byte*)&spP->opt ); /* no err returned */
+    pSCFopt( pid,spP, (byte*)&spP->opt ); /* no err returned */
     
     debugprintf( dbgTerminal,dbgDetail,("# pCopen (%s): successful, pid=%d\n",
                                            name, pid ));

@@ -274,7 +274,7 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
             return _errmsg( 1, "can't move from one device to another" );
         
         /* try as file first, then as dir */
-            err= get_locations( cpid,typeS, nmS,false, &asDirS, &fdS,&dfdS,&dcpS,&sctS ); 
+        err= get_locations( cpid,typeS, nmS,false, &asDirS, &fdS,&dfdS,&dcpS,&sctS );
         if (err) return _errmsg( err, "can't find \"%s\". ", nmS );
     }
     else {

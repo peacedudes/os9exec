@@ -41,13 +41,15 @@
 
 
 
+#ifndef win_unix
 int          gConsoleID        =    0;
 syspath_typ* g_spP             = NULL;
-int          gLastwritten_pid  =    0; /* last written character's process */
+int          gLastwritten_pid  =    0;
 ulong        gNetActive        =    0;
+#endif
 
 
-void main(int argc,char **argv,char **envp)
+int main(int argc,char **argv,char **envp)
 {    os9_main(argc,argv,envp);
 }
 /* eof */

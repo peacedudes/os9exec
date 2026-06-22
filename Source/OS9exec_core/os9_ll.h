@@ -102,10 +102,14 @@
 
 #if !defined(USE_UAEMU) && !defined(linux)
   /* struct alignment must be 68k for these structs! */
-  #pragma push
-  #ifdef macintosh
-    #ifndef powerc
-    #pragma align=mac68k
+  #ifdef __clang__
+    #pragma pack(push, 2)
+  #else
+    #pragma push
+    #ifdef macintosh
+      #ifndef powerc
+      #pragma align=mac68k
+      #endif
     #endif
   #endif
 #endif
@@ -304,7 +308,11 @@ void  lowlevel_release (void);
 #endif
 
 #if !defined(USE_UAEMU) && !defined(linux)
-#pragma pop
+  #ifdef __clang__
+    #pragma pack(pop)
+  #else
+    #pragma pop
+  #endif
 #endif
 
 

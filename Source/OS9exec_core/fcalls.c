@@ -523,16 +523,18 @@ os9err OS9_F_STime( regs_type *rp, ushort cpid )
  *          d1.w = error
  */
 {
-  ulong   secs= rp->d[ 0 ];                      // get time
   long    days= rp->d[ 1 ] - j_date( 1,1,1904 ); // get date
   OS9_F_Julian( rp, cpid );
-    
-  if ( days<0 ) { days= 0; secs= 0; }
-    
-  secs+= SecsPerDay*days;
-    
+
+  if ( days<0 ) { days= 0; }
+
   #ifdef MACOS9
+  {
+    ulong secs= rp->d[ 0 ];
+    if ( days<0 ) secs= 0;
+    secs+= SecsPerDay*days;
     SetDateTime( secs );
+  }
   #endif
     
   return 0;
@@ -580,10 +582,10 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
                         minV= rp->d[2];
                         maxV= rp->d[3];
                         
-                        if (cp->state==pWaitRead)
+                        if (cp->state==pWaitRead) {
                             set_os9_state( cpid, cp->saved_state, "OS9_F_Event" );
-                        
-                            err= evWait( evId, minV,maxV, &evValue );
+                        }
+                        err= evWait( evId, minV,maxV, &evValue );
                         if (err) {
                             cp->saved_state= cp->state;
                             set_os9_state( cpid, pWaitRead, "OS9_F_Event" );
@@ -826,7 +828,7 @@ os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
     s  = (short *)ptr;
     sl = (short *)lim;
     
-    if ( s<sl ) { *s= os9_word(MAXPROCESSES-1); s++; }; /* no process 0 */
+    if ( s<sl ) { *s= (short)os9_word(MAXPROCESSES-1); s++; }; /* no process 0 */
     if ( s<sl ) { *s= os9_word(2048);           s++; }; /* the size of the real descriptor */
     
     ptr= (ulong *)s;                                    /* start with process nr 1 */
@@ -1367,7 +1369,7 @@ os9err OS9_F_Fork( regs_type *rp, ushort cpid )
 
     while (n-->0) {
       if (*p<' ') break;
-      if (*p=='/') putchar ('¶'); /* quote slashes, as they are MPW shell quotes */
+      if (*p=='/') putchar ('/');    /* MPW shell quoting not applicable on UNIX */
       putchar(*p++);
     } /* while */
 

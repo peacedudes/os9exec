@@ -1238,7 +1238,7 @@ os9err pFseek( _pid_, syspath_typ* spP, ulong *posP )
       ulong effpos;
       file_typ* f= &spP->u.disk.u.file;
     #else
-      int   fildes;
+//    int   fildes;  /* was for commented-out ioctl(fildes, FIOSETEOF, ...) */
     #endif
 
     if (spP->rawMode) {
@@ -1296,7 +1296,7 @@ os9err pFseek( _pid_, syspath_typ* spP, ulong *posP )
           /* try extending file */
           debugprintf(dbgFiles,dbgDetail,("# pFseek: Trying to extend file to size=$%08lX\n",*posP));
           fflush(spP->stream); /* unbuffer everything */
-          fildes= fileno( spP->stream );
+//        fildes= fileno( spP->stream );  /* was for FIOSETEOF ioctl */
 
           #ifdef macintosh
             return c2os9err(errno,E_SEEK); /* %%% FIOSETEOF is not available in MSL on Mac: use MACFILES-Version normally !! */
@@ -1474,7 +1474,7 @@ os9err pFsetsz( ushort pid, syspath_typ* spP, ulong *sizeP )
         
       #elif defined UNIX
         int  fd, i, j, cnt;
-        OSErr oserr= 0;
+//      OSErr oserr= 0;  /* holdover from MACFILES version, not used in UNIX path */
         char tmpName[ OS9PATHLEN ];
         FILE* tmp__stream;
         #define      BUFFSIZE 1024
@@ -1574,7 +1574,7 @@ os9err pFsetsz( ushort pid, syspath_typ* spP, ulong *sizeP )
       #ifdef UNIX
         if (*sizeP==0) {
           fclose( spP->stream );
-          oserr=          remove( spP->fullName );
+                          remove( spP->fullName );
               spP->stream= fopen( spP->fullName,"wb+" );       /* create for update, use binary mode (bfo) ! */
           if (spP->stream==NULL) return c2os9err(errno,E_FNA); /* default: file not accessible in this mode */  
         }
@@ -1797,11 +1797,11 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
       
           if (v & S_IRUSR)    *att|= poRead;
           if (v & S_IWUSR)    *att|= poWrite;
-       /* if (v & S_IXUSR) */ *att|= poExec; /* always */
+          *att|= poExec; /* always — if (v & S_IXUSR) was here */
 
           if (v & S_IROTH)    *att|= 0x08;
           if (v & S_IWOTH)    *att|= 0x10;
-       /* if (v & S_IXOTH) */ *att|= 0x20;   /* always */
+          *att|= 0x20;       /* always — if (v & S_IXOTH) was here */
       
           #ifdef windows32
             *att|= 0x03; /* workaround because currently not visible */

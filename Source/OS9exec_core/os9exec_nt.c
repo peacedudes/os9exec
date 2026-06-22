@@ -815,7 +815,7 @@ static void cleanup(void)
 	
 	if (debugcheck(dbgAllInfo,dbgNorm)) {
 		/* --- avoid endless messages only for cleanup */
-			debug[dbgNorm  ]= debug[dbgNorm  ] && 0xfdff; /* without error display */
+			debug[dbgNorm  ]= debug[dbgNorm  ] &  0xfdff; /* without error display */
 	}
 	
 	if (debugcheck(dbgAllInfo,dbgDetail)) {
@@ -1002,7 +1002,6 @@ static void PathUp( char* p )
 
 static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recursive )
 {
-	os9err err;
 	char   tmp[OS9PATHLEN];
     Boolean doRep= false;
     
@@ -1018,7 +1017,7 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
   
         drP->type= IO_Type( 1,           p,mode ); // get device type: Mac/PC or RBF
     if (drP->type==fRBF) {
-		err=    change_dir( 1,drP->type, p,mode ); // set the types at procid 0
+		        change_dir( 1,drP->type, p,mode ); // set the types at procid 0
 		return;
 	} // if
 
@@ -1505,9 +1504,8 @@ static void CheckStartup( int cpid, char* toolname, int *argc, char **argv )
 #ifdef UNIX
   static void CtrlC_Handler( int sig )
   {
-    Boolean fnd= false;
-  
-    fnd=         (main_mco.spP->lastwritten_pid!=0);
+//  Boolean fnd= false;
+//  fnd=         (main_mco.spP->lastwritten_pid!=0);
     KeyToBuffer( &main_mco, CtrlC );
 
   //printf("Ctrl-C Addr: %d %d fnd=%s\n", sig, main_mco.spP->lastwritten_pid, fnd ? "TRUE":"FALSE" );
@@ -2164,7 +2162,9 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
   //printf("*** Bus Error *** %d\n", sig );
   //fflush(0);
 
+    #ifdef USE_UAEMU
     in_m68k_go= 0;                        // remove the blocker in UAE
+    #endif
     llm_os9_copyback( crp );              // copy registers back for BusError reporting
     
     #ifdef windows32
@@ -2327,8 +2327,8 @@ ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
     #endif
   } // for
   
-  for (ii= 0; ii<MAXDIRHIT; ii++) hittable[ ii ]= 0;
-                                  hittable[  0 ]= MAXDIRS;
+  for (ii= 0; ii<MAXDIRHIT; ii++) { hittable[ ii ]= 0; }
+                                    hittable[  0 ]= MAXDIRS;
   
   #if defined MACOS9 && defined powerc && !defined MPW
   for (ii= 0; ii<PENDING_MAX; ii++) dPending[ ii ].toBeDeleted= false;

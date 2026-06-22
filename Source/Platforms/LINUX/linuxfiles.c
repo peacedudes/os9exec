@@ -96,7 +96,7 @@ Boolean CaseSens( char* pathname, char* filename, Boolean *reduS )
     Boolean     ok= false; /* not yet found */
     DIR*        d;
     dirent_typ* dEnt;
-    int  P_Len= strlen(".");
+//  int  P_Len= strlen(".");
     char        tmp [OS9PATHLEN];
     char        name[DIRNAMSZ];
     
@@ -216,16 +216,16 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
 void CheckDir( DIR* d )
 {
     dirent_typ* dEnt;
-    long int    pos;
-    
+//  long int    pos;
+
     while (true) {
         dEnt= readdir( d ); if (dEnt==NULL) break;
-        pos = telldir( d );
+//      pos = telldir( d );
       //printf( "%08x '%s'\n", pos, dEnt->d_name );
     }
     
     seekdir( d,0 );
-    pos = telldir( d );
+//  pos = telldir( d );
   //printf( "%08x EOF\n", pos );
 } /* CheckDir */
 

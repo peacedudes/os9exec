@@ -163,7 +163,7 @@ void A_Kill( ushort pid )
 /* Remove all alarms of this process */
 {
 	alarm_typ* q;
-	Boolean    fnd= false;
+//	Boolean    fnd= false;
 	int        k;
 	
     debugprintf(dbgProcess,dbgNorm,("# A_Kill: pid=%d\n", pid ));

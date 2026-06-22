@@ -431,7 +431,7 @@ static os9err int_debughalt( ushort pid, int argc, char** argv )
                                 p= argv[k];
                             }
                             
-                            if (sscanf( p,"%d", &screenW )<1) screenW= 0;
+                            if (sscanf( p,"%lu", &screenW )<1) screenW= 0;
                             break;
                 
                 case 'y' :  if (*(p+1)=='=') p+=2;
@@ -440,7 +440,7 @@ static os9err int_debughalt( ushort pid, int argc, char** argv )
                                 p= argv[k];
                             }
                             
-                            if (sscanf( p,"%d", &screenH )<1) screenH= 0;
+                            if (sscanf( p,"%lu", &screenH )<1) screenH= 0;
                             break; 
 
                 default  :  idbg_usage( argv[ 0 ] );
@@ -591,10 +591,10 @@ static os9err int_mem( _pid_, int argc, char** argv )
 
 
 
+/* int_unused: commented out, no longer referenced
 static os9err int_unused( _pid_, _argc_, _argv_ )
-/* Show unused memory */
 {  show_unused(); return 0;
-} /* int_unused */
+} */
 
 
 
@@ -893,9 +893,8 @@ static os9err int_devs( _pid_, int argc, char** argv )
 // Returns true, if at least one native program can be used
 Boolean Native_Possible( Boolean hardCheck )
 {
-  Boolean possible= hardCheck; // at least used once
-
   #if defined NATIVE_SUPPORT || defined PTOC_SUPPORT
+  Boolean possible= hardCheck;
     Boolean   enabled;
     plug_typ* p;
     int       i;
@@ -919,9 +918,8 @@ Boolean Native_Possible( Boolean hardCheck )
 // Returns true, if at least one plugin is connected
 Boolean Plugin_Possible( Boolean hardCheck )
 {
-  Boolean possible= hardCheck; // at least used once
-
   #if defined NATIVE_SUPPORT || defined PTOC_SUPPORT
+  Boolean possible= hardCheck;
     Boolean   isBuiltIn, enabled;
     Boolean   natAny= nativeActive || !Native_Empty( true );
     plug_typ* p;
@@ -1818,9 +1816,8 @@ os9err prepArgs( char *arglist, ushort *argcP, char*** argP )
 
 static void large_pipe_connect( ushort pid, syspath_typ* spC )
 {
-    pipe_typ* pipe= &spC->u.pipe;
-    
     #ifdef PIP_SUPPORT
+    pipe_typ* pipe= &spC->u.pipe;
       ulong        n;
       pipechan_typ *p,*q;
       
@@ -1930,7 +1927,7 @@ static void large_pipe_connect( ushort pid, syspath_typ* spC )
 /* executes internal command */
 os9err callcommand( char* name, ushort pid, ushort parentid, int argc, char** argv, Boolean* asThread )
 {
-    os9err       err;
+    os9err       err = 0;
     int          index;
     ushort       sp;
     syspath_typ* spP;

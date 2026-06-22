@@ -125,44 +125,38 @@
   #include "module.h"
   #include "procid_adapted.h"
   #include "sgstat.h"
+  /* undef POSIX names that errno_adapted.h redefines with OS-9 values */
+  #undef EWOULDBLOCK
+  #undef EINPROGRESS
+  #undef EALREADY
+  #undef EDESTADDRREQ
+  #undef EMSGSIZE
+  #undef EPROTOTYPE
+  #undef ENOPROTOOPT
+  #undef EPROTONOSUPPORT
+  #undef ESOCKNOSUPPORT
+  #undef EOPNOTSUPP
+  #undef EPFNOSUPPORT
+  #undef EAFNOSUPPORT
+  #undef EADDRINUSE
+  #undef EADDRNOTAVAIL
+  #undef ENETDOWN
+  #undef ENETUNREACH
+  #undef ENETRESET
+  #undef ECONNABORTED
+  #undef ECONNRESET
+  #undef ENOBUFS
+  #undef EISCONN
+  #undef ENOTCONN
+  #undef ESHUTDOWN
+  #undef ETOOMANYREFS
+  #undef ETIMEDOUT
+  #undef ECONNREFUSED
+  #undef EBUFTOOSMALL
+  #undef ESMODEXISTS
+  #undef ENOTSOCK
   #include "errno_adapted.h"
 #endif
-
-
-// these should definitely not be defined here, as MSL
-// will definitely use other intergers for the same
-// errors, causing probably all error checks failing
-// miserably. However, we let it as it is for older
-// pre-CW7 versions for now....
-#undef EWOULDBLOCK
-#undef EINPROGRESS
-#undef EALREADY
-#undef EDESTADDRREQ
-#undef EMSGSIZE
-#undef EPROTOTYPE
-#undef ENOPROTOOPT
-#undef EPROTONOSUPPORT
-#undef ESOCKNOSUPPORT
-#undef EOPNOTSUPP
-#undef EPFNOSUPPORT
-#undef EAFNOSUPPORT
-#undef EADDRINUSE
-#undef EADDRNOTAVAIL
-#undef ENETDOWN
-#undef ENETUNREACH
-#undef ENETRESET
-#undef ECONNABORTED
-#undef ECONNRESET
-#undef ENOBUFS
-#undef EISCONN
-#undef ENOTCONN
-#undef ESHUTDOWN
-#undef ETOOMANYREFS
-#undef ETIMEDOUT
-#undef ECONNREFUSED
-#undef EBUFTOOSMALL
-#undef ESMODEXISTS
-#undef ENOTSOCK
 
 #undef E_ABORT
 
@@ -246,8 +240,8 @@
   #else
     #include "macfiles.h"
   #endif
-  
-#elif defined linux
+
+#elif defined linux || defined MACOSX
   #include "linuxfiles.h"
 #endif
 

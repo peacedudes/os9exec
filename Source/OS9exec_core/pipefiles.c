@@ -293,7 +293,6 @@ static void releasePipe_svd( ushort pid, syspath_typ* spP, Boolean forced )
 os9err pPopen(ushort pid, syspath_typ *spP, ushort *modeP, char* name)
 /* open pipe, make it anonymous if name==NULL, named otherwise */
 {
-    os9err  err;
     ulong   pipesz;
     ushort  k;
     Boolean cre= IsCrea(*modeP);
@@ -357,7 +356,7 @@ os9err pPopen(ushort pid, syspath_typ *spP, ushort *modeP, char* name)
     
     /* allocate buffer */
                         spP->u.pipe.i_svd_pchP= NULL; /* initialize */
-    err=     pPopt( pid,spP, (byte*)&spP->opt ); /* no err returned */
+             pPopt( pid,spP, (byte*)&spP->opt ); /* no err returned */
     return getPipe( pid,spP, pipesz );
 } /* pPopen */
 
@@ -1261,13 +1260,12 @@ os9err ConnectPTY_TTY( ushort pid, syspath_typ* spP )
 
 
 
-void PutCharsToTTY( ushort  pid, syspath_typ* spP, 
+void PutCharsToTTY( ushort  pid, syspath_typ* spP,
                     ulong *lenP, char* buffer, Boolean wrln )
 /* write characters to TTY buffer */
 {
-     os9err    err;
-     if (wrln) err= pPwriteln( pid,spP, lenP,buffer );
-     else      err= pPwrite  ( pid,spP, lenP,buffer );
+     if (wrln) pPwriteln( pid,spP, lenP,buffer );
+     else      pPwrite  ( pid,spP, lenP,buffer );
 } /* PutCharsToTTY */
 
 

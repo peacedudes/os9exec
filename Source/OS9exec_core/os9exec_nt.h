@@ -300,6 +300,8 @@
 #ifndef __os9exec_nt_h
 #define __os9exec_nt_h
 
+#include <stdio.h>
+
 /* activate linked hash table */
 //#if !defined MACOS9 && !defined windows32
 #if defined MACOS9 && !defined powerc

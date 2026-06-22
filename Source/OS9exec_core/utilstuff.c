@@ -286,11 +286,11 @@ int pustrcmp( const char *s1,const char *s2 )
    int  len2= s2[0];
    char c;
 
-   if (len1<len2) len= len1;
-                  len= len2;
+   if (len1<len2) { len= len1; }
+                   len= len2;
 
-   *(s1++); /* start with 1st char */
-   *(s2++);
+   s1++; /* start with 1st char */
+   s2++;
    
    for (n=1; n<=len; n++) {
       if ((diff=toupper(c=*(s1++))
@@ -390,10 +390,10 @@ os9err os9error(os9err err)
 /* translates mac OS error into OS-9 error codes */
 os9err host2os9err(OSErr hosterr,ushort suggestion)
 {
-    os9err err;
-    Boolean known;
-   
-    known=true;
+    os9err  err;
+    #ifndef UNIX
+    Boolean known= true;
+    #endif
 
     #ifdef MACOS9
       if (hosterr==noErr) return 0;
@@ -510,7 +510,7 @@ os9err host2os9err(OSErr hosterr,ushort suggestion)
 
     #elif defined UNIX
       if     (hosterr==0) return 0;
-      err= suggestion; known=false;
+      err= suggestion; /* known=false; — no debug print in UNIX path */
     
     #else
       #error Unknown Target OS, no error translation implemented
@@ -899,7 +899,7 @@ static struct _sgs init_consoleopts = {
     0x00000000, /* PD_TBL   Device table address (copy) */
         0x0001, /* PD_Col   Current column number */
         0,      /* PD_Err   most recent error status */
-        0       /*          _sgs_spare[93]; spare bytes */
+      { 0 }   /*          _sgs_spare[93]; spare bytes */
 };
 
 /* get options from SCF device */
@@ -1222,15 +1222,19 @@ void CutUp( char* pathname, const char* prev )
 /* cut out /xxxx/../ sequences */
 {
     char *v, *q, *qs;
+    #ifdef linux
     Boolean inc;
-    int     i;
-    
+    #endif
+//  int i;  /* dot-counter — only used in commented-out //if (i>0) q++; */
+
     v= pathname;
     while (true) {
         q =   strstr( v,prev ); if (q==NULL) break; /* search the string */
         qs= q+strlen(   prev );
-        
+
+        #ifdef linux
         inc= false;
+        #endif
         switch (*qs) {
             case NUL      : *q= NUL; break; /* cut "/."  at the end */
             
@@ -1241,8 +1245,8 @@ void CutUp( char* pathname, const char* prev )
             case PSEP     : *q= NUL; strcat( pathname,qs ); break; /* cut "/./" anywhere */
 
             case '.'      : v= qs;
-                            i= 0;
-                            while  (*(++v)=='.') i++;
+                         // i= 0;
+                            while  (*(++v)=='.') /* i++ */;
                             switch (*v) {
                                 case NUL:
 
@@ -1266,11 +1270,17 @@ void CutUp( char* pathname, const char* prev )
                                                 q--;
                                                 break;
 
-                                default:        q++; inc= true;
+                                default:        q++;
+                                                #ifdef linux
+                                                inc= true;
+                                                #endif
                             } /* switch */
                             break;
-                            
-            default:        q++; inc= true;
+
+            default:        q++;
+                            #ifdef linux
+                            inc= true;
+                            #endif
         } /* switch */
       
         #ifdef linux
@@ -1434,8 +1444,8 @@ os9err FD_ID( const char* pathname, dirent_typ* dEnt,
         strcpy( (*mH)->fName,                 fName );
       #endif
           
-      if (liCnt==0) hittable[ 0 ]--; // adapt statistics
-                    hittable[ n ]++;            
+      if (liCnt==0) { hittable[ 0 ]--; } // adapt statistics
+                      hittable[ n ]++;
     } /* if */
           
     if (dirid!=0) (*mH)->dirid= dirid;
@@ -1494,7 +1504,7 @@ os9err FD_Name( ulong fdID, char* *pathnameP )
 {
   os9err          err= 0;
   dirtable_entry* m;
-  ulong           id= fdID;
+//ulong           id= fdID;  /* referenced only in commented-out debug prints */
   
   #ifdef LINKED_HASH
     int   i;
@@ -1628,7 +1638,7 @@ os9err Flush_Entry( ushort cpid, const char* name )
 
 void Flush_FDCache( const char* pathname )
 {
-  const char* p= pathname;
+//const char* p= pathname;
 //main_printf( "flush for '%s'\n", pathname );
 } // Flush_FD_Cache
 
@@ -2367,7 +2377,6 @@ Boolean RBF_ImgSize( long size )
       char   *pp, *qq;
       struct stat info;
       FILE*  stream;
-      int    cnt;
       char   bb[STD_SECTSIZE]; /* one sector */
 
 
@@ -2407,7 +2416,7 @@ Boolean RBF_ImgSize( long size )
           if (!RBF_ImgSize( info.st_size ))            { err= E_FNA;  break; }
 
           stream= fopen( pp,"rb" );  if (stream==NULL) { err= E_PNNF; break; }
-          cnt= fread( &bb, 1,sizeof(bb), stream );
+          (void)fread( &bb, 1,sizeof(bb), stream );
           fclose( stream ); /* is this really an OS-9 partition ? => Cruzli check */
           if (strcmp( &bb[CRUZ_POS],Cruz_Str )!=0)     { err= E_FNA;  break; }   
       } while (false);

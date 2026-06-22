@@ -341,7 +341,7 @@ static os9err ReadSector( rbfdev_typ* dev, ulong sectorNr,
     ulong   img      = dev->imgScts*sect;
     ulong   sectorLim= sectorNr + nSectors;   // upper limit
     ulong   blindNr, nBlinds;                 // not accessible sectors
-    ulong   cnt;
+    ulong   cnt = 0;
 
 //  if (sectorNr==0) {
 //      debugprintf(dbgFiles,dbgDetail,("# RBF read  sector0\n"));
@@ -823,10 +823,11 @@ static os9err Open_Image( ushort pid, rbfdev_typ* dev, ptype_typ type, char* pat
                           ushort mode )
 {
     #define R0 "/r0"
-    os9err  err, cer;
+    os9err  err;
     ushort  sp, sctSize;
     ulong   len, iSize, tSize;
-    ulong   imgScts, totScts;
+//  ulong   imgScts;  /* only used in commented-out debug prints */
+    ulong   totScts;
     ulong*  l;
     ushort* w;
     byte    bb[STD_SECTSIZE]; /* one sector */
@@ -857,7 +858,7 @@ static os9err Open_Image( ushort pid, rbfdev_typ* dev, ptype_typ type, char* pat
         w=        (ushort*)&bb[ SECT_POS ]; sctSize= os9_word(*w);
         if (sctSize==0)                     sctSize= STD_SECTSIZE;
        
-        imgScts= iSize/sctSize;
+//      imgScts= iSize/sctSize;
       //upo_printf( "name1='%s' size=%d %d\n", pathname, imgScts, totScts );
 
              tSize= totScts*sctSize;
@@ -871,7 +872,7 @@ static os9err Open_Image( ushort pid, rbfdev_typ* dev, ptype_typ type, char* pat
         err= DevSize( dev );
     } while (false);
     
-    if (err) { cer= syspath_close( 0, sp ); return err; }
+    if (err) { syspath_close( 0, sp ); return err; }
     strcpy( dev->img_name,pathName );
     
     /* if not the complete name at the image */
@@ -976,7 +977,8 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
     #define SectsPerTrack 0x20
     
     os9err    err, cErr;
-    ulong     allocSize, allocN, allocClu, mapSize,
+    ulong     allocSize, allocN, mapSize,
+//            allocClu,  /* only used in commented-out code */
               f, r, fN, rN, totBits, tracks, cluRest, iSize;
     ulong*    u;
     ushort*   w;
@@ -1028,9 +1030,9 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
       return 1;
     } // if
     
-    if (mnt_sctSize>0) dev->sctSize    = mnt_sctSize;
-                       dev->clusterSize= clu;
-                       dev->sas        = DD__MINALLOC;
+    if (mnt_sctSize>0) { dev->sctSize    = mnt_sctSize; }
+                         dev->clusterSize= clu;
+                         dev->sas        = DD__MINALLOC;
     
               dev->totScts= mnt_ramSize*KByte/dev->sctSize; /* adapt to KBytes */
     tracks = (dev->totScts-1) / SectsPerTrack + 1;
@@ -1061,7 +1063,7 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
   
     allocSize= (totBits-1)/(dev->sctSize*BpB) + 1; // nr of allocation sectors, rounded up
     allocN   =  allocSize * dev->sctSize*BpB;      // nr of allocation bits
-    allocClu =  allocSize/clu + 1;                 // nr of allocated clusters ( including sect 0 )
+//  allocClu =  allocSize/clu + 1;  /* only used in commented-out code below */
     
             dev->ramBase= get_mem( dev->sctSize*dev->totScts );
     if    ( dev->ramBase==NULL ) return E_NORAM;
@@ -1125,7 +1127,7 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
     char         cmp[OS9PATHLEN],
                  ali[OS9PATHLEN],
                  tmp[OS9PATHLEN],
-                 ers[10], *q, *p, *v;
+                 ers[12], *q, *p, *v;
     rbfdev_typ*  dev;
     ptype_typ    type;
     int          ii, n;

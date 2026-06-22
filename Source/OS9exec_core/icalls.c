@@ -199,12 +199,12 @@ os9err OS9_I_Delete( regs_type *rp, ushort cpid )
     ushort    mode    = lobyte(rp->d[0]); /* take do.b, avoid poCreate bug problem */   
     char*     os9_name= (char*)rp->a[0];
     char      os9_path[OS9PATHLEN];
-    char*     pastpath;
+//  char*     pastpath;
     ptype_typ type;
-    
+
 
     if (os9_name==NULL)                     os9_name= "";
-    pastpath= nullterm(            os9_path,os9_name, OS9PATHLEN );
+    /*pastpath=*/ nullterm(         os9_path,os9_name, OS9PATHLEN );
     type    =  IO_Type( cpid,      os9_path,mode ); if (type==fNone) return E_BPNAM;
     return delete_file( cpid,type, os9_path,mode );
 } /* OS9_I_Delete */
@@ -232,12 +232,12 @@ os9err OS9_I_MakDir( regs_type *rp, ushort cpid )
 {   
     ushort    mode    = loword(rp->d[0]) | poCreateMask; /* internal open used */
     char*     os9_name= (char*)rp->a[0];
-    char      os9_path[OS9PATHLEN]; 
-    char*     pastpath;
+    char      os9_path[OS9PATHLEN];
+//  char*     pastpath;
     ptype_typ type;
 
 
-    pastpath= nullterm(            os9_path,os9_name, OS9PATHLEN );
+    /*pastpath=*/ nullterm(        os9_path,os9_name, OS9PATHLEN );
     type    =  IO_Type( cpid,      os9_path,mode ); if (type==fNone) return E_BPNAM;
     return    make_dir( cpid,type, os9_path,mode );
 } /* OS9_I_MakDir */
@@ -260,15 +260,15 @@ os9err OS9_I_ChgDir( regs_type *rp, ushort cpid )
  *              - Access mode is only used to ignore "chx"-requests
  */
 {
-    ushort    mode    = loword(rp->d[0]) & 0x07 | 0x80; /* ignore some flags */
+    ushort    mode    = (loword(rp->d[0]) & 0x07) | 0x80; /* ignore some flags */
     char*     os9_name= (char*)rp->a[0];
     char      os9_path[OS9PATHLEN];
-    char*     pastpath;
+//  char*     pastpath;
     ptype_typ type;
-    
-    
+
+
     if (os9_name==NULL)                     os9_name= ""; /* avoid problems without $HOME */
-    pastpath= nullterm(            os9_path,os9_name, OS9PATHLEN );
+    /*pastpath=*/ nullterm(        os9_path,os9_name, OS9PATHLEN );
     type=      IO_Type( cpid,      os9_path,mode ); if (type==fNone) return E_BPNAM;
     return  change_dir( cpid,type, os9_path,mode );
 } /* OS9_I_ChgDir */

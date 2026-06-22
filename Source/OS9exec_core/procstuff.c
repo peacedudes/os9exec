@@ -329,7 +329,7 @@ void init_processes()
     } /* for */
     
                                   s= (short*)prDBT;
-    *s= os9_word(MAXPROCESSES-1); s++; /* no process 0 */
+    *s= (short)os9_word(MAXPROCESSES-1); s++; /* no process 0 */
     *s= os9_word((ushort)sz);     s++; /* the size of the real descriptor */
     
     currentpid= 0; /* earlier: MAXPROCESSES; no process is running */
@@ -863,7 +863,6 @@ os9err send_signal( ushort spid, ushort signal )
 
 os9err sig_mask( ushort cpid, int level )
 {
-    os9err err;
     process_typ* cp= &procs[cpid];  /* ptr to procs descriptor */
     int*   plv= &cp->masklevel;
     process_typ*  sigp;
@@ -894,7 +893,7 @@ os9err sig_mask( ushort cpid, int level )
             } /* for */
         
             if (s->cnt<=0) async_pending= false;
-            err= send_signal( pid,signal );
+            send_signal( pid,signal );
             break;
         } /* if */
     } /* for */
@@ -921,7 +920,9 @@ static void wait_for_signal( ushort pid )
 /* this routine looks for incoming data from any of the connected */
 /* network sockets */
 {
-    os9err       sig= 0; /* yes it is used (=assigned), even if there is no net support */
+    #ifdef NET_SUPPORT
+    os9err       sig= 0;
+    #endif
     syspath_typ* spP;
     int          k, sp;
     int          sv= currentpid;
@@ -1349,18 +1350,19 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
     byte         *mp,*p,*p2;
     ulong*       a;
     ulong        memsiz, cnt;
-    ushort       err, mty, svid;
+    ushort       err, mty;
     mod_exec*    theModule;
     process_typ* cp= &procs[newpid];
-    process_typ* pp= &procs[os9_word(cp->pd._pid)];  
     regs_type*   rp= &cp->os9regs;
-    Boolean      asThread;
-    void*        modBase;
-    
+
     #ifdef INT_CMD
-      ushort     argc;
-      char**     arguments;
-    #endif  
+      ushort       svid;
+      process_typ* pp= &procs[os9_word(cp->pd._pid)];
+      Boolean      asThread;
+      void*        modBase;
+      ushort       argc;
+      char**       arguments;
+    #endif
 
     /* save main module ID */
     cp->mid=  mid;

@@ -1,0 +1,10 @@
+# Proprietary OS-9 DEFS headers -- must NEVER be committed (Microware copyright).
+# Supply your own copy locally from a licensed OS-9 system.
+# See Source/OS9exec_core/os9defs/defs_files.txt for which files and how to adapt.
+/Source/OS9exec_core/os9defs/*.h
+
+# Build output
+/Output/
+
+# Claude Code per-user local settings (machine-specific allowlist)
+/.claude/settings.local.json

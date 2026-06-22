@@ -213,11 +213,11 @@ Boolean SCSI_Device  ( const char* os9path,
   Boolean RAM_Device ( const char* os9path );
 // #endif
 
-#ifdef windows32
+#if defined windows32 || defined UNIX
   os9err AdjustPath ( const char* pathname, char* adname, Boolean creFile );
 #endif
 
-#ifdef win_linux
+#if defined win_linux || defined UNIX
   void   GetEntry( dirent_typ* dEnt, char* name, Boolean do_2e_conv );
 #endif
 

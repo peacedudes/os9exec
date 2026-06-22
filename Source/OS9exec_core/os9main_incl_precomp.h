@@ -153,8 +153,8 @@
   #define UNIX
 #endif
 
-/* either windows or linux */
-#if defined windows32 || defined linux
+/* either windows or linux (or macOS as a unix-like peer) */
+#if defined windows32 || defined linux || defined MACOSX
   #define win_linux
 #endif
 
@@ -316,11 +316,17 @@
 typedef struct dirent dirent_typ;
 
 #ifdef __MACH__
-  #define  NULL 0L
   #include <stddef.h>
-  
+  #ifndef NULL
+    #define NULL 0L
+  #endif
+  #include <stdio.h>
+  #include <stdlib.h>
+  #include <stdarg.h>
+  #include <string.h>
+  #include <errno.h>
+
   #ifdef __MWERKS__
-    #include <stdio.h>
 	#include <mw_stdarg.h>    // N.B. Not cdstarg!
   //#include <cstdio>
     #include <stat.h>
