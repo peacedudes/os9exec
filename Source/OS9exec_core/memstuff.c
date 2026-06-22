@@ -130,12 +130,47 @@ pmem_typ     pmem    [ MAXPROCESSES ];
 #endif
 
 
+/* ---- the 68k machine's RAM: one contiguous host arena ----
+   A 68k address is simply an offset into this block; the host pointer is
+   emul_base + addr (see get_real_address in the UAE memory layer). All OS-9
+   memory is carved from here so every host pointer handed to the 68k world
+   fits in a 32-bit offset on a 64-bit host. The low page is reserved and
+   never handed out, so 68k address 0 can never alias a real block -- this
+   mirrors the 68000 exception-vector region and keeps NULL == 0 valid.
+   The reservation is demand-zero (untouched pages cost no real memory). */
+#define EMUL_ARENA_SIZE  (256u*1024u*1024u)  /* generous; bigger than any real OS-9/68k machine */
+#define EMUL_RESERVED    0x1000u             /* low page never allocated */
+
+unsigned char* emul_base = NULL;             /* arena base (referenced by memory.h) */
+static unsigned char* emul_next = NULL;      /* bump pointer for fresh allocations */
+static unsigned char* emul_end  = NULL;      /* one past the end of the arena */
+
+
+static void* emul_alloc( ulong memsz )
+/* bump-allocate a zeroed block from the 68k arena; NULL if exhausted */
+{
+    unsigned char* p= emul_next;
+    if (p+memsz > emul_end) return NULL;     /* arena exhausted */
+    emul_next= p+memsz;
+    return p;                                /* pages are demand-zero, already cleared */
+} /* emul_alloc */
+
+
 /* prepare the memory handling for use */
 void init_all_mem(void)
 {
     int k;
-    
+
     totalMem= 0; /* initialize startup memory */
+
+    if (emul_base==NULL) { /* allocate the 68k RAM arena once */
+        emul_base= (unsigned char*)calloc( (size_t)EMUL_ARENA_SIZE, 1 );
+        if (emul_base==NULL) {
+            upe_printf( "Cannot allocate 68k memory arena (%u bytes) !!!\n", EMUL_ARENA_SIZE );
+        }
+        emul_next= emul_base + EMUL_RESERVED; /* keep the low page out of circulation */
+        emul_end = emul_base + EMUL_ARENA_SIZE;
+    } /* if */
     
     #ifdef REUSE_MEM
        freeinfo.freeN  = 0;
@@ -484,7 +519,7 @@ void release_mem( void* membase )
     debugprintf(dbgMemory,dbgNorm,("# release_mem: release block     at $%08lX (size=%5u) %8d\n",
                                       membase,memsz, totalMem ));
       
-    #ifdef MACMEM    
+    #ifdef MACMEM
       DisposePtr( membase );
 
       if (MemError()!=noErr) {
@@ -492,7 +527,11 @@ void release_mem( void* membase )
                  ("# release_memblock: DisposePtr returned Mac OS9 MemError=%d\n",MemError()));
       }
     #else
-      free( membase );
+      /* arena memory is never returned to the host: membase points inside the
+         single 68k arena, not at an individually malloc'd block, so it must
+         not be passed to free(). Without REUSE_MEM the block simply stays
+         out of circulation; enabling REUSE_MEM recycles it via release_ok. */
+      (void)membase;
     #endif
 } /* release_mem */
 
@@ -605,7 +644,7 @@ void* get_mem( ulong memsz )
                                          "NewPtrClear", MemError()));
         }
       #else
-        pp= (void*)calloc( (size_t)sz, (size_t)1 ); /* get memory block, cleared to 0 */
+        pp= emul_alloc( sz ); /* carve a zeroed block from the 68k arena */
       #endif
     } // if
  

@@ -187,10 +187,15 @@ static __inline__ void put_byte(uaecptr addr, uae_u32 b)
     byteput_1(addr, b);
 }
 
+/* base of the single 68k RAM arena (defined in memstuff.c). A 68k address is
+   an offset into this block; the host pointer is emul_base + addr. This
+   replaces the original identity mapping, which only worked when host
+   pointers were 32 bits wide (see memstuff.c for the full rationale). */
+extern unsigned char *emul_base;
+
 static __inline__ uae_u8 *get_real_address(uaecptr addr)
 {
- /* return get_mem_bank(addr).xlateaddr(addr); */
-    return (uae_u8 *)addr; /* no translation ever %%% */
+    return (uae_u8 *)(emul_base + addr);
 }
 
 static __inline__ int valid_address( uaecptr addr, uae_u32 size )
