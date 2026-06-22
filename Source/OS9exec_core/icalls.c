@@ -490,17 +490,16 @@ os9err OS9_I_SetStt( regs_type *rp, ushort cpid )
  * Restrictions:- 
  */
 {
-    ulong* a0= (ulong*)&rp->a[0];
-    ulong* a1= (ulong*)&rp->a[1];
-    ulong* d0= (ulong*)&rp->d[0];
-    ulong* d1= (ulong*)&rp->d[1];
-    ulong* d2= (ulong*)&rp->d[2];
-    ulong* d3= (ulong*)&rp->d[3];
+    ulong a0= (ulong)FROM68K(rp->a[0]); /* register addresses -> host pointers */
+    ulong a1= (ulong)FROM68K(rp->a[1]);
+    ulong d0= rp->d[0], d1= rp->d[1], d2= rp->d[2], d3= rp->d[3];
 
-    ushort path= loword(*d0);
-    ushort func= loword(*d1);
+    ushort path= loword(d0);
+    ushort func= loword(d1);
 
-    return usrpath_setstat( cpid,path,func, a0,a1, d0,d1,d2,d3 );
+    os9err err= usrpath_setstat( cpid,path,func, &a0,&a1, &d0,&d1,&d2,&d3 );
+    rp->d[0]= d0; rp->d[1]= d1; rp->d[2]= d2; rp->d[3]= d3; /* copy back results */
+    return err;
 } /* OS9_I_SetStt */
 
                               
@@ -517,17 +516,16 @@ os9err OS9_I_GetStt( regs_type *rp, ushort cpid )
  *             E$BPNUM: this path is not open 
  */
 {
-    ulong* a0= (ulong *)&rp->a[0];
-    ulong* d0= (ulong *)&rp->d[0];
-    ulong* d1= (ulong *)&rp->d[1];
-    ulong* d2= (ulong *)&rp->d[2];
-    ulong* d3= (ulong *)&rp->d[3];
+    ulong a0= (ulong)FROM68K(rp->a[0]); /* register address -> host pointer */
+    ulong d0= rp->d[0], d1= rp->d[1], d2= rp->d[2], d3= rp->d[3];
 
-    ushort path= loword(*d0);
-    ushort func= loword(*d1);
-    
+    ushort path= loword(d0);
+    ushort func= loword(d1);
+
     /* perform getstat */
-    return usrpath_getstat( cpid,path,func, a0, d0,d1,d2,d3 );
+    os9err err= usrpath_getstat( cpid,path,func, &a0, &d0,&d1,&d2,&d3 );
+    rp->d[0]= d0; rp->d[1]= d1; rp->d[2]= d2; rp->d[3]= d3; /* copy back results */
+    return err;
 } /* OS9_I_GetStt */
 
 
@@ -544,17 +542,16 @@ os9err OS9_I_SGetSt( regs_type *rp, ushort cpid )
  *             E$BPNUM: this path is not open 
  */
 {
-    ulong* a0= (ulong *)&rp->a[0];
-    ulong* d0= (ulong *)&rp->d[0];
-    ulong* d1= (ulong *)&rp->d[1];
-    ulong* d2= (ulong *)&rp->d[2];
-    ulong* d3= (ulong *)&rp->d[3];
-    
-    ushort path= loword(*d0);
-    ushort func= loword(*d1);
-    
+    ulong a0= (ulong)FROM68K(rp->a[0]); /* register address -> host pointer */
+    ulong d0= rp->d[0], d1= rp->d[1], d2= rp->d[2], d3= rp->d[3];
+
+    ushort path= loword(d0);
+    ushort func= loword(d1);
+
     /* perform getstat */
-    return syspath_getstat( cpid,path,func, a0,d0,d1,d2,d3 );
+    os9err err= syspath_getstat( cpid,path,func, &a0, &d0,&d1,&d2,&d3 );
+    rp->d[0]= d0; rp->d[1]= d1; rp->d[2]= d2; rp->d[3]= d3; /* copy back results */
+    return err;
 } /* OS9_I_SGetSt */
 
 
