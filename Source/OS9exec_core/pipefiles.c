@@ -707,9 +707,9 @@ static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP,
 static os9err pReadSysTask( ushort pid, syspath_typ* spP, regs_type* rp )
 {   
     os9err err;
-    char*  a0= (char*)(rp->a[0]);
+    char*  a0= (char*)FROM68K(rp->a[0]);
     ulong  d1=         rp->d[1];
-    
+
     err= pReadSysTaskExe( pid,spP, &d1,a0, false, false, (systaskfunc_typ)pReadSysTask );
     rp->d[1]= d1;
     return err;
@@ -718,9 +718,9 @@ static os9err pReadSysTask( ushort pid, syspath_typ* spP, regs_type* rp )
 static os9err pReadSysTaskLn( ushort pid, syspath_typ* spP, regs_type* rp )
 {   
     os9err err;
-    char* a0= (char*)(rp->a[0]);
+    char* a0= (char*)FROM68K(rp->a[0]);
     ulong d1=         rp->d[1];
-    
+
     err= pReadSysTaskExe( pid,spP, &d1,a0, true,  false, (systaskfunc_typ)pReadSysTaskLn );
     rp->d[1]= d1;
     return err;

@@ -264,7 +264,7 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
                                /* Attention !!! Colored memory (bit 7) is %%% ignored. */ 
                                     
            
-    p= nullterm(mpath,(char*)rp->a[0],OS9PATHLEN);
+    p= nullterm(mpath,(char*)FROM68K(rp->a[0]),OS9PATHLEN);
     debugprintf(dbgModules,dbgNorm,
       ("# F$Load: requested %sload of '%s', mode=$%04X\n", exedir ? "exec ":"", mpath,mode ));
 
@@ -274,10 +274,10 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
     theModule=(mod_exec *)get_module_ptr(mid);
     retword(rp->d[0])=os9_word(theModule->_mh._mtylan);
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
-      
-    rp->a[0]=(ulong) p;
-    rp->a[2]=(ulong) theModule;
-    rp->a[1]=(ulong) theModule+os9_long(theModule->_mexec); 
+
+    rp->a[0]=TO68K(p);
+    rp->a[2]=TO68K(theModule);
+    rp->a[1]=TO68K(theModule)+os9_long(theModule->_mexec);
     return 0;
 } /* OS9_F_Load */
 
@@ -305,7 +305,7 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
     ushort   mid;
     ushort   tylan=loword(rp->d[0]); /* wanted attrs */
        
-    p= nullterm( mname,(char*)rp->a[0],OS9NAMELEN );
+    p= nullterm( mname,(char*)FROM68K(rp->a[0]),OS9NAMELEN );
     debugprintf(dbgModules,dbgNorm,("# F$Link: requested link to '%s', type/lang=$%04X\n",mname,tylan));
 
 
@@ -320,9 +320,9 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
     if (tylan!=0 && tylan!=os9_word(theModule->_mh._mtylan)) return os9error(E_MNF); /* no such module found */
         
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
-    rp->a[0]= (ulong)p;
-    rp->a[2]= (ulong)theModule;
-    rp->a[1]= (ulong)theModule + os9_long(theModule->_mexec);
+    rp->a[0]= TO68K(p);
+    rp->a[2]= TO68K(theModule);
+    rp->a[1]= TO68K(theModule) + os9_long(theModule->_mexec);
    
     return 0;
 } /* OS9_F_Link */
@@ -338,7 +338,7 @@ os9err OS9_F_UnLink( regs_type *rp, _pid_ )
  *             none possible
  */
 {
-    ushort mid= get_mid( (void*)rp->a[2] );
+    ushort mid= get_mid( (void*)FROM68K(rp->a[2]) );
     debugprintf    (dbgModules,dbgNorm,("# F$Unlink: Module at $%08lX has mid=%d%s\n",
                                            rp->a[2],mid,mid<MAXMODULES ? "" : "=MAXMODULES" ));
                                            
@@ -364,11 +364,11 @@ os9err OS9_F_UnLoad( regs_type *rp, _pid_ )
 {
     char  mname[OS9NAMELEN];
 
-    char* p  = nullterm   ( mname,(char*)rp->a[0],OS9NAMELEN );
+    char* p  = nullterm   ( mname,(char*)FROM68K(rp->a[0]),OS9NAMELEN );
     int   mid= find_mod_id( mname );
     if   (mid>=MAXMODULES) return os9error(E_MNF); /* module not found */
-    
-    rp->a[0]= (ulong)p;
+
+    rp->a[0]= TO68K(p);
     unlink_module( mid );
     debugprintf(dbgModules,dbgNorm,("# F$UnLoad: Unloaded mid=%d, '%s', link now=%d\n",
                                        mid,mname,os9modules[mid].linkcount ));
@@ -407,7 +407,7 @@ os9err OS9_F_SRqMem( regs_type *rp, ushort cpid )
     /* %%% E_MEMFUL is never returned, even if only pointer list is full */
     if (bp==NULL) return os9error(E_NORAM); /* not enough RAM */
     rp->d[0]= memsz;     /* return actual block size */
-    rp->a[2]= (ulong)bp; /* return block pointer */
+    rp->a[2]= TO68K(bp); /* return block pointer */
     return 0;
 } /* OS9_F_SRqMem */
 
@@ -426,9 +426,9 @@ os9err OS9_F_SRtMem( regs_type *rp, ushort cpid )
 {
    void *bp;
    ulong memsz;
-   
+
    memsz=rp->d[0];
-   bp=(void *)rp->a[2];
+   bp=(void *)FROM68K(rp->a[2]);
    memsz=(memsz+15) & 0xFFFFFFF0; /* round up to next 16-byte boundary */
    return os9free(cpid,bp,memsz);
 } /* OS9_F_SRtMem */
@@ -446,7 +446,7 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
  *                ignored, as well as all FPU exceptions.
  */
 {
-    ushort*      itab= (ushort*)rp->a[1];
+    ushort*      itab= (ushort*)FROM68K(rp->a[1]);
     ushort       vect;
     process_typ* cp= &procs[cpid];
    
@@ -461,7 +461,7 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
                   ("De-Installed handler for vector number $%02X\n",vect));
             }  
             else {
-                cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr=*(itab+1)+(ulong)itab; /* install routine pointer */
+                cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr=*(itab+1)+TO68K(itab); /* install routine pointer (68k addr) */
                 cp->ErrorTraps[vect-FIRSTEXCEPTION].handlerstack=rp->a[0]; /* stack */
                 debugprintf(dbgTrapHandler,dbgNorm,
                   ("Installed handler at $%08lX for vector number $%02X\n",
@@ -544,7 +544,7 @@ os9err OS9_F_STime( regs_type *rp, ushort cpid )
 os9err OS9_F_Event( regs_type *rp, ushort cpid )
 {
     os9err       err   = 0;
-    char*        p     = (char*)rp->a[0];
+    char*        p     = (char*)FROM68K(rp->a[0]);
     short        evCode= loword(rp->d[1]);
     process_typ* cp    = &procs[cpid];
     
@@ -567,15 +567,15 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
                         wIncr  = loword(rp->d[2]);
                         sIncr  = loword(rp->d[3]);
                     
-                            err=  evCreat( p, evValue, wIncr,sIncr, &evId ); 
+                            err=  evCreat( p, evValue, wIncr,sIncr, &evId );
                         if (err) break;
-                       
-                        rp->a[0]= (ulong)( p + strlen( p ) );
+
+                        rp->a[0]= TO68K( p + strlen( p ) );
                         rp->d[0]= evId;
                         break;
                         
         case Ev_Delet:  err=      evDelet( p );
-                        rp->a[0]= (ulong)( p + strlen( p ) );
+                        rp->a[0]= TO68K( p + strlen( p ) );
                         break;
 
         case Ev_Wait:   evId= rp->d[0];
@@ -732,7 +732,7 @@ os9err OS9_F_Icpt( regs_type *rp, ushort cpid )
 {
     process_typ* cp= &procs[cpid];
 
-    cp->pd._sigvec= (byte*) os9_long(rp->a[0]);  /* set address of intercept routine */
+    cp->pd._sigvec= (byte*) FROM68K(os9_long(rp->a[0]));  /* set address of intercept routine */
     cp->icpta6    =                  rp->a[6]; /* set data pointer for intercept routine */
     debugprintf(dbgProcess,dbgNorm,
       ("# F$Icpt: set intercept of pid=%d to pc=$%08lx, a6=$%08lx\n",
@@ -821,8 +821,8 @@ os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
     int k;
     ulong *ptr,*lim;
     short *s,  *sl;
-    
-    ptr= (ulong *)  rp->a[0];
+
+    ptr= (ulong *)  FROM68K(rp->a[0]);
     lim= (ulong *)( rp->d[1] + (long)ptr );
     
     s  = (short *)ptr;
@@ -841,7 +841,7 @@ os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
       ptr++;
     }
     
-    rp->d[1]= (long)ptr - rp->a[0];
+    rp->d[1]= (long)ptr - (long)FROM68K(rp->a[0]); /* bytes written (host span) */
     return 0;
 } /* OS9_F_GPrDBT */
 
@@ -872,7 +872,7 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
 
   memcpy( &pd,&cp->pd, sizeof(procid) );
     
-  pd._usp= (byte*) os9_long( rp->a[ 7 ] );
+  pd._usp= (byte*) FROM68K(os9_long( rp->a[ 7 ] ));
     
   // <_state> and <queueid> will be assigned directly
   if (id==cpid) pd._queueid = '*';
@@ -913,7 +913,7 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
   } // for
   pd._blksiz[ 0 ]= os9_long( memsz );
           
-  memcpy( (byte*)rp->a[ 0 ], &pd, loword( rp->d[ 1 ] ) );
+  memcpy( (byte*)FROM68K(rp->a[ 0 ]), &pd, loword( rp->d[ 1 ] ) );
 //upe_printf( "pmodul2=%08X\n", os9_long( (ulong)pd._pmodul ) );
   return 0;
 } // OS9_F_GPrDsc
@@ -950,8 +950,8 @@ os9err OS9_F_GBlkMp( regs_type *rp, _pid_ )
     if (memsz>totalMem) totalMem= memsz;
     rp->d[2]= totalMem;
     rp->d[3]= memsz;
-   
-    b= (ulong**)rp->a[0]; *b= NULL; /* no segments available */
+
+    b= (ulong**)FROM68K(rp->a[0]); *b= NULL; /* no segments available */
     return 0;
 } /* OS9_F_GBlkMp */
 
@@ -1112,10 +1112,10 @@ os9err OS9_F_GModDr( regs_type *rp, _pid_ )
  * Input:   d1.l = Maximum number of bytes to copy
  *          (a0) = Buffer pointer
  * Output:  d1.l = Actual number of bytes copied.
- *                   
+ *
  */
 {
-    byte* b  = (byte*)rp->a[0];
+    byte* b  = (byte*)FROM68K(rp->a[0]);
     ulong cnt=        rp->d[1];
     ulong mx = sizeof(mdirField); if (cnt>mx) cnt= mx;
 
@@ -1137,11 +1137,11 @@ os9err OS9_F_CpyMem( regs_type *rp, _pid_ )
  *          (a0) = address of memory in external process to copy
  *          (a1) = caller's destination buffer pointer
  * Output:  none
- *                   
+ *
  */
 {
-    byte* src= (byte*)rp->a[0];
-    byte* dst= (byte*)rp->a[1];
+    byte* src= (byte*)FROM68K(rp->a[0]);
+    byte* dst= (byte*)FROM68K(rp->a[1]);
     ulong cnt= (ulong)rp->d[1];
     
     MoveBlk( dst,src, cnt );
@@ -1174,30 +1174,30 @@ os9err OS9_F_TLink( regs_type *rp, ushort cpid )
         trapidx=rp->d[0]-1;
     if (trapidx>=NUMTRAPHANDLERS) return os9error(E_ITRAP); /* invalid trap code */
 
-    if ((rp->a[0]!=0) && (*((char *)rp->a[0])!=0)) {
+    if ((rp->a[0]!=0) && (*((char *)FROM68K(rp->a[0]))!=0)) {
         /* install trap handler */
-        p=nullterm(mpath,(char *)rp->a[0],OS9PATHLEN);
+        p=nullterm(mpath,(char *)FROM68K(rp->a[0]),OS9PATHLEN);
 
              err=install_traphandler(cpid,trapidx,mpath,rp->d[1],&tp);
         if (!err) {
             trapmodP=tp->trapmodule;
-        
+
             /* --- D0.W is still the trap no, D1.L is the additional memory */
-            rp->a[0]= (ulong)p;
-            rp->a[2]= (ulong)trapmodP; /* pointer to the trap module */
-            rp->a[1]= (ulong)trapmodP+os9_long(trapmodP->progmod._mexec);
+            rp->a[0]= TO68K(p);
+            rp->a[2]= TO68K(trapmodP); /* pointer to the trap module */
+            rp->a[1]= TO68K(trapmodP)+os9_long(trapmodP->progmod._mexec);
          
             /* --- now modify stack and PC to return through trapinit routine to program */
-            sp=(ulong*)rp->a[7];           // get current stack pointer as *ulong
+            sp=(ulong*)FROM68K(rp->a[7]);           // get current stack pointer as *ulong
             if (!cp->isIntUtil) {          // workaround for built-in utilities: not really used
               *(--sp)= os9_long(rp->pc);   // save PC pointing to instruction after F$TLink
               *(--sp)= 0;                  // save two dummy null words
               *(--sp)= os9_long(rp->a[6]); // save "caller's A6"
-              rp->a[7]=(ulong)sp;          // update stack pointer
+              rp->a[7]=TO68K(sp);          // update stack pointer
             } // if
             
             /* --- modify registers to continue execution in traphandler's init routine */
-            rp->pc=(ulong)trapmodP + os9_long(trapmodP->_mtrapinit);
+            rp->pc=TO68K(trapmodP) + os9_long(trapmodP->_mtrapinit);
             rp->a[6]=tp->trapmem+0x8000; /* set pointer to traphandler's data with offset */
             debugprintf(dbgTrapHandler,dbgNorm,("# F$TLink: About to launch trapinit of vector #%d (pid=%d) with the following regs:\n",trapidx+1,cpid));
         }
@@ -1248,7 +1248,7 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
     short  access,tylan,attrev;
 
     size= rp->d[0];
-    p= nullterm( mpath,(char*)rp->a[0],OS9PATHLEN );
+    p= nullterm( mpath,(char*)FROM68K(rp->a[0]),OS9PATHLEN );
     debugprintf(dbgModules,dbgNorm,("# F$DatMod: for '%s', size=%d, mode=$%04X\n",
                                        mpath,size, loword(rp->d[3])));
 
@@ -1314,10 +1314,10 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
     theModule= (mod_exec*)get_module_ptr( mid );
     retword(rp->d[0])=os9_word(theModule->_mh._mtylan);
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
-      
-    rp->a[0]=(ulong) p;
-    rp->a[2]=(ulong) theModule;
-    rp->a[1]=(ulong) theModule+os9_long(theModule->_mexec);
+
+    rp->a[0]=TO68K(p);
+    rp->a[2]=TO68K(theModule);
+    rp->a[1]=TO68K(theModule)+os9_long(theModule->_mexec);
 
     return 0;
 } /* OS9_F_DatMod */
@@ -1352,8 +1352,8 @@ os9err OS9_F_Fork( regs_type *rp, ushort cpid )
   process_typ* np;
      
   /* get module name */
-  rp->a[0]= (ulong)nullterm( mpath, (char*)rp->a[0],OS9PATHLEN );
-   
+  rp->a[0]= TO68K(nullterm( mpath, (char*)FROM68K(rp->a[0]),OS9PATHLEN ));
+
   /* now fork */
   if (dummyfork) {
     /* --- dummy fork, no new process */
@@ -1364,7 +1364,7 @@ os9err OS9_F_Fork( regs_type *rp, ushort cpid )
     printf("%s ",mpath); /* show program name */
     
     /* --- scan and display parameters */
-    p= (char*)rp->a[1];
+    p= (char*)FROM68K(rp->a[1]);
     n= rp->d[2];
 
     while (n-->0) {
@@ -1398,7 +1398,7 @@ os9err OS9_F_Fork( regs_type *rp, ushort cpid )
   do {
     err= link_load ( cpid, mpath,&newmid );            if (err) break;
     err= prepFork( newpid, mpath, newmid,
-                           (byte*)rp->a[1],rp->d[2],rp->d[1], 
+                           (byte*)FROM68K(rp->a[1]),rp->d[2],rp->d[1], 
                            numpaths, grp,usr, prior ); if (err) break;
 
     if   (!np->isIntUtil) {
@@ -1498,7 +1498,7 @@ os9err OS9_F_Chain( regs_type *rp, ushort cpid )
     err= 0;
     
     /* get module name */
-    rp->a[0]= (ulong)nullterm(mpath,(char *)rp->a[0],OS9PATHLEN);
+    rp->a[0]= TO68K(nullterm(mpath,(char *)FROM68K(rp->a[0]),OS9PATHLEN));
     numpaths= loword(rp->d[3]);
 
     paramsiz= rp->d[2];
@@ -1507,7 +1507,7 @@ os9err OS9_F_Chain( regs_type *rp, ushort cpid )
     if (paramptr==NULL) err= os9error(E_NORAM);
     if (!err) {
         /* save a copy of the parameter area */
-        MoveBlk( paramptr,(char*)rp->a[1], paramsiz );
+        MoveBlk( paramptr,(char*)FROM68K(rp->a[1]), paramsiz );
 
         /* user paths higher than numpaths must be closed */
         for (k=numpaths; k<MAXUSRPATHS; k++) {
@@ -1768,7 +1768,7 @@ os9err OS9_F_CRC( regs_type *rp, _pid_ )
   }
   else {
     /* update CRC over given area */
-    rp->d[1]=calc_crc( (byte*)rp->a[0], rp->d[0], rp->d[1]);
+    rp->d[1]=calc_crc( (byte*)FROM68K(rp->a[0]), rp->d[0], rp->d[1]);
   } // if
 
   return 0;
@@ -1782,7 +1782,7 @@ os9err OS9_F_SetCRC( regs_type *rp, _pid_ )
  * Output:  module image with updated CRC
  */
 {
-    mod_exec* m= (mod_exec*)rp->a[0];
+    mod_exec* m= (mod_exec*)FROM68K(rp->a[0]);
     ulong     modsize;
     ushort    hpar;
     
@@ -1815,17 +1815,17 @@ os9err OS9_F_PrsNam( regs_type *rp, _pid_ )
 {
     char *p;
     ushort n;
-    
-    p=(char *)rp->a[0];
+
+    p=(char *)FROM68K(rp->a[0]);
     debugprintf(dbgFiles,dbgDeep,("# F$PrsNam: input string='%s'\n",p));
-    if (*p=='/') rp->a[0]=(ulong) (++p); /* assign updated ptr to path element */
+    if (*p=='/') rp->a[0]=TO68K(++p); /* assign updated ptr to path element */
     n=0; /* pathlist size=0 */
     while (isalnum(*p) || *p=='.' || *p=='_' || *p=='$' || *p=='{' || *p=='}' ) {
         p++; n++;
     }
     if (n==0) return os9error(E_BNAM); /* null name is bad name */
-    debugprintf(dbgFiles,dbgDeep,("# F$PrsNam: a0='%s', a1='%s', terminator='%c'\n",(char*)rp->a[0],p,*p));
-    rp->a[1]=(ulong)p; /* pointer to terminator */
+    debugprintf(dbgFiles,dbgDeep,("# F$PrsNam: a0='%s', a1='%s', terminator='%c'\n",(char*)FROM68K(rp->a[0]),p,*p));
+    rp->a[1]=TO68K(p); /* pointer to terminator */
     retbyte(rp->d[0])=(unsigned char) *p; /* terminator */
     retword(rp->d[1])=n; /* size of path element */
     return 0;
@@ -1848,8 +1848,8 @@ os9err OS9_F_CmpNam( regs_type *rp, _pid_ )
     Boolean match;
     
     /* get pointers */
-    pat   =       (char*)rp->a[0];
-    targ  =       (char*)rp->a[1];
+    pat   =       (char*)FROM68K(rp->a[0]);
+    targ  =       (char*)FROM68K(rp->a[1]);
     patend= pat + loword(rp->d[1]); /* attention, high word can be <> 0 */
     spat  = NULL;
     

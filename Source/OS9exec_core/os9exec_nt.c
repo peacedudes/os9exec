@@ -1640,7 +1640,7 @@ static Boolean TCALL_or_Exception( process_typ* cp, regs_type* crp, ushort cpid 
 				mp= get_module_ptr(cp->mid); /* get module pointer */
 			if (mp->_mexcpt!=0) {
 				/* there is an exception entry point, call it */
-				crp->pc=(ulong)mp+os9_long(mp->_mexcpt); /* set new PC into exception handling routine */
+				crp->pc=TO68K(mp)+os9_long(mp->_mexcpt); /* set new PC into exception handling routine */
 				debugprintf(dbgTrapHandler,dbgNorm,("# main loop: Calling exception entry point of pid=%s's main module\n",cpid));
 			}
 			else { /* no exception entry point: Abort process */

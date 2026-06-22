@@ -1382,10 +1382,10 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
 
     /* -- copy parameter area, for internal commands as well */
     p= paramptr;        p2= mp+memsiz-paramsiz;
-    cp->my_args= (ulong)p2; /* parameter area start */
-    
-    regcheck( newpid,"Param writing start",(ulong)p2,           RCHK_MEM );
-    regcheck( newpid,"Param writing end",  (ulong)p2+paramsiz-1,RCHK_MEM );
+    cp->my_args= TO68K(p2); /* parameter area start (68k offset) */
+
+    regcheck( newpid,"Param writing start",TO68K(p2),            RCHK_MEM );
+    regcheck( newpid,"Param writing end",  TO68K(p2)+paramsiz-1, RCHK_MEM );
     for (cnt=0; cnt<paramsiz; cnt++) *(p2++)= *(p++);
     
     cp->isIntUtil= false; /* no internal command by default */
@@ -1442,22 +1442,22 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
 
     /* -- prepare registers */
     rp->sr=0; /* everything cleared, USER state */
-    rp->pc  = os9_long(theModule->_mexec)+(ulong)theModule; /* entry point */
-    rp->a[3]=   (ulong)theModule; /* primary module pointer */
+    rp->pc  = TO68K(theModule)+os9_long(theModule->_mexec); /* entry point */
+    rp->a[3]= TO68K(theModule); /* primary module pointer */
     rp->d[0]= newpid;    /* assign process ID */
     rp->d[1]= os9_word(cp->pd._group)<<(2*BpB)|
               os9_word(cp->pd._user ); /* inherited group/user */
     rp->d[2]= prior;     /* priority */
     rp->d[3]= numpaths;  /* number of paths inherited */
    
-    cp->memstart= (ulong)mp;        /* save static storage start address */
-    rp->a[6]    = (ulong)mp+0x8000; /* biased A6 */
-    rp->membase =        mp;        /* unbiased static storage pointer */
+    cp->memstart= TO68K(mp);        /* save static storage start address (68k offset) */
+    rp->a[6]    = TO68K(mp)+0x8000; /* biased A6 */
+    rp->membase =        mp;        /* unbiased static storage pointer (host ptr) */
 
     /* set up parameter area regs */
     rp->a[5]= cp->my_args;
     rp->a[7]= rp->a[5];                        /* top of stack */
-    rp->a[1]= cp->memtop= (ulong)(mp+memsiz);  /* memory end */
+    rp->a[1]= cp->memtop= TO68K(mp+memsiz);  /* memory end (68k offset) */
     rp->d[5]= paramsiz; /* parameter size */
     rp->d[6]= memsiz; /* total initial memory allocation */
 

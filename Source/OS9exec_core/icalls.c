@@ -80,7 +80,7 @@ static os9err OS9_I_OpenCreate( regs_type *rp, ushort cpid, Boolean cre )
 {
     os9err    err;
     ushort    mode    = loword(rp->d[0]) & 0x00ff; /* consider only byte => bugfix for the */
-    char*     os9_name= (char*)rp->a[0];           /* poCreateMask problem */
+    char*     os9_name= (char*)FROM68K(rp->a[0]);  /* poCreateMask problem */
     char      os9_path[OS9PATHLEN]; 
     char*     pastpath;
     
@@ -124,7 +124,7 @@ static os9err OS9_I_OpenCreate( regs_type *rp, ushort cpid, Boolean cre )
     err= usrpath_open( cpid,&path,type, os9_path,xmode ); if (err) return err;
     
     retword(rp->d[0])=        path;     /* return path number */
-    rp->a[0]         = (ulong)pastpath; /* return updated pathname pointer */
+    rp->a[0]         = TO68K(pastpath); /* return updated pathname pointer */
     debugprintf( dbgFiles,dbgNorm,("# %s successful, path number= %d\n", co,path ));
     return 0;
 } /* OS9_I_OpenCreate */
@@ -196,8 +196,8 @@ os9err OS9_I_Delete( regs_type *rp, ushort cpid )
  *                termination characters.
  */
 {
-    ushort    mode    = lobyte(rp->d[0]); /* take do.b, avoid poCreate bug problem */   
-    char*     os9_name= (char*)rp->a[0];
+    ushort    mode    = lobyte(rp->d[0]); /* take do.b, avoid poCreate bug problem */
+    char*     os9_name= (char*)FROM68K(rp->a[0]);
     char      os9_path[OS9PATHLEN];
 //  char*     pastpath;
     ptype_typ type;
@@ -229,9 +229,9 @@ os9err OS9_I_MakDir( regs_type *rp, ushort cpid )
  *              - Access mode is not used
  *              - File attributes are not used
  */
-{   
+{
     ushort    mode    = loword(rp->d[0]) | poCreateMask; /* internal open used */
-    char*     os9_name= (char*)rp->a[0];
+    char*     os9_name= (char*)FROM68K(rp->a[0]);
     char      os9_path[OS9PATHLEN];
 //  char*     pastpath;
     ptype_typ type;
@@ -261,7 +261,7 @@ os9err OS9_I_ChgDir( regs_type *rp, ushort cpid )
  */
 {
     ushort    mode    = (loword(rp->d[0]) & 0x07) | 0x80; /* ignore some flags */
-    char*     os9_name= (char*)rp->a[0];
+    char*     os9_name= (char*)FROM68K(rp->a[0]);
     char      os9_path[OS9PATHLEN];
 //  char*     pastpath;
     ptype_typ type;
@@ -324,8 +324,8 @@ os9err OS9_I_WritLn( regs_type *rp, ushort cpid )
 
     path= loword(rp->d[0]);
     cnt =        rp->d[1];
-    buff= (char*)rp->a[0];
-    
+    buff= (char*)FROM68K(rp->a[0]);
+
     path= path & 0x7f; /* mask the specific OS9exec non-debug flag */
    
     /* search if there is a CR char before end of the buffer */
@@ -374,8 +374,8 @@ os9err OS9_I_Write( regs_type *rp, ushort cpid )
 
     path= loword(rp->d[0]);
     cnt =        rp->d[1];
-    buff= (char*)rp->a[0];
-  
+    buff= (char*)FROM68K(rp->a[0]);
+
     /* now write */
     err= usrpath_write(cpid,path, &cnt,buff, false);
     rp->d[ 1 ]= cnt;
@@ -411,7 +411,7 @@ os9err OS9_I_ReadLn( regs_type *rp, ushort cpid )
         regcheck(cpid,"I$ReadLn buffer end",  rp->a[0]+rp->d[1]-1,RCHK_DRU+RCHK_ARU+RCHK_MEM);
     }
 
-    p=(char *)  rp->a[0];
+    p=(char *)  FROM68K(rp->a[0]);
     path=loword(rp->d[0]);
     cnt =       rp->d[1];
 
@@ -444,7 +444,7 @@ os9err OS9_I_Read( regs_type *rp, ushort cpid )
        regcheck(cpid,"I$Read buffer end",  rp->a[0]+rp->d[1]-1,RCHK_DRU+RCHK_ARU+RCHK_MEM);
    }
 
-   p=(char *)  rp->a[0];
+   p=(char *)  FROM68K(rp->a[0]);
    path=loword(rp->d[0]);
    cnt =       rp->d[1];
 
@@ -607,8 +607,8 @@ os9err OS9_I_Attach( regs_type *rp, _pid_ )
  * Restrictions:- Is only a dummy. Always returns 0xFF00FF00 for the device table entry
  */
 {
-	char* name= (char*) rp->a[0];
-	
+	char* name= (char*) FROM68K(rp->a[0]);
+
 	if (ustrcmp( name,"/L2" )==0) {
 		rp->a[2]= 0x22002200; /* %%% /L2 identifier */
 		return 0;

@@ -158,6 +158,24 @@
 #endif
 
 
+/* ---- 68k address <-> host pointer conversion ----
+   A 68k address is an offset into the single RAM arena (emul_base, defined in
+   memstuff.c). TO68K turns a host pointer into the offset stored in 68k
+   registers / emulated memory; FROM68K turns an offset back into a host
+   pointer for dereferencing. NULL <-> 0 is preserved both ways, so the 68000's
+   reserved low memory keeps "address 0 means no pointer" intact. Conversion
+   happens ONLY at this register/memory boundary -- in-world values are always
+   offsets and are never stored as real addresses. */
+extern unsigned char *emul_base;
+
+/* a 32-bit 68k word: an in-world register or address. Exactly the width of a
+   real 68k register, so it also matches UAE's uae_u32 regstruct fields. */
+typedef unsigned int ulong32;
+
+#define TO68K(hostptr)  ((ulong32)( (hostptr)==NULL ? 0 : (unsigned char*)(hostptr) - emul_base ))
+#define FROM68K(addr)   ( (addr)==0 ? NULL : (void*)( emul_base + (addr) ) )
+
+
 /* floating point register */
 #ifdef USE_UAEMU
   typedef  double        fp_typ;     
@@ -223,8 +241,8 @@ typedef  struct {
 #endif
 
     /* common in UAE and os9exec */
-    ulong d[8]; /* data registers */
-    ulong a[8]; /* address registers */
+    ulong32 d[8]; /* data registers (32-bit, matches UAE regs[]) */
+    ulong32 a[8]; /* address registers (32-bit, matches UAE regs[]) */
 
     #ifdef USE_UAEMU
       /* UAE only */
@@ -247,7 +265,7 @@ typedef  struct {
     #endif
 
     /* common */
-    ulong pc;               /* program counter */
+    ulong32 pc;             /* program counter (32-bit) */
 
     #ifdef USE_UAEMU
     /* UAE only */
@@ -258,9 +276,9 @@ typedef  struct {
     
     /* common */                
     fp_typ fp[8];        /* FPU data registers */
-    ulong fpcr;
-    ulong fpsr;
-    ulong fpiar;            /* FPU control registers */ 
+    ulong32 fpcr;
+    ulong32 fpsr;
+    ulong32 fpiar;          /* FPU control registers (32-bit) */
 
     #ifdef USE_UAEMU
       /* UAE only */             

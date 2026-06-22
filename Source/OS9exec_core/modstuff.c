@@ -328,7 +328,7 @@ void Update_MDir( void )
         if (ok) {                modK= &os9modules[k];
             hiword( b )= (ushort)modK->linkcount;
             
-            en->m1  = os9_long( (ulong)mod );
+            en->m1  = os9_long( TO68K(mod) );
             en->m2  = en->m1;               /* %%% module groups not yet supported */
             en->size= mod->_mh._msize; /* big/little endian is already correct !!! */
             en->lnk = os9_long( b );
@@ -1556,7 +1556,7 @@ os9err prepData(ushort pid, mod_exec *theModule, ulong memplus, ulong *msiz, byt
    while (cnt-- >0) *p++ = *p2++; /* copy initialized data */
    /* -- adjust initialized data and object pointers */
    p2  = (byte*)theModule+os9_long(theModule->_midref); /* initalized data references */
-   offs= (ulong)theModule; /* for first table, use code start address as offset */
+   offs= TO68K(theModule); /* for first table, use code start address as offset (68k) */
 
    for (k=0;k<2;k++) {
       debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: irefs correction to base address $%08lX\n",offs));
@@ -1577,7 +1577,7 @@ os9err prepData(ushort pid, mod_exec *theModule, ulong memplus, ulong *msiz, byt
          p2+=2;
       }
       p2 += 4; /* skip 0 terminator */
-      offs= (ulong) bp; /* for second table, use data base pointer as offset */
+      offs= TO68K(bp); /* for second table, use data base pointer as offset (68k) */
    }
 
    debugprintf(dbgModules+dbgProcess,dbgNorm,("# prepData: Finally allocated static for pid=%d:  %ld Bytes at $%lX\n",pid,memsz,bp));
@@ -1609,12 +1609,15 @@ os9err install_traphandler( ushort pid, ushort trapidx,
     /* now prepare the trap handler data */
     theModule=(mod_exec *) get_module_ptr(mid);
     tp->mid=mid; /* save mid */
-    tp->trapmodule=(mod_trap *) (ulong) theModule;
-    tp->trapentry=(ulong) theModule+os9_long(theModule->_mexec);
-    
+    tp->trapmodule=(mod_trap *) theModule; /* host pointer, used by high-level code */
+    tp->trapentry= TO68K(theModule)+os9_long(theModule->_mexec); /* 68k entry address */
+
     /* --- module found, prepare as trap handler */
-        err= prepData(pid,theModule,addmem,&tp->trapmemsz,(byte**) &tp->trapmem);
-    if (err) return err;
+      { byte* trapdata;
+        err= prepData(pid,theModule,addmem,&tp->trapmemsz,&trapdata);
+        if (err) return err;
+        tp->trapmem= TO68K(trapdata); /* 68k offset of trap handler's static storage */
+      }
     
     *traphandler= tp;
     return 0;

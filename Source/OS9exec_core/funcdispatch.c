@@ -615,7 +615,7 @@ void debug_return( regs_type* crp, ushort pid, Boolean cwti )
           p= (char*)&cp->intProcName;
         }
         else {
-          mod= (mod_exec *)cp->os9regs.a[3];
+          mod= (mod_exec *)FROM68K(cp->os9regs.a[3]);
           p  =  Mod_Name( mod );
         } // if
         
