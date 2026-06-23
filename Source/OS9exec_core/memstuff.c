@@ -180,12 +180,16 @@ void init_all_mem(void)
     for (k=0;k<MAX_MEMALLOC;k++) {
         memtable[k].base= NULL;
         memtable[k].size= 0;
-        
+
         #ifdef REUSE_MEM
           freeinfo.f[k].base= NULL;
           freeinfo.f[k].size= 0;
         #endif
     } /* for */
+
+    /* allocate the module directory table in the 68k arena so D_ModDir can return TO68K(mdirField) */
+    if (mdirField==NULL)
+        mdirField= (mdir_entry*)get_mem( MAXMODULES * sizeof(mdir_entry) );
 } /* init_all_mem */
 
 

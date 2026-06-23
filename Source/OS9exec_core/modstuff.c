@@ -323,12 +323,14 @@ void Update_MDir( void )
     
     for (k=0; k<MAXMODULES; k++) {
         en= &mdirField[k];
-        
+
                  mod= os9mod(k);
-            ok= (mod!=NULL);
-        if (ok) {                modK= &os9modules[k];
-            hiword( b )= (ushort)modK->linkcount;
-            
+                modK= &os9modules[k];
+            ok= (mod!=NULL) && !modK->isBuiltIn; /* built-ins are not real 68k modules */
+        if (ok) {
+            b = 0;
+            hiword( b ) = (ushort)modK->linkcount;
+
             en->m1  = os9_long( TO68K(mod) );
             en->m2  = en->m1;               /* %%% module groups not yet supported */
             en->size= mod->_mh._msize; /* big/little endian is already correct !!! */

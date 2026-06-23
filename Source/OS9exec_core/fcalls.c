@@ -996,7 +996,7 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 	    
     ulong        offs= loword(rp->d[0]);
     int          size= (int)  rp->d[1];
-    ulong        b   = (ulong) &mdirField;
+    ulong        b   = TO68K(mdirField);
     process_typ* cp  = &procs[cpid];
 
     ulong  v;
@@ -1022,8 +1022,8 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
         #endif
         break;
          
-      case D_ModDir  : v=  b;                     Update_MDir(); break;
-      case D_ModDir_L: v=  b + sizeof(mdirField); Update_MDir(); break;
+      case D_ModDir  : Update_MDir(); v=  b;                                       break;
+      case D_ModDir_L: Update_MDir(); v=  b + MAXMODULES * sizeof(mdir_entry);     break;
       case D_PrcDBT  : v= (ulong)prDBT;
       
                        ptr= &prDBT[1];                           /* start with process nr 1 */
@@ -1117,10 +1117,10 @@ os9err OS9_F_GModDr( regs_type *rp, _pid_ )
 {
     byte* b  = (byte*)FROM68K(rp->a[0]);
     ulong cnt=        rp->d[1];
-    ulong mx = sizeof(mdirField); if (cnt>mx) cnt= mx;
+    ulong mx = MAXMODULES * sizeof(mdir_entry); if (cnt>mx) cnt= mx;
 
     Update_MDir();
-    MoveBlk( b, (byte*)&mdirField, cnt );
+    MoveBlk( b, (byte*)mdirField, cnt );
         
     debugprintf(dbgProcess,dbgNorm,("# F$GModDr: get module directory\n"));
     

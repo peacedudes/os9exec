@@ -419,7 +419,7 @@
 module_typ 	os9modules[MAXMODULES];
 mod_exec*   init_module;
 ulong       totalMem;
-mdir_entry  mdirField [MAXMODULES];
+mdir_entry *mdirField = NULL;
 
 /* the system paths */
 syspath_typ syspaths[MAXSYSPATHS];

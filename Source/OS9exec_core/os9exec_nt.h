@@ -585,12 +585,12 @@ typedef struct {
          } module_typ;
 
 
-/* a standard module directory entry */
+/* a standard module directory entry — four 32-bit big-endian fields as the 68k expects */
 typedef struct {
-            ulong m1;
-            ulong m2;
-            ulong size;
-            ulong lnk;
+            os9addr_t m1;    /* big-endian 68k module address */
+            os9addr_t m2;    /* big-endian 68k module address (group; mirrors m1 for now) */
+            uint32_t  size;  /* big-endian module size */
+            uint32_t  lnk;   /* big-endian link count */
          } mdir_entry;
 
 
@@ -1244,7 +1244,7 @@ extern  ushort currentpid;
 extern  module_typ  os9modules[MAXMODULES];
 extern  mod_exec*   init_module;
 extern  ulong       totalMem;
-extern  mdir_entry  mdirField [MAXMODULES];
+extern  mdir_entry *mdirField;
 
 /* the system paths */
 extern  syspath_typ syspaths [MAXSYSPATHS];
