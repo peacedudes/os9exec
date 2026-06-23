@@ -168,7 +168,7 @@ os9err int_rename( ushort cpid, int argc, char **argv )
     char       nmS     [OS9PATHLEN];
     char       nmD     [OS9PATHLEN];
     char       newName [OS9PATHLEN];
-    ulong      fd, dfd, dcp, dcpD, sSct, len;
+    uint32_t   fd, dfd, dcp, dcpD, sSct, len;
     Boolean    asDir;
     char       oldPath [OS9PATHLEN];
 

@@ -101,8 +101,8 @@ os9err usrpath_open      ( ushort pid, ushort *up, ptype_typ type, const char* p
 os9err syspath_close     ( ushort pid, ushort  sp );
 os9err usrpath_close     ( ushort pid, ushort  up );
 os9err usrpath_link      ( ushort pid, ushort  sp, const char* ident );
-os9err syspath_write     ( ushort pid, ushort  sp, ulong *len, void* buffer, Boolean wrln );
-os9err usrpath_write     ( ushort pid, ushort  up, ulong *len, void* buffer, Boolean wrln );
+os9err syspath_write     ( ushort pid, ushort  sp, uint32_t *len, void* buffer, Boolean wrln );
+os9err usrpath_write     ( ushort pid, ushort  up, uint32_t *len, void* buffer, Boolean wrln );
 
 void usrpath_printf      ( ushort pid, ushort  up, const char* format, ... );
 void     upo_printf                              ( const char* format, ... );
@@ -112,29 +112,29 @@ void    uphe_printf                              ( const char* format, ... );
 void    main_printf                              ( const char* format, ... );
 void copyright();
 
-os9err syspath_read      ( ushort pid, ushort  sp, ulong *len, void* buffer, Boolean rdln );
-os9err usrpath_read      ( ushort pid, ushort  up, ulong *len, void* buffer, Boolean rdln );
-os9err syspath_seek      ( ushort pid, ushort  sp, ulong  pos );
-os9err usrpath_seek      ( ushort pid, ushort  up, ulong  pos );
+os9err syspath_read      ( ushort pid, ushort  sp, uint32_t *len, void* buffer, Boolean rdln );
+os9err usrpath_read      ( ushort pid, ushort  up, uint32_t *len, void* buffer, Boolean rdln );
+os9err syspath_seek      ( ushort pid, ushort  sp, uint32_t  pos );
+os9err usrpath_seek      ( ushort pid, ushort  up, uint32_t  pos );
 
 os9err syspath_getstat   ( ushort pid, ushort  sp, ushort func, ulong *a0,
-                                                                ulong *d0,ulong *d1,ulong *d2,ulong *d3 );
-os9err syspath_gs_size   ( ushort pid, ushort  sp, ulong *size );
+                                                                uint32_t *d0, uint32_t *d1, uint32_t *d2, uint32_t *d3 );
+os9err syspath_gs_size   ( ushort pid, ushort  sp, uint32_t *size );
 os9err syspath_gs_devnm  ( ushort pid, ushort  sp, char*  name );
-os9err syspath_gs_ready  ( ushort pid, ushort  sp, ulong *cnt  );
+os9err syspath_gs_ready  ( ushort pid, ushort  sp, uint32_t *cnt  );
 
-os9err usrpath_getstat   ( ushort pid, ushort  up, ushort func, ulong *a0,ulong * 
-                                                                       d0,ulong *d1,ulong *d2,ulong *d3 );
+os9err usrpath_getstat   ( ushort pid, ushort  up, ushort func, ulong *a0,
+                                                                uint32_t *d0, uint32_t *d1, uint32_t *d2, uint32_t *d3 );
 
-os9err syspath_setstat   ( ushort pid, ushort  sp, ushort func, ulong *a0,ulong *a1,
-                                                                ulong *d0,ulong *d1,ulong *d2,ulong *d3 );
-os9err usrpath_setstat   ( ushort pid, ushort  up, ushort func, ulong *a0,ulong *a1,
-                                                                ulong *d0,ulong *d1,ulong *d2,ulong *d3 );
+os9err syspath_setstat   ( ushort pid, ushort  sp, ushort func, ulong *a0, ulong *a1,
+                                                                uint32_t *d0, uint32_t *d1, uint32_t *d2, uint32_t *d3 );
+os9err usrpath_setstat   ( ushort pid, ushort  up, ushort func, ulong *a0, ulong *a1,
+                                                                uint32_t *d0, uint32_t *d1, uint32_t *d2, uint32_t *d3 );
 
 
-os9err get_locations     ( ushort pid, ptype_typ type, const char* pathname, 
-                                                       Boolean doCreate, Boolean *asDir, 
-                                                       ulong *fdP, ulong *dfdP, ulong *dcpP, ulong *sSct );
+os9err get_locations     ( ushort pid, ptype_typ type, const char* pathname,
+                                                       Boolean doCreate, Boolean *asDir,
+                                                       uint32_t *fdP, uint32_t *dfdP, uint32_t *dcpP, uint32_t *sSct );
                                                        
 os9err change_dir        ( ushort pid, ptype_typ type, const char* pathname, ushort mode );
 os9err delete_file       ( ushort pid, ptype_typ type, const char* pathname, ushort mode );
@@ -175,7 +175,7 @@ os9err           getPipe( ushort pid, syspath_typ*, ulong buffsize );
 os9err       releasePipe( ushort pid, syspath_typ* );
 syspath_typ* crossedPath( ushort pid, syspath_typ* );
 os9err    ConnectPTY_TTY( ushort pid, syspath_typ* );
-void       PutCharsToTTY( ushort pid, syspath_typ*, ulong *lenP, char* buffer, Boolean wrln );
+void       PutCharsToTTY( ushort pid, syspath_typ*, uint32_t *lenP, char* buffer, Boolean wrln );
 void    CheckInBufferTTY( ttydev_typ* mco );
 
 

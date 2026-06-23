@@ -276,7 +276,7 @@ void Change_DbgPath( int argc, char** argv, char** pp, ushort* kp )
 { 
   os9err    err;
   ptype_typ type;
-  ulong     size;
+  uint32_t  size;
   char*     v;
   
   // switch off a potentialy open dbgPath

@@ -100,34 +100,34 @@
 void   init_Pipe( fmgr_typ* f );
 os9err pPopen   ( ushort pid, syspath_typ*, ushort *modeP,  char* pathname );
 os9err pPclose  ( ushort pid, syspath_typ* );
-os9err pPreadln ( ushort pid, syspath_typ*, ulong  *n,      char* buffer   );
-os9err pPread   ( ushort pid, syspath_typ*, ulong  *n,      char* buffer   );
-os9err pPwriteln( ushort pid, syspath_typ*, ulong  *n,      char* buffer   );
-os9err pPwrite  ( ushort pid, syspath_typ*, ulong  *n,      char* buffer   );
-os9err pPdelete ( ushort pid, syspath_typ*, ushort *modeP,  char* pathname );
+os9err pPreadln ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer   );
+os9err pPread   ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer   );
+os9err pPwriteln( ushort pid, syspath_typ*, uint32_t *n,      char* buffer   );
+os9err pPwrite  ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer   );
+os9err pPdelete ( ushort pid, syspath_typ*, ushort  *modeP,   char* pathname );
 
-os9err pPsize   ( ushort pid, syspath_typ*, ulong  *sizeP );
-os9err pPopt    ( ushort pid, syspath_typ*,                 byte* buffer   );
+os9err pPsize   ( ushort pid, syspath_typ*, uint32_t *sizeP );
+os9err pPopt    ( ushort pid, syspath_typ*,                    byte* buffer   );
 os9err pPeof    ( ushort pid, syspath_typ* );
-os9err pPready  ( ushort pid, syspath_typ*, ulong  *n     );
-os9err pPFDInf  ( ushort pid, syspath_typ*, ulong  *maxbytP, 
-                                            ulong  *fdinf,  byte* buffer   );
-os9err pPsetsz  ( ushort pid, syspath_typ*, ulong  *sizeP );
+os9err pPready  ( ushort pid, syspath_typ*, uint32_t *n     );
+os9err pPFDInf  ( ushort pid, syspath_typ*, uint32_t *maxbytP,
+                                            uint32_t *fdinf,   byte* buffer   );
+os9err pPsetsz  ( ushort pid, syspath_typ*, uint32_t *sizeP );
 
 
 /* --- ptys */
 void   init_PTY  ( fmgr_typ* f );
 os9err pKopen    ( ushort pid, syspath_typ*, ushort *modeP, char* pathname );
 os9err pKclose   ( ushort pid, syspath_typ* );
-os9err pKread    ( ushort pid, syspath_typ*, ulong  *n,     char* buffer   );
-os9err pKreadln  ( ushort pid, syspath_typ*, ulong  *n,     char* buffer   );
-os9err pKwrite   ( ushort pid, syspath_typ*, ulong  *n,     char* buffer   );
-os9err pKwriteln ( ushort pid, syspath_typ*, ulong  *n,     char* buffer   );
+os9err pKread    ( ushort pid, syspath_typ*, uint32_t *n,     char* buffer   );
+os9err pKreadln  ( ushort pid, syspath_typ*, uint32_t *n,     char* buffer   );
+os9err pKwrite   ( ushort pid, syspath_typ*, uint32_t *n,     char* buffer   );
+os9err pKwriteln ( ushort pid, syspath_typ*, uint32_t *n,     char* buffer   );
 
-os9err pKopt     ( ushort pid, syspath_typ*,                byte* buffer   );
-os9err pKpos     ( ushort pid, syspath_typ*, ulong  *posP );
-os9err pKready   ( ushort pid, syspath_typ*, ulong  *n    );
-os9err pKlock    ( ushort pid, syspath_typ*, ulong  *d0,    ulong *d1      );
+os9err pKopt     ( ushort pid, syspath_typ*,                  byte* buffer   );
+os9err pKpos     ( ushort pid, syspath_typ*, uint32_t *posP );
+os9err pKready   ( ushort pid, syspath_typ*, uint32_t *n    );
+os9err pKlock    ( ushort pid, syspath_typ*, uint32_t *d0,    uint32_t *d1   );
 /* ------------------------------------------------------------------------- */
 
 void init_Pipe( fmgr_typ* f )
@@ -432,8 +432,8 @@ static void Reactivate( ushort pid, process_typ* cp, const char* callingProc )
 } /* Reactvate */
 
 
-static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP, 
-                                ulong *lenP, char* buffer, Boolean wrln, systaskfunc_typ wr_func )
+static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
+                                uint32_t *lenP, char* buffer, Boolean wrln, systaskfunc_typ wr_func )
 {
     os9err        err= 0;
     int           numfree, remaining, bytes, nn;
@@ -560,24 +560,24 @@ static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
 
 /* system task routines to complete pipe write request */
 static os9err pWriteSysTask( ushort pid, syspath_typ* spP, regs_type* rp )
-{   
-    os9err err;
-    ulong  dd= procs[pid].systask_offs;
-    char*  a0= (char*)(rp->a[0] + dd);
-    ulong  d1=         rp->d[1] - dd;
-    
+{
+    os9err   err;
+    ulong    dd= procs[pid].systask_offs;
+    char*    a0= (char*)(rp->a[0] + dd);
+    uint32_t d1= (uint32_t)(rp->d[1] - dd);
+
     err= pWriteSysTaskExe( pid,spP, &d1,a0, false, (systaskfunc_typ)pWriteSysTask );
     rp->d[1]= d1 + dd;
     return err;
 } /* pWriteSysTask */
-    
+
 static os9err pWriteSysTaskLn( ushort pid, syspath_typ* spP, regs_type* rp )
-{   
-    os9err err;
-    ulong  dd= procs[pid].systask_offs;
-    char*  a0= (char*)(rp->a[0] + dd);
-    ulong  d1=         rp->d[1] - dd;
-    
+{
+    os9err   err;
+    ulong    dd= procs[pid].systask_offs;
+    char*    a0= (char*)(rp->a[0] + dd);
+    uint32_t d1= (uint32_t)(rp->d[1] - dd);
+
     err= pWriteSysTaskExe( pid,spP, &d1,a0, true,  (systaskfunc_typ)pWriteSysTaskLn );
     rp->d[1]= d1 + dd;
     return err;
@@ -587,7 +587,7 @@ static os9err pWriteSysTaskLn( ushort pid, syspath_typ* spP, regs_type* rp )
 
 
 /* write to pipe buffer */
-os9err pPwrite( ushort pid, syspath_typ* spP, ulong *n, char* buffer )
+os9err pPwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
 {
     debugprintf( dbgFiles,dbgDetail,("# pPwrite: requests %ld bytes\n",*n ));
     spP->u.pipe.pchP->bwritten= 0; /* start of new write request */
@@ -598,7 +598,7 @@ os9err pPwrite( ushort pid, syspath_typ* spP, ulong *n, char* buffer )
 
 
 /* writeln to pipe buffer */
-os9err pPwriteln( ushort pid, syspath_typ* spP, ulong *n, char* buffer )
+os9err pPwriteln( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
 {
     debugprintf( dbgFiles,dbgDetail,("# pPwriteln: requests %ld bytes\n",*n ));
     spP->u.pipe.pchP->bwritten= 0; /* start of new write request */
@@ -609,10 +609,10 @@ os9err pPwriteln( ushort pid, syspath_typ* spP, ulong *n, char* buffer )
 
 
 /* <syW>: if true, it is already in SysTask write mode */
-static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP, 
-                               ulong *lenP, char* buffer, Boolean rdln, Boolean syW, systaskfunc_typ rd_func )
+static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP,
+                               uint32_t *lenP, char* buffer, Boolean rdln, Boolean syW, systaskfunc_typ rd_func )
 {
-    ulong         numready,remaining,bytes,nn;
+    uint32_t      numready,remaining,bytes,nn;
     byte*         buf;
     pipe_typ*     pp= &spP->u.pipe;
     pipechan_typ* p =  pp->pchP;
@@ -705,10 +705,10 @@ static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP,
 
 /* system task routines to complete pipe read request */    
 static os9err pReadSysTask( ushort pid, syspath_typ* spP, regs_type* rp )
-{   
-    os9err err;
-    char*  a0= (char*)FROM68K(rp->a[0]);
-    ulong  d1=         rp->d[1];
+{
+    os9err   err;
+    char*    a0= (char*)FROM68K(rp->a[0]);
+    uint32_t d1= (uint32_t)rp->d[1];
 
     err= pReadSysTaskExe( pid,spP, &d1,a0, false, false, (systaskfunc_typ)pReadSysTask );
     rp->d[1]= d1;
@@ -716,10 +716,10 @@ static os9err pReadSysTask( ushort pid, syspath_typ* spP, regs_type* rp )
 } /* pReadSysTask */
 
 static os9err pReadSysTaskLn( ushort pid, syspath_typ* spP, regs_type* rp )
-{   
-    os9err err;
-    char* a0= (char*)FROM68K(rp->a[0]);
-    ulong d1=         rp->d[1];
+{
+    os9err   err;
+    char*    a0= (char*)FROM68K(rp->a[0]);
+    uint32_t d1= (uint32_t)rp->d[1];
 
     err= pReadSysTaskExe( pid,spP, &d1,a0, true,  false, (systaskfunc_typ)pReadSysTaskLn );
     rp->d[1]= d1;
@@ -758,7 +758,7 @@ static os9err ShowPipeDir( syspath_typ* spP, char* buffer )
 
 
 /* read from pipe buffer */
-os9err pPread( ushort pid, syspath_typ* spP, ulong *n, char* buffer )
+os9err pPread( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
 {
   Boolean       syW;
   process_typ*  cp= &procs[pid];
@@ -783,7 +783,7 @@ os9err pPread( ushort pid, syspath_typ* spP, ulong *n, char* buffer )
         
     
 /* readln from pipe buffer */
-os9err pPreadln( ushort pid, syspath_typ *spP, ulong *n, char* buffer )
+os9err pPreadln( ushort pid, syspath_typ *spP, uint32_t *n, char* buffer )
 {
   Boolean       syW;
   process_typ*  cp = &procs[pid];
@@ -847,7 +847,7 @@ os9err pPeof( _pid_, syspath_typ *spP )
 
 
 /* check ready */
-os9err pPready( ushort pid, syspath_typ* spP, ulong *n )
+os9err pPready( ushort pid, syspath_typ* spP, uint32_t *n )
 {
     pipe_typ*     pp= &spP->u.pipe;
     pipechan_typ* p =  pp->pchP;
@@ -869,8 +869,8 @@ os9err pPready( ushort pid, syspath_typ* spP, ulong *n )
 } /* pPready */
 
 
-os9err pPFDInf( _pid_, _spP_, ulong *maxbytP, 
-                              ulong *fdinf,  byte* buffer )
+os9err pPFDInf( _pid_, _spP_, uint32_t *maxbytP,
+                              uint32_t *fdinf,  byte* buffer )
 {
   #define       FDS 16
   byte          fdbeg[FDS];                  /* buffer for preparing FD */
@@ -910,7 +910,7 @@ os9err pPFDInf( _pid_, _spP_, ulong *maxbytP,
 
 
 /* get pipe size */
-os9err pPsize( _pid_, syspath_typ* spP, ulong *sizeP )
+os9err pPsize( _pid_, syspath_typ* spP, uint32_t *sizeP )
 {
     *sizeP= spP->u.pipe.pchP->size-1; /* return max available size of pipe buffer */
     return 0;
@@ -919,7 +919,7 @@ os9err pPsize( _pid_, syspath_typ* spP, ulong *sizeP )
 
 
 /* set pipe size */
-os9err pPsetsz( _pid_, syspath_typ* spP, ulong *sizeP )
+os9err pPsetsz( _pid_, syspath_typ* spP, uint32_t *sizeP )
 {
     pipechan_typ* p= spP->u.pipe.pchP;
 
@@ -1040,23 +1040,23 @@ os9err pKclose( ushort pid, syspath_typ* spP )
 
 
 /* read/readln will be done directly */
-os9err pKread   ( ushort pid, syspath_typ* spP, ulong *n, char* buffer )
+os9err pKread   ( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
 {   return pPread      ( pid, spP, n,buffer );
 }
 
-os9err pKreadln ( ushort pid, syspath_typ* spP, ulong *n, char* buffer )
+os9err pKreadln ( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
 {   return pPreadln    ( pid, spP, n,buffer );
 }
 
 
 
 /* write/writeln will be done with cross-over */
-os9err pKwrite  ( ushort pid, syspath_typ* spP, ulong *n, char* buffer )
+os9err pKwrite  ( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
 {   syspath_typ*              spC= crossedPath( pid,spP );
     return pPwrite     ( pid, spC, n,buffer );
 } /* pKwrite */
 
-os9err pKwriteln( ushort pid, syspath_typ* spP, ulong *n, char* buffer )
+os9err pKwriteln( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
 {   syspath_typ*              spC= crossedPath( pid,spP );
     return pPwriteln   ( pid, spC, n,buffer );
 } /* pKwriteln */
@@ -1091,21 +1091,21 @@ os9err pKopt( _pid_, _spP_, byte *buffer )
 } /* pKopt */
 
 
-os9err pKpos( _pid_, _spP_, ulong *posP )
+os9err pKpos( _pid_, _spP_, uint32_t *posP )
 /* get current file position */
 {   *posP= 0; return 0;
 } /* pKpos */
 
 
 
-os9err pKready( ushort pid, syspath_typ *spP, ulong *n )
+os9err pKready( ushort pid, syspath_typ *spP, uint32_t *n )
 /* gs_ready will be done directly */
 {   return pPready( pid,spP, n );
 } /* pKready */
 
 
 
-os9err pKlock( ushort pid, _spP_, ulong *d0, ulong *d1)
+os9err pKlock( ushort pid, _spP_, uint32_t *d0, uint32_t *d1)
 /* creates tty/pty system paths and locks them together */
 /* they are named tty0,tty1,... and pty0,pty1,... */
 /* the lowest free name will be taken */ 
@@ -1260,7 +1260,7 @@ os9err ConnectPTY_TTY( ushort pid, syspath_typ* spP )
 
 
 void PutCharsToTTY( ushort  pid, syspath_typ* spP,
-                    ulong *lenP, char* buffer, Boolean wrln )
+                    uint32_t *lenP, char* buffer, Boolean wrln )
 /* write characters to TTY buffer */
 {
      if (wrln) pPwriteln( pid,spP, lenP,buffer );
@@ -1279,11 +1279,13 @@ void CheckInBufferTTY( ttydev_typ* mco )
     if (mco->installed &&
         mco->pid!=0    &&
         mco->spP->type==fTTY) {
-        err= pPready( mco->pid, mco->spP, (ulong*)&cnt ); if (cnt==0) return;
+        uint32_t ucnt;
+        err= pPready( mco->pid, mco->spP, &ucnt ); cnt= ucnt; if (cnt==0) return;
 
         cmax= INBUFSIZE-mco->inBufUsed-1;
         if (cnt>cmax) cnt= cmax;
-        err= pPread ( mco->pid, mco->spP, (ulong*)&cnt, buffer ); if (err) return;
+        ucnt= (uint32_t)cnt;
+        err= pPread ( mco->pid, mco->spP, &ucnt, buffer ); cnt= ucnt; if (err) return;
   
                k= 0;
         while (k<cnt) {

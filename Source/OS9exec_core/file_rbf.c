@@ -232,30 +232,30 @@ void   init_RBF  ( fmgr_typ* f );
 
 os9err pRopen    ( ushort pid, syspath_typ*, ushort *modeP,   const char* pathname );
 os9err pRclose   ( ushort pid, syspath_typ* );
-os9err pRread    ( ushort pid, syspath_typ*, ulong  *lenP,    char* buffer );
-os9err pRreadln  ( ushort pid, syspath_typ*, ulong  *lenP,    char* buffer );
-os9err pRwrite   ( ushort pid, syspath_typ*, ulong  *lenP,    char* buffer );
-os9err pRwriteln ( ushort pid, syspath_typ*, ulong  *lenP,    char* buffer );
-os9err pRseek    ( ushort pid, syspath_typ*, ulong  *posP );
+os9err pRread    ( ushort pid, syspath_typ*, uint32_t *lenP,    char* buffer );
+os9err pRreadln  ( ushort pid, syspath_typ*, uint32_t *lenP,    char* buffer );
+os9err pRwrite   ( ushort pid, syspath_typ*, uint32_t *lenP,    char* buffer );
+os9err pRwriteln ( ushort pid, syspath_typ*, uint32_t *lenP,    char* buffer );
+os9err pRseek    ( ushort pid, syspath_typ*, uint32_t *posP );
 os9err pRchd     ( ushort pid, syspath_typ*, ushort *modeP,   char* pathname );
 os9err pRdelete  ( ushort pid, syspath_typ*, ushort *modeP,   char* pathname );
 os9err pRmakdir  ( ushort pid, syspath_typ*, ushort *modeP,   char* pathname );
 
-os9err pRsize    ( ushort pid, syspath_typ*, ulong  *sizeP );
+os9err pRsize    ( ushort pid, syspath_typ*, uint32_t *sizeP );
 os9err pRopt     ( ushort pid, syspath_typ*,                  byte* buffer );
 os9err pRnam     ( ushort pid, syspath_typ*,                  char* volname );
-os9err pRpos     ( ushort pid, syspath_typ*, ulong  *posP  );
+os9err pRpos     ( ushort pid, syspath_typ*, uint32_t *posP  );
 os9err pReof     ( ushort pid, syspath_typ* );
-os9err pRready   ( ushort pid, syspath_typ*, ulong  *n     );
-os9err pRgetFD   ( ushort pid, syspath_typ*, ulong  *maxbytP, byte* buffer );
-os9err pRgetFDInf( ushort pid, syspath_typ*, ulong  *maxbytP,
-                                             ulong  *fdinf,   byte* buffer );
-os9err pRdsize   ( ushort pid, syspath_typ*, ulong  *size,    ulong *dtype );
+os9err pRready   ( ushort pid, syspath_typ*, uint32_t *n     );
+os9err pRgetFD   ( ushort pid, syspath_typ*, uint32_t *maxbytP, byte* buffer );
+os9err pRgetFDInf( ushort pid, syspath_typ*, uint32_t *maxbytP,
+                                             uint32_t *fdinf,   byte* buffer );
+os9err pRdsize   ( ushort pid, syspath_typ*, uint32_t *size,    uint32_t *dtype );
 
-os9err pRsetsz   ( ushort pid, syspath_typ*, ulong  *size );
-os9err pRsetatt  ( ushort pid, syspath_typ*, ulong  *attr  );
+os9err pRsetsz   ( ushort pid, syspath_typ*, uint32_t *size );
+os9err pRsetatt  ( ushort pid, syspath_typ*, uint32_t *attr  );
 os9err pRsetFD   ( ushort pid, syspath_typ*,                  byte* buffer );
-os9err pRWTrk    ( ushort pid, syspath_typ*, ulong  *trackNr );
+os9err pRWTrk    ( ushort pid, syspath_typ*, uint32_t *trackNr );
 
 void init_RBF_devs();
 /* ------------------------------------------------------------------------- */
@@ -335,13 +335,13 @@ static os9err ReadSector( rbfdev_typ* dev, ulong sectorNr,
 {
     os9err  err= 0;
     Boolean pos_already;
-    ulong   sect     = dev->sctSize;
-    ulong   pos      =     sectorNr*sect; // get position and length to read
-    ulong   len      =     nSectors*sect;
-    ulong   img      = dev->imgScts*sect;
-    ulong   sectorLim= sectorNr + nSectors;   // upper limit
-    ulong   blindNr, nBlinds;                 // not accessible sectors
-    ulong   cnt = 0;
+    ulong    sect     = dev->sctSize;
+    ulong    pos      =     sectorNr*sect; // get position and length to read
+    ulong    len      =     nSectors*sect;
+    ulong    img      = dev->imgScts*sect;
+    ulong    sectorLim= sectorNr + nSectors;   // upper limit
+    ulong    blindNr, nBlinds;                 // not accessible sectors
+    uint32_t cnt = 0;
 
 //  if (sectorNr==0) {
 //      debugprintf(dbgFiles,dbgDetail,("# RBF read  sector0\n"));
@@ -435,13 +435,13 @@ static os9err WriteSector( rbfdev_typ* dev, ulong sectorNr,
 {
     os9err  err= 0;
     Boolean pos_already, extendIt= false;
-    ulong   sect     = dev->sctSize;
-    ulong   pos      =     sectorNr*sect;     // get position and length to write
-    ulong   len      =     nSectors*sect;
-    ulong   img      = dev->imgScts*sect;
-    ulong   sectorLim= sectorNr + nSectors;   // upper limit
-    ulong   blindNr;                          // not accessible sectors
-    ulong   cnt;
+    ulong    sect     = dev->sctSize;
+    ulong    pos      =     sectorNr*sect;     // get position and length to write
+    ulong    len      =     nSectors*sect;
+    uint32_t img      = (uint32_t)(dev->imgScts*sect);
+    ulong    sectorLim= sectorNr + nSectors;   // upper limit
+    ulong    blindNr;                          // not accessible sectors
+    uint32_t cnt;
     byte    ee;
 
     /* take care of write and format protection */
@@ -483,7 +483,7 @@ static os9err WriteSector( rbfdev_typ* dev, ulong sectorNr,
         
         dev->currPos= UNDEF_POS;
         dev->imgScts= sectorLim;
-        img         = dev->imgScts*sect;
+        img         = (uint32_t)(dev->imgScts*sect);
         extendIt    = true;
         err= syspath_setstat( 0, dev->sp_img, SS_Size, NULL,NULL, NULL,NULL,&img,NULL );
       } // if
@@ -628,9 +628,10 @@ static os9err DevSize( rbfdev_typ* dev )
    and adjust either device's sector size if possible, otherwise
    copy device's current sector size to dev->sctSize */
 {
-    os9err err;
-    ulong  size, ssize;
-    
+    os9err   err;
+    uint32_t size;
+    ulong    ssize;
+
     /* should be defined already for the RAM disk */
  // #ifdef RAM_SUPPORT
       if (dev->isRAM) return 0;
@@ -687,15 +688,15 @@ static os9err GetTop( ushort pid, rbfdev_typ* dev )
 {
   os9err err = 0;
   short  sp  = dev->sp_img;
-  ulong  sect= dev->sctSize;
-  ulong  map = dev->mapSize;
-  ulong  last= map % sect;
-  ulong  len;
-  ulong  pos = ( (map-1)/sect + 1 )*sect;
-  byte   b   = 0;
-  ulong  offs= 0;
-  ulong  sv= dev->imgScts;
-  ulong img;
+  ulong    sect= dev->sctSize;
+  ulong    map = dev->mapSize;
+  ulong    last= map % sect;
+  uint32_t len;
+  ulong    pos = ( (map-1)/sect + 1 )*sect;
+  byte     b   = 0;
+  ulong    offs= 0;
+  ulong    sv= dev->imgScts;
+  uint32_t img;
   
 //upo_printf( "map=%d sect=%d pos=%d\n", map, sect, pos );
   
@@ -725,7 +726,7 @@ static os9err GetTop( ushort pid, rbfdev_typ* dev )
   
   if (sv>dev->imgScts) {
 //  upo_printf( "REDUCE\n" );
-    img= dev->imgScts*sect;
+    img= (uint32_t)(dev->imgScts*sect);
 //  upo_printf( "REDUCE img=%d\n",  img );
     err= syspath_setstat( pid, sp, SS_Size, NULL,NULL, NULL,NULL,&img,NULL );
 //  upo_printf( "REDUCED err=%d\n", err );
@@ -738,11 +739,11 @@ static os9err GetTop( ushort pid, rbfdev_typ* dev )
 
 static os9err GetFull( ushort pid, rbfdev_typ* dev )
 {
-  os9err err = 0;
-  short  sp  = dev->sp_img;
-  ulong  sect= dev->sctSize;
-  ulong  img = dev->totScts*sect;
-  
+  os9err   err = 0;
+  short    sp  = dev->sp_img;
+  ulong    sect= dev->sctSize;
+  uint32_t img = (uint32_t)(dev->totScts*sect);
+
   err= syspath_setstat( pid, sp, SS_Size, NULL,NULL, NULL,NULL,&img,NULL );
   if (!err) dev->imgScts= dev->totScts;
   
@@ -821,9 +822,10 @@ static os9err Open_Image( ushort pid, rbfdev_typ* dev, ptype_typ type, char* pat
                           ushort mode )
 {
     #define R0 "/r0"
-    os9err  err;
-    ushort  sp, sctSize;
-    ulong   len, iSize, tSize;
+    os9err   err;
+    ushort   sp, sctSize;
+    uint32_t len, iSize;
+    ulong    tSize;
 //  ulong   imgScts;  /* only used in commented-out debug prints */
     ulong   totScts;
     byte    bb[STD_SECTSIZE]; /* one sector */
@@ -975,7 +977,8 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
     os9err    err, cErr;
     ulong     allocSize, allocN, mapSize,
 //            allocClu,  /* only used in commented-out code */
-              f, r, fN, rN, totBits, tracks, cluRest, iSize;
+              f, r, fN, rN, totBits, tracks, cluRest;
+    uint32_t  iSize;
     byte*     b;
     int       ii, v, 
               clu= mnt_cluSize;
@@ -2311,7 +2314,7 @@ static os9err AdaptAlloc_FD( syspath_typ* spP, ulong pos, ulong scs )
 
 
 
-static os9err DoAccess( syspath_typ* spP, ulong   *lenP, char* buffer, 
+static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
                           Boolean lnmode, Boolean wMode )
 /* this is the main read routine for the RBF emulator */
 /* it is working for read and readln */
@@ -2321,7 +2324,7 @@ static os9err DoAccess( syspath_typ* spP, ulong   *lenP, char* buffer,
     rbfdev_typ* dev   = &rbfdev[rbf->devnr];
     uint32_t    bstart=  rbf->currPos;
     ulong       boffs =  0;
-    ulong       remain= *lenP;
+    uint32_t    remain= *lenP;
     ulong*      mw    = &spP->mustW;
     ulong       ma    = Max( dev->sas,dev->clusterSize );
     ulong       sect, slim, offs, size, totsize, maxc, pos, scs, *rs, pref, coff, sv, req;
@@ -2605,7 +2608,7 @@ static os9err Access_DirEntry( rbfdev_typ* dev, ulong dfd,  ulong fd,
                                                 char* name, uint32_t *deptr )
 {
     os9err          err, cer;
-    ulong           dir_len;
+    uint32_t        dir_len;
     os9direntry_typ dir_entry;
     ushort          sp;
     syspath_typ*    spP;
@@ -2739,7 +2742,8 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     rbf_typ*        rbf= &spP->u.rbf;
     rbfdev_typ*     dev;
     os9err          err= 0;
-    ulong           sect, slim, size, totsize, dir_len, pref;
+    ulong           sect, slim, size, totsize, pref;
+    uint32_t        dir_len;
     os9direntry_typ dir_entry;
     char            cmp_entry[OS9NAMELEN];
     int             root, isFileEntry;    
@@ -3009,28 +3013,28 @@ os9err pRclose( ushort pid, syspath_typ* spP )
 
 
 
-os9err pRread( _pid_, syspath_typ* spP, ulong *lenP, char* buffer )
+os9err pRread( _pid_, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return DoAccess( spP, lenP,buffer, false,false );
 } /* pRread */
 
 
-os9err pRreadln ( _pid_, syspath_typ* spP, ulong *lenP, char* buffer )
+os9err pRreadln ( _pid_, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return DoAccess( spP, lenP,buffer, true, false );
 } /* pRreadln */
 
 
-os9err pRwrite  ( _pid_, syspath_typ* spP, ulong *lenP, char* buffer )
+os9err pRwrite  ( _pid_, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return DoAccess( spP, lenP,buffer, false,true );
 } /* pRwrite */
 
 
-os9err pRwriteln( _pid_, syspath_typ* spP, ulong *lenP, char* buffer )
+os9err pRwriteln( _pid_, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return DoAccess( spP, lenP,buffer, true, true );
 } /* pRwriteln */
 
 
 
-os9err pRseek( _pid_, syspath_typ* spP, ulong *posP )
+os9err pRseek( _pid_, syspath_typ* spP, uint32_t *posP )
 /* seek to new file position <posP> */
 {   
   rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr];
@@ -3135,8 +3139,8 @@ os9err pRdelete( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
 
 os9err pRmakdir( ushort pid, syspath_typ* spP, _modeP_, char* pathname )
 {
-    os9err err;
-    ulong  size= 2*DIRENTRYSZ;
+    os9err   err;
+    uint32_t size= 2*DIRENTRYSZ;
     os9direntry_typ dirblk[ 2 ];
     ushort path;
     
@@ -3159,7 +3163,7 @@ os9err pRmakdir( ushort pid, syspath_typ* spP, _modeP_, char* pathname )
 
 
 
-os9err pRpos( _pid_, syspath_typ* spP, ulong *posP )
+os9err pRpos( _pid_, syspath_typ* spP, uint32_t *posP )
 /* get current file position <posP> */
 {
     rbf_typ*    rbf= &spP->u.rbf;
@@ -3214,7 +3218,7 @@ os9err pRopt(ushort pid, syspath_typ* spP, byte *buffer)
 
 
 
-os9err pRready( _pid_, _spP_, ulong *n )
+os9err pRready( _pid_, _spP_, uint32_t *n )
 /* check ready */
 {   *n= 1; return 0;
 } /* pRready */
@@ -3222,7 +3226,7 @@ os9err pRready( _pid_, _spP_, ulong *n )
 
 
 
-os9err pRgetFD( _pid_, syspath_typ* spP, ulong *maxbytP, byte *buffer )
+os9err pRgetFD( _pid_, syspath_typ* spP, uint32_t *maxbytP, byte *buffer )
 /* get the current FD sector of the opened path */
 {
     debugprintf(dbgFiles,dbgNorm,("# RBF getFD (fd/bytes): $%x %d\n", 
@@ -3234,8 +3238,8 @@ os9err pRgetFD( _pid_, syspath_typ* spP, ulong *maxbytP, byte *buffer )
 
 
 
-os9err pRgetFDInf( _pid_, syspath_typ* spP, ulong *maxbytP, 
-                                                       ulong *fdinf, byte *buffer )
+os9err pRgetFDInf( _pid_, syspath_typ* spP, uint32_t *maxbytP,
+                                                       uint32_t *fdinf, byte *buffer )
 /* get any FD sector ( using variable <fdinf> ) */
 {
     os9err      err;
@@ -3264,24 +3268,25 @@ os9err pRsetFD( _pid_, syspath_typ* spP, byte *buffer )
 
 
 
-os9err pRsize( ushort pid, syspath_typ* spP, ulong *sizeP )
+os9err pRsize( ushort pid, syspath_typ* spP, uint32_t *sizeP )
 /* get the size of a file */
 {
     os9err      err;
     rbf_typ*    rbf= &spP->u.rbf;
     rbfdev_typ* dev= &rbfdev[rbf->devnr];
     byte        attr;
-    ulong       sect, slim, totsize, sv, pref;
+    ulong       sect, slim, totsize, sv, pref, fileSize;
 
     if (spP->rawMode) {
-        *sizeP= dev->totScts*dev->sctSize;
+        *sizeP= (uint32_t)(dev->totScts*dev->sctSize);
         return 0;
 	  } // if
 
     sv = rbf->currPos;
          rbf->currPos= 0;  /* initialize position to 0 */
-    
-    err= FD_Segment( spP, &attr,sizeP,&totsize,&sect,&slim, &pref );
+
+    err= FD_Segment( spP, &attr,&fileSize,&totsize,&sect,&slim, &pref );
+    *sizeP= (uint32_t)fileSize;
 
          rbf->currPos= sv; /* get saved position back */
     if  (rbf->lastPos>*sizeP) *sizeP= rbf->lastPos;
@@ -3292,7 +3297,7 @@ os9err pRsize( ushort pid, syspath_typ* spP, ulong *sizeP )
 
 
 
-os9err pRdsize(ushort pid, syspath_typ* spP, ulong* size, ulong* dtype )
+os9err pRdsize(ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
 /* get the size of the device as numbers of sectors */
 /* the <dtype> field will be returned as 0, to avoid problems with "castype" */
 {
@@ -3309,7 +3314,7 @@ os9err pRdsize(ushort pid, syspath_typ* spP, ulong* size, ulong* dtype )
 
 
 
-os9err pRsetsz( _pid_, syspath_typ* spP, ulong *size )
+os9err pRsetsz( _pid_, syspath_typ* spP, uint32_t *size )
 /* set the size of a file */
 {
     rbf_typ* rbf= &spP->u.rbf;
@@ -3324,7 +3329,7 @@ os9err pRsetsz( _pid_, syspath_typ* spP, ulong *size )
 
 
 
-os9err pRsetatt( _pid_, syspath_typ* spP, ulong *attr )
+os9err pRsetatt( _pid_, syspath_typ* spP, uint32_t *attr )
 /* set the attributes of a file */
 {
     Set_FDAtt     ( spP, (byte)*attr ); /* byte ordering is already correct */
@@ -3348,13 +3353,14 @@ os9err pRnam( ushort pid, syspath_typ* spP, char* volname )
 } /* pRnam*/
 
 
-os9err pRWTrk( ushort pid, syspath_typ* spP, ulong* trackNr )
+os9err pRWTrk( ushort pid, syspath_typ* spP, uint32_t* trackNr )
 /* get device name of RBF device */
 {
     os9err      err;
-    rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr]; 
+    rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr];
     int         ii;
-    ulong       sctNr, scts, dtype;
+    ulong       sctNr;
+    uint32_t    scts, dtype;
     
     for (ii=0; ii<dev->sctSize; ii++)
         dev->tmp_sct[ii]= 0xE5; /* fill with formatting pattern */

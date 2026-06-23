@@ -234,8 +234,9 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
     ushort     pathS, pathD, pathX;
     ptype_typ  typeS, typeD;
     char       *nameS, *nameD;
-    ulong      fdS, dfdS, dcpS, sctS, len, 
-               fdD, dfdD, dcpD, sctD, l, a0;
+    uint32_t   fdS, dfdS, dcpS, sctS, len,
+               fdD, dfdD, dcpD, sctD, l;
+    ulong      a0; /* host pointer container for SS_DevNm */
     Boolean    isRBF, asDirS, asDirD;
     
     
@@ -411,7 +412,7 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
             if (asDirS) {
                 err= usrpath_open ( cpid,&pathX, typeS, nmS,0x83 ); if (err) break;
                 err= usrpath_seek ( cpid, pathX, DIRNAMSZ );        if (err) break;
-                                    len= sizeof(ulong); l= os9_long(dfdD/sctD);
+                                    len= sizeof(uint32_t); l= os9_long(dfdD/sctD);
                 err= usrpath_write( cpid, pathX, &len, &l, false ); if (err) break;
                 err= usrpath_seek ( cpid, pathX, 0 ); /*hld alloc*/ if (err) break;
                 err= usrpath_close( cpid, pathX );                  if (err) break;
@@ -420,7 +421,7 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
         
             /* and write the fd positions vice versa */
             err= usrpath_seek ( cpid, pathS, dcpS+DIRNAMSZ );       if (err) break;
-                                len= sizeof(ulong); l= os9_long(fdD/sctD);
+                                len= sizeof(uint32_t); l= os9_long(fdD/sctD);
             err= usrpath_write( cpid, pathS, &len, &l, false );     if (err) break;
             err= usrpath_seek ( cpid, pathS, 0 ); /* hold alloc */  if (err) break;
 
@@ -428,7 +429,7 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
             else               pathX= pathD; /* directories are different */
             
             err= usrpath_seek ( cpid, pathX, dcpD+DIRNAMSZ );       if (err) break;
-                                len= sizeof(ulong); l= os9_long(fdS/sctS);
+                                len= sizeof(uint32_t); l= os9_long(fdS/sctS);
             err= usrpath_write( cpid, pathX, &len, &l, false );     if (err) break;
             err= usrpath_seek ( cpid, pathX, 0 ); /* hold alloc */  if (err) break;
         } while (false);

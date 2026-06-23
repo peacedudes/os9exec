@@ -117,18 +117,18 @@
 void   init_Cons ( fmgr_typ* f );
 os9err pCopen    ( ushort pid, syspath_typ*, ushort  *modeP, char* pathname );
 os9err pCclose   ( ushort pid, syspath_typ* );
-os9err pConsIn   ( ushort pid, syspath_typ*, ulong *maxlenP, char* buffer );
-os9err pConsInLn ( ushort pid, syspath_typ*, ulong *maxlenP, char* buffer );
-os9err pConsOut  ( ushort pid, syspath_typ*, ulong *maxlenP, char* buffer );
-os9err pConsOutLn( ushort pid, syspath_typ*, ulong *maxlenP, char* buffer );
+os9err pConsIn   ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
+os9err pConsInLn ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
+os9err pConsOut  ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
+os9err pConsOutLn( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
 
-os9err pCopt     ( ushort pid, syspath_typ*,                 byte* buffer );
-os9err pCpos     ( ushort pid, syspath_typ*, ulong *posP );
-os9err pCready   ( ushort pid, syspath_typ*, ulong *n );
-os9err pCsetopt  ( ushort pid, syspath_typ*,                 byte* buffer );
+os9err pCopt     ( ushort pid, syspath_typ*,                    byte* buffer );
+os9err pCpos     ( ushort pid, syspath_typ*, uint32_t *posP );
+os9err pCready   ( ushort pid, syspath_typ*, uint32_t *n );
+os9err pCsetopt  ( ushort pid, syspath_typ*,                    byte* buffer );
 
 void   init_NIL  ( fmgr_typ* f );
-os9err pEOF      ( ushort pid, syspath_typ*, ulong *maxlenP, char* buffer );
+os9err pEOF      ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
 
 void   init_SCF  ( fmgr_typ* f );
 os9err pSopen    ( ushort pid, syspath_typ*, ushort  *modeP, char* pathname );
@@ -371,8 +371,8 @@ Boolean ConsGetc( char* c )
 } /* ConsGetc */
 
 
-static os9err ConsRead( ushort pid, syspath_typ* spP, 
-                        ulong *maxlenP, char* buffer, Boolean edit, char endchar )
+static os9err ConsRead( ushort pid, syspath_typ* spP,
+                        uint32_t *maxlenP, char* buffer, Boolean edit, char endchar )
 {
     os9err        err= 0; /* no err so far */
     long          cnt= 0;
@@ -684,7 +684,7 @@ os9err pSclose( _pid_, _spP_ )
 
 
 /* input character wise from console */
-os9err pConsIn( ushort pid, syspath_typ* spP, ulong *maxlenP, char* buffer )
+os9err pConsIn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
 {
     #ifdef TERMINAL_CONSOLE
       gConsoleID= spP->term_id;
@@ -698,7 +698,7 @@ os9err pConsIn( ushort pid, syspath_typ* spP, ulong *maxlenP, char* buffer )
 
 
 
-os9err pConsInLn( ushort pid, syspath_typ* spP, ulong *maxlenP, char* buffer )
+os9err pConsInLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
 /* input line from console */
 {
 	os9err err= 0;
@@ -759,11 +759,11 @@ os9err pEOF( _pid_, _spP_, _maxlenP_, _buffer_ )
 
 
 
-static os9err ConsoleOut( ushort pid, syspath_typ* spP, 
-                          ulong *maxlenP, char* buffer, Boolean wrln )
+static os9err ConsoleOut( ushort pid, syspath_typ* spP,
+                          uint32_t *maxlenP, char* buffer, Boolean wrln )
 /* output to console */
 {
-    ulong        cnt;
+    uint32_t     cnt;
     char         c;
     ulong        outputticks= GetSystemTick();
     syspath_typ* spC=  spP;          /* default: no crossed path */
@@ -837,13 +837,13 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
 } /* ConsoleOut */
 
 
-os9err pConsOut  ( ushort pid, syspath_typ* spP, ulong *maxlenP, char* buffer )
+os9err pConsOut  ( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
 /* output to console */
 { return ConsoleOut( pid,spP, maxlenP, buffer, false );    
 } /* pConsOut */
 
 
-os9err pConsOutLn( ushort pid, syspath_typ* spP, ulong *maxlenP, char* buffer)
+os9err pConsOutLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer)
 /* output line to console */
 {   
 	os9err err= ConsoleOut( pid,spP, maxlenP, buffer, true );
@@ -871,13 +871,13 @@ os9err pCsetopt( _pid_, syspath_typ* spP, byte* buffer )
 
 
 
-os9err pCpos( _pid_, _spP_, ulong *posP )
+os9err pCpos( _pid_, _spP_, uint32_t *posP )
 { *posP= 0; return 0;
 } /* pCpos */
 
 
 
-os9err pCready( _pid_, syspath_typ* spP, ulong* n )
+os9err pCready( _pid_, syspath_typ* spP, uint32_t* n )
 /* check ready */
 /* NOTE: is valid for outputs also, when using "dup" */
 {

@@ -162,14 +162,14 @@
  * when calling non-variadic callees. Each dispatch site casts to the concrete
  * non-variadic type matching the actual callee signature before calling. */
 typedef os9err (*pfunc_od_t )(ushort, syspath_typ*, ushort*,  const char*); /* open/chd/del/makdir */
-typedef os9err (*pfunc_rw_t )(ushort, syspath_typ*, ulong*,   void*);       /* read/write/readln/writeln */
-typedef os9err (*pfunc_sk_t )(ushort, syspath_typ*, ulong*);                /* seek */
-typedef os9err (*pfunc_cl_t )(ushort, syspath_typ*);                        /* close */
-typedef os9err (*pfunc_p1_t )(ushort, syspath_typ*, ulong*);                /* 1 data arg */
-typedef os9err (*pfunc_p2_t )(ushort, syspath_typ*, ulong*,   ulong*);      /* 2 data args */
-typedef os9err (*pfunc_pa_t )(ushort, syspath_typ*, void*);                 /* 1 byte* arg */
-typedef os9err (*pfunc_p2a_t)(ushort, syspath_typ*, ulong*,   void*);       /* ulong* + byte* */
-typedef os9err (*pfunc_p3a_t)(ushort, syspath_typ*, ulong*,   ulong*, void*); /* 2 ulong* + byte* */
+typedef os9err (*pfunc_rw_t )(ushort, syspath_typ*, uint32_t*, void*);        /* read/write/readln/writeln */
+typedef os9err (*pfunc_sk_t )(ushort, syspath_typ*, uint32_t*);               /* seek */
+typedef os9err (*pfunc_cl_t )(ushort, syspath_typ*);                          /* close */
+typedef os9err (*pfunc_p1_t )(ushort, syspath_typ*, uint32_t*);               /* 1 data arg */
+typedef os9err (*pfunc_p2_t )(ushort, syspath_typ*, uint32_t*, uint32_t*);    /* 2 data args */
+typedef os9err (*pfunc_pa_t )(ushort, syspath_typ*, void*);                   /* 1 byte* arg */
+typedef os9err (*pfunc_p2a_t)(ushort, syspath_typ*, uint32_t*, void*);        /* uint32_t* + byte* */
+typedef os9err (*pfunc_p3a_t)(ushort, syspath_typ*, uint32_t*, uint32_t*, void*); /* 2 uint32_t* + byte* */
 
 
 /* I/O routines */
@@ -1446,7 +1446,7 @@ os9err usrpath_open( ushort pid,ushort *up, ptype_typ type, const char* pathname
 
 
 /* write to a syspath */
-os9err syspath_write( ushort pid,ushort spnum, ulong *len, void* buffer, Boolean wrln )
+os9err syspath_write( ushort pid,ushort spnum, uint32_t *len, void* buffer, Boolean wrln )
 {
     os9err         err;
     procid*        pd= &procs[pid].pd;
@@ -1490,7 +1490,7 @@ os9err syspath_write( ushort pid,ushort spnum, ulong *len, void* buffer, Boolean
 
    
 /* write to a usrpath */
-os9err usrpath_write(ushort pid,ushort up, ulong *len, void* buffer, Boolean wrln)
+os9err usrpath_write(ushort pid,ushort up, uint32_t *len, void* buffer, Boolean wrln)
 {
     if (up>=MAXUSRPATHS) return os9error(E_BPNUM);
     return syspath_write(pid,procs[pid].usrpaths[up],len,buffer,wrln);
@@ -1501,7 +1501,7 @@ os9err usrpath_write(ushort pid,ushort up, ulong *len, void* buffer, Boolean wrl
 /* print to user path */
 static void usrpath_puts( ushort pid, ushort up, char* s, Boolean direct )
 {
-    ulong        n, c, base;
+    uint32_t     n, c, base;
     ushort       sp;
     int          ii;
     char*        b;
@@ -1639,7 +1639,7 @@ void copyright(void)
 
    
 /* read from a syspath */
-os9err syspath_read( ushort pid,ushort spnum, ulong *len, void* buffer, Boolean rdln )
+os9err syspath_read( ushort pid,ushort spnum, uint32_t *len, void* buffer, Boolean rdln )
 {
     os9err         err;
     procid*        pd= &procs[pid].pd;
@@ -1672,7 +1672,7 @@ os9err syspath_read( ushort pid,ushort spnum, ulong *len, void* buffer, Boolean 
 
    
 /* read from a usrpath */
-os9err usrpath_read(ushort pid,ushort up, ulong *len, void* buffer, Boolean rdln)
+os9err usrpath_read(ushort pid,ushort up, uint32_t *len, void* buffer, Boolean rdln)
 {
     if (up>=MAXUSRPATHS) return os9error(E_BPNUM);
     return syspath_read(pid,procs[pid].usrpaths[up],len,buffer,rdln);
@@ -1680,7 +1680,7 @@ os9err usrpath_read(ushort pid,ushort up, ulong *len, void* buffer, Boolean rdln
 
 
 
-os9err syspath_seek(ushort pid,ushort spnum, ulong pos)
+os9err syspath_seek(ushort pid,ushort spnum, uint32_t pos)
 /* seek from a syspath */
 {
     syspath_typ* spP= get_syspathd( pid,spnum ); 
@@ -1691,7 +1691,7 @@ os9err syspath_seek(ushort pid,ushort spnum, ulong pos)
 
    
 
-os9err usrpath_seek(ushort pid,ushort up, ulong pos)
+os9err usrpath_seek(ushort pid,ushort up, uint32_t pos)
 /* read from a usrpath */
 {
     if (up>=MAXUSRPATHS) return os9error(E_BPNUM);
@@ -1703,25 +1703,23 @@ os9err usrpath_seek(ushort pid,ushort up, ulong pos)
 static os9err etc_path( _pid_, _spP_, _d2_, byte* a0 )
 /* %%% this is a very straight forward implementation for OS9TCP/inetd */
 {
-    ulong* u;
-    char*  p;
+    /* Write 4-byte big-endian fields at byte offsets into opt_buff */
+    *(uint32_t*)(a0+0x00)= 0x0064;
+    *(uint32_t*)(a0+0x04)= 0x0014;
+    *(uint32_t*)(a0+0x08)= 0x03e8;
+    *(uint32_t*)(a0+0x0c)= 0x0001;
+    *(uint32_t*)(a0+0x10)= 0x0001;
+    strcpy( (char*)(a0+0x14), "mac" );
+    *(uint32_t*)(a0+0x34)= 0x14;
+    strcpy( (char*)(a0+0x38), "/dd/ETC" );
 
-    u= (ulong*)a0;      *u= 0x0064;
-    u= (ulong*)a0+0x04; *u= 0x0014;
-    u= (ulong*)a0+0x08; *u= 0x03e8;
-    u= (ulong*)a0+0x0c; *u= 0x0001;
-    u= (ulong*)a0+0x10; *u= 0x0001;
-    p= (char *)a0+0x14;     strcpy( p,"mac" );
-    u= (ulong*)a0+0x34; *u= 0x14;
-    p= (char *)a0+0x38;     strcpy( p,"/dd/ETC" );
-    
     return 0;
 } /* etc_path */
 
 
 
 os9err syspath_getstat( ushort pid, ushort sp, ushort func,
-                        ulong* a0, _d0_, ulong* d1, ulong* d2, ulong* d3 )
+                        ulong* a0, _d0_, uint32_t* d1, uint32_t* d2, uint32_t* d3 )
 /* GetStat from syspath */
 {
     os9err        err;
@@ -1770,7 +1768,7 @@ os9err syspath_getstat( ushort pid, ushort sp, ushort func,
 
 
 
-os9err syspath_gs_size ( ushort pid, ushort sp, ulong *size )
+os9err syspath_gs_size ( ushort pid, ushort sp, uint32_t *size )
 {   return syspath_getstat( pid,sp, SS_Size,  NULL, NULL,NULL,size,NULL );
 } /* syspath_gs_size */
 
@@ -1780,7 +1778,7 @@ os9err syspath_gs_devnm( ushort pid, ushort sp,  char* name )
 } /* syspath_gs_devnm */
 
 
-os9err syspath_gs_ready( ushort pid, ushort sp, ulong *cnt )
+os9err syspath_gs_ready( ushort pid, ushort sp, uint32_t *cnt )
 {   return syspath_getstat( pid,sp, SS_Ready, NULL, NULL,cnt, NULL,NULL );
 } /* syspath_gs_ready */
 
@@ -1788,7 +1786,7 @@ os9err syspath_gs_ready( ushort pid, ushort sp, ulong *cnt )
 
    
 os9err usrpath_getstat( ushort pid, ushort up, ushort func,
-                        ulong* a0,  ulong* d0, ulong* d1, ulong* d2,ulong* d3)
+                        ulong* a0,  uint32_t* d0, uint32_t* d1, uint32_t* d2, uint32_t* d3)
 /* GetStat from usrpath */
 {
     if (up>=MAXUSRPATHS) return os9error(E_BPNUM);
@@ -1799,15 +1797,15 @@ os9err usrpath_getstat( ushort pid, ushort up, ushort func,
 
 /* SetStat from syspath */
 os9err syspath_setstat( ushort pid, ushort path, ushort func,
-                        ulong* a0,       _a1_, 
-                        ulong* d0, ulong* d1, ulong* d2, _d3_ )
+                        ulong* a0,       _a1_,
+                        uint32_t* d0, uint32_t* d1, uint32_t* d2, _d3_ )
 {
     os9err    err;
     fmgr_typ* f;
     ss_typ*   s;
     byte**    a;
-    ulong     n;
-	
+    uint32_t  n;
+
     syspath_typ*  spP= get_syspathd( pid,path ); 
     if           (spP==NULL) return os9error(E_BPNUM);
         
@@ -1887,8 +1885,8 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
    
 /* SetStat from usrpath */
 os9err usrpath_setstat(ushort pid,ushort up, ushort func,
-                       ulong *a0,ulong *a1, 
-                       ulong *d0,ulong *d1,ulong *d2,ulong *d3)
+                       ulong *a0, ulong *a1,
+                       uint32_t *d0, uint32_t *d1, uint32_t *d2, uint32_t *d3)
 {
     if (up>=MAXUSRPATHS) return os9error(E_BPNUM);
     return syspath_setstat( pid,procs[pid].usrpaths[up],func, a0,a1, d0,d1,d2,d3 );
@@ -1897,34 +1895,35 @@ os9err usrpath_setstat(ushort pid,ushort up, ushort func,
 
 
 os9err get_locations( ushort pid, ptype_typ type, const char* pathname,
-                      Boolean doCreate, Boolean *asDir, ulong *fdP, ulong *dfdP, ulong *dcpP, ulong *sSct )
+                      Boolean doCreate, Boolean *asDir,
+                      uint32_t *fdP, uint32_t *dfdP, uint32_t *dcpP, uint32_t *sSct )
 {   /* try as file first, then as dir */
     os9err err;
-    ulong  a0, *l;
-    byte   opt_buff[OPTSECTSIZE];      
+    ulong  a0;              /* holds host pointer to opt_buff — must be ulong (64-bit) */
+    byte   opt_buff[OPTSECTSIZE];
     ushort modeF= 0x01;
     ushort modeD= 0x81;
     ushort path;
-    
+
     if (doCreate) {
         modeF= modeF | poCreateMask;
         modeD= modeD | poCreateMask;
-        
+
         procs[pid].fileAtt     = 0x03; /* avoid wrong attributes at "move" */
         procs[pid].cre_initsize= 0;
     }
                       err= usrpath_open( pid,&path, type,pathname,modeF ); *asDir= false;
     if (err==E_FNA) { err= usrpath_open( pid,&path, type,pathname,modeD ); *asDir= true; }
     if (err) return   err;
-        
+
     /* do it the same way as the OS-9 rename */
     a0 = (ulong) opt_buff;
     err= usrpath_getstat( pid,path, SS_Opt, &a0, NULL,NULL,NULL,NULL ); if (err) return err;
-                          
-    l  = (ulong*)&opt_buff[ PD_FD     ];  *fdP= os9_long( *l ); /* position of file    (not LSN) */
-    l  = (ulong*)&opt_buff[ PD_DFD    ]; *dfdP= os9_long( *l ); /* position of its dir (not LSN) */
-    l  = (ulong*)&opt_buff[ PD_DCP    ]; *dcpP= os9_long( *l ); /* dir entry pointer */
-    l  = (ulong*)&opt_buff[ PD_SctSiz ]; *sSct= os9_long( *l ); /* dir entry pointer */
+
+     *fdP= GET_OS9L(opt_buff, PD_FD     ); /* position of file    (not LSN) */
+    *dfdP= GET_OS9L(opt_buff, PD_DFD    ); /* position of its dir (not LSN) */
+    *dcpP= GET_OS9L(opt_buff, PD_DCP    ); /* dir entry pointer */
+    *sSct= GET_OS9L(opt_buff, PD_SctSiz ); /* sector size */
     err= usrpath_close( pid,path ); return err;
 } /* get_locations */
 

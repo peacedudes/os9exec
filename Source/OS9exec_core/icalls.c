@@ -311,11 +311,11 @@ os9err OS9_I_WritLn( regs_type *rp, ushort cpid )
  *                path to which the CR character is written.
  */
 {
-    ushort path;
-    ulong  cnt;
-    ulong  ii;
-    char   *buff;
-    os9err err;
+    ushort   path;
+    uint32_t cnt;
+    uint32_t ii;
+    char     *buff;
+    os9err   err;
 
     if (debugcheck(dbgWarnings,dbgDetail)) {
         regcheck(cpid,"I$WriteLn buffer start",rp->a[0],           RCHK_DRU+RCHK_ARU+RCHK_MEM+RCHK_MOD);
@@ -362,9 +362,9 @@ os9err OS9_I_Write( regs_type *rp, ushort cpid )
  *                path to which the CR character is written.
  */
 {
-    ushort path;
-    ulong  cnt;
-    char   *buff;
+    ushort   path;
+    uint32_t cnt;
+    char     *buff;
     os9err err;
 
     if (debugcheck(dbgWarnings,dbgDetail)) {
@@ -401,11 +401,11 @@ os9err OS9_I_ReadLn( regs_type *rp, ushort cpid )
  *              - NULL chars cannot be read from stdin using I$ReadLn 
  */
 {
-    char   *p;
-    ulong  cnt;
-    ushort path;
-    os9err err;
-   
+    char     *p;
+    uint32_t  cnt;
+    ushort    path;
+    os9err    err;
+
     if (debugcheck(dbgWarnings,dbgDetail)) {
         regcheck(cpid,"I$ReadLn buffer start",rp->a[0],           RCHK_DRU+RCHK_ARU+RCHK_MEM);
         regcheck(cpid,"I$ReadLn buffer end",  rp->a[0]+rp->d[1]-1,RCHK_DRU+RCHK_ARU+RCHK_MEM);
@@ -434,10 +434,10 @@ os9err OS9_I_Read( regs_type *rp, ushort cpid )
  *             E$READ: attempt to read from path 0..2
  */
 {
-   char   *p;
-   ushort path;
-   ulong  cnt;
-   os9err err;
+   char     *p;
+   ushort    path;
+   uint32_t  cnt;
+   os9err    err;
    
    if (debugcheck(dbgWarnings,dbgDetail)) {
        regcheck(cpid,"I$Read buffer start",rp->a[0],           RCHK_DRU+RCHK_ARU+RCHK_MEM);
@@ -465,9 +465,9 @@ os9err OS9_I_Seek( regs_type *rp, ushort cpid )
  *             E$BPNUM: this path is not open 
  */
 {
-    os9err err;
-    ushort path= loword(rp->d[0]);
-    ulong  pos =        rp->d[1];
+    os9err   err;
+    ushort   path= loword(rp->d[0]);
+    uint32_t pos =        rp->d[1];
 
     err= usrpath_seek( cpid,path, pos );
     debugprintf(dbgFiles,dbgDetail,("# I$Seek: path=%d: New position=$%lX, err=%d\n",
@@ -490,9 +490,9 @@ os9err OS9_I_SetStt( regs_type *rp, ushort cpid )
  * Restrictions:- 
  */
 {
-    ulong a0= (ulong)FROM68K(rp->a[0]); /* register addresses -> host pointers */
-    ulong a1= (ulong)FROM68K(rp->a[1]);
-    ulong d0= rp->d[0], d1= rp->d[1], d2= rp->d[2], d3= rp->d[3];
+    ulong    a0= (ulong)FROM68K(rp->a[0]); /* register addresses -> host pointers */
+    ulong    a1= (ulong)FROM68K(rp->a[1]);
+    uint32_t d0= rp->d[0], d1= rp->d[1], d2= rp->d[2], d3= rp->d[3];
 
     ushort path= loword(d0);
     ushort func= loword(d1);
@@ -516,8 +516,8 @@ os9err OS9_I_GetStt( regs_type *rp, ushort cpid )
  *             E$BPNUM: this path is not open 
  */
 {
-    ulong a0= (ulong)FROM68K(rp->a[0]); /* register address -> host pointer */
-    ulong d0= rp->d[0], d1= rp->d[1], d2= rp->d[2], d3= rp->d[3];
+    ulong    a0= (ulong)FROM68K(rp->a[0]); /* register address -> host pointer */
+    uint32_t d0= rp->d[0], d1= rp->d[1], d2= rp->d[2], d3= rp->d[3];
 
     ushort path= loword(d0);
     ushort func= loword(d1);
@@ -542,8 +542,8 @@ os9err OS9_I_SGetSt( regs_type *rp, ushort cpid )
  *             E$BPNUM: this path is not open 
  */
 {
-    ulong a0= (ulong)FROM68K(rp->a[0]); /* register address -> host pointer */
-    ulong d0= rp->d[0], d1= rp->d[1], d2= rp->d[2], d3= rp->d[3];
+    ulong    a0= (ulong)FROM68K(rp->a[0]); /* register address -> host pointer */
+    uint32_t d0= rp->d[0], d1= rp->d[1], d2= rp->d[2], d3= rp->d[3];
 
     ushort path= loword(d0);
     ushort func= loword(d1);

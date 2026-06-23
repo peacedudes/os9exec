@@ -868,7 +868,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
       FILE   *stream;
     #endif
     
-    ulong  dsize, loadbytes;
+    uint32_t dsize, loadbytes;
     os9err err;
     ushort par;
     ulong  crc;
@@ -1382,7 +1382,7 @@ os9err load_OS9Boot( ushort pid )
   char   name[OS9PATHLEN];
   
   byte                  sect0[ 256 ];
-  ulong   size= sizeof( sect0 );
+  uint32_t size= sizeof( sect0 );
   ushort* sp;
   ushort* sc;
   ulong   pos, siz, scs;

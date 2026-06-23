@@ -325,9 +325,9 @@ Boolean llm_vm_enabled      (void);
 Boolean llm_has_cache       (void);
 Boolean llm_runs_in_usermode(void);
 
-void  Flush68kCodeRange(void *address, ulong size);
-void  LockMemRange     (void *address, ulong size);
-void  UnlockMemRange   (void *address, ulong size);
+void  Flush68kCodeRange(void *address, uint32_t size);
+void  LockMemRange     (void *address, uint32_t size);
+void  UnlockMemRange   (void *address, uint32_t size);
 
 OSErr lowlevel_prepare (void);
 void  lowlevel_release (void);

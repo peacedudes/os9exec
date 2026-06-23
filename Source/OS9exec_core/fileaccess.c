@@ -199,38 +199,38 @@
 void   init_File ( fmgr_typ* f );
 os9err pFopen    ( ushort pid, syspath_typ*, ushort *modeP,  const char* pathname );
 os9err pFclose   ( ushort pid, syspath_typ* );
-os9err pFread    ( ushort pid, syspath_typ*, ulong  *n,      char* buffer );
-os9err pFreadln  ( ushort pid, syspath_typ*, ulong  *n,      char* buffer );
-os9err pFwrite   ( ushort pid, syspath_typ*, ulong  *n,      char* buffer );
-os9err pFwriteln ( ushort pid, syspath_typ*, ulong  *n,      char* buffer );
-os9err pFseek    ( ushort pid, syspath_typ*, ulong   *posP );
-os9err pFdelete  ( ushort pid, syspath_typ*, ushort *modeP,  char* pathname );
+os9err pFread    ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
+os9err pFreadln  ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
+os9err pFwrite   ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
+os9err pFwriteln ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
+os9err pFseek    ( ushort pid, syspath_typ*, uint32_t  *posP );
+os9err pFdelete  ( ushort pid, syspath_typ*, ushort   *modeP,  char* pathname );
 
-os9err pFsize    ( ushort pid, syspath_typ*, ulong  *sizeP );
-os9err pFopt     ( ushort pid, syspath_typ*,                 byte* buffer );
-os9err pHvolnam  ( ushort pid, syspath_typ*,                 char* volname );
-os9err pFpos     ( ushort pid, syspath_typ*, ulong   *posP );
+os9err pFsize    ( ushort pid, syspath_typ*, uint32_t *sizeP );
+os9err pFopt     ( ushort pid, syspath_typ*,                   byte* buffer );
+os9err pHvolnam  ( ushort pid, syspath_typ*,                   char* volname );
+os9err pFpos     ( ushort pid, syspath_typ*, uint32_t  *posP );
 os9err pFeof     ( ushort pid, syspath_typ* );
-os9err pFready   ( ushort pid, syspath_typ*, ulong  *n );
-os9err pHgetFD   ( ushort pid, syspath_typ*, ulong  *maxbytP,byte* buffer );
-os9err pHgetFDInf( ushort pid, syspath_typ*, ulong  *maxbytP, 
-                                             ulong  *fdinf,  byte* buffer );
+os9err pFready   ( ushort pid, syspath_typ*, uint32_t *n );
+os9err pHgetFD   ( ushort pid, syspath_typ*, uint32_t *maxbytP, byte* buffer );
+os9err pHgetFDInf( ushort pid, syspath_typ*, uint32_t *maxbytP,
+                                             uint32_t *fdinf,   byte* buffer );
 
-os9err pFsetsz   ( ushort pid, syspath_typ*, ulong  *sizeP );
-os9err pHsetFD   ( ushort pid, syspath_typ*,                 byte* buffer );
+os9err pFsetsz   ( ushort pid, syspath_typ*, uint32_t *sizeP );
+os9err pHsetFD   ( ushort pid, syspath_typ*,                   byte* buffer );
 
 
 
 void   init_Dir  ( fmgr_typ* f );
-os9err pDopen    ( ushort pid, syspath_typ*, ushort *modeP,  const char* pathname );
+os9err pDopen    ( ushort pid, syspath_typ*, ushort  *modeP,  const char* pathname );
 os9err pDclose   ( ushort pid, syspath_typ* );
-os9err pDread    ( ushort pid, syspath_typ*, ulong  *n,      char* buffer );
-os9err pDseek    ( ushort pid, syspath_typ*, ulong   *posP );
-os9err pDchd     ( ushort pid, syspath_typ*, ushort *modeP,  char* pathname );
-os9err pDmakdir  ( ushort pid, syspath_typ*, ushort *modeP,  char* pathname );
+os9err pDread    ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
+os9err pDseek    ( ushort pid, syspath_typ*, uint32_t  *posP );
+os9err pDchd     ( ushort pid, syspath_typ*, ushort  *modeP,  char* pathname );
+os9err pDmakdir  ( ushort pid, syspath_typ*, ushort  *modeP,  char* pathname );
 
-os9err pDsize    ( ushort pid, syspath_typ*, ulong  *sizeP );
-os9err pDpos     ( ushort pid, syspath_typ*, ulong   *posP );
+os9err pDsize    ( ushort pid, syspath_typ*, uint32_t *sizeP );
+os9err pDpos     ( ushort pid, syspath_typ*, uint32_t  *posP );
 os9err pDeof     ( ushort pid, syspath_typ* );
 os9err pDsetatt  ( ushort pid, syspath_typ*, ulong   *attr );
 /* ------------------------------------------------------------------------- */
@@ -320,7 +320,7 @@ void init_Dir( fmgr_typ* f )
 
 
 /* input from file */
-os9err pFread( _pid_, syspath_typ* spP, ulong *n, char* buffer )
+os9err pFread( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
 {
     long cnt, k;
     file_typ* f= &spP->u.disk.u.file;
@@ -382,7 +382,7 @@ os9err pFread( _pid_, syspath_typ* spP, ulong *n, char* buffer )
 
 
 /* input line from file */
-os9err pFreadln( _pid_, syspath_typ* spP, ulong *n, char* buffer )
+os9err pFreadln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
 {
     long      cnt;
     file_typ* f= &spP->u.disk.u.file;
@@ -506,7 +506,7 @@ os9err pFreadln( _pid_, syspath_typ* spP, ulong *n, char* buffer )
 
 
 /* output to file */
-os9err pFwrite( _pid_, syspath_typ* spP, ulong *n, char* buffer )
+os9err pFwrite( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
 {
   file_typ*  f= &spP->u.disk.u.file;
   
@@ -570,7 +570,7 @@ os9err pFwrite( _pid_, syspath_typ* spP, ulong *n, char* buffer )
 
 
 /* output to file */
-os9err pFwriteln( _pid_, syspath_typ* spP, ulong *n, char* buffer )
+os9err pFwriteln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
 {
   file_typ* f= &spP->u.disk.u.file;
   
@@ -726,7 +726,7 @@ os9err pFopt( ushort pid, syspath_typ* spP, byte *buffer )
 
 
 /* check ready */
-os9err pFready( _pid_, _spP_, ulong *n )
+os9err pFready( _pid_, _spP_, uint32_t *n )
 {   *n= 1; return 0;
 } /* pFready */
 
@@ -1230,7 +1230,7 @@ os9err pFclose( _pid_, syspath_typ* spP )
 } /* pFclose */
 
 
-os9err pFseek( _pid_, syspath_typ* spP, ulong *posP )
+os9err pFseek( _pid_, syspath_typ* spP, uint32_t *posP )
 /* seek within a file */
 {
     #ifdef MACFILES
@@ -1385,7 +1385,7 @@ os9err pFdelete( ushort pid, _spP_, ushort *modeP, char* pathname )
 
 
 /* get file position */
-os9err pFpos( _pid_, syspath_typ* spP, ulong *posP )
+os9err pFpos( _pid_, syspath_typ* spP, uint32_t *posP )
 {   
   #ifdef MACFILES
     file_typ* f= &spP->u.disk.u.file;
@@ -1400,7 +1400,7 @@ os9err pFpos( _pid_, syspath_typ* spP, ulong *posP )
 
 
 /* get file size */
-os9err pFsize( _pid_, syspath_typ* spP, ulong* sizeP )
+os9err pFsize( _pid_, syspath_typ* spP, uint32_t* sizeP )
 {
   os9err err= 0;
     
@@ -1434,13 +1434,13 @@ os9err pFsize( _pid_, syspath_typ* spP, ulong* sizeP )
 
 
 /* set file size */
-os9err pFsetsz( ushort pid, syspath_typ* spP, ulong *sizeP )
+os9err pFsetsz( ushort pid, syspath_typ* spP, uint32_t *sizeP )
 {
-    os9err err= 0;
-    char   b= 0;
-    ulong  n;
-    ulong  p;
-    ulong  tmp_pos= 0;
+    os9err   err= 0;
+    char     b= 0;
+    uint32_t n;
+    uint32_t p;
+    uint32_t tmp_pos= 0;
     
     #if defined win_unix || defined MACFILES
       long curSize;
@@ -1480,7 +1480,7 @@ os9err pFsetsz( ushort pid, syspath_typ* spP, ulong *sizeP )
         #define      BUFFSIZE 1024
         byte buffer[ BUFFSIZE ];
         
-        tmp_pos= ftell( spP->stream );                 /* make it compatible for gcc >= 3.2 */
+        tmp_pos= (uint32_t)ftell( spP->stream );       /* make it compatible for gcc >= 3.2 */
         err= fseek    ( spP->stream,0,SEEK_END ); if (err) return err;         /* go to EOF */
 
         curSize= (ulong)ftell( spP->stream ); /* get position now = file size */
@@ -1993,7 +1993,7 @@ static void setFD( syspath_typ* spP, void* fdl, byte *buffer )
 
 
 /* get file descriptor for object */
-os9err pHgetFD( _pid_, syspath_typ* spP, ulong *maxbytP, byte *buffer )
+os9err pHgetFD( _pid_, syspath_typ* spP, uint32_t *maxbytP, byte *buffer )
 {
     void* fdl;
 
@@ -2066,8 +2066,8 @@ os9err pHsetFD( _pid_, syspath_typ* spP, byte *buffer )
 
 
 /* get file descriptor for file specified by "sector" */
-os9err pHgetFDInf( _pid_, syspath_typ* spP, ulong *maxbytP,
-                                            ulong *fdinf, byte *buffer)
+os9err pHgetFDInf( _pid_, syspath_typ* spP, uint32_t *maxbytP,
+                                            uint32_t *fdinf, byte *buffer)
 {
     void*  fdl;
     os9err err= 0;
@@ -2397,7 +2397,7 @@ os9err pDclose( _pid_, syspath_typ* spP )
 
 
 /* read from (simulated) directory file */
-os9err pDread( _pid_, syspath_typ *spP, ulong *n, char* buffer )
+os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
 {
   os9err err;
     
@@ -2524,7 +2524,7 @@ os9err pDread( _pid_, syspath_typ *spP, ulong *n, char* buffer )
 
 
 /* get pointer position */
-os9err pDpos( _pid_, syspath_typ* spP, ulong *posP )
+os9err pDpos( _pid_, syspath_typ* spP, uint32_t *posP )
 {
     *posP= spP->u.disk.u.dir.pos;
     return 0;
@@ -2533,7 +2533,7 @@ os9err pDpos( _pid_, syspath_typ* spP, ulong *posP )
 
 
 /* get size of directory file */
-os9err pDsize( _pid_, syspath_typ* spP, ulong *sizeP )
+os9err pDsize( _pid_, syspath_typ* spP, uint32_t *sizeP )
 {
     os9err err= 0;
     
@@ -2558,7 +2558,7 @@ os9err pDsize( _pid_, syspath_typ* spP, ulong *sizeP )
 
 
 /* set read position */
-os9err pDseek( ushort pid, syspath_typ* spP, ulong *posP )
+os9err pDseek( ushort pid, syspath_typ* spP, uint32_t *posP )
 {
     #ifdef MACOS9
       ulong       size;
@@ -2978,7 +2978,7 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, ulong *attr )
 /* check for EOF */
 os9err pDeof( ushort pid, syspath_typ* spP )
 {
-    ulong  n;
+    uint32_t n;
     os9err err= pDsize( pid,spP, &n ); if (err) return err;
     if    (n<=spP->u.disk.u.dir.pos) return os9error(E_EOF);
     

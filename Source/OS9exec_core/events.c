@@ -172,7 +172,7 @@ os9err evWait( ulong evId, int minV, int maxV, int *evValue )
 {
     os9err       err;
     syspath_typ* spP;
-    ulong        cnt;
+    uint32_t     cnt;
     int          k, prev;
     
     event_typ*   ev= getEv( evId );
