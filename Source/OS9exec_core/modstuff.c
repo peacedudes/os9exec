@@ -1567,8 +1567,8 @@ os9err prepData(ushort pid, mod_exec *theModule, ulong memplus, ulong *msiz, byt
    
    /* -- prepare initialized data */
    p2 = (byte *)theModule+os9_long(theModule->_midata); /* idata */
-   p  =    bp + os9_long(*((ulong *) p2)); /* offset into data space */
-   p2+= 4; cnt= os9_long(*((ulong *) p2)); /* number of bytes to copy */
+   p  =    bp + GET_OS9L(p2, 0); /* offset into data space */
+   p2+= 4; cnt= GET_OS9L(p2, 0); /* number of bytes to copy */
    p2+= 4;
 
    debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: idata at $%08lX, data offset start=$%08lX, bytecount=$%lX\n",p2,p,cnt));
@@ -1579,7 +1579,7 @@ os9err prepData(ushort pid, mod_exec *theModule, ulong memplus, ulong *msiz, byt
 
    for (k=0;k<2;k++) {
       debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: irefs correction to base address $%08lX\n",offs));
-      while (*((ulong *)p2)!=0) {
+      while (GET_OS9L(p2, 0) != 0) {
          p=bp + ((ulong)os9_word(*((ushort *)p2))<<16); /* calc group's base address */
          p2+=2; /* step over base address word */
          debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: irefs group at $%08lX, count=%d\n",
@@ -1587,11 +1587,12 @@ os9err prepData(ushort pid, mod_exec *theModule, ulong memplus, ulong *msiz, byt
 
          for (cnt= os9_word(*((ushort *)p2));cnt>0;cnt--) {
             p2+= 2; /* step to next offset word */
-            debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: original value at $%08lX = $%08lX; offset=$%08lX\n",
-                (ulong)(p+os9_word(*((ushort *)p2))),os9_long(*((ulong *)(p+os9_word(*((ushort *)p2))))),offs));
-            /* now correct */
-            *((ulong *)(p+os9_word(*((ushort *)p2))))=
-                os9_long(os9_long(*((ulong *)(p+os9_word(*((ushort *)p2)))))+offs);
+            {  byte *fp= p+os9_word(*((ushort *)p2));
+               debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: original value at $%08lX = $%08lX; offset=$%08lX\n",
+                   (ulong)fp, GET_OS9L(fp, 0), offs));
+               /* now correct: read 4-byte big-endian field, add offset, write back */
+               SET_OS9L(fp, 0, GET_OS9L(fp, 0) + offs);
+            }
          }
          p2+=2;
       }
