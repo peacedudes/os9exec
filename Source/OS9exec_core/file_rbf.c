@@ -2325,7 +2325,7 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     uint32_t    bstart=  rbf->currPos;
     ulong       boffs =  0;
     uint32_t    remain= *lenP;
-    ulong*      mw    = &spP->mustW;
+    uint32_t*   mw    = &spP->mustW;
     ulong       ma    = Max( dev->sas,dev->clusterSize );
     ulong       sect, slim, offs, size, totsize, maxc, pos, scs, *rs, pref, coff, sv, req;
     byte*       bb;

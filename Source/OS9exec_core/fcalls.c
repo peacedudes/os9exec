@@ -551,7 +551,7 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
     int          evValue;
     short        wIncr, sIncr;
     int          minV,  maxV;
-    ulong        evId;
+    uint32_t     evId;
 
     
     switch (evCode) {
@@ -617,7 +617,7 @@ os9err OS9_F_Julian( regs_type *rp, _pid_ )
  */
 {
     byte   tc[4];
-    ulong* tcp= (ulong*)&tc[0];
+    uint32_t* tcp= (uint32_t*)&tc[0];
     
     *tcp    = os9_long( rp->d[0] );         /* get time */
     rp->d[0]= tc[1]*3600+tc[2]*60+tc[3]; /* seconds since midnight */
@@ -641,7 +641,7 @@ os9err OS9_F_Gregor( regs_type *rp, _pid_ )
  */
 {
     byte   tc[4];
-    ulong* tcp= (ulong*)&tc[0];
+    uint32_t* tcp= (uint32_t*)&tc[0];
     int  d, m, y;
       
     tc[0]= 0;

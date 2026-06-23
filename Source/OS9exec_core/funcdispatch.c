@@ -675,8 +675,8 @@ os9err exec_syscall( ushort func, ushort pid, regs_type* rp, Boolean withinIntUt
     if (withinIntUtil) {
       // make the debug logging prep for systemcalls within int commands here
     //memcpy( (void*)&cp->os9regs,   (void*)rp,       sizeof(regs_type) );
-      memcpy( (void*)&cp->os9regs.d, (void*)&rp->d, 5*sizeof(ulong) );
-      memcpy( (void*)&cp->os9regs.a, (void*)&rp->a, 6*sizeof(ulong) );
+      memcpy( (void*)&cp->os9regs.d, (void*)&rp->d, 5*sizeof(ulong32) );
+      memcpy( (void*)&cp->os9regs.a, (void*)&rp->a, 6*sizeof(ulong32) );
       
       if (ptocThread) pthread_mutex_lock( &sysCallMutex );
       currentpid= pid;
@@ -752,7 +752,7 @@ os9err exec_syscall( ushort func, ushort pid, regs_type* rp, Boolean withinIntUt
 // Callback entry for plugin trap0 calls
 os9err trap0_call( ushort code, Regs_68k* regs )
 {
-  const int RegsSize= 16*sizeof( ulong );
+  const int RegsSize= 16*sizeof( uint32_t ); /* 16 × 32-bit 68k regs = 64 bytes */
   process_typ* cp= &procs[ currentpid ];
    
   os9err    err;

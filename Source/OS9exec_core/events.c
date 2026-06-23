@@ -68,7 +68,7 @@ void init_events(void)
 
 
 
-static event_typ* getEv( ulong evId )
+static event_typ* getEv( uint32_t evId )
 {
     event_typ* ev;
     int  k;
@@ -83,7 +83,7 @@ static event_typ* getEv( ulong evId )
 
 
 
-os9err evLink( char* evName, ulong *evId )
+os9err evLink( char* evName, uint32_t *evId )
 {
     event_typ* ev;
     int        k;
@@ -103,7 +103,7 @@ os9err evLink( char* evName, ulong *evId )
 
 
 
-os9err evUnLnk( ulong evId )
+os9err evUnLnk( uint32_t evId )
 {
     event_typ* ev;
     int        k;
@@ -121,7 +121,7 @@ os9err evUnLnk( ulong evId )
 
 
 
-os9err evCreat( char* evName, int evValue, short wInc, short sInc, ulong *evId )
+os9err evCreat( char* evName, int evValue, short wInc, short sInc, uint32_t *evId )
 {
     event_typ* ev;
     int        k;
@@ -168,7 +168,7 @@ os9err evDelet( char* evName )
 } /* evDelet */
 
 
-os9err evWait( ulong evId, int minV, int maxV, int *evValue )
+os9err evWait( uint32_t evId, int minV, int maxV, int *evValue )
 {
     os9err       err;
     syspath_typ* spP;
@@ -200,7 +200,7 @@ os9err evWait( ulong evId, int minV, int maxV, int *evValue )
 
 
 
-os9err evSignl( ulong evId )
+os9err evSignl( uint32_t evId )
 {
     event_typ*  ev= getEv( evId );
     if         (ev==NULL) return E_EVNTID;
@@ -209,7 +209,7 @@ os9err evSignl( ulong evId )
 } /* evSignl */
 
 
-os9err evSet( ulong evId, int evValue, int *prvValue )
+os9err evSet( uint32_t evId, int evValue, int *prvValue )
 {
     event_typ* ev= getEv( evId );
     if        (ev==NULL) return E_EVNTID;

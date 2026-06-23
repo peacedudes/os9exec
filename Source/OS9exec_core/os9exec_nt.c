@@ -482,7 +482,7 @@ fmgr_typ    fmgr_none,
 
 /* the events */
 event_typ   events  [MAXEVENTS];
-ulong		newEventId= 0xffffffff; /* initial value */
+uint32_t	newEventId= 0xffffffff; /* initial value */
 
 short    arbitrate;         // set if arbitrate() should switch away from one running process to next
 ushort   interactivepid;    // process that will get keyboard abort signals

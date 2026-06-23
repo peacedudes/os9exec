@@ -58,6 +58,7 @@
 
 
 // ----- C access from Plugin side and OS9exec internal use -----
+#include <stdint.h>
 #include "target_options.h"
 
 #ifndef  __GLOBDEF
@@ -95,10 +96,10 @@
 
 #define No_Module (void*)1 // predefined value for 'no module'
 
-// 68k registers
+// 68k registers — 32-bit values matching the Motorola 68k register width
 typedef struct {
-  ulong d[ 8 ];
-  ulong a[ 8 ];
+  uint32_t d[ 8 ];
+  uint32_t a[ 8 ];
 } Regs_68k;
 
 

@@ -882,15 +882,15 @@ typedef struct {
     byte      opt[OPTSECTSIZE]; /* path's option section */
     ushort    signal_to_send;   /* send signal on data ready */
     ushort    signal_pid;       /* signal has to be sent to this process */
-    ulong     set_evId;         /* set  event  on data ready */
+    uint32_t  set_evId;         /* set  event  on data ready */
     int       lastwritten_pid;  /* connection for signal handler */
     Boolean   rawMode;          /* raw mode /xx@ */
-    ulong     rawPos;           /* the (emulated) sector 0 position */
-        
+    uint32_t  rawPos;           /* the (emulated) sector 0 position */
+
     byte*     fd_sct;           /* FD  sector buffer */
     byte*     rw_sct;           /* R/W sector buffer */
-    ulong     rw_nr;            /* current R/W sector nr */
-    ulong     mustW;            /* current sector to be written */
+    uint32_t  rw_nr;            /* current R/W sector nr */
+    uint32_t  mustW;            /* current sector to be written */
     Boolean   fullsearch;       /* recursive mode for "babushka" */
 
     // %%%luz: many of these should be in the union below...
@@ -1014,7 +1014,7 @@ typedef struct {
 
 /* an "event" */
 typedef struct {
-            ulong   id;
+            uint32_t id;
             char    name[OS9EVNAMELEN];
             int     value;
             short   wInc;      
@@ -1049,7 +1049,7 @@ typedef struct {                /* saved structure during read */
 typedef struct {
             ptype_typ type;             /* current dir's device type */
             ushort    dev;              /* RBF: device */
-            ulong     lsn;              /* RBF: current lsn */
+            uint32_t  lsn;             /* RBF: current lsn */
             char      path[OS9PATHLEN]; /* current dir path */
                                 
             #ifdef macintosh
@@ -1071,11 +1071,11 @@ typedef struct {
 
 /* alarm type */
 typedef struct {
-			ushort  pid;
-			ushort  signal;
-			ulong   ticks;
-			ulong   due;
-			Boolean cyclic;
+			ushort   pid;
+			ushort   signal;
+			uint32_t ticks;
+			uint32_t due;
+			Boolean  cyclic;
 		} alarm_typ;
 		
 
@@ -1327,7 +1327,7 @@ extern  fmgr_typ    fmgr_none,
 
 /* the events */
 extern  event_typ   events  [MAXEVENTS];
-extern  ulong  newEventId;
+extern  uint32_t  newEventId;
 #define EvOffs 0x00010001
 
 /* the currently executing process, MAXPROCESSES if none */
