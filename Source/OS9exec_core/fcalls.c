@@ -819,11 +819,11 @@ os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
  */
 {
     int k;
-    ulong *ptr,*lim;
+    uint32_t *ptr,*lim;
     short *s,  *sl;
 
-    ptr= (ulong *)  FROM68K(rp->a[0]);
-    lim= (ulong *)( rp->d[1] + (long)ptr );
+    ptr= (uint32_t *)  FROM68K(rp->a[0]);
+    lim= (uint32_t *)( rp->d[1] + (long)ptr );
     
     s  = (short *)ptr;
     sl = (short *)lim;
@@ -831,7 +831,7 @@ os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
     if ( s<sl ) { *s= (short)os9_word(MAXPROCESSES-1); s++; }; /* no process 0 */
     if ( s<sl ) { *s= os9_word(2048);           s++; }; /* the size of the real descriptor */
     
-    ptr= (ulong *)s;                                    /* start with process nr 1 */
+    ptr= (uint32_t *)s;                                 /* start with process nr 1 */
     for (k=1; ( k<MAXPROCESSES ) && ( ptr<lim ); k++ )
     {
       if (procs[k].state==pUnused)
@@ -1242,7 +1242,6 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
     char   mpath[OS9PATHLEN],*p;
     ushort mid;
     ulong  size, namsize, msz, xpos, npos, usz;
-    ulong  *k;
     ushort hpar;
     void   *pp;
     short  access,tylan,attrev;
@@ -1294,7 +1293,7 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
     xpos= (ulong)&theModule->_mexcpt;
     usz = (ulong) theModule + msz;
 
-    for (k= (ulong *)xpos; k<(ulong *)usz; k++) *k= 0;         /* clear data area */
+    memset((void*)xpos, 0, usz - xpos);                         /* clear data area */
 
     xpos= (ulong)( (char*)xpos- (char*)theModule );   /* now calculated as offset */
     npos= (ulong)( (char*)msz - sizeof(ulong) - (char*)namsize );

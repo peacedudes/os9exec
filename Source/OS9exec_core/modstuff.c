@@ -673,17 +673,14 @@ static void adapt_init( mod_exec* mh )
 static void adapt_le0( mod_exec* mh, ulong inetAddr )
 {
     byte*  bp;
-    ulong* lp;
-        
+
     bp= (byte*) mh + 0x7a;        /* broadcast address position */
-    lp= (ulong*)bp;
-   *lp= os9_long(inetAddr);
+    *(uint32_t*)bp= os9_long((uint32_t)inetAddr);
     bp= (byte*) mh + 0x7d; *bp= 0xff; /* specific for broadcast */
 
     bp= (byte*) mh + 0x8a;      /* my internet address position */
-    lp= (ulong*)bp;
-   *lp= os9_long(inetAddr);
-            
+    *(uint32_t*)bp= os9_long((uint32_t)inetAddr);
+
     mod_crc( mh );
 } /* adapt_le0 */
 
@@ -1384,7 +1381,6 @@ os9err load_OS9Boot( ushort pid )
   
   byte                  sect0[ 256 ];
   ulong   size= sizeof( sect0 );
-  ulong*  lp;
   ushort* sp;
   ushort* sc;
   ulong   pos, siz, scs;
@@ -1402,7 +1398,7 @@ os9err load_OS9Boot( ushort pid )
   do {
     err= usrpath_read( pid,  path, &size, &sect0,   false ); if (err) break;
     
-    lp= (ulong *)&sect0[ 0x15 ]; pos= os9_long(*lp)>>BpB;
+    pos= GET_OS9L(sect0, 0x15)>>BpB;
     sp= (ushort*)&sect0[ 0x18 ]; siz= os9_word(*sp);
     sc= (ushort*)&sect0[ 0x68 ]; scs= os9_word(*sc);
     
