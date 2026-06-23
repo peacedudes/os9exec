@@ -217,10 +217,9 @@ typedef  struct {
 
 /* traphandler description */
 typedef  struct {
-            /* don't move these 2, they are used by low-level code */
-            ulong trapentry;
-            ulong trapmem;
-            
+            os9addr_t trapentry;   /* 68k entry point of the trap handler */
+            os9addr_t trapmem;     /* 68k arena offset of trap handler static storage */
+
             /* other entries are used by high-level code only */
             ulong trapmemsz;
             mod_trap *trapmodule;
