@@ -69,12 +69,15 @@ typedef char flagtype;
 
 
 /* register context:
-   !!!!!!!! must be STRUCTURALLY EQUAL to regs_type in os9_uae.h */
+   !!!!!!!! must be STRUCTURALLY EQUAL to regs_type in os9_ll.h !!!!!!!!
+   The two are bulk-copied with memcpy in llm_os9_go; _Static_assert checks in
+   os9_uae.c fail the build if their layouts ever drift apart. */
 extern struct regstruct
 {
     uae_u32 regs[16];
     uaecptr  usp,isp,msp;
     uae_u16 sr;
+    uae_u16 flags;  /* unused by UAE; mirrors regs_type's flags so the structs stay aligned */
     flagtype t1;
     flagtype t0;
     flagtype s;

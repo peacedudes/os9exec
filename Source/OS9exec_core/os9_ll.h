@@ -233,7 +233,10 @@ typedef  struct {
 #endif
 
 /* register context:
-   !!!!!!!! must be STRUCTURALLY EQUAL to regstruct in newcpu.h */
+   !!!!!!!! must be STRUCTURALLY EQUAL to regstruct in newcpu.h !!!!!!!!
+   (through the last common field; the ttP/membase tail is os9exec-only and is
+   never reached by the llm_os9_go memcpy. _Static_assert in os9_uae.c enforces
+   this.) The `flags` field below is mirrored by a matching field in regstruct. */
 #ifdef USE_UAEMU
   typedef struct {
 #else

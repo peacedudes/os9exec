@@ -42,6 +42,22 @@
 #include "compiler.h"
 #undef   _in_uae_c
 
+#include <stddef.h> /* offsetof */
+
+/* llm_os9_go bulk-copies registers between os9exec's regs_type and UAE's
+   regstruct, so the two MUST share an identical layout through the last common
+   field. These build-time checks fail loudly the moment the structs drift --
+   cheaper and surer than a runtime probe. The ttP/membase tail of regs_type is
+   never reached because the memcpy uses sizeof(struct regstruct). */
+_Static_assert( offsetof(regs_type,d)        == offsetof(struct regstruct,regs),                    "d[]/regs[] base drift" );
+_Static_assert( offsetof(regs_type,a)        == offsetof(struct regstruct,regs)+8*sizeof(uae_u32),  "a[] register drift" );
+_Static_assert( offsetof(regs_type,sr)       == offsetof(struct regstruct,sr),                      "sr drift" );
+_Static_assert( offsetof(regs_type,pc)       == offsetof(struct regstruct,pc),                      "pc drift" );
+_Static_assert( offsetof(regs_type,fp)       == offsetof(struct regstruct,fp),                      "fp[] drift" );
+_Static_assert( offsetof(regs_type,fpcr)     == offsetof(struct regstruct,fpcr),                    "fpcr drift" );
+_Static_assert( offsetof(regs_type,prefetch) == offsetof(struct regstruct,prefetch),                "prefetch drift" );
+_Static_assert( sizeof (regs_type)           >= sizeof (struct regstruct),                          "regs_type smaller than regstruct" );
+
 /* universal interface to 68k low level magic */
 /* ========================================== */
 
