@@ -877,7 +877,6 @@ os9err pPFDInf( _pid_, _spP_, ulong *maxbytP,
   syspath_typ*  spK= &syspaths[ *fdinf ];
   pipechan_typ* p;
   struct tm*    tim; 
-  ulong*        sizeP= (ulong*)&fdbeg[9];    /* the position of the size field */
 
   if  (spK==NULL) return E_UNKSVC;
   p  = spK->u.pipe.pchP; 
@@ -903,7 +902,7 @@ os9err pPFDInf( _pid_, _spP_, ulong *maxbytP,
   fdbeg[ 14 ]= tim->tm_mon+1;
   fdbeg[ 15 ]= tim->tm_mday;
   
-  *sizeP= os9_long( Pipe_NReady( p ) );
+  SET_OS9L(fdbeg, 9, Pipe_NReady( p ));
   
   memcpy( buffer, fdbeg, *maxbytP>FDS ? FDS : *maxbytP );
   return 0;

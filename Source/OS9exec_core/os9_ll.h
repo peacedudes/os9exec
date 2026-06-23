@@ -157,6 +157,13 @@
     #define os9_long(l) (l)
 #endif
 
+/* Safe typed accessors for OS-9 big-endian fields embedded in byte arrays.
+   Always read/write exactly 2 or 4 bytes regardless of host word size. */
+#define GET_OS9L(buf, off)       os9_long( *(uint32_t*)&(buf)[off] )
+#define SET_OS9L(buf, off, val) (*(uint32_t*)&(buf)[off] = os9_long((uint32_t)(val)))
+#define GET_OS9W(buf, off)       os9_word( *(uint16_t*)&(buf)[off] )
+#define SET_OS9W(buf, off, val) (*(uint16_t*)&(buf)[off] = (uint16_t)os9_word((uint16_t)(val)))
+
 
 /* ---- 68k address <-> host pointer conversion ----
    A 68k address is an offset into the single RAM arena (emul_base, defined in
@@ -171,6 +178,10 @@ extern unsigned char *emul_base;
 /* a 32-bit 68k word: an in-world register or address. Exactly the width of a
    real 68k register, so it also matches UAE's uae_u32 regstruct fields. */
 typedef unsigned int ulong32;
+
+/* a 68k virtual address stored in emulated memory or an OS-9 binary struct.
+   This is an arena offset, not a real host pointer — use FROM68K to dereference. */
+typedef ulong32 os9addr_t;
 
 #define TO68K(hostptr)  ((ulong32)( (hostptr)==NULL ? 0 : (unsigned char*)(hostptr) - emul_base ))
 #define FROM68K(addr)   ( (addr)==0 ? NULL : (void*)( emul_base + (addr) ) )

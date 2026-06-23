@@ -665,11 +665,11 @@ static os9err DevSize( rbfdev_typ* dev )
 static os9err ChkIntegrity( rbfdev_typ* dev, syspath_typ* spP, 
                             byte* mysct, Boolean ignore )
 {
-    ushort* w= (ushort*)&mysct[14]; 
-    
-        dev->last_diskID = *w;
-    if (spP->u.rbf.diskID!=*w) { /* doesn't matter big/little endian */
-        spP->u.rbf.diskID= *w;
+    ushort diskID= GET_OS9W(mysct, 14);
+
+        dev->last_diskID = diskID;
+    if (spP->u.rbf.diskID!=diskID) { /* doesn't matter big/little endian */
+        spP->u.rbf.diskID= diskID;
         if (ignore) return 0;
 
         spP->u.rbf.fd_nr= 0; /* do not access any more this fd */
@@ -752,10 +752,8 @@ static os9err GetFull( ushort pid, rbfdev_typ* dev )
 
 
 static os9err RootLSN( _pid_, rbfdev_typ* dev, syspath_typ* spP, Boolean ignore )
-{   
+{
     os9err  err;
-    ulong*  l;
-    ushort* w;
     ushort  sctSize;
     Boolean cruz;
     
@@ -772,7 +770,7 @@ static os9err RootLSN( _pid_, rbfdev_typ* dev, syspath_typ* spP, Boolean ignore 
         debugprintf(dbgFiles,dbgNorm,("# RootLSN: sectorsize %d %s\n", dev->sctSize, cruz?"(cruz)":"" ));
         
         if (cruz) {
-            w= (ushort*)&dev->tmp_sct[ SECT_POS ]; sctSize= os9_word(*w);
+            sctSize= GET_OS9W(dev->tmp_sct, SECT_POS);
         }
         else {
             if (dev->sctSize==0) sctSize= STD_SECTSIZE;
@@ -797,11 +795,11 @@ static os9err RootLSN( _pid_, rbfdev_typ* dev, syspath_typ* spP, Boolean ignore 
         dev->last_alloc= 0; /* initialize allocater pointer */
     } /* loop */
     
-    l= (ulong *)&dev->tmp_sct[ TOT_POS ]; dev->totScts    = os9_long(*l) >> BpB;
-    if (dev->imgScts==0)                  dev->imgScts    = dev->totScts;
-    w= (ushort*)&dev->tmp_sct[ MAP_POS ]; dev->mapSize    = os9_word(*w);
-    w= (ushort*)&dev->tmp_sct[ BIT_POS ]; dev->clusterSize= os9_word(*w);
-    l= (ulong *)&dev->tmp_sct[ DIR_POS ]; dev->root_fd_nr = os9_long(*l) >> BpB;
+    dev->totScts    = GET_OS9L(dev->tmp_sct, TOT_POS) >> BpB;
+    if (dev->imgScts==0) dev->imgScts = dev->totScts;
+    dev->mapSize    = GET_OS9W(dev->tmp_sct, MAP_POS);
+    dev->clusterSize= GET_OS9W(dev->tmp_sct, BIT_POS);
+    dev->root_fd_nr = GET_OS9L(dev->tmp_sct, DIR_POS) >> BpB;
     
     spP->u.rbf.fd_nr=  dev->root_fd_nr;
     err= ChkIntegrity( dev,spP, dev->tmp_sct, ignore );
@@ -828,8 +826,6 @@ static os9err Open_Image( ushort pid, rbfdev_typ* dev, ptype_typ type, char* pat
     ulong   len, iSize, tSize;
 //  ulong   imgScts;  /* only used in commented-out debug prints */
     ulong   totScts;
-    ulong*  l;
-    ushort* w;
     byte    bb[STD_SECTSIZE]; /* one sector */
     
     do {
@@ -854,8 +850,8 @@ static os9err Open_Image( ushort pid, rbfdev_typ* dev, ptype_typ type, char* pat
 
         /* Cruzli check */
         if (strcmp( (char*)&bb[ CRUZ_POS ],Cruz_Str )!=0) { err= E_FNA; break; }
-        l=        (ulong *)&bb[  TOT_POS ]; totScts= os9_long(*l) >> BpB;
-        w=        (ushort*)&bb[ SECT_POS ]; sctSize= os9_word(*w);
+        totScts= GET_OS9L(bb, TOT_POS) >> BpB;
+        sctSize= GET_OS9W(bb, SECT_POS);
         if (sctSize==0)                     sctSize= STD_SECTSIZE;
        
 //      imgScts= iSize/sctSize;
@@ -980,8 +976,6 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
     ulong     allocSize, allocN, mapSize,
 //            allocClu,  /* only used in commented-out code */
               f, r, fN, rN, totBits, tracks, cluRest, iSize;
-    ulong*    u;
-    ushort*   w;
     byte*     b;
     int       ii, v, 
               clu= mnt_cluSize;
@@ -1009,10 +1003,10 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
       cErr= syspath_close( pid, sp ); if (!err) err= cErr;
       if (err) return err;
       
-      u= (ulong*) &dev->ramBase[ TOT_POS ]; dev->totScts    = os9_long( *u ) >> BpB;
-                                            dev->imgScts    = dev->totScts;
-      w= (ushort*)&dev->ramBase[ BIT_POS ]; dev->clusterSize= os9_word( *w );
-      w= (ushort*)&dev->ramBase[SECT_POS ]; dev->sctSize    = os9_word( *w );
+      dev->totScts    = GET_OS9L(dev->ramBase, TOT_POS) >> BpB;
+                        dev->imgScts    = dev->totScts;
+      dev->clusterSize= GET_OS9W(dev->ramBase, BIT_POS);
+      dev->sctSize    = GET_OS9W(dev->ramBase, SECT_POS);
                                             dev->sas        = DD__MINALLOC;
       return 0;
     } // if
@@ -1046,8 +1040,7 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
       && ustrcmp( p,"RBF" )==0 ) {
         p= (char*)mod + os9_word(mod->_mpdev);
         if (ustrcmp( p,"ram" )==0) {
-            w= (ushort*)(&mod->_mdtype + PD_SCT);
-            dev->totScts= os9_word( *w );
+                dev->totScts= GET_OS9W((byte*)(&mod->_mdtype + PD_SCT), 0);
         } // if
     } // if
 
@@ -1093,24 +1086,24 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
       pt= pt/2; if (pt==0) pt= 0x80; /* prepare the next pattern */
     } // for
     
-    u= (ulong*) &dev->ramBase[ TOT_POS ]; *u=         os9_long( dev->totScts << BpB ); /* 0x03 overwritten, is 0 anyway */
-                 dev->ramBase[ TRK_POS ]= SectsPerTrack;                                  /* number of sector per track */
-    w= (ushort*)&dev->ramBase[ MAP_POS ]; *w= (ushort)os9_word( mapSize );
-    w= (ushort*)&dev->ramBase[ BIT_POS ]; *w= (ushort)os9_word( clu );
-    u= (ulong*) &dev->ramBase[ DIR_POS ]; *u=         os9_long(            f << BpB ); /* 0x0b overwritten, is 0 anyway */
-    w= (ushort*)&dev->ramBase[SECT_POS ]; *w= (ushort)os9_word( dev->sctSize );
-                       
+    SET_OS9L(dev->ramBase, TOT_POS,  dev->totScts << BpB); /* 0x03 overwritten, is 0 anyway */
+             dev->ramBase[ TRK_POS ]= SectsPerTrack;        /* number of sectors per track */
+    SET_OS9W(dev->ramBase, MAP_POS,  mapSize);
+    SET_OS9W(dev->ramBase, BIT_POS,  clu);
+    SET_OS9L(dev->ramBase, DIR_POS,  f << BpB);            /* 0x0b overwritten, is 0 anyway */
+    SET_OS9W(dev->ramBase, SECT_POS, dev->sctSize);
+
                  dev->ramBase[ fN      ]= 0xbf; /* prepare the fd sector */
                  dev->ramBase[ fN+0x08 ]= 0x01;
                  dev->ramBase[ fN+0x0C ]= 0x40;
-    u= (ulong*) &dev->ramBase[ fN+0x10 ]; *u= os9_long( r << BpB );                 /* fN+0x14 overwritten, is 0 anyway */
+    SET_OS9L(dev->ramBase, fN+0x10,  r << BpB);            /* fN+0x14 overwritten, is 0 anyway */
                  dev->ramBase[ fN+0x14 ]= cluRest;
-            
+
                  dev->ramBase[ rN      ]= 0x2e; /* prepare the directory entry */
                  dev->ramBase[ rN+0x01 ]= 0xae;
-    w= (ushort*)&dev->ramBase[ rN+0x1e ]; *w= (ushort) os9_word( f );
+    SET_OS9W(dev->ramBase, rN+0x1e,  f);
                  dev->ramBase[ rN+0x20 ]= 0xae;
-    w= (ushort*)&dev->ramBase[ rN+0x3e ]; *w= (ushort) os9_word( f );
+    SET_OS9W(dev->ramBase, rN+0x3e,  f);
     
     strcpy( dev->img_name,cmp );
     return 0;
@@ -1963,13 +1956,13 @@ static os9err WriteFD( syspath_typ* spP )
 
 static ulong FDSize( syspath_typ* spP )
 /* get the file size  */
-{   ulong* lp= (ulong*)&spP->fd_sct[9]; return os9_long(*lp);   
+{   return GET_OS9L(spP->fd_sct, 9);
 } /* FDSize */
 
 
 static void Set_FDSize( syspath_typ* spP, ulong size )
 /* set the file size  */
-{   ulong* lp= (ulong*)&spP->fd_sct[9]; *lp= os9_long(size);    
+{   SET_OS9L(spP->fd_sct, 9, size);
 } /* Set_FDSize */
 
 
@@ -2000,19 +1993,18 @@ static os9err FD_Segment( syspath_typ* spP, byte *attr, ulong *size, ulong *tots
                                            ulong *sect, ulong *slim, ulong *pref )
 {
   rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr];
-  ulong       *lp, v, scs, blk, add, pos;
-  ushort      *sp;
+  ulong        v, scs, blk, add, pos;
   int         ii;
   Boolean     done= false;
 
   *attr= FDAtt ( spP );
-  *size= FDSize( spP );   
+  *size= FDSize( spP );
   *pref= 0; // preferred sector to allocate: none
-    
+
   v= 0;  ii= FD_Header_Size;
   while (ii+SegSize <= dev->sctSize) {
-    lp = (ulong *)&spP->fd_sct[ ii   ]; pos= os9_long( *lp )>>BpB;
-    sp = (ushort*)&spP->fd_sct[ ii+3 ]; scs= os9_word( *sp );
+    pos= GET_OS9L(spP->fd_sct, ii  ) >> BpB;
+    scs= GET_OS9W(spP->fd_sct, ii+3);
     blk=                                scs * dev->sctSize;
         
     if (!done && v+blk > spP->u.rbf.currPos) {
@@ -2195,12 +2187,9 @@ static os9err DeallocateBlocks( syspath_typ* spP )
     rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr];
     ulong       fd =         spP->u.rbf.fd_nr;
     int         ii;
-    ulong       *lp, pos;
-    ushort      *sp, scs;
-    
     for (ii=16; ii+SegSize <= dev->sctSize; ii+=SegSize) {
-        lp= (ulong *)&spP->fd_sct[ii  ];  pos= os9_long(*lp)>>BpB;
-        sp= (ushort*)&spP->fd_sct[ii+3];  scs= os9_word(*sp);
+        ulong  pos= GET_OS9L(spP->fd_sct, ii  ) >> BpB;
+        ushort scs= GET_OS9W(spP->fd_sct, ii+3);
 
         /* if the fd sector is allocated alone -> dealloc it alone */
         if (ii==16 && fd+1!=pos) GetThem( dev, fd, 1, false );
@@ -2228,35 +2217,34 @@ static os9err ReleaseBlocks( syspath_typ* spP, ulong lastPos )
 //ulong       fd =         spP->u.rbf.fd_nr;
   ulong       cmp= lastPos/dev->sctSize + 1; /* including fd sector for cluster allocation */
   ulong       tps= 0;
-  ulong       *lp, pos, diff;
-  ushort      *sp, scs;
+  ulong        diff;
   Boolean     broken= false;
 
   // go through the fs segment list
-  for (ii=16; ii+SegSize <= dev->sctSize; ii+=SegSize) { 
-    lp= (ulong *)&spP->fd_sct[ ii   ]; pos= os9_long( *lp )>>BpB;
-    sp= (ushort*)&spP->fd_sct[ ii+3 ]; scs= os9_word( *sp );
-        
+  for (ii=16; ii+SegSize <= dev->sctSize; ii+=SegSize) {
+    ulong  pos= GET_OS9L(spP->fd_sct, ii  ) >> BpB;
+    ushort scs= GET_OS9W(spP->fd_sct, ii+3);
+
     if (scs==0) broken= true;
     if (broken) {
-      *lp= 0;
-      *sp= 0;
+      SET_OS9L(spP->fd_sct, ii,   0);
+      SET_OS9W(spP->fd_sct, ii+3, 0);
       if (scs>0) GetThem( dev, pos, scs, false );
     }
-    else { 
+    else {
           tps+= scs;
       if (tps>cmp) {
             diff= tps-cmp; /* keep track of granularity */
             diff= diff/dev->clusterSize*dev->clusterSize;
         if (diff>=scs) {
             diff= scs;
-          *lp = 0;
-          *sp = 0;
+          SET_OS9L(spP->fd_sct, ii,   0);
+          SET_OS9W(spP->fd_sct, ii+3, 0);
         }
         else {
-          *sp = os9_word( scs-diff );
+          SET_OS9W(spP->fd_sct, ii+3, scs-diff);
         } // if
-              
+
         broken= true;
         GetThem( dev, (pos+scs)-diff, diff, false );
       } // if
@@ -2276,49 +2264,45 @@ static os9err AdaptAlloc_FD( syspath_typ* spP, ulong pos, ulong scs )
   #define     Second First+SegSize
   os9err      err;
   rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr];
-  int         ii;
-  ulong       *lp,  prev_l,  blk, mx;
-  ushort      *sp, *prev_sp, psp, size= 0;
+  int         ii, prev_ii= -1; /* -1 = no previous segment yet */
+  ulong        prev_l= 0, blk, mx;
+  ushort       psp;
   ulong       lpos= pos; /* treat them locally, because 'Get_Them' uses it also */
   ushort      lscs= scs;
 
-  prev_sp= &size; /* initial value */
   for (ii=First; ii+SegSize <= dev->sctSize; ii+=SegSize) {
-    lp= (ulong *)&spP->fd_sct[ii  ];
-    sp= (ushort*)&spP->fd_sct[ii+3];
-
-    if (*sp==0) {          /* zero is zero for big/little endian */
-          psp= os9_word(*prev_sp);
+    if (GET_OS9W(spP->fd_sct, ii+3)==0) { /* zero is zero for big/little endian */
+          psp= (prev_ii>=0) ? GET_OS9W(spP->fd_sct, prev_ii+3) : 0;
       if (psp>0 && prev_l+psp==lpos) {  /* combine it */
-        if (ii==Second)    mx= LimScsPerSegment-1; /* assuming clusterSize is divideable */
-        else               mx= LimScsPerSegment-dev->clusterSize;
+        if (ii==Second) mx= LimScsPerSegment-1; /* assuming clusterSize is divideable */
+        else            mx= LimScsPerSegment-dev->clusterSize;
         blk= Min( psp+lscs,mx ); /* but not larger than the max allowed size */
-        *prev_sp= os9_word(blk);
-                
+        SET_OS9W(spP->fd_sct, prev_ii+3, blk);
+
         lpos+= blk-psp;
         lscs-= blk-psp; /* adjust the number of blocks */
       } // if
-                
+
       if (lscs>0) {
         if (ii==First) mx= LimScsPerSegment-1; /* assuming clusterSize is divideable */
         else           mx= LimScsPerSegment-dev->clusterSize;
         blk= Min( lscs,mx );
-                                
-        *lp= os9_long(lpos<<BpB);
-        *sp= os9_word(blk); /* one byte overlapping */
+
+        SET_OS9L(spP->fd_sct, ii,   lpos<<BpB);
+        SET_OS9W(spP->fd_sct, ii+3, blk); /* one byte overlapping */
 
         lpos+= blk;
         lscs-= blk;
       } // if
-            
+
       if (lscs==0) {
         err= WriteFD( spP ); if (err) return err;
         return 0;
       } // if
     } /* if */
-        
-    prev_l = os9_long(*lp)>>BpB;
-    prev_sp= sp; 
+
+    prev_l  = GET_OS9L(spP->fd_sct, ii) >> BpB;
+    prev_ii = ii;
   } /* for */
 
   GetThem( dev, pos,scs, false );
@@ -2340,7 +2324,6 @@ static os9err DoAccess( syspath_typ* spP, ulong   *lenP, char* buffer,
     ulong       remain= *lenP;
     ulong*      mw    = &spP->mustW;
     ulong       ma    = Max( dev->sas,dev->clusterSize );
-    ushort*     w;
     ulong       sect, slim, offs, size, totsize, maxc, pos, scs, *rs, pref, coff, sv, req;
     byte*       bb;
     byte        attr;
@@ -2488,9 +2471,9 @@ static os9err DoAccess( syspath_typ* spP, ulong   *lenP, char* buffer,
             /* if sector in raw mode */
             if (spP->rawMode) {
               if (sect==0) {
-                w= (ushort*)&spP->rw_sct[14]; /* get the new disk ID */
-                dev->last_diskID = *w;        /* must be done */
-                rbf->diskID=       *w;
+                ushort diskID= GET_OS9W(spP->rw_sct, 14); /* get the new disk ID */
+                dev->last_diskID= diskID;     /* must be done */
+                rbf->diskID=      diskID;
                 
                 /* write sector 0 always */
                 err= WriteSector( dev,  sect,1, spP->rw_sct ); if (err) break;
@@ -3213,26 +3196,21 @@ os9err pRopt(ushort pid, syspath_typ* spP, byte *buffer)
     rbfdev_typ* dev = &rbfdev[rbf->devnr];
     ulong       sSct= dev->sctSize;
     byte*       b;
-    ushort*     w;
-    ulong*      l;
     char*       c;
 
     if (sSct==0) sSct= STD_SECTSIZE;     /* the std way how to handle unknow sector sizes */
-    
+
     /* and fill some specific RBF path values */
-    b= (byte  *)&buffer[ PD_TYP    ]; *b=          dev->pdtyp;
-    w= (ushort*)&buffer[ PD_SAS    ]; *w= os9_word(dev->sas);        /* sector alloc size */
-    w= (ushort*)&buffer[ PD_SSize  ]; *w= os9_word(sSct);            /* phys sect size    */
-    b= (byte  *)&buffer[ PD_CtrlrID]; *b=          dev->scsi.ID;
-    b= (byte  *)&buffer[ PD_ATT    ]; *b=          rbf->att;
-
-    l= (ulong *)&buffer[ PD_FD     ]; *l= os9_long(rbf->fd_nr*sSct); /* pos of file       */
-    l= (ulong *)&buffer[ PD_DFD    ]; *l= os9_long(rbf->fddir*sSct); /* pos of its dir    */
-
-    l= (ulong *)&buffer[ PD_DCP    ]; *l= os9_long(rbf->deptr);      /* dir entry pointer */
-    l= (ulong *)&buffer[ PD_DVT    ]; 
-    l= (ulong *)&buffer[ PD_SctSiz ]; *l= os9_long(sSct);            /* logical sect size */
-    c= (char  *)&buffer[ PD_NAME   ];  strcpy( c,  spP->name );      /* name */
+    b= (byte*)&buffer[ PD_TYP    ]; *b= dev->pdtyp;
+    b= (byte*)&buffer[ PD_CtrlrID]; *b= dev->scsi.ID;
+    b= (byte*)&buffer[ PD_ATT    ]; *b= rbf->att;
+    SET_OS9W(buffer, PD_SAS,    dev->sas);       /* sector alloc size */
+    SET_OS9W(buffer, PD_SSize,  sSct);           /* phys sect size    */
+    SET_OS9L(buffer, PD_FD,     rbf->fd_nr*sSct); /* pos of file     */
+    SET_OS9L(buffer, PD_DFD,    rbf->fddir*sSct); /* pos of its dir  */
+    SET_OS9L(buffer, PD_DCP,    rbf->deptr);     /* dir entry pointer */
+    SET_OS9L(buffer, PD_SctSiz, sSct);           /* logical sect size */
+    c= (char*)&buffer[ PD_NAME ]; strcpy( c, spP->name ); /* name */
 
     return err;
 } /* pRopt */
