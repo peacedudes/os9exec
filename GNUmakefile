@@ -2,6 +2,8 @@ CC      = clang
 CORE    = Source/OS9exec_core
 PLAT    = Source/Platforms/LINUX
 NATIVE  = Source/NATIVE
+UAE     = Source/OS9AppEmu/UAE68emulator
+APPEMU  = Source/OS9AppEmu
 OBJDIR  = build
 
 CFLAGS  = -g -Wall \
@@ -9,7 +11,9 @@ CFLAGS  = -g -Wall \
           -I$(CORE) \
           -I$(CORE)/os9defs \
           -I$(PLAT) \
-          -ISource/Platforms
+          -ISource/Platforms \
+          -I$(UAE) \
+          -I$(APPEMU)
 
 SRCS = \
     Source/OS9execMPW/os9.c \
@@ -34,18 +38,33 @@ SRCS = \
     $(CORE)/modstuff.c \
     $(CORE)/os9exec_nt.c \
     $(CORE)/os9main.c \
-    $(CORE)/os9_llm_unix.c \
     $(CORE)/pipefiles.c \
     $(CORE)/printer.c \
     $(CORE)/procstuff.c \
     $(CORE)/telnetaccess.c \
     $(CORE)/utilstuff.c \
     $(CORE)/vmod.c \
-    $(PLAT)/linuxfiles.c
+    $(PLAT)/linuxfiles.c \
+    $(APPEMU)/os9_uae.c \
+    $(APPEMU)/luzstuff.c \
+    $(UAE)/newcpu.c \
+    $(UAE)/cpuemu.c \
+    $(UAE)/cpustbl.c \
+    $(UAE)/cpudefs.c \
+    $(UAE)/readcpu.c \
+    $(UAE)/memory.c \
+    $(UAE)/fpp.c \
+    $(UAE)/support.c
 
 OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(SRCS)))
 
-VPATH = $(CORE):$(PLAT):Source/OS9execMPW
+# Warnings suppressed only for auto-generated / legacy UAE files that we
+# cannot realistically clean up without regenerating or rewriting them.
+UAE_SUPPRESS = -Wno-unused-variable -Wno-unused-but-set-variable \
+               -Wno-deprecated-non-prototype -Wno-format \
+               -Wno-unused-function
+
+VPATH = $(CORE):$(PLAT):Source/OS9execMPW:$(APPEMU):$(UAE)
 
 .PHONY: all clean
 
@@ -53,6 +72,12 @@ all: $(OBJDIR) os9exec
 
 os9exec: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
+
+$(OBJDIR)/cpuemu.o: $(UAE)/cpuemu.c
+	$(CC) $(CFLAGS) $(UAE_SUPPRESS) -c $< -o $@
+
+$(OBJDIR)/newcpu.o: $(UAE)/newcpu.c
+	$(CC) $(CFLAGS) $(UAE_SUPPRESS) -c $< -o $@
 
 $(OBJDIR)/%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

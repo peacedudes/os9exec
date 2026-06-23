@@ -117,6 +117,18 @@ extern void map_banks(addrbank *bank, int first, int count);
 #endif // %%% LuZ
 
 
+/* base of the single 68k RAM arena (defined in memstuff.c). A 68k address is
+   an offset into this block; the host pointer is emul_base + addr. This
+   replaces the original identity mapping, which only worked when host
+   pointers were 32 bits wide (see memstuff.c for the full rationale).
+   Declared here, before the access macros that call get_real_address. */
+extern unsigned char *emul_base;
+
+static __inline__ uae_u8 *get_real_address(uaecptr addr)
+{
+    return (uae_u8 *)(emul_base + addr);
+}
+
 //#ifndef NO_INLINE_MEMORY_ACCESS
 //
 //#define longget(addr)   (call_mem_get_func(get_mem_bank(addr).lget, addr))
@@ -126,14 +138,16 @@ extern void map_banks(addrbank *bank, int first, int count);
 //#define wordput(addr,w) (call_mem_put_func(get_mem_bank(addr).wput, addr, w))
 //#define byteput(addr,b) (call_mem_put_func(get_mem_bank(addr).bput, addr, b))
 //
-// %%% LuZ: direct mapping to native addresses
+// %%% arm64: 68k addr is a 32-bit offset into the arena; must translate via
+// get_real_address before casting to a host pointer (identity mapping fails
+// on 64-bit hosts where the low 4 GB is unmapped __PAGEZERO).
 
-#define longget(addr)   (do_get_mem_long((uae_u32 *)addr))
-#define wordget(addr)   (do_get_mem_word((uae_u16 *)addr))
-#define byteget(addr)   (do_get_mem_byte((uae_u8  *)addr))
-#define longput(addr,l) (do_put_mem_long((uae_u32 *)addr, l))
-#define wordput(addr,w) (do_put_mem_word((uae_u16 *)addr, w))
-#define byteput(addr,b) (do_put_mem_byte((uae_u8  *)addr, b))
+#define longget(addr)   (do_get_mem_long((uae_u32 *)get_real_address(addr)))
+#define wordget(addr)   (do_get_mem_word((uae_u16 *)get_real_address(addr)))
+#define byteget(addr)   (do_get_mem_byte((uae_u8  *)get_real_address(addr)))
+#define longput(addr,l) (do_put_mem_long((uae_u32 *)get_real_address(addr), l))
+#define wordput(addr,w) (do_put_mem_word((uae_u16 *)get_real_address(addr), w))
+#define byteput(addr,b) (do_put_mem_byte((uae_u8  *)get_real_address(addr), b))
 
 /*
 //%%% LuZ: This case does not seem to be a valid choice any more, as
@@ -185,17 +199,6 @@ static __inline__ void put_word(uaecptr addr, uae_u32 w)
 static __inline__ void put_byte(uaecptr addr, uae_u32 b)
 {
     byteput_1(addr, b);
-}
-
-/* base of the single 68k RAM arena (defined in memstuff.c). A 68k address is
-   an offset into this block; the host pointer is emul_base + addr. This
-   replaces the original identity mapping, which only worked when host
-   pointers were 32 bits wide (see memstuff.c for the full rationale). */
-extern unsigned char *emul_base;
-
-static __inline__ uae_u8 *get_real_address(uaecptr addr)
-{
-    return (uae_u8 *)(emul_base + addr);
 }
 
 static __inline__ int valid_address( uaecptr addr, uae_u32 size )

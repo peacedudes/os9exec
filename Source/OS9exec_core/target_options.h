@@ -24,6 +24,7 @@
                              // ============
 #define PTOC_HELLO_WORLD     // PtoC internal command "hello_world"
 #define PTOC_OPTIMIZER       //  "   speedup
+#define USE_UAEMU            // UAE 68k engine (arm64 host)
 
 #ifdef __MACH__
 #include <stdio.h>

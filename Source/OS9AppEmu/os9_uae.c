@@ -185,9 +185,6 @@ void llm_os9_copyback( regs_type *rp )
 
 
 
-/* Flush code range in 68k (real one or emulator, especially DR emulator needs it!!) */
-static void llm_cache_rf( _bufferV_, _size_ ) { }
-
 
 #ifdef MACOS9
 /* enter debugger with (most of) OS9 context in registers */
