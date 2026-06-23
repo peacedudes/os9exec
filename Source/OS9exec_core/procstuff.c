@@ -303,22 +303,22 @@ void init_processes()
         pd->_task  = 0;
      // pd->_resvd1= os9_word(0xBD00); /* invisible at DevPak von 68K OS-9 V1.2 */
         pd->_deadlk= 0;                /* as in real OS-9 */
-        pd->_sigdat= (byte*)os9_long((ulong)&procs[k].sigdat);
+        pd->_sigdat= os9_long( TO68K(&procs[k].sigdat) );
 
         /* clear all memory segments ... */
         for (j=0; j<32; j++) {
-            pd->_memimg[j] = NULL;
+            pd->_memimg[j] = 0;
             pd->_blksiz[j] = 0;
         }
-    
-        pd->_frag  = NULL;             /* don't use OS-9 V3.0 memory method */
-        pd->_fragg = NULL;
-        
-        pd->_data  = NULL;
+
+        pd->_frag  = 0;                /* don't use OS-9 V3.0 memory method */
+        pd->_fragg = 0;
+
+        pd->_data  = 0;
         pd->_datasz= 0;
-    
-        for (j=0; j<   7; j++) pd->FPExcpt [j]= NULL;
-        for (j=0; j<   7; j++) pd->FPExStk [j]= NULL;
+
+        for (j=0; j<   7; j++) pd->FPExcpt [j]= 0;
+        for (j=0; j<   7; j++) pd->FPExStk [j]= 0;
      // for (j=0; j<1168; j++) pd->_procstk[j]= NUL; /* invisible at DevPak von 68K OS-9 V1.2 */
         
         set_os9_state( k, pUnused, "init_process" ); /* invalidate this process  */
@@ -440,9 +440,11 @@ os9err new_process(ushort parentid, ushort *newpid, ushort numpaths)
                 #endif
             
                 cp->x.type = pap->x.type;
-                cp->x.dev  = pap->x.dev; 
+                cp->x.dev  = pap->x.dev;
                 cp->x.lsn  = pap->x.lsn;
                 strncpy( cp->x.path, pap->x.path, OS9PATHLEN );
+                fprintf(stderr,"# new_process: pid=%d inherits x.dev=%d x.lsn=%lu x.path='%s' from pap=%d\n",
+                        npid, cp->x.dev, (unsigned long)cp->x.lsn, cp->x.path, (int)(pap-procs));
             
                 #ifdef macintosh
                   cp->x.volID= pap->x.volID; 

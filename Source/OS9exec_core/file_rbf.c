@@ -2799,7 +2799,12 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     if (isExec) { cdv= cp->x.dev; ls= cp->x.lsn; curpath= cp->x.path; }
     else        { cdv= cp->d.dev; ls= cp->d.lsn; curpath= cp->d.path; }
 
-    err= DeviceInit( pid, &dev, spP, cdv, pathname,curpath, *modeP, &new_inst ); if (err) return err;
+    fprintf(stderr,"# pRopen pid=%d '%s' isExec=%d cdv=%d ls=%ld curpath='%s'\n",
+            pid, pathname, isExec, cdv, ls, curpath);
+    err= DeviceInit( pid, &dev, spP, cdv, pathname,curpath, *modeP, &new_inst ); if (err) {
+        fprintf(stderr,"# pRopen DeviceInit err=%d\n", err);
+        return err;
+    }
     debugprintf(dbgFiles,dbgNorm,("# RBF before adapt '%s' '%s'\n" , pathname,mnt_name ));
     AdaptPath            ( dev,          &pathname ); /* adapt to offical name */
     debugprintf(dbgFiles,dbgNorm,("# RBF after  adapt '%s' '%s'\n" , pathname,mnt_name ));
@@ -2912,11 +2917,15 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
             rbf->lastPos= 0;                      /* last       position is 0 */
 
                              rbf->fd_nr= DirLSN( &dir_entry );
-            err= ReadFD    ( spP );                                          if (err) break;  
+            fprintf(stderr,"# pRopen found '%s' fdsect=%lu fd_nr=%lu\n",
+                    dir_entry.name, (unsigned long)os9_long(dir_entry.fdsect), (unsigned long)rbf->fd_nr);
+            err= ReadFD    ( spP );                                          if (err) break;
             err= FD_Segment( spP, &attr,&size,&totsize,&sect,&slim, &pref ); if (err) break;
             rbf->lastPos= size;                   /* last pos is the filesize */
             rbf->att    = attr;                   /* save attributes */
             isFileEntry= (attr & 0x80)==0x00;     /* recognized as file entry */
+            fprintf(stderr,"# pRopen '%s' attr=0x%02x isFileEntry=%d isFile=%d\n",
+                    dir_entry.name, attr, isFileEntry, isFile);
             
             err= CutOS9Path( &p, (char*)&cmp_entry ); if (err) break;
 
@@ -3078,9 +3087,11 @@ os9err pRchd( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
         spP= get_syspathd( pid, cp->usrpaths[path] );
     if (spP==NULL) return os9error(E_BPNUM);
     
-    *xV= spP->u.rbf.devnr; dev= &rbfdev[ *xV ];   
+    *xV= spP->u.rbf.devnr; dev= &rbfdev[ *xV ];
     *xD= spP->u.rbf.fd_nr;
-    
+    fprintf(stderr,"# pRchd pid=%d '%s' exedir=%d stored dev=%d lsn=%lu fd_nr=%lu\n",
+            pid, pathname, exedir, (int)*xV, (unsigned long)*xD, (unsigned long)spP->u.rbf.fd_nr);
+
     if (AbsPath(pathname)) strcpy( curpath,"" );
     else                   strcat( curpath,PSEP_STR );
     strcat( curpath,pathname );

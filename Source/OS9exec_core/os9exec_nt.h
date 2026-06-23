@@ -617,9 +617,10 @@ typedef struct {
 
 /* a OS9 directory file entry */
 typedef struct {
-            char  name[DIRNAMSZ];
-            ulong fdsect;
+            char     name[DIRNAMSZ];
+            uint32_t fdsect;       /* 4-byte big-endian FD sector number */
         } os9direntry_typ;
+static_assert(sizeof(os9direntry_typ) == DIRENTRYSZ, "os9direntry_typ must be exactly 32 bytes");
 
 /* pipe */
 #define SAFETY           2
@@ -929,7 +930,9 @@ typedef struct {
 
 
 /* path operation function def */
-// typedef  os9err(*pathopfunc_typ)(ushort pid, syspath_typ*, ulong *n, void* b);
+// Originally variadic (...) to accept different 3rd/4th arg types across file managers.
+// arm64: variadic call through fn pointer misaligns registers vs non-variadic callees.
+// Call sites must cast to an explicit non-variadic type before dispatching.
 typedef os9err(*pathopfunc_typ) ( ushort pid, syspath_typ*, ... );
 
                 

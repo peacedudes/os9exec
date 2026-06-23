@@ -52,7 +52,7 @@
 /* "module.h" with its ulong definition on Linux */
 #ifdef linux
   #undef  __USE_MISC
-  typedef unsigned long int ulong;
+  typedef unsigned long int ulong;  /* native word; used for host pointers and OS-9 register values */
   typedef unsigned int uint;
 
   #ifdef __cplusplus

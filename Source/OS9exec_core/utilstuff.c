@@ -242,7 +242,7 @@ char* nullterm( char* s1, const char* s2, ushort max )
     char *res= s1;
     ushort  n=  0;
     
-    regcheck( currentpid,"nullterm inptr",(ulong)s2,RCHK_ARU+RCHK_MEM );    
+    regcheck( currentpid,"nullterm inptr",(uintptr_t)s2,RCHK_ARU+RCHK_MEM );
     while(*s2>' ') {
         if (n++<max) *s1++= *s2++; /* don't use max-- structure any more */
         else                 s2++; /* don't copy more, simply increment */
@@ -1540,7 +1540,7 @@ os9err Flush_Dir( ushort cpid, ushort* pathP, const char* nmS )
 {
   os9err          err;
   os9direntry_typ d;
-  size_t          dir_size;
+  ulong           dir_size;
   syspath_typ*    spP;
   char            fullName[OS9PATHLEN];
   int             oLen;
@@ -2387,7 +2387,7 @@ Boolean RBF_ImgSize( long size )
       err= parsepath( 0,  &pp,adjust, false ); if (err) return E_PNNF;
       strcpy( sv, adjust );
       pp =    sv;
-      
+
       err= AdjustPath    ( pp,adjust, false ); if (err) return E_PNNF;
       pp =                    adjust;
       

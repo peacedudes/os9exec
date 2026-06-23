@@ -158,6 +158,18 @@
 
 #include "os9exec_incl.h"
 
+/* arm64: pathopfunc_typ uses ... (variadic) which misaligns registers on arm64
+ * when calling non-variadic callees. Each dispatch site casts to the concrete
+ * non-variadic type matching the actual callee signature before calling. */
+typedef os9err (*pfunc_od_t )(ushort, syspath_typ*, ushort*,  const char*); /* open/chd/del/makdir */
+typedef os9err (*pfunc_rw_t )(ushort, syspath_typ*, ulong*,   void*);       /* read/write/readln/writeln */
+typedef os9err (*pfunc_sk_t )(ushort, syspath_typ*, ulong*);                /* seek */
+typedef os9err (*pfunc_cl_t )(ushort, syspath_typ*);                        /* close */
+typedef os9err (*pfunc_p1_t )(ushort, syspath_typ*, ulong*);                /* 1 data arg */
+typedef os9err (*pfunc_p2_t )(ushort, syspath_typ*, ulong*,   ulong*);      /* 2 data args */
+typedef os9err (*pfunc_pa_t )(ushort, syspath_typ*, void*);                 /* 1 byte* arg */
+typedef os9err (*pfunc_p2a_t)(ushort, syspath_typ*, ulong*,   void*);       /* ulong* + byte* */
+typedef os9err (*pfunc_p3a_t)(ushort, syspath_typ*, ulong*,   ulong*, void*); /* 2 ulong* + byte* */
 
 
 /* I/O routines */
@@ -1242,7 +1254,7 @@ os9err syspath_close( ushort pid, ushort sp )
     debugprintf(dbgFiles,dbgNorm,("# syspath_close: close of syspath=%d really closes path\n",
                                      sp,spP->linkcount));
 
-        err= (fmgr_op[spP->type]->close)( pid,spP );
+        err= ((pfunc_cl_t)fmgr_op[spP->type]->close)( pid,spP );
     if (err==1) return 0;     /* err=1: let the path open, this is not an error */
   //if (err)    return err;   /* do not invalidate, if error */
     
@@ -1390,7 +1402,7 @@ os9err syspath_open( ushort pid, ushort *sp, ptype_typ type, const char* pathnam
     spP=     &syspaths[*sp];                                /* this is a free syspath */
     spP->mode   = mode;                                         /* store this as well */
     spP->fileAtt= procs[ pid ].fileAtt;
-    err= (fmgr_op[spP->type]->open)( pid, spP, (void*)&mode, pathname );  /* specific */
+    err= ((pfunc_od_t)fmgr_op[spP->type]->open)( pid, spP, &mode, pathname );  /* specific */
     
     /* successful ? */
     if (err) {                               /* in E_PLINK case, syspath open routine */
@@ -1466,7 +1478,7 @@ os9err syspath_write( ushort pid,ushort spnum, ulong *len, void* buffer, Boolean
                      f= fmgr_op[spP->type];
     if (wrln) wproc= f->writeln;
     else      wproc= f->write;
-    err=     (wproc)( pid,spP, len,(char*)buffer );
+    err=     ((pfunc_rw_t)wproc)( pid,spP, len,(char*)buffer );
     
     if (!err) os9_long_inc( &pd->_wbytes, *len ); /* for statistics*/
     if (!err && debugcheck(dbgSysCall,dbgDetail)) showbuff( spP, buffer,*len );
@@ -1641,7 +1653,7 @@ os9err syspath_read( ushort pid,ushort spnum, ulong *len, void* buffer, Boolean 
                      f= fmgr_op[spP->type];
     if (rdln) rproc= f->readln;
     else      rproc= f->read;
-    err=     (rproc)( pid,spP, len,(char*)buffer );
+    err=     ((pfunc_rw_t)rproc)( pid,spP, len,(char*)buffer );
     
     
     if (!err) os9_long_inc( &pd->_rbytes, *len ); /* for statistics */
@@ -1674,7 +1686,7 @@ os9err syspath_seek(ushort pid,ushort spnum, ulong pos)
     syspath_typ* spP= get_syspathd( pid,spnum ); 
     if          (spP==NULL) return os9error(E_BPNUM);
 
-    return (fmgr_op[spP->type]->seek)( pid,spP,&pos );
+    return ((pfunc_sk_t)fmgr_op[spP->type]->seek)( pid,spP,&pos );
 } /* syspath_seek */
 
    
@@ -1727,30 +1739,30 @@ os9err syspath_getstat( ushort pid, ushort sp, ushort func,
     
     /* call appropriate service */
     switch (func) {
-        case SS_Size   : err= (g->_SS_Size  )( pid,spP, d2       );            break;
-        case SS_Opt    : err= (g->_SS_Opt   )( pid,spP,       *a );            break;
-        case SS_DevNm  : err= (g->_SS_DevNm )( pid,spP,       *a );            break;
-        case SS_Pos    : err= (g->_SS_Pos   )( pid,spP, d2       );            break;
-        case SS_EOF    : err= (g->_SS_EOF   )( pid,spP );     *d1= 0;          break;
-        case SS_Ready  : err= (g->_SS_Ready )( pid,spP, d1 ); arbitrate= true; break;
-        case SS_FD     : err= (g->_SS_FD    )( pid,spP, d2,   *a );            break;
-        case SS_FDInf  : err= (g->_SS_FDInf )( pid,spP, d2,d3,*a );            break;
-        case SS_DSize  : err= (g->_SS_DSize )( pid,spP, d2,d3 );               break;
+        case SS_Size   : err= ((pfunc_p1_t )g->_SS_Size  )( pid,spP, d2          ); break;
+        case SS_Opt    : err= ((pfunc_pa_t )g->_SS_Opt   )( pid,spP,       *a    ); break;
+        case SS_DevNm  : err= ((pfunc_pa_t )g->_SS_DevNm )( pid,spP,       *a    ); break;
+        case SS_Pos    : err= ((pfunc_p1_t )g->_SS_Pos   )( pid,spP, d2          ); break;
+        case SS_EOF    : err= ((pfunc_cl_t )g->_SS_EOF   )( pid,spP );    *d1= 0;  break;
+        case SS_Ready  : err= ((pfunc_p1_t )g->_SS_Ready )( pid,spP, d1 ); arbitrate= true; break;
+        case SS_FD     : err= ((pfunc_p2a_t)g->_SS_FD    )( pid,spP, d2,  *a    ); break;
+        case SS_FDInf  : err= ((pfunc_p3a_t)g->_SS_FDInf )( pid,spP, d2,d3,*a  ); break;
+        case SS_DSize  : err= ((pfunc_p2_t )g->_SS_DSize )( pid,spP, d2,d3      ); break;
 
         /* $7A protocol direct command */
-        case SS_PCmd   : err= (g->_SS_PCmd  )( pid,spP,       *a );            break;
+        case SS_PCmd   : err= ((pfunc_pa_t )g->_SS_PCmd  )( pid,spP,       *a    ); break;
 
         /* $80 + 32: "/L2" specific */
-        case SS_LBlink : err= (g->_SS_LBlink)( pid,spP,d2        );            break;
+        case SS_LBlink : err= ((pfunc_p1_t )g->_SS_LBlink)( pid,spP, d2          ); break;
 
         /* get ETC path name and more */
-        case SS_Etc    : err=       etc_path( pid,spP, d2,    *a );            break;
+        case SS_Etc    : err=       etc_path( pid,spP, d2,    *a );                  break;
 
         /* don't know yet what is it good for, used by mgratrap */
-        case SS_201    : err= 0;                                               break;
-            
+        case SS_201    : err= 0;                                                     break;
+
         /* undefined */
-        default        : err= (g->_SS_Undef)( pid,spP, d1,d2 );                break;
+        default        : err= ((pfunc_p2_t )g->_SS_Undef)( pid,spP, d1,d2 );       break;
     } /* switch */
           
     return err;
@@ -1807,41 +1819,41 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
     
     /* call appropriate service */
     switch (func) {
-        case SS_Size   : err= (s->_SS_Size )( pid,spP, d2    ); break;
-        case SS_Opt    : err= (s->_SS_Opt  )( pid,spP, *a    ); break;
-        case SS_Attr   : err= (s->_SS_Attr )( pid,spP, d2    ); break;
-        case SS_FD     : err= (s->_SS_FD   )( pid,spP, *a    ); break;
-        case SS_Lock   : err= (s->_SS_Lock )( pid,spP, d0,d1 ); break; /* $11 */
+        case SS_Size   : err= ((pfunc_p1_t )s->_SS_Size  )( pid,spP, d2       ); break;
+        case SS_Opt    : err= ((pfunc_pa_t )s->_SS_Opt   )( pid,spP, *a       ); break;
+        case SS_Attr   : err= ((pfunc_p1_t )s->_SS_Attr  )( pid,spP, d2       ); break;
+        case SS_FD     : err= ((pfunc_pa_t )s->_SS_FD    )( pid,spP, *a       ); break;
+        case SS_Lock   : err= ((pfunc_p2_t )s->_SS_Lock  )( pid,spP, d0,d1   ); break; /* $11 */
 
-        case SS_SSig   : spP->signal_to_send=  loword(*d2);            /* $1A: sends  signal on data ready */
-                         spP->signal_pid    =  pid;                    /* if ready, send immediately */          
-                         err= (f->gs._SS_Ready)( pid,spP, &n );
+        case SS_SSig   : spP->signal_to_send=  loword(*d2);        /* $1A: sends signal on data ready */
+                         spP->signal_pid    =  pid;                /* if ready, send immediately */
+                         err= ((pfunc_p1_t)f->gs._SS_Ready)( pid,spP, &n );
             if (!err)  { send_signal(spP->signal_pid,spP->signal_to_send );
                                                      spP->signal_to_send= 0; }
                          err= 0; break;
-            
-        case SS_Relea  : err= 0;                                       /* $1B: clears signal on data ready */
+
+        case SS_Relea  : err= 0;                                   /* $1B: clears signal on data ready */
                          spP->signal_to_send= 0;
                          spP->signal_pid    = 0; break;
-                       
-        case SS_SEvent : err= 0; spP->set_evId= *d2;                 break; /* $3A set event on data ready */
-        case SS_Reset  : err= 0; /* do nothing */                    break;
-        case SS_WTrk   : err= (s->_SS_WTrk   )( pid,spP,    d2,*a ); break;
-        
-        case SS_LBlink : err= (s->_SS_LBlink )( pid,spP,    d2    ); break; /* $80 + 32: "/L2" specific */
-        
+
+        case SS_SEvent : err= 0; spP->set_evId= *d2;              break; /* $3A set event on data ready */
+        case SS_Reset  : err= 0; /* do nothing */                 break;
+        case SS_WTrk   : err= ((pfunc_p2a_t)s->_SS_WTrk   )( pid,spP, d2,  *a ); break;
+
+        case SS_LBlink : err= ((pfunc_p1_t )s->_SS_LBlink  )( pid,spP, d2      ); break; /* $80+32 */
+
         /* socket connections */
-        case SS_Bind   : err= (s->_SS_Bind   )( pid,spP,    d2,*a ); break; /* $6C */
-        case SS_Listen : err= (s->_SS_Listen )( pid,spP,    d2,*a ); break; /* $6D */
-        case SS_Connect: err= (s->_SS_Connect)( pid,spP,    d2,*a ); break; /* $6E */
-        case SS_Resv   : err=  0;    /* do nothing at the moment */  break; /* $6F */
-        case SS_Accept : err= (s->_SS_Accept )( pid,spP, d1,   *a ); break; /* $70 */
-        case SS_Recv   : err= (s->_SS_Recv   )( pid,spP, d1,d2,*a ); break; /* $71 */
-        case SS_Send   : err= (s->_SS_Send   )( pid,spP, d1,d2,*a ); break; /* $72 */
-        case SS_GNam   : err= (s->_SS_GNam   )( pid,spP, d1,d2,*a ); break; /* $73 */
-        case SS_SOpt   : err= (s->_SS_SOpt   )( pid,spP, d1,d2    ); break; /* $74 set socket option   */
-        case SS_SendTo : err= (s->_SS_SendTo )( pid,spP, d1,d2,*a ); break; /* $77 */
-        case SS_PCmd   : err= (s->_SS_PCmd   )( pid,spP,       *a ); break; /* $7A protocol direct cmd */
+        case SS_Bind   : err= ((pfunc_p2a_t)s->_SS_Bind   )( pid,spP, d2,  *a ); break; /* $6C */
+        case SS_Listen : err= ((pfunc_p2a_t)s->_SS_Listen )( pid,spP, d2,  *a ); break; /* $6D */
+        case SS_Connect: err= ((pfunc_p2a_t)s->_SS_Connect)( pid,spP, d2,  *a ); break; /* $6E */
+        case SS_Resv   : err=  0;    /* do nothing at the moment */               break; /* $6F */
+        case SS_Accept : err= ((pfunc_p2a_t)s->_SS_Accept )( pid,spP, d1,  *a ); break; /* $70 */
+        case SS_Recv   : err= ((pfunc_p3a_t)s->_SS_Recv   )( pid,spP, d1,d2,*a); break; /* $71 */
+        case SS_Send   : err= ((pfunc_p3a_t)s->_SS_Send   )( pid,spP, d1,d2,*a); break; /* $72 */
+        case SS_GNam   : err= ((pfunc_p3a_t)s->_SS_GNam   )( pid,spP, d1,d2,*a); break; /* $73 */
+        case SS_SOpt   : err= ((pfunc_p2_t )s->_SS_SOpt   )( pid,spP, d1,d2   ); break; /* $74 */
+        case SS_SendTo : err= ((pfunc_p3a_t)s->_SS_SendTo )( pid,spP, d1,d2,*a); break; /* $77 */
+        case SS_PCmd   : err= ((pfunc_pa_t )s->_SS_PCmd   )( pid,spP,      *a ); break; /* $7A */
 
         /* general block read */
         case SS_BlkRd: /* normal sw goes automatically to read/write if error */
@@ -1866,7 +1878,7 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
             err= 0; break;
                         
         /* undefined */ 
-        default: err= (s->_SS_Undef)( pid,spP, d2,*a ); break;
+        default: err= ((pfunc_p2a_t)s->_SS_Undef)( pid,spP, d2,*a ); break;
     } /* switch */
 
     return err;
@@ -1921,7 +1933,7 @@ os9err get_locations( ushort pid, ptype_typ type, const char* pathname,
 static os9err doCmd( pathopfunc_typ cmd, ushort pid, ptype_typ type, ushort mode,
                                          const char* pathname, const char* txt )
 {
-    os9err err= (cmd)( pid,NULL, &mode,pathname ); /* specific call */
+    os9err err= ((pfunc_od_t)cmd)( pid,NULL, &mode,pathname ); /* specific call */
     debugprintf( dbgFiles,dbgNorm,( "# %s '%s' (type=%s) err=%d\n",
                                    txt,pathname,TypeStr(type), err ));
     return err;

@@ -411,12 +411,12 @@ typedef struct dirent dirent_typ;
   #endif
 
   #if defined __MACH__
-    typedef unsigned long ulong;
+    typedef unsigned long ulong;  /* native word; used for host pointers and OS-9 register values */
   #endif
 
 
   #ifndef UNIX
-    typedef unsigned      int uint;
+    typedef unsigned     int uint;
     typedef unsigned long int ulong;
   #endif
 

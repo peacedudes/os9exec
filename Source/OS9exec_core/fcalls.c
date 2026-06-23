@@ -732,7 +732,7 @@ os9err OS9_F_Icpt( regs_type *rp, ushort cpid )
 {
     process_typ* cp= &procs[cpid];
 
-    cp->pd._sigvec= (byte*) FROM68K(os9_long(rp->a[0]));  /* set address of intercept routine */
+    cp->pd._sigvec= os9_long(rp->a[0]);  /* set address of intercept routine */
     cp->icpta6    =                  rp->a[6]; /* set data pointer for intercept routine */
     debugprintf(dbgProcess,dbgNorm,
       ("# F$Icpt: set intercept of pid=%d to pc=$%08lx, a6=$%08lx\n",
@@ -872,20 +872,20 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
 
   memcpy( &pd,&cp->pd, sizeof(procid) );
     
-  pd._usp= (byte*) FROM68K(os9_long( rp->a[ 7 ] ));
+  pd._usp= os9_long( rp->a[ 7 ] );
     
   // <_state> and <queueid> will be assigned directly
   if (id==cpid) pd._queueid = '*';
     
   pd._scall =            os9_byte( cp->lastsyscall );
-  pd._pmodul= (mod_exec*)os9_long( (ulong)os9mod(cp->mid) );
+  pd._pmodul= os9_long( TO68K(os9mod(cp->mid)) );
 //upe_printf( "pmodul1=%08X\n", os9_long( (ulong)pd._pmodul ) );
 
   // get the list of the currently connected trap handlers (bfo)
   for (k=0; k<NUMTRAPHANDLERS; k++) {
     tp = &cp->TrapHandlers[ k ];
-    pd._traps [ k ]= (byte*)os9_long( (ulong)tp->trapmodule );
-    pd._trpmem[ k ]= (byte*)os9_long( (ulong)tp->trapmem    );
+    pd._traps [ k ]= os9_long( TO68K(tp->trapmodule) );
+    pd._trpmem[ k ]= os9_long( tp->trapmem );
     pd._trpsiz[ k ]= 0;
   } // for
 
@@ -893,8 +893,8 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
   for (k=0; k<NUMEXCEPTIONS; k++) {
     ep= &cp->ErrorTraps[ k ];
         
-    pd.except[ k ]= (byte*)os9_long( (ulong)ep->handleraddr );        
-    pd._exstk[ k ]= (byte*)os9_long( (ulong)ep->handlerstack);
+    pd.except[ k ]= os9_long( ep->handleraddr );
+    pd._exstk[ k ]= os9_long( ep->handlerstack );
   } // for
 
   // get the list of the currently opened paths
@@ -907,7 +907,7 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
     
   for (k=0; k<MAXMEMBLOCKS; k++) {
     if (cm->m[ k ].base!=NULL) {
-      pd._memimg[ 0 ]= (unsigned char *) os9_long( (ulong)cm->m[ k ].base );
+      pd._memimg[ 0 ]= os9_long( TO68K(cm->m[ k ].base) );
       memsz+= cm->m[ k ].size;
     } // if
   } // for

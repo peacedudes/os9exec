@@ -721,7 +721,7 @@ os9err os9free( ushort pid, void* membase, ulong memsz )
         // try to free it in smaller pieces ...
         // NOTE: e.g. OS-9 "dir" is doing it this way !
         if (memsz > m->size) { // recursive call
-               err= os9free( pid, (void*)( (ulong)membase + m->size ), memsz - m->size );
+               err= os9free( pid, (void*)( (uintptr_t)membase + m->size ), memsz - m->size );
           if (!err) {
             release_memblock( pid, k ); // only release it, if all of them are fitting
             return 0; /* freed ok */

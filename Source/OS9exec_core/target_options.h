@@ -25,6 +25,10 @@
 #define PTOC_HELLO_WORLD     // PtoC internal command "hello_world"
 #define PTOC_OPTIMIZER       //  "   speedup
 #define USE_UAEMU            // UAE 68k engine (arm64 host)
+#define CON_SUPPORT          // console and TTYs
+#define PIP_SUPPORT          // pipes and PTYs
+#define TFS_SUPPORT          // transparent file system (host-dir access)
+#define RBF_SUPPORT          // RBF disk image access
 
 #ifdef __MACH__
 #include <stdio.h>

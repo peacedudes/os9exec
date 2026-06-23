@@ -122,6 +122,7 @@
 
 
 #include "os9exec_incl.h"
+_Static_assert(sizeof(((mod_exec*)0)->_mh._msize)==4, "modhcom._msize must be 32-bit for OS-9 binary layout");
 
 #ifdef NET_SUPPORT
   #include "net_platform.h"
@@ -455,7 +456,7 @@ void show_modules( char* cmp )
             if (cmp==NULL || ustrcmp( nam,cmp )==0) {
                 debugprintf(dbgUtils,dbgNorm,("# imdir: %3d '%s'\n", k,nam ));
                 
-                sprintf( exeo,"%8lX",          os9_long(mod->_mexec )       );
+                sprintf( exeo,"%8X",           os9_long(mod->_mexec )       );
                 sprintf( dats,"%7.2fk", (float)os9_long(mod->_mdata )/KByte );
                 sprintf( stck,"%7.2fk", (float)os9_long(mod->_mstack)/KByte );
         
@@ -825,7 +826,7 @@ static void adapt_L2( mod_exec* mh )
     mod_dev* dsc;
     
     dsc= (mod_dev*)mh;
-    dsc->_mport= (char*) os9_long( (ulong)&l2.hw_location );
+    dsc->_mport= os9_long( TO68K(&l2.hw_location) );
     
     mod_crc( mh );
 } /* adapt_L2 */
@@ -912,7 +913,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         isPath= false; /* make life easy */
         strcpy( datapath,name );
     }
-    else {                     
+    else {
         pn = name;
         err= parsepathext(pid,&pn,datapath,exedir,&isPath); if (err) return err;
     }
@@ -1059,37 +1060,40 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
                                             exedir ? "exec":"data", datapath ));
 
         /* try to open a file */
-// openit: 
+// openit:
 //      mode= exedir ? 0x05 : 0x01;
 //      type= IO_Type( pid,name, mode );
         if (type==fFile || type==fDir) name= datapath;
-        
+
         err= 0;
         if (bootPos==0) {     // for <bootPos> > 0, it's already opened for boot reading
+              fprintf(stderr,"# load_module: usrpath_open type=%d name='%s' mode=0x%x\n", type, name, mode);
               err= usrpath_open( pid, &path,type, name,mode );
           if (err)
             return os9error( linkstyle ? E_MNF:err ); /* as the real OS-9 */
         } // if
 
         if (bootSiz==0) {
-              err= usrpath_getstat( pid,path,SS_Size, NULL,NULL,NULL,&dsize,NULL ); 
+              err= usrpath_getstat( pid,path,SS_Size, NULL,NULL,NULL,&dsize,NULL );
+          fprintf(stderr,"# load_module: SS_Size err=%d dsize=%lu\n", err, (unsigned long)dsize);
           if (err) return err;
         }
         else {
           dsize= bootSiz;
         } // if
-          
+
             pp= get_mem( dsize );
         if (pp==NULL) {
           if (bootPos==0) err= usrpath_close( pid, path );
-              
+
           return os9error(E_NORAM); /* not enough memory */
         } // if
-            
+
         loadbytes = dsize;
         theModuleP= pp;
-        
-            err= usrpath_read ( pid, path, &loadbytes, theModuleP, false ); 
+
+            err= usrpath_read ( pid, path, &loadbytes, theModuleP, false );
+        fprintf(stderr,"# load_module: usrpath_read err=%d loadbytes=%lu dsize=%lu\n", err, (unsigned long)loadbytes, (unsigned long)dsize);
         if (err || loadbytes<dsize) {
           if (bootPos==0) err= usrpath_close( pid, path );
           return E_READ;
@@ -1204,14 +1208,27 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         /* make sure that module is ok */
         /* --- check module SYNC parity and CRC */
             sync= os9_word(theModuleP->_mh._msync);
+        { const unsigned char* b= (const unsigned char*)theModuleP;
+          fprintf(stderr,"# load_module: theModuleP=%p bytes=[%02x %02x %02x %02x  %02x %02x %02x %02x  %02x %02x %02x %02x  %02x %02x %02x %02x] sync=%04x MODSYNC=%04x\n",
+                (void*)theModuleP,
+                b[0],b[1],b[2],b[3],b[4],b[5],b[6],b[7],
+                b[8],b[9],b[10],b[11],b[12],b[13],b[14],b[15],
+                (unsigned)sync, (unsigned)MODSYNC);
+          fprintf(stderr,"# load_module: sizeof_mh=%zu off_msync=%zu off_msize=%zu sizeof_msize=%zu\n",
+                sizeof(theModuleP->_mh),
+                (size_t)((char*)&theModuleP->_mh._msync - (char*)theModuleP),
+                (size_t)((char*)&theModuleP->_mh._msize - (char*)theModuleP),
+                sizeof(theModuleP->_mh._msize));
+        }
         if (sync!=MODSYNC) {
             /* bad module sync */
             debugprintf(dbgModules,dbgNorm,
               ("# load_module: bad modsync: %04x, E_BMID\n", sync ));
             err= E_BMID;  break;
         } /* if */
-         
+
             par= calc_parity( (ushort*)theModuleP, 24 );
+        fprintf(stderr,"# load_module: parity check result=%04x (should be 0)\n",(unsigned)par);
         if (par!=0) {
             /* bad header parity */
             debugprintf(dbgModules,dbgNorm,
@@ -1220,13 +1237,15 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         } /* if */
         
             modSize= os9_long(theModuleP->_mh._msize);
+        fprintf(stderr,"# load_module: modSize=%lu dsize=%lu\n",(unsigned long)modSize,(unsigned long)dsize);
         if (modSize>dsize) {
             debugprintf(dbgModules,dbgNorm,
               ("# load_module: bad size: %d>%d, E_BMID\n", modSize,dsize ));
             err= E_BMID;  break; /* as a native OS-9 system (bfo) */
         } /* if */
-        
+
         	crc= calc_crc( (byte*)theModuleP, modSize, 0xFFFFFFFF );
+        fprintf(stderr,"# load_module: crc=%08lx (should be ff800fe3)\n",(unsigned long)crc);
         if (crc!=0xFF800FE3) {
             debugprintf(dbgModules,dbgNorm,
               ("# load_module: bad crc, crc result=$%08lX (should be $FF800FE3)\n",crc));
@@ -1272,7 +1291,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         *midP= mid0;
         if    (dsize==modSize) return 0; /* its done now */ 
         dsize= dsize- modSize;
-        theModuleP= (mod_exec *)( (ulong)theModuleP + (ulong)modSize );
+        theModuleP= (mod_exec *)( (uintptr_t)theModuleP + (uintptr_t)modSize );
                                                   /* get pointer to the next module */
 
         if (dsize>1 && os9_word(theModuleP->_mh._msync)!=MODSYNC) return 0;
@@ -1512,7 +1531,7 @@ void mod_crc( mod_exec* m )
     crc= calc_crc( (byte*)"\0", 1,        crc ); /* update with one additional 0 byte */
     crc=     ~crc; /* 1's complement */
 
-    *((ulong*)((ulong)m+modsize-4))= os9_long(crc); /* assign now */
+    *((ulong*)((uintptr_t)m+modsize-4))= os9_long(crc); /* assign now */
     
     debugprintf(dbgModules,dbgNorm,("# mod_crc: '%s' (size=%ld): new CRC=$%08lX\n",
                                        Mod_Name(m), modsize, crc ));
@@ -1561,7 +1580,7 @@ os9err prepData(ushort pid, mod_exec *theModule, ulong memplus, ulong *msiz, byt
    for (k=0;k<2;k++) {
       debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: irefs correction to base address $%08lX\n",offs));
       while (*((ulong *)p2)!=0) {
-         p=(byte *)((ulong) os9_word(*((ushort *)p2))<<16)+(ulong)bp; /* calc group's base address */
+         p=bp + ((ulong)os9_word(*((ushort *)p2))<<16); /* calc group's base address */
          p2+=2; /* step over base address word */
          debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: irefs group at $%08lX, count=%d\n",
             (ulong) p,os9_word(*((ushort *)p2))));

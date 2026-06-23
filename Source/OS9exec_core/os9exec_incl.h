@@ -122,9 +122,9 @@
   #include ":os9defs:errno_adapted.h"  /* errno_adapted.h: errno -> errno2 */
 #else
   #include <string.h>  /* according to Martin Gregorie's proposal */
-  #include "module.h"
+  #include "module_adapted.h"
   #include "procid_adapted.h"
-  #include "sgstat.h"
+  #include "sgstat_adapted.h"
   /* undef POSIX names that errno_adapted.h redefines with OS-9 values */
   #undef EWOULDBLOCK
   #undef EINPROGRESS
