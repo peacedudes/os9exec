@@ -1044,8 +1044,8 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
 	  }  
 	#endif
 		      
-	strcpy( tmp, p );
-	p=      tmp;
+	if (p != tmp) strcpy( tmp, p );
+	p= tmp;
 
 	if (doRep) {
 	  while  (*p!=NUL) { /* replace slashes -> PATHDELIM */

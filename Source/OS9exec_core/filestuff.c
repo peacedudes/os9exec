@@ -546,7 +546,7 @@ static void TwoCharDev( char* p, char** p3, char* tmp )
         }
     }
     
-    if (*p3!=NULL && **p3==NUL) *p3= NULL; /* invalidate again */ 
+    if (*p3!=NULL && **p3==NUL) *p3= NULL; /* invalidate again */
     debugprintf(dbgFiles,dbgNorm,( "# TwoCharDev: path='%s'\n", *p3 ));
 } /* TwoCharDev */
 
@@ -1010,7 +1010,7 @@ os9err pSCFnam( _pid_, syspath_typ* spP, char* volname )
         default      : p= spP->name; break;
     } /* switch */
     
-    strcpy( volname,p );
+    if (p != volname) strcpy( volname, p );
     return 0;
 } /* pSCFnam */
 
