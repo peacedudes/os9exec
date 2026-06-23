@@ -1248,7 +1248,7 @@ extern  mdir_entry *mdirField;
 
 /* the system paths */
 extern  syspath_typ syspaths [MAXSYSPATHS];
-extern  ulong       syspth   [MAXSYSPATHS];
+extern  uint32_t    syspth   [MAXSYSPATHS]; /* big-endian 32-bit path table entries */
 
 
 /* the RBF and SCSI devices */
@@ -1260,7 +1260,7 @@ extern  ttydev_typ  ttydev[MAXTTYDEV];
 
 /* the processes */
 extern  process_typ procs[MAXPROCESSES];
-extern  ulong       prDBT[MAXPROCESSES]; /* os9_long(process_typ*) */
+extern  uint32_t    prDBT[MAXPROCESSES]; /* big-endian 32-bit process descriptor offsets */
 
 /* the signal queue */
 extern  sig_typ     sig_queue;

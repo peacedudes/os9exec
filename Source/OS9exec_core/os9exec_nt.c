@@ -423,7 +423,7 @@ mdir_entry *mdirField = NULL;
 
 /* the system paths */
 syspath_typ syspaths[MAXSYSPATHS];
-ulong       syspth  [MAXSYSPATHS];
+uint32_t    syspth  [MAXSYSPATHS]; /* big-endian 32-bit path table entries */
 
 /* the SCSI devices */
 scsi_typ    scsi[MAXSCSI];
@@ -433,7 +433,7 @@ ttydev_typ  ttydev[MAXTTYDEV];
 
 /* the processes */
 process_typ  procs[MAXPROCESSES];
-ulong        prDBT[MAXPROCESSES]; /* os9_long(process_typ*) */
+uint32_t     prDBT[MAXPROCESSES]; /* big-endian 32-bit process descriptor offsets */
 
 /* the signal queue */
 sig_typ     sig_queue;

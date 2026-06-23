@@ -999,9 +999,9 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
     ulong        b   = TO68K(mdirField);
     process_typ* cp  = &procs[cpid];
 
-    ulong  v;
-    ulong* ptr;
-    int    k;
+    ulong     v;
+    uint32_t* ptr;
+    int       k;
         
     switch (offs) {
       case D_ID      : v=                   MODSYNC; break;
