@@ -179,9 +179,8 @@ extern unsigned char *emul_base;
    real 68k register, so it also matches UAE's uae_u32 regstruct fields. */
 typedef unsigned int ulong32;
 
-/* a 68k virtual address stored in emulated memory or an OS-9 binary struct.
-   This is an arena offset, not a real host pointer — use FROM68K to dereference. */
-typedef ulong32 os9addr_t;
+/* os9addr_t — 68k virtual address (arena offset, not a host pointer).
+   Defined early in os9main_incl_precomp.h so os9defs adapted headers can use it. */
 
 #define TO68K(hostptr)  ((ulong32)( (hostptr)==NULL ? 0 : (unsigned char*)(hostptr) - emul_base ))
 #define FROM68K(addr)   ( (addr)==0 ? NULL : (void*)( emul_base + (addr) ) )

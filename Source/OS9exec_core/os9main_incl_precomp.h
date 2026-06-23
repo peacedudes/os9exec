@@ -414,6 +414,9 @@ typedef struct dirent dirent_typ;
     typedef unsigned long ulong;  /* native word; used for host pointers and OS-9 register values */
   #endif
 
+  /* a 68k virtual address: 32-bit arena offset, not a host pointer */
+  typedef unsigned int os9addr_t;
+
 
   #ifndef UNIX
     typedef unsigned     int uint;
