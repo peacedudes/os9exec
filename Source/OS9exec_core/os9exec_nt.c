@@ -646,7 +646,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    ulong paramsiz, argsiz, envsiz;
    int os9envc,h;
    byte *p,*pp, *hp;
-   ulong *alp,*elp;
+   uint32_t *alp,*elp;
    char *modnam;
    int k;
    
@@ -690,20 +690,20 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    /* -- prepare parameters shell-like */
    debugprintf(dbgStartup,dbgDeep,("# prepParams: Calculated parameter size=$%lX\n",paramsiz));
    p=pp+paramsiz; /* end of param area */
-   p-=4; *((ulong *)p)=0; /* envp[] terminator */
+   p-=4; *((uint32_t *)p)=0; /* envp[] terminator */
    p-=os9envc*4; /* reserve room for envp[] pointers */
-   elp=(ulong *)p; /* save ptr to first envp pointer */
-   p-=4; *((ulong *)p)=0; /* argv[]/envp[] separator */
+   elp=(uint32_t *)p; /* save ptr to first envp pointer */
+   p-=4; *((uint32_t *)p)=0; /* argv[]/envp[] separator */
    p-=argc*4; /* reserve room for argv[] pointers */
-   alp=(ulong *)p; /* save ptr to first argv pointer */
-   p-=4; *((ulong *)p)=0; /* argv[] list beginning */
+   alp=(uint32_t *)p; /* save ptr to first argv pointer */
+   p-=4; *((uint32_t *)p)=0; /* argv[] list beginning */
    p-=2; *((ushort *)p)=os9_word(0x000D);
    k=strlen(modnam);
    if (!(k & 1)) *(--p)=0; /* align if module name has even # of chars (=odd with NUL) */
    p-=k+1;
    strcpy( (char*)p,modnam ); /* copy module name as argv[0] */
    p-=4;
-   *((ulong *)p)=os9_long(p+4-pp); /* set argv[0] offset */
+   *((uint32_t *)p)=os9_long((uint32_t)(p+4-pp)); /* set argv[0] offset */
    p-=2; *((ushort *)p)=os9_word(0xFC01); /* special sync code */
    /* --- environment variable strings */
    if ((envsiz & 1)==0) *(--p)=0; /* align needed if even envsize */
@@ -715,7 +715,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    while (os9envc) {
       if (*envp[k]=='@') {
          /* --- it is an OS-9 environment variable */
-         *(elp++)=os9_long((ulong)hp-(ulong)pp); /* set offset */
+         *(elp++)=os9_long((uint32_t)((ulong)hp-(ulong)pp)); /* set offset */
          strcpy( (char*)hp, envp[k]+1 ); /* copy the environment variable name, but without the '@' */
          h=strlen(envp[k])-1; /* size of variable name without '@' */
    		debugprintf(dbgStartup,dbgDeep,("# prepParams: envp[%d] name='%s', len=%d",k,envp[k]+1,h));
@@ -738,7 +738,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    debugprintf(dbgStartup,dbgDeep,("# prepParams: Starting to write args at $%08lX, memstart=$%08lX\n",(ulong) p,(ulong) pp));
    k=0;
    while (argc) {
-      *(alp++)=os9_long((ulong)p-(ulong)pp); /* set offset */
+      *(alp++)=os9_long((uint32_t)((ulong)p-(ulong)pp)); /* set offset */
       strcpy( (char*)p, argv[k] ); /* copy the argument */
       p+=strlen(argv[k]); /* advance pointer */
       if (k+1>=argc) break;

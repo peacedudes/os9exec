@@ -1168,7 +1168,7 @@ os9err OS9_F_TLink( regs_type *rp, ushort cpid )
     char mpath[OS9PATHLEN], *p;
     traphandler_typ *tp;
     mod_trap *trapmodP;
-    ulong *sp;
+    uint32_t *sp;
     process_typ* cp= &procs[cpid];
     
         trapidx=rp->d[0]-1;
@@ -1188,7 +1188,7 @@ os9err OS9_F_TLink( regs_type *rp, ushort cpid )
             rp->a[1]= TO68K(trapmodP)+os9_long(trapmodP->progmod._mexec);
          
             /* --- now modify stack and PC to return through trapinit routine to program */
-            sp=(ulong*)FROM68K(rp->a[7]);           // get current stack pointer as *ulong
+            sp=(uint32_t*)FROM68K(rp->a[7]);        // get current stack pointer as *uint32_t
             if (!cp->isIntUtil) {          // workaround for built-in utilities: not really used
               *(--sp)= os9_long(rp->pc);   // save PC pointing to instruction after F$TLink
               *(--sp)= 0;                  // save two dummy null words
