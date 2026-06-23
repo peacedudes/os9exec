@@ -1287,7 +1287,7 @@ static os9err os9exec_compatible( mod_exec* mod )
     p = Mod_Name( mod );
     ed= os9_word( mod->_mh._medit );
     
-    if (ustrcmp(p,"deldir" )==0 && ed<=100) return E_BADREV; /* shrinking directory entries not supported */
+    /* deldir: pRdelete zeros the parent slot and frees target sectors; no parent-shrink attempted */
     if (ustrcmp(p,"sysdbg" )==0 && ed<=100) return E_BADREV; /* crashes right at the beginning */
     if (ustrcmp(p,"mnt"    )==0 && ed<=100) return E_BADREV; /* no "/mt" device available */
 

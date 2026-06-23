@@ -1653,7 +1653,7 @@ os9err release_traphandler( ushort pid, ushort trapidx )
 	    tp=&procs[pid].TrapHandlers[trapidx];
 	if (tp->trapmodule!=NULL) {
 		/* release trap handler's static storage */
-        os9free( pid, (void*)tp->trapmem,tp->trapmemsz );
+        os9free( pid, FROM68K(tp->trapmem), tp->trapmemsz );
        
         /* unlink trap handler's module */
 		unlink_module( tp->mid );
