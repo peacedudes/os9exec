@@ -2319,7 +2319,7 @@ static os9err DoAccess( syspath_typ* spP, ulong   *lenP, char* buffer,
     os9err      err   =  0;
     rbf_typ*    rbf   = &spP->u.rbf;
     rbfdev_typ* dev   = &rbfdev[rbf->devnr];
-    ulong       bstart=  rbf->currPos;
+    uint32_t    bstart=  rbf->currPos;
     ulong       boffs =  0;
     ulong       remain= *lenP;
     ulong*      mw    = &spP->mustW;
@@ -2327,7 +2327,6 @@ static os9err DoAccess( syspath_typ* spP, ulong   *lenP, char* buffer,
     ulong       sect, slim, offs, size, totsize, maxc, pos, scs, *rs, pref, coff, sv, req;
     byte*       bb;
     byte        attr;
-    byte        *bp;
     int         ii;
     Boolean     done= false;               // break condition for readln 
     Boolean     rOK = (remain==0);         // is true, if nothing to read
@@ -2494,16 +2493,14 @@ static os9err DoAccess( syspath_typ* spP, ulong   *lenP, char* buffer,
         } // if
                     
         rbf->currPos+= maxc; /* calculate the new position */
-    
-        bp   = (byte *) rbf->currPos - bstart;
-        *lenP= (ulong) bp;
-        
+
+        *lenP = rbf->currPos - bstart;
+
         if (done) {
             maxc = remain; /* loop is finished now because CR has been found */
         }
         else if (rbf->currPos > *rs) {         /* remaining byte calculation */
-            bp   = (byte *) *lenP  +  *rs - rbf->currPos;
-            *lenP= (ulong) bp;
+            *lenP = *lenP + *rs - rbf->currPos;
             rbf->currPos= *rs;
         }
         
@@ -2604,8 +2601,8 @@ static void Fill_DirEntry( os9direntry_typ* dir_entry, char* name, ulong fd )
 
 
 
-static os9err Access_DirEntry( rbfdev_typ* dev, ulong dfd,  ulong fd, 
-                                                char* name, ulong *deptr )
+static os9err Access_DirEntry( rbfdev_typ* dev, ulong dfd,  ulong fd,
+                                                char* name, uint32_t *deptr )
 {
     os9err          err, cer;
     ulong           dir_len;
@@ -2651,7 +2648,7 @@ static os9err Access_DirEntry( rbfdev_typ* dev, ulong dfd,  ulong fd,
 
 static os9err Delete_DirEntry( rbfdev_typ* dev, ulong fd,  char* name )
 {   /* file sector 0 deletes the file */
-    ulong  d; /* no interrest for this variable here */
+    uint32_t d; /* no interest in this value here */
     return Access_DirEntry( dev, fd, 0, name, &d );
 } /* Delete_DirEntry */
 
@@ -2687,7 +2684,7 @@ static os9err CreateNewFile( syspath_typ* spP, byte fileAtt, char* name, ulong c
     ulong       sct=  dev->sctSize;
     ulong       clu=  dev->clusterSize;
     ulong       dfd=  rbf->fd_nr;
-    ulong*      d  = &rbf->deptr;
+    uint32_t*   d  = &rbf->deptr;
     ulong       fd, scs, ascs, sTmp;
 
     if (strlen(name)>DIRNAMSZ) return E_BPNAM;

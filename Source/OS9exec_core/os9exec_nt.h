@@ -596,8 +596,8 @@ typedef struct {
 
 /* a error trap handler */
 typedef struct {
-            ulong handleraddr;
-            ulong handlerstack;
+            os9addr_t handleraddr;   /* 68k virtual address of handler entry point */
+            os9addr_t handlerstack;  /* 68k virtual address of handler stack pointer */
          } errortrap_typ;
 
 
@@ -749,10 +749,10 @@ typedef struct {
 
 /* sub-variant for disk directories */
 typedef struct {
-            ulong pos;                  /* the emulated directory "file"'s position for fDir */
+            uint32_t pos;               /* the emulated directory "file"'s position for fDir */
 
             #ifdef win_unix
-              ulong fdcur;
+              uint32_t fdcur;
             #endif
         } dir_typ;              
 
@@ -772,16 +772,16 @@ typedef struct {
 
 /* variant for RBF objects */
 typedef struct {
-            ulong     devnr;        // current device number
+            uint32_t  devnr;        // current device number
             byte      att;          // file's atttributes
-            ulong     currPos;      // current file position
-            ulong     lastPos;      // current file last position (seek<end)
+            uint32_t  currPos;      // current file position
+            uint32_t  lastPos;      // current file last position (seek<end)
             Boolean   wMode;        // opened in write mode
             Boolean   flushFDCache; // flush FD cache
             ushort    diskID;       // disk ID for comparison reasons
-            ulong     fd_nr;        // current FD logical sector number
-            ulong     fddir;        // current FD logical sector of the dir
-            ulong     deptr;        // dir entry ptr
+            uint32_t  fd_nr;        // current FD logical sector number
+            uint32_t  fddir;        // current FD logical sector of the dir
+            uint32_t  deptr;        // dir entry ptr
         } rbf_typ;
 
 /* variant for SCF objects */
@@ -1172,8 +1172,8 @@ typedef struct {
                 ulong            iticks;    /* number of ticks at icalls */
                                   
                 /* memory */
-                ulong memstart;             /* the process' static storage start addr (unbiased) */ 
-                ulong memtop;               /* the process' static storage top pointer (unbiased) */
+                os9addr_t memstart;         /* the process' static storage start addr (68k arena offset) */
+                os9addr_t memtop;           /* the process' static storage top pointer (68k arena offset) */
              // memblock_typ    os9memblocks[MAXMEMBLOCKS]; /* the process' allocated memory blocks */
                 byte sigdat[SIG_SCRATCH];
                 
@@ -1185,8 +1185,8 @@ typedef struct {
                 ushort usrpaths[MAXUSRPATHS]; /* system path number of user paths */
 
                 /* create init size */
-                ushort fileAtt;             /* here because I$Create is not able */
-                ulong  cre_initsize;        /* to call with these params */
+                ushort    fileAtt;          /* here because I$Create is not able */
+                uint32_t  cre_initsize;     /* to call with these params (from rp->d[2]) */
 
                 dir_type d;                 /* current      directory */
                 dir_type x;                 /* current exec directory */
@@ -1203,7 +1203,7 @@ typedef struct {
                 
                 int     masklevel;
                 Boolean pwr_brk;            /* pWaitRead break for signals <= 32 */
-                ulong   icpta6;             /* value to pass in A6 to intercept routine */
+                os9addr_t icpta6;           /* 68k A6 value to pass to intercept routine */
 
                 Boolean way_to_icpt;        /* is true on the way to icpt */
                 ushort  icpt_pid,           /* keep pid and signal save */
@@ -1221,7 +1221,7 @@ typedef struct {
                 int        saved_cnt;
                 pstate_typ saved_state;     /* saved process' state */
                 
-                ulong my_args;              /* arguments pointer */
+                os9addr_t my_args;          /* 68k arena offset of process argument area */
                 int   tid;                  /* thread ID */
             } process_typ;
             

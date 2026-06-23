@@ -2401,9 +2401,9 @@ os9err pDread( _pid_, syspath_typ *spP, ulong *n, char* buffer )
 {
   os9err err;
     
-  ulong* pos  = &spP->u.disk.u.dir.pos; /* current file position */
-  ulong  offs = *pos & 0x1F;            /* offset    to start */
-  ushort index= *pos >> 5;              /* dir index to start */
+  uint32_t* pos  = &spP->u.disk.u.dir.pos; /* current file position */
+  uint32_t  offs = *pos & 0x1F;            /* offset    to start */
+  ushort    index= *pos >> 5;              /* dir index to start */
   char*  myb= buffer;
     
   ulong  cnt, nbytes;
