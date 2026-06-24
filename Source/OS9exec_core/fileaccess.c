@@ -1117,14 +1117,18 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
 
       if (cre) {
           /* --- create */
-          /* check if file exists */
-          if (FileFound( pp )) return os9error(E_CEF); /* create existing file not allowed */
-          #ifdef windows32
-          if (GetLastError()==ERROR_NOT_READY) return os9error(E_NOTRDY);
-          #endif
-
+          if (FileFound( pp )) {
+              /* OS-9 I$Create opens existing files without truncating; caller truncates via SS_Size if needed */
+              stream= fopen( pp,"rb+" );
+              if (stream==NULL) return c2os9err(errno,E_FNA);
+          }
+          else {
+              #ifdef windows32
+              if (GetLastError()==ERROR_NOT_READY) return os9error(E_NOTRDY);
+              #endif
               stream= fopen( pp,"wb+" ); /* create for update, use binary mode (bfo) ! */
-          if (stream==NULL) return c2os9err(errno,E_FNA); /* default: file not accessible in this mode */  
+              if (stream==NULL) return c2os9err(errno,E_FNA); /* default: file not accessible in this mode */
+          }
       }
       else {
           /* --- open */
