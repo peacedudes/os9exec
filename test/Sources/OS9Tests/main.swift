@@ -252,6 +252,19 @@ check("tsmon: shows usage",      contains: "tsmon",       "tsmon")
 check("os9gen: no device",       contains: "os9gen",      "os9gen")
 noError("cfp: shows help",       "cfp")
 
+// attr: show file attribute string
+check("attr: module attrs",      contains: "--e-r",       "attr -re /dd/CMDS/echo")
+check("attr: data file attrs",   contains: "-ew",         "attr -re /dd/startup")
+
+// help: specific command help
+check("help dir: options listed", contains: "recursive",  "help dir")
+
+// merge: line count confirms newlines preserved
+check("merge: two files two lines", contains: "2 lines",
+    "echo x >/dd/t_mg1", "echo y >/dd/t_mg2",
+    "merge /dd/t_mg1 /dd/t_mg2 ! count",
+    "del /dd/t_mg1", "del /dd/t_mg2")
+
 // disk save generates a restore script
 check("dsave: generates script", contains: "Copy",        "dsave /dd")
 
