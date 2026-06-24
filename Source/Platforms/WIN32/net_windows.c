@@ -80,14 +80,14 @@ os9err NetInstall(void)
 
 
 
-os9err MyInetAddr( ulong *inetAddr, ulong *dns1Addr,
-                                    ulong *dns2Addr, char* domainName )
+os9err MyInetAddr( uint32_t *inetAddr, uint32_t *dns1Addr,
+                                    uint32_t *dns2Addr, char* domainName )
 {
   #define  Unk 0x7f7f7f7f
-  HOSTENT* h;
-  ulong    *a;
-//ulong    *a0, *a1, *a2;
-  int      i;
+  HOSTENT*  h;
+  uint32_t *a;
+//uint32_t *a0, *a1, *a2;
+  int       i;
       
   OSStatus err= NetInstall(); if (err) return err;
 
@@ -100,7 +100,7 @@ os9err MyInetAddr( ulong *inetAddr, ulong *dns1Addr,
   if (h==NULL) return OS9_ENETDOWN;
       
   a= NULL; 
-  i= h->h_length/sizeof(ulong);
+  i= h->h_length/sizeof(uint32_t);
   while (i>0 && a==NULL) {
     a= h->h_addr_list[ i-1 ];
 //  printf( "length: %d %X\n", i, a );
@@ -132,10 +132,10 @@ os9err MyInetAddr( ulong *inetAddr, ulong *dns1Addr,
 
 
 
-OSStatus netReadBlock( ushort pid, net_typ* net, ulong *nBytes )
+OSStatus netReadBlock( ushort pid, net_typ* net, uint32_t *nBytes )
 {
   OSStatus err;
-  ulong    arg;
+  uint32_t arg;
   int      flags= 0;
   WSANETWORKEVENTS ev;
 
@@ -162,7 +162,7 @@ OSStatus netReadBlock( ushort pid, net_typ* net, ulong *nBytes )
 
 
 
-OSStatus netWriteBlock( ushort pid, net_typ* net, ulong *nBytes )
+OSStatus netWriteBlock( ushort pid, net_typ* net, uint32_t *nBytes )
 {
   OSStatus err;
   int      loopit= 10;

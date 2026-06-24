@@ -672,7 +672,7 @@ static void adapt_init( mod_exec* mh )
 
 
 
-static void adapt_le0( mod_exec* mh, ulong inetAddr )
+static void adapt_le0( mod_exec* mh, uint32_t inetAddr )
 {
     byte*  bp;
 
@@ -696,7 +696,7 @@ static void fill_s( char** b, char* s )
 
 
 
-static void go_thru_list( char* v0, char* b0, ulong inetAddr )
+static void go_thru_list( char* v0, char* b0, uint32_t inetAddr )
 /* adapt "localhost" at the "inetdb" module */
 {
     char      *v, *b, *blk, *bBlk;
@@ -757,13 +757,13 @@ static void go_thru_list( char* v0, char* b0, ulong inetAddr )
 
 
 
-static void adapt_inetdb( mod_exec* mh, ulong inetAddr, ulong dns1, ulong dns2, char* domainName )
+static void adapt_inetdb( mod_exec* mh, uint32_t inetAddr, uint32_t dns1, uint32_t dns2, char* domainName )
 /* the module "inetdb" (part of Internet Support Package ISP) will be adapted according */
 /* to the OS9exec's host machine settings: <inetAddr> <dns1> <dns2> and <domainName>    */
 {
     short   *hp;
     char    *bp, *b0, *bL, *v0;
-    ulong   d, size;
+    uint32_t d, size;
     byte    *h;
     char    sv[ OS9NAMELEN ];
 
@@ -845,7 +845,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
     ushort  mid, mid0, oldmid;
     ushort  linkmid;
     Boolean isBuiltIn;
-    ulong   dns1= 0, dns2= 0;
+    uint32_t dns1= 0, dns2= 0;
 
     #ifdef MACOS9
       Handle hh;

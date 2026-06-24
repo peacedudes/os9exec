@@ -159,8 +159,8 @@ os9err NetInstall(void)
 
 
 
-os9err MyInetAddr( ulong *inetAddr, ulong *dns1Addr,
-                                    ulong *dns2Addr, char* domainName )
+os9err MyInetAddr( uint32_t *inetAddr, uint32_t *dns1Addr,
+                                    uint32_t *dns2Addr, char* domainName )
 {
   InetInterfaceInfo iinfo;
 
@@ -182,7 +182,7 @@ os9err MyInetAddr( ulong *inetAddr, ulong *dns1Addr,
 
 
 
-OSStatus netReadBlock( _pid_, net_typ* net, ulong *nBytes  )
+OSStatus netReadBlock( _pid_, net_typ* net, uint32_t *nBytes  )
 {
   OSStatus err;
   OTFlags  junkFlags;
@@ -209,7 +209,7 @@ OSStatus netReadBlock( _pid_, net_typ* net, ulong *nBytes  )
 
 
 
-OSStatus netWriteBlock( _pid_, net_typ* net, ulong *nBytes )
+OSStatus netWriteBlock( _pid_, net_typ* net, uint32_t *nBytes )
 {
   OSStatus err;
   OTResult lookResult;

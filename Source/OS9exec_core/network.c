@@ -200,27 +200,27 @@ void   init_Net ( fmgr_typ* f );
 
 os9err pNopen   ( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname );
 os9err pNclose  ( ushort pid, syspath_typ* spP );
-os9err pNread   ( ushort pid, syspath_typ* spP, ulong  *lenP,  char* buffer );
-os9err pNreadln ( ushort pid, syspath_typ* spP, ulong  *lenP,  char* buffer );
-os9err pNwrite  ( ushort pid, syspath_typ* spP, ulong  *lenP,  char* buffer );
-os9err pNwriteln( ushort pid, syspath_typ* spP, ulong  *lenP,  char* buffer );
+os9err pNread   ( ushort pid, syspath_typ* spP, uint32_t *lenP,  char* buffer );
+os9err pNreadln ( ushort pid, syspath_typ* spP, uint32_t *lenP,  char* buffer );
+os9err pNwrite  ( ushort pid, syspath_typ* spP, uint32_t *lenP,  char* buffer );
+os9err pNwriteln( ushort pid, syspath_typ* spP, uint32_t *lenP,  char* buffer );
 
-os9err pNopt    ( ushort pid, syspath_typ* spP,                byte* buffer );
-os9err pNpos    ( ushort pid, syspath_typ* spP, ulong  *posP );
-os9err pNready  ( ushort pid, syspath_typ* spP, ulong  *n    );
+os9err pNopt    ( ushort pid, syspath_typ* spP,                  byte* buffer );
+os9err pNpos    ( ushort pid, syspath_typ* spP, uint32_t *posP );
+os9err pNready  ( ushort pid, syspath_typ* spP, uint32_t *n    );
 
        /* network specific functions */
-os9err pNbind   ( ushort pid, syspath_typ* spP, ulong  *n,     byte* ispP );
+os9err pNbind   ( ushort pid, syspath_typ* spP, uint32_t *n,     byte* ispP );
 os9err pNlisten ( ushort pid, syspath_typ* spP );
-os9err pNconnect( ushort pid, syspath_typ* spP, ulong  *n,     byte* ispP );
-os9err pNaccept ( ushort pid, syspath_typ* spP, ulong  *d1 );
-os9err pNrecv   ( ushort pid, syspath_typ* spP, ulong  *d1,    
-                                                ulong  *d2,    char* *a0  );
-os9err pNsend   ( ushort pid, syspath_typ* spP, ulong  *d1,    
-                                                ulong  *d2,    char* *a0  );
-os9err pNGNam   ( ushort pid, syspath_typ* spP, ulong  *d1,
-                                                ulong  *d2,    byte* ispP );
-os9err pNSOpt   ( ushort pid, syspath_typ* spP, ulong  *d1,    ulong *d2  );
+os9err pNconnect( ushort pid, syspath_typ* spP, uint32_t *n,     byte* ispP );
+os9err pNaccept ( ushort pid, syspath_typ* spP, uint32_t *d1 );
+os9err pNrecv   ( ushort pid, syspath_typ* spP, uint32_t *d1,
+                                                uint32_t *d2,    char* *a0  );
+os9err pNsend   ( ushort pid, syspath_typ* spP, uint32_t *d1,
+                                                uint32_t *d2,    char* *a0  );
+os9err pNGNam   ( ushort pid, syspath_typ* spP, uint32_t *d1,
+                                                uint32_t *d2,    byte* ispP );
+os9err pNSOpt   ( ushort pid, syspath_typ* spP, uint32_t *d1,    uint32_t *d2  );
 
 os9err pNgPCmd  ( ushort pid, syspath_typ *spP, ulong  *a0 );
 os9err pNsPCmd  ( ushort pid, syspath_typ *spP, ulong  *a0 );
@@ -333,8 +333,8 @@ typedef struct _icmphdr
     byte   i_type;
     byte   i_code;    // Type sub code
     ushort i_cksum;
-    ulong  i_ISP;     /* use this instead of UInt16 pID/pSeqNum */
-    ulong  i_magic;
+    uint32_t i_ISP;     /* use this instead of UInt16 pID/pSeqNum */
+    uint32_t i_magic;
 } IcmpHeader;
 
 
@@ -597,16 +597,16 @@ os9err pNclose( _pid_, syspath_typ* spP )
 
 
 
-static os9err netRead( ushort pid, syspath_typ* spP, ulong *lenP, 
+static os9err netRead( ushort pid, syspath_typ* spP, uint32_t *lenP,
                                    char* buffer, Boolean lnmode )
 {
     OSStatus     err= 0;
     net_typ*     net= &spP->u.net;
     process_typ* cp = &procs[pid];
     int          ii;
-    ulong        askBytes= *lenP, mx;
+    uint32_t     askBytes= *lenP, mx;
     Boolean      CR_found= false; /* CR found for <lnmode> */
-    ulong        nBytes= kTransferBufferSize;
+    uint32_t     nBytes= kTransferBufferSize;
     
     *lenP= 0; /* how many bytes read ? 0 at the beginning */
     do {
@@ -650,22 +650,22 @@ static os9err netRead( ushort pid, syspath_typ* spP, ulong *lenP,
 } /* netRead */
 
 
-os9err pNread( ushort pid, syspath_typ* spP, ulong *lenP, char* buffer )
+os9err pNread( ushort pid, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return netRead( pid,spP, lenP,buffer, false );
 } /* pNread */
 
-os9err pNreadln( ushort pid, syspath_typ* spP, ulong *lenP, char* buffer )
+os9err pNreadln( ushort pid, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return netRead( pid,spP, lenP,buffer, true  );
 } /* pNreadln */
 
 
 
-static os9err netWrite( ushort pid, syspath_typ* spP, ulong *lenP, 
+static os9err netWrite( ushort pid, syspath_typ* spP, uint32_t *lenP,
                         char* buffer, Boolean lnmode )
 {
     OSStatus  err= 0;
     net_typ*  net= &spP->u.net;
-    ulong     remain, nBytes;
+    uint32_t  remain, nBytes;
     int       ii;
     char*     pp;
 
@@ -700,12 +700,12 @@ static os9err netWrite( ushort pid, syspath_typ* spP, ulong *lenP,
 } /* netWrite */
 
 
-os9err pNwrite( ushort pid, syspath_typ* spP, ulong *lenP, char* buffer )
+os9err pNwrite( ushort pid, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return netWrite( pid,spP, lenP,buffer, false );
 } /* pNwrite */
 
 
-os9err pNwriteln( ushort pid, syspath_typ* spP, ulong *lenP, char* buffer )
+os9err pNwriteln( ushort pid, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return netWrite( pid,spP, lenP,buffer, true  );
 } /* pNwriteln */
 
@@ -1086,7 +1086,7 @@ os9err pNconnect( ushort pid, syspath_typ* spP, _d2_, byte *ispP)
 
 
 
-os9err pNaccept( ushort pid, syspath_typ* spP, ulong *d1 )
+os9err pNaccept( ushort pid, syspath_typ* spP, uint32_t *d1 )
 {
     OSStatus     err= 0;
     net_typ*     net= &spP->u.net;
@@ -1094,7 +1094,7 @@ os9err pNaccept( ushort pid, syspath_typ* spP, ulong *d1 )
     syspath_typ* spN;
     ushort       up, path;
     byte         c[ 4 ];
-    ulong*       cpt;
+    uint32_t*    cpt;
     SOCKET       epNew;
     
     #ifdef MACOS9
@@ -1197,12 +1197,12 @@ os9err pNaccept( ushort pid, syspath_typ* spP, ulong *d1 )
 
 
 
-os9err pNrecv( ushort pid, syspath_typ* spP, ulong* d1, ulong* d2, char** a0 )
+os9err pNrecv( ushort pid, syspath_typ* spP, uint32_t* d1, uint32_t* d2, char** a0 )
 /* for TCP protocol, 2 additional bytes with length info will be received */
 {
-    os9err err;
-    ulong  lenB=   2;
-    ulong  len = *d2;
+    os9err   err;
+    uint32_t lenB=   2;
+    uint32_t len = *d2;
     ushort n; /* the length fill be filled in here */
     
     err= netRead( pid, spP, &lenB, (char*)&n, false );
@@ -1213,12 +1213,12 @@ os9err pNrecv( ushort pid, syspath_typ* spP, ulong* d1, ulong* d2, char** a0 )
 } /* pNrecv */
 
 
-os9err pNsend( ushort pid, syspath_typ* spP, ulong *d1, ulong *d2, char** a0 )
+os9err pNsend( ushort pid, syspath_typ* spP, uint32_t *d1, uint32_t *d2, char** a0 )
 /* for TCP protocol, 2 additional bytes with length info must be sent */
 {
-    os9err err;
-    ulong  lenB=   2;
-    ulong  len = *d2;
+    os9err   err;
+    uint32_t lenB=   2;
+    uint32_t len = *d2;
     ushort n   = os9_word( (ushort)len );
     
     err= netWrite( pid, spP, &lenB, (char*)&n, false );
@@ -1230,7 +1230,7 @@ os9err pNsend( ushort pid, syspath_typ* spP, ulong *d1, ulong *d2, char** a0 )
 
 
 
-os9err pNGNam( _pid_, syspath_typ* spP, ulong* d1, ulong* d2, byte* ispP )
+os9err pNGNam( _pid_, syspath_typ* spP, uint32_t* d1, uint32_t* d2, byte* ispP )
 /* Still some hardcoded things here */
 /* mode will be:    accepted / connected */
 /* ftpd/telnetd:      yes         no     */
@@ -1267,7 +1267,7 @@ os9err pNGNam( _pid_, syspath_typ* spP, ulong* d1, ulong* d2, byte* ispP )
 
 
 
-os9err pNSOpt( _pid_, syspath_typ* spP, ulong* d1, ulong* d2 )
+os9err pNSOpt( _pid_, syspath_typ* spP, uint32_t* d1, uint32_t* d2 )
 /* don't know what this is really good for (bfo) */
 {
     net_typ* net= &spP->u.net;
@@ -1287,7 +1287,7 @@ static ushort checksum( ushort *buffer, int size )
 /* This function calculates the 16-bit one's complement sum */
 /* of the supplied buffer (ICMP) header */
 {
-    ulong cksum= 0;
+    uint32_t cksum= 0;
 
     while ( size>1 ) {
         cksum+= *buffer++;
@@ -1515,13 +1515,13 @@ os9err pNopt( _pid_, _spP_, byte *buffer )
 } /* pNopt */
 
 
-os9err pNpos( _pid_, _spP_, ulong *posP )
+os9err pNpos( _pid_, _spP_, uint32_t *posP )
 /* get current file position */
 {   *posP= 0; return 0;
 } /* pRpos */
 
 
-os9err pNready( _pid_, syspath_typ* spP, ulong *n )
+os9err pNready( _pid_, syspath_typ* spP, uint32_t *n )
 {
     #if defined powerc && !defined MACOSX
       OTResult lookResult;

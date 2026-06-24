@@ -994,7 +994,7 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 	#define D_UserOpt  0x1010   /* User defined option -u                   */
 	#define D_IPAddr   0x1014   /* Open MGR screen at IP address: option -g */
 	    
-    ulong        offs= loword(rp->d[0]);
+    uint32_t     offs= loword(rp->d[0]);
     int          size= (int)  rp->d[1];
     ulong        b   = TO68K(mdirField);
     process_typ* cp  = &procs[cpid];

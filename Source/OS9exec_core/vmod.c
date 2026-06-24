@@ -84,7 +84,7 @@
 #endif
 
 
-os9err pVMod( ushort pid, _spP_, ulong *d1,ulong *d2 )
+os9err pVMod( ushort pid, _spP_, uint32_t *d1, uint32_t *d2 )
 /* These routine makes the direct jump into the Macintosh Toolbox */
 /* It emulates the "/vmod" driver of the Spectrapot system */
 {

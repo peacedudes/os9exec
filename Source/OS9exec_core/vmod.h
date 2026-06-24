@@ -54,7 +54,7 @@
 
 /* /VMod access  */
 /* ============= */
-os9err pVMod( ushort pid, syspath_typ*, ulong *d1,ulong *d2 );
+os9err pVMod( ushort pid, syspath_typ*, uint32_t *d1, uint32_t *d2 );
 
 /* eof */
 

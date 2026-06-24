@@ -85,8 +85,8 @@ os9err NetInstall(void)
 
 
 
-os9err MyInetAddr( ulong *inetAddr, ulong *dns1Addr,
-                                    ulong *dns2Addr, char* domainName )
+os9err MyInetAddr( uint32_t *inetAddr, uint32_t *dns1Addr,
+                                    uint32_t *dns2Addr, char* domainName )
 {
   struct utsname     sysname= { 0 };
   struct hostent     *hostPtr;  
@@ -158,7 +158,7 @@ os9err MyInetAddr( ulong *inetAddr, ulong *dns1Addr,
     fclose( stream );
   } /* if */
 
-      hostPtr= gethostbyaddr( (void*)&serverName.sin_addr.s_addr,sizeof(ulong), AF_INET );
+      hostPtr= gethostbyaddr( (void*)&serverName.sin_addr.s_addr,sizeof(uint32_t), AF_INET );
   if (hostPtr==NULL) strcpy( hostName, "unknown" );
   else               strcpy( hostName, hostPtr->h_name );
   
@@ -177,33 +177,33 @@ os9err MyInetAddr( ulong *inetAddr, ulong *dns1Addr,
 
 
 
-OSStatus netReadBlock( _pid_, net_typ* net, ulong *nBytes )
+OSStatus netReadBlock( _pid_, net_typ* net, uint32_t *nBytes )
 // platform specific reading
 {
   OSStatus err;
   int      flags= 0;
-      
+
       err= recv( net->ep, net->transferBuffer, *nBytes, flags );
   if (err==0)    net->closeIt= true;
-  if (err< 0) { *nBytes= 0; return err; } 
-  
-  *nBytes= (ulong)err;
+  if (err< 0) { *nBytes= 0; return err; }
+
+  *nBytes= (uint32_t)err;
   return 0;
 } /* netReadBlock */
 
 
 
-OSStatus netWriteBlock( _pid_, net_typ* net, ulong *nBytes )
+OSStatus netWriteBlock( _pid_, net_typ* net, uint32_t *nBytes )
 // platform specific reading
 {
   OSStatus err;
   int flags= 0;
-  
+
       err= send( net->ep, net->transferBuffer, *nBytes, flags );
   if (err==0)    net->closeIt= true;
-  if (err< 0) { *nBytes= 0; return err; } 
-  
-  *nBytes= (ulong)err;
+  if (err< 0) { *nBytes= 0; return err; }
+
+  *nBytes= (uint32_t)err;
   return 0;
 } /* netWriteBlock */
 
