@@ -404,17 +404,17 @@ Boolean SameBlk( byte *a, byte *b, ulong size )
 
 
 /* get the required size of a data module */
-ulong DatMod_Size( ulong namsize, ulong datsize )
+uint32_t DatMod_Size( uint32_t namsize, uint32_t datsize )
 {
-    ulong dsize= sizeof(struct modhcom) /* module header */
-               + sizeof(uint32_t)       /* data offset (4-byte OS-9 field) */
-               + datsize                /* the data segment */
-               + namsize                /* module name */
-               + sizeof(uint32_t);      /* CRC (4-byte OS-9 field) */
-    
+    uint32_t dsize= sizeof(struct modhcom) /* module header */
+                  + sizeof(uint32_t)       /* data offset (4-byte OS-9 field) */
+                  + datsize                /* the data segment */
+                  + namsize                /* module name */
+                  + sizeof(uint32_t);      /* CRC (4-byte OS-9 field) */
+
     dsize= (dsize+15) - ((dsize+15) % 16); // OS-9 data module sizes are divisible by 16
     return  dsize;
-} /* DatMod_Size */  
+} /* DatMod_Size */
 
 
 void FillTemplate( mod_exec *m, short access, short tylan, short attrev )
@@ -871,12 +871,12 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
     uint32_t dsize, loadbytes;
     os9err err;
     ushort par;
-    ulong  crc;
-    
+    uint32_t crc;
+
     #define MODNLEN 33
     char realmodname[MODNLEN];
-    
-    ulong     modSize;    /* OS-9 module size */
+
+    uint32_t  modSize;    /* OS-9 module size */
     ushort    mode, sync;
     ptype_typ type;       /* distinguish which file manager to be used */
     
@@ -1493,10 +1493,10 @@ ushort calc_parity(ushort *p,ushort numwords)
 
 
 
-ulong calc_crc(byte *p,ulong size, ulong accum)
+uint32_t calc_crc(byte *p, uint32_t size, uint32_t accum)
 /* calculate CRC over <size> bytes at <p>, starting with <accum> */
 {
-   ulong count,b,b1;
+   uint32_t count,b,b1;
    int i,j;
     
    for (count=0;count<size;count++) {
@@ -1522,16 +1522,16 @@ ulong calc_crc(byte *p,ulong size, ulong accum)
 
 void mod_crc( mod_exec* m )
 {
-    ulong modsize= os9_long(m->_mh._msize);
-    ulong crc;
+    uint32_t modsize= os9_long(m->_mh._msize);
+    uint32_t crc;
 
     crc= calc_crc( (byte*)m,    modsize-4,0xFFFFFFFF );
     crc= calc_crc( (byte*)"\0", 1,        crc ); /* update with one additional 0 byte */
     crc=     ~crc; /* 1's complement */
 
-    *((ulong*)((uintptr_t)m+modsize-4))= os9_long(crc); /* assign now */
-    
-    debugprintf(dbgModules,dbgNorm,("# mod_crc: '%s' (size=%ld): new CRC=$%08lX\n",
+    *((uint32_t*)((uintptr_t)m+modsize-4))= os9_long(crc); /* assign now */
+
+    debugprintf(dbgModules,dbgNorm,("# mod_crc: '%s' (size=%u): new CRC=$%08X\n",
                                        Mod_Name(m), modsize, crc ));
 } /* mod_crc */
 

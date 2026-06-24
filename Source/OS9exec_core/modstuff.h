@@ -64,7 +64,7 @@ void      Update_MDir ( void );
 
 void      MoveBlk     ( void* dst, void* src, ulong size );
 Boolean   SameBlk     ( byte* a,   byte* b,   ulong size );
-ulong     DatMod_Size ( ulong namsize, ulong datsize );
+uint32_t  DatMod_Size ( uint32_t namsize, uint32_t datsize );
 void      FillTemplate( mod_exec* m, short access, short tylan, short attrev );
 
 int   NextFreeModuleId( char* name );
@@ -89,7 +89,7 @@ void init_exceptions  ( ushort pid );
 void init_traphandlers( ushort pid );
 
 ushort calc_parity( ushort*   p, ushort numwords );
-ulong  calc_crc   ( byte*     p, ulong size, ulong accum );
+uint32_t calc_crc ( byte*     p, uint32_t size, uint32_t accum );
 void    mod_crc   ( mod_exec* m );
 
 os9err prepData(ushort pid, mod_exec* theModule, uint32_t memplus, uint32_t *msiz, byte **mp);

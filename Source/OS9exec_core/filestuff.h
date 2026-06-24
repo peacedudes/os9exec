@@ -171,7 +171,7 @@ os9err  ReadFD          ( syspath_typ* spP );
 
 
 /* external pipe   support routines */
-os9err           getPipe( ushort pid, syspath_typ*, ulong buffsize );
+os9err           getPipe( ushort pid, syspath_typ*, uint32_t buffsize );
 os9err       releasePipe( ushort pid, syspath_typ* );
 syspath_typ* crossedPath( ushort pid, syspath_typ* );
 os9err    ConnectPTY_TTY( ushort pid, syspath_typ* );

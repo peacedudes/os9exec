@@ -199,7 +199,7 @@ void init_PTY( fmgr_typ* f )
 
 
 
-os9err getPipe( _pid_, syspath_typ* spP, ulong buffsize )
+os9err getPipe( _pid_, syspath_typ* spP, uint32_t buffsize )
 {
     pipechan_typ* p  = get_mem( sizeof(pipechan_typ) );
     byte*         buf= get_mem( buffsize             );
@@ -221,8 +221,8 @@ os9err getPipe( _pid_, syspath_typ* spP, ulong buffsize )
     p->broken    = false;    /* not yet broken */
     p->pipeDirCnt= 0;        /* pipe dir count */
     
-    debugprintf( dbgFiles,dbgDetail,("# getPipe: (name='%s') created with buffer[%ld] @ $%lX\n",
-                 spP->name, buffsize, buf));
+    debugprintf( dbgFiles,dbgDetail,("# getPipe: (name='%s') created with buffer[%u] @ $%lX\n",
+                 spP->name, buffsize, (ulong)buf));
     return 0;
 } /* getPipe */
 
@@ -293,7 +293,7 @@ static void releasePipe_svd( ushort pid, syspath_typ* spP, Boolean forced )
 os9err pPopen(ushort pid, syspath_typ *spP, ushort *modeP, char* name)
 /* open pipe, make it anonymous if name==NULL, named otherwise */
 {
-    ulong   pipesz;
+    uint32_t pipesz;
     ushort  k;
     Boolean cre= IsCrea(*modeP);
     
@@ -829,15 +829,15 @@ os9err pPopt( _pid_, _spP_, byte* buffer )
 /* check for EOF in pipe */
 os9err pPeof( _pid_, syspath_typ *spP )
 {
-    ulong numready;
+    uint32_t numready;
     pipechan_typ* p= spP->u.pipe.pchP;
-    
+
     /* number of chars ready to be read in the pipe */
   //if (p->prp>p->pwp) numready= p->pwp-p->prp + p->size;
   //else               numready= p->pwp-p->prp;
     numready= Pipe_NReady( p );
 
-    debugprintf(dbgFiles,dbgDetail,("# pPeof: numready=%ld, linkcount=%d\n",
+    debugprintf(dbgFiles,dbgDetail,("# pPeof: numready=%u, linkcount=%d\n",
                 numready,spP->linkcount));
     /* if buffer empty and no writer left: E_EOF */
     if (numready==0 && spP->linkcount<2) return os9error(E_EOF);
