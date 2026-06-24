@@ -1,73 +1,116 @@
-// 
-//    OS9exec,   OS-9 emulator for Mac OS, Windows and Linux 
+//
+//    OS9exec,   OS-9 emulator for Mac OS, Windows and Linux
 //    Copyright (C) 1993-2006  Lukas Zeller / Beat Forster
 //    Available under http://www.synthesis.ch/os9exec
-// 
-//    This program is free software; you can redistribute it and/or 
-//    modify it under the terms of the GNU General Public License as 
-//    published by the Free Software Foundation; either version 2 of 
-//    the License, or (at your option) any later version. 
-// 
-//    This program is distributed in the hope that it will be useful, 
-//    but WITHOUT ANY WARRANTY; without even the implied warranty of 
-//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. 
-//    See the GNU General Public License for more details. 
-// 
-//    You should have received a copy of the GNU General Public License 
-//    along with this program; if not, write to the Free Software 
-//    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. 
+//
+//    This program is free software; you can redistribute it and/or
+//    modify it under the terms of the GNU General Public License as
+//    published by the Free Software Foundation; either version 2 of
+//    the License, or (at your option) any later version.
+//
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+//    See the GNU General Public License for more details.
+//
+//    You should have received a copy of the GNU General Public License
+//    along with this program; if not, write to the Free Software
+//    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 //
 
 
 The original OS-9 DEFS files are not part of the OS9exec source
-due to copyright reasons. The OS9exec project can be compiled only,
-if 4 files of an original OS-9 system (V2.4, V2.9 or V3.0) will be
+due to copyright reasons. The OS9exec project can be compiled only
+if 4 files of an original OS-9 system (V2.4, V2.9 or V3.0) are
 added to this directory:
 
   - errno.h
   - module.h
   - procid.h
   - sgstat.h
-  
-Two of these files, "errno.h" and "procid.h" must be adapted.
-OS9exec expects them as "errno_adapted.h" and "procid_adapted.h"
+
+All four must be adapted and renamed with the "_adapted" suffix:
+
+  - errno_adapted.h    (from errno.h)
+  - module_adapted.h   (from module.h)
+  - procid_adapted.h   (from procid.h)
+  - sgstat_adapted.h   (from sgstat.h)
 
 
+============================================================
+PART 1: Original adaptations (all platforms)
+============================================================
 
 "errno_adapted.h"
 -----------------
 
-1)  ERRNO_H is in use already, so ERRNO_ADAPTED must be defined instead.
+1)  ERRNO_H is already in use, so ERRNO_ADAPTED_H must be used instead.
 
-2)  <errno> must be changed to <errno2>, as it clashes with the 
-    global <errno> of every compile environment.
-
-
-
-           #if !defined(_ERRNO_H)                              
-           #define _ERRNO_H                                          
+           #if !defined(_ERRNO_H)
+           #define _ERRNO_H
 
     ===>   #if !defined(_ERRNO_ADAPTED_H)
-           #define _ERRNO_ADAPTED_H 
+           #define _ERRNO_ADAPTED_H
 
 
+2)  <errno> must be changed to <errno2>, as it clashes with the
+    global <errno> of every compile environment.
 
-           extern int errno;                                    
+           extern int errno;
 
     ===>   extern int errno2;
-
-
 
 
 "procid_adapted.h"
 ------------------
 
-3)  "_except" must be changed to "except", as it clashes with the 
+3)  "_except" must be changed to "except", as it clashes with the
     Windows exception system.
 
+          *_except[10], /* program error exception vectors */
 
-          *_except[10], /* program error exception vectors */  
+    ===>   *except[10], /* program error exception vectors */
 
-     ===>  *except[10], /* program error exception vectors */
 
- 
+============================================================
+PART 2: arm64 / 64-bit adaptations (module_adapted.h,
+         procid_adapted.h, sgstat_adapted.h)
+============================================================
+
+On arm64 (Apple Silicon and other 64-bit hosts), C's "long" and
+"unsigned long" are 64 bits wide. The OS-9 struct definitions use
+these types to describe 32-bit fields and pointers in the 68k address
+space. Left unchanged, every such field is 8 bytes instead of 4,
+corrupting the struct layouts that the emulator maps directly onto
+68k binary data.
+
+errno_adapted.h contains only error-code constants (#define) and
+needs no struct-layout changes.
+
+The three remaining files — module_adapted.h, procid_adapted.h, and
+sgstat_adapted.h — require these mechanical substitutions applied to
+every struct field declaration:
+
+  short  / unsigned short / ushort   ===>   uint16_t
+  long   / unsigned long  / ulong    ===>   uint32_t
+  <any pointer type>                 ===>   os9addr_t
+
+os9addr_t is a uint32_t typedef defined in os9main_incl_precomp.h
+before these headers are included. It represents a 32-bit virtual
+address in the 68k emulated address space. Host code translates
+between os9addr_t values and real host pointers using the macros
+TO68K() and FROM68K() defined in os9_ll.h.
+
+The goal is that sizeof() of every OS-9 struct matches the layout
+of the corresponding binary structure in a real OS-9 disk image or
+module file.
+
+
+Summary
+-------
+  errno_adapted.h   — guard rename + errno -> errno2 only
+  procid_adapted.h  — above changes + _except rename +
+                      short->uint16_t, long->uint32_t, ptr->os9addr_t
+  module_adapted.h  — short->uint16_t, long->uint32_t, ptr->os9addr_t
+  sgstat_adapted.h  — short->uint16_t, long->uint32_t, ptr->os9addr_t
+
