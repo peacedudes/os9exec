@@ -2,6 +2,7 @@
 # Supply your own copy locally from a licensed OS-9 system.
 # See Source/OS9exec_core/os9defs/defs_files.txt for which files and how to adapt.
 /Source/OS9exec_core/os9defs/*.h
+/Source/OS9exec_core/h0
 
 # Build output
 /Output/
