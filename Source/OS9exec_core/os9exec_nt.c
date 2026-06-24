@@ -641,9 +641,9 @@ Boolean mnt_imgMode  = false;
  * Note: If routine exits w/o error, it has malloc()-ed a block at pap
  *       containing the parameter structure which must be freed afterwards.
  */
-static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, ulong* psiz, byte **pap)
+static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, uint32_t* psiz, byte **pap)
 {
-   ulong paramsiz, argsiz, envsiz;
+   uint32_t paramsiz, argsiz, envsiz;
    int os9envc,h;
    byte *p,*pp, *hp;
    uint32_t *alp,*elp;
@@ -758,7 +758,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
  */
 static os9err prepLaunch(char *toolname, char **argv, int argc, char **envp, ulong memplus, ushort prior)
 {
-  ulong   psiz;
+  uint32_t psiz;
   byte*   pap;
   os9err  err;
   ushort  newpid;
@@ -1154,7 +1154,7 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
   {
     os9err          err, cErr;
     ushort          path;
-    ulong           size;
+    uint32_t        size;
     process_typ*    cp= &procs[ pid ];
     char            pathName[ OS9PATHLEN ];
     os9direntry_typ dEnt;
