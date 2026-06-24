@@ -133,8 +133,8 @@ os9err pEOF      ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
 void   init_SCF  ( fmgr_typ* f );
 os9err pSopen    ( ushort pid, syspath_typ*, ushort  *modeP, char* pathname );
 os9err pSclose   ( ushort pid, syspath_typ* );
-os9err pSBlink   ( ushort pid, syspath_typ*, ulong      *d2 );
-os9err pGBlink   ( ushort pid, syspath_typ*, ulong      *d2 );
+os9err pSBlink   ( ushort pid, syspath_typ*, uint32_t   *d2 );
+os9err pGBlink   ( ushort pid, syspath_typ*, uint32_t   *d2 );
 /* ------------------------------------------------------------------------- */
 
 /* -----------------------  /term pause control  --------------------------- */
@@ -596,11 +596,11 @@ os9err pSopen( _pid_, syspath_typ* spP, _modeP_, char* name )
 
 
 
-os9err pSBlink( _pid_, _spP_, ulong *d2 )
+os9err pSBlink( _pid_, _spP_, uint32_t *d2 )
 /* specific "/L2" blink command, as defined in "led_Drv" */
 {
-     byte*   bb= (byte  *)*d2;
-     ushort* ww= (ushort*)*d2;
+     byte*   bb= (byte  *)FROM68K(*d2);
+     ushort* ww= (ushort*)FROM68K(*d2);
         	
      l2.col1  =           *(bb+0); /* assign values as done in the "led_drv" */
      l2.ratio1= os9_word( *(ww+1) );
@@ -610,11 +610,11 @@ os9err pSBlink( _pid_, _spP_, ulong *d2 )
 } /* pSBlink */
 
 
-os9err pGBlink( _pid_, _spP_, ulong *d2 )
+os9err pGBlink( _pid_, _spP_, uint32_t *d2 )
 /* specific "/L2" blink command, as defined in "led_Drv" */
 {
-     byte*   bb= (byte  *)*d2;
-     ushort* ww= (ushort*)*d2;
+     byte*   bb= (byte  *)FROM68K(*d2);
+     ushort* ww= (ushort*)FROM68K(*d2);
         	
      *(bb+0)=          l2.col1; /* assign values as done in the "led_drv" */
      *(ww+1)= os9_word(l2.ratio1);

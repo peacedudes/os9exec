@@ -90,15 +90,15 @@ BOOL ClosePrinterRaw(HANDLE hPrinter);
 /* --- local procedure definitions for object definition ------------------- */
 os9err pPrOpen   ( ushort pid, syspath_typ*, ushort  *modeP, char* pathname );
 os9err pPrClose  ( ushort pid, syspath_typ* );
-os9err pPrOut    ( ushort pid, syspath_typ*, ulong *maxlenP, char* buffer );
-os9err pPrOutLn  ( ushort pid, syspath_typ*, ulong *maxlenP, char* buffer );
+os9err pPrOut    ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
+os9err pPrOutLn  ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
 
 //os9err pPrOpt    ( ushort pid, syspath_typ*,                 byte* buffer );
-os9err pPrReady  ( ushort pid, syspath_typ*, ulong *n );
+os9err pPrReady  ( ushort pid, syspath_typ*, uint32_t *n );
 //os9err pPrSetopt ( ushort pid, syspath_typ*,                 byte* buffer );
 
 // used from consio.c
-os9err pEOF      ( ushort pid, syspath_typ*, ulong *maxlenP, char* buffer );
+os9err pEOF      ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
 os9err pCopt(ushort pid, syspath_typ* spP, byte* buffer);
 os9err pCsetopt(ushort pid, syspath_typ* spP, byte* buffer);
 
@@ -345,7 +345,7 @@ os9err pPrClose( ushort pid, syspath_typ* spP )
 
 
 /* output to printer */
-os9err pPrOut  ( ushort pid, syspath_typ* spP, ulong *maxlenP, char* buffer )
+os9err pPrOut  ( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
 {
   struct _sgs* ot = (struct _sgs*)&spP->opt; /* path opt table */
   char *p,*q;
@@ -385,7 +385,7 @@ os9err pPrOut  ( ushort pid, syspath_typ* spP, ulong *maxlenP, char* buffer )
 
 
 /* output line to printer */
-os9err pPrOutLn( ushort pid, syspath_typ* spP, ulong *maxlenP, char* buffer)
+os9err pPrOutLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer)
 {   
   struct _sgs* ot = (struct _sgs*)&spP->opt; /* path opt table */
   char *p;
@@ -409,7 +409,7 @@ os9err pPrOutLn( ushort pid, syspath_typ* spP, ulong *maxlenP, char* buffer)
 
 
 
-os9err pPrReady( _pid_, syspath_typ*, ulong *n )
+os9err pPrReady( _pid_, syspath_typ*, uint32_t *n )
 /* check ready */
 /* NOTE: is valid for outputs also, when using "dup" */
 {   return 0;

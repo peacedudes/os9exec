@@ -64,7 +64,7 @@ void  CheckInputBuffersTTY( void );
 short           InstallTTY        ( syspath_typ*, int consoleID );
 void             RemoveTTY                      ( int consoleID );
 long      ReadCharsFromPTY( char *buffer, long n, int consoleID );
-ulong      WriteCharsToPTY( char *buffer,ulong n, int consoleID, Boolean do_lf );
+uint32_t   WriteCharsToPTY( char *buffer, uint32_t n, int consoleID, Boolean do_lf );
 Boolean        DevReadyTTY( long *count,          int consoleID );
 
 void           HandleEvent( void );

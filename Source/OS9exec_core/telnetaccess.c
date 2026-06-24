@@ -127,7 +127,7 @@ void RemoveTTY( int consoleID )
 
 
 
-ulong WriteCharsToPTY( char* buffer, ulong n, int consoleID, Boolean do_lf )
+uint32_t WriteCharsToPTY( char* buffer, uint32_t n, int consoleID, Boolean do_lf )
 /* write characters to TTY */
 {
     #ifdef PIP_SUPPORT
@@ -147,11 +147,9 @@ ulong WriteCharsToPTY( char* buffer, ulong n, int consoleID, Boolean do_lf )
           set_os9_state( pid, pWaitRead, "WriteCharsToPTY" );
           return n;
 	  } // if
-	  
+
       spC->u.pipe.pchP->do_lf= do_lf;                     /* store it here also */
-      { uint32_t n32= (uint32_t)n;
-        PutCharsToTTY( currentpid,spC, &n32,buffer, do_lf ); /* put it into pipe !! */
-        n= n32; }
+      PutCharsToTTY( currentpid,spC, &n,buffer, do_lf ); /* put it into pipe !! */
       if    (n>0) lw_pid( mco );                          /* assign for later use */
       return n;
 
