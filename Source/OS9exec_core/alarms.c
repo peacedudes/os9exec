@@ -141,7 +141,7 @@ static alarm_typ* A_GetNew( ushort pid )
 
 
 
-os9err A_Make( ushort pid, ulong *aId, ushort aCode, ulong aTicks, Boolean cyclic )
+os9err A_Make( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTicks, Boolean cyclic )
 /* General routine to make alarms */
 {
 	alarm_typ* aa;
@@ -151,9 +151,9 @@ os9err A_Make( ushort pid, ulong *aId, ushort aCode, ulong aTicks, Boolean cycli
 	aa->ticks = aTicks;
 	aa->due   = aTicks + GetSystemTick();
 	aa->cyclic= cyclic;
-	
+
 	A_Insert   ( aa );
-	*aId= (ulong)aa;
+	*aId= (uint32_t)(aa - alarms);  /* use array index, not pointer — fits in 32-bit OS-9 register */
 	return 0;
 } /* A_Make */
 
@@ -179,50 +179,50 @@ void A_Kill( ushort pid )
 
 /* ------------------------------------------------------------------ */
 
-static os9err Alarm_Delete( _pid_, ulong aId )
+static os9err Alarm_Delete( _pid_, uint32_t aId )
 /* A$Delete call: 0 */
 {
 	alarm_typ* aa;
-	int        k;
-	
-    for (k=0; k<MAXALARMS; k++) {
-    	    aa= &alarms[k];
-		if (aa!=NULL && aa==(alarm_typ*)aId) { 
-		    A_Remove  ( aa ); 
-		    return 0;
-		} /* if */
-	} /* for */
-	
+
+	if (aId >= MAXALARMS) return E_BPADDR;
+	aa= &alarms[ aId ];
+	if (aa->pid != 0) {
+		A_Remove( aa );
+		return 0;
+	}
+
 	/* can't find this alarm */
 	return E_BPADDR;
 } /* Alarm_Delete */
 
 
 
-static os9err Alarm_Set( ushort pid, ulong *aId, ushort aCode, ulong aTicks )
+static os9err Alarm_Set( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTicks )
 /* A$Set call: 1 */
 {	return A_Make( pid, aId,aCode,aTicks, false );
 } /* Alarm_Set */
 
 
 
-static os9err Alarm_Cycle( ushort pid, ulong *aId, ushort aCode, ulong aTicks )
+static os9err Alarm_Cycle( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTicks )
 /* A$Cycle call: 2 */
 {	return A_Make( pid, aId,aCode,aTicks, true );
 } /* Alarm_Cycle */
 
 
 
-static os9err Alarm_AtDate( ushort pid, ulong *aId, ushort aCode, ulong aTime, ulong aDate )
+static os9err Alarm_AtDate( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTime, uint32_t aDate )
 /* A$AtDate call: 3 */
 {
-	ulong  iTime,iDate, aTicks;
-	int    dayOfWk, currentTick;
-	int    mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
-    byte   tc[4];
-    ulong* tcp= (ulong*)&tc[0];
+	uint32_t iTime, iDate, aTicks;
+	ulong    gt_time, gt_date;
+	int      dayOfWk, currentTick;
+	int      mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
+    byte       tc[4];
+    uint32_t* tcp= (uint32_t*)&tc[0];
 
-	Get_Time( &iTime,&iDate, &dayOfWk,&currentTick, false,false );
+	Get_Time( &gt_time,&gt_date, &dayOfWk,&currentTick, false,false );
+	iTime= (uint32_t)gt_time;  iDate= (uint32_t)gt_date;
 
     *tcp = os9_long( aTime );         /* get time */
     aTime= tc[1]*3600+tc[2]*60+tc[3]; /* seconds since midnight */
@@ -243,28 +243,30 @@ static os9err Alarm_AtDate( ushort pid, ulong *aId, ushort aCode, ulong aTime, u
 
 
 
-static os9err Alarm_AtJul( ushort pid, ulong *aId, ushort aCode, ulong aTime, ulong aDate )
+static os9err Alarm_AtJul( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTime, uint32_t aDate )
 /* A$AtJul call: 4 */
 {
-	ulong  iTime,iDate, aTicks;
-	int    dayOfWk, currentTick;
-	int    mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
+	uint32_t iTime, iDate, aTicks;
+	ulong    gt_time, gt_date;
+	int      dayOfWk, currentTick;
+	int      mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
 
-	Get_Time( &iTime,&iDate, &dayOfWk,&currentTick, false,false );
-	
+	Get_Time( &gt_time,&gt_date, &dayOfWk,&currentTick, false,false );
+	iTime= (uint32_t)gt_time;  iDate= (uint32_t)gt_date;
+
 	/* alarms in the past are not allowed */
-	if (aDate <iDate)       return E_PARAM; 
+	if (aDate <iDate)       return E_PARAM;
 	if (aDate==iDate &&
 		aTime <iTime)       return E_PARAM;
 	if (aDate -iDate >= mx) return E_PARAM;
-		
+
 	aTicks= ((aDate-iDate)*SecsPerDay + aTime-iTime)*TICKS_PER_SEC;
 	return A_Make( pid, aId,aCode,aTicks, false );
 } /* Alarm_AtJul */
 
 
 
-os9err Alarm( ushort pid, ulong *aId, short aFunc, ushort sig, ulong aTime, ulong aDate )
+os9err Alarm( ushort pid, uint32_t *aId, short aFunc, ushort sig, uint32_t aTime, uint32_t aDate )
 {
 	#define A_Delete    0x00
 	#define A_Set       0x01

@@ -1725,16 +1725,16 @@ os9err OS9_F_Alarm( regs_type *rp, ushort cpid )
  * Output:  d0.l=Alarm ID
  */
 {
-	os9err err;
-    ulong  aId  =        rp->d[0];
-    short  aFunc= loword(rp->d[1]);
-    ushort sig  =        rp->d[2];
-    ulong  aTime=        rp->d[3];
-    ulong  aDate=        rp->d[4];
+	os9err   err;
+    uint32_t aId  =        rp->d[0];
+    short    aFunc= loword(rp->d[1]);
+    ushort   sig  =        rp->d[2];
+    uint32_t aTime=        rp->d[3];
+    uint32_t aDate=        rp->d[4];
 
 	err= Alarm( cpid, &aId, aFunc, sig, aTime,aDate );
 	debugprintf(dbgProcess,dbgNorm,
-	        ("# OS9_F_Alarm: id=%08X aFunc=%d sig=%08X tim=%08X dat=%08X err=%d\n", 
+	        ("# OS9_F_Alarm: id=%08X aFunc=%d sig=%08X tim=%08X dat=%08X err=%d\n",
                 aId,aFunc, sig, aTime,aDate, err ));
 
     if   (!err) rp->d[0]= aId; /* get back <aId> */

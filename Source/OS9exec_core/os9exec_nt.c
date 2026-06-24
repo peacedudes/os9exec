@@ -1805,7 +1805,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
   ushort       svd_intpid= 0; // by default, we are not called from intutil
   ulong        resL;          // llm_os9_go result
   alarm_typ*   aa;
-  ulong		   aaNew;         // new alarm number for cyclic alarm
+  uint32_t    aaNew;         // new alarm number for cyclic alarm
   Boolean      last_arbitrate;
   process_typ* sigp;
   

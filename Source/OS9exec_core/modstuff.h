@@ -92,9 +92,9 @@ ushort calc_parity( ushort*   p, ushort numwords );
 ulong  calc_crc   ( byte*     p, ulong size, ulong accum );
 void    mod_crc   ( mod_exec* m );
 
-os9err prepData(ushort pid, mod_exec* theModule, ulong memplus, ulong *msiz, byte **mp);
+os9err prepData(ushort pid, mod_exec* theModule, uint32_t memplus, uint32_t *msiz, byte **mp);
 
-os9err install_traphandler(ushort pid, ushort trapidx, char *mpath, ulong addmem, traphandler_typ **traphandler);
+os9err install_traphandler(ushort pid, ushort trapidx, char *mpath, uint32_t addmem, traphandler_typ **traphandler);
 os9err release_traphandler(ushort pid, ushort trapidx);
 void   unlink_traphandlers(ushort pid);
 

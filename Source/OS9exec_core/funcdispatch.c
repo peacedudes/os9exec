@@ -703,9 +703,9 @@ os9err exec_syscall( ushort func, ushort pid, regs_type* rp, Boolean withinIntUt
   if (withinIntUtil) {
     // make the debug logging prep for systemcalls within int commands here
   //memcpy( (void*)&cp->os9regs,   (void*)rp,       sizeof(regs_type) );
-    memcpy( (void*)&cp->os9regs.d, (void*)&rp->d, 5*sizeof(ulong) );
-    memcpy( (void*)&cp->os9regs.a, (void*)&rp->a, 6*sizeof(ulong) );
-    
+    memcpy( (void*)&cp->os9regs.d, (void*)&rp->d, 5*sizeof(uint32_t) );
+    memcpy( (void*)&cp->os9regs.a, (void*)&rp->a, 6*sizeof(uint32_t) );
+
     if (func==F_Exit) { // for internal utilities, F$Exit returns until here !!
       rp->d[ 1 ]= cp->exiterr;
       

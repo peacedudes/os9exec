@@ -221,7 +221,7 @@ typedef  struct {
             os9addr_t trapmem;     /* 68k arena offset of trap handler static storage */
 
             /* other entries are used by high-level code only */
-            ulong trapmemsz;
+            uint32_t trapmemsz;
             mod_trap *trapmodule;
             ushort mid;
             ushort dummy;

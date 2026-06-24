@@ -513,11 +513,11 @@ static os9err SCSIcall( short scsiAdapt, ushort scsiBus, ushort scsiID, ushort s
 
 
 
-os9err Set_SSize( scsi_dev* scsi, ulong sctSize )
+os9err Set_SSize( scsi_dev* scsi, uint32_t sctSize )
 /* Set the SCSI sector size */
 {
-    byte   cb     [CB_Size];
-    ulong  dat_buf[3];
+    byte     cb     [CB_Size];
+    uint32_t dat_buf[3];
 
     cb[0]= CmdSel;
     cb[1]= (scsi->LUN & 0x07)<<5;
@@ -535,12 +535,12 @@ os9err Set_SSize( scsi_dev* scsi, ulong sctSize )
 } /* Set_SSize */
 
 
-os9err Get_SSize( scsi_dev* scsi, ulong *sctSize )
+os9err Get_SSize( scsi_dev* scsi, uint32_t *sctSize )
 /* Get the SCSI sector size */
 {
-    os9err err;
-    byte   cb     [CB_Size];
-    ulong  dat_buf[3];
+    os9err   err;
+    byte     cb     [CB_Size];
+    uint32_t dat_buf[3];
 
     cb[0]= CmdSense;
     cb[1]= (scsi->LUN & 0x07)<<5;
@@ -557,12 +557,12 @@ os9err Get_SSize( scsi_dev* scsi, ulong *sctSize )
 
 
 
-os9err ReadCapacity( scsi_dev* scsi, ulong *totScts, ulong *sctSize )
+os9err ReadCapacity( scsi_dev* scsi, uint32_t *totScts, uint32_t *sctSize )
 /* Get the SCSI device size */
 {
-    os9err err;
-    byte   cb     [CB_SizeExt];
-    ulong  dat_buf[3];
+    os9err   err;
+    byte     cb     [CB_SizeExt];
+    uint32_t dat_buf[3];
     
     dat_buf[0]= 0; 
     dat_buf[1]= 0; 
@@ -590,13 +590,13 @@ os9err ReadCapacity( scsi_dev* scsi, ulong *totScts, ulong *sctSize )
 
 
 
-os9err Get_DSize( scsi_dev* scsi, ulong *totScts )
+os9err Get_DSize( scsi_dev* scsi, uint32_t *totScts )
 /* Get the SCSI device size */
 {
-    os9err err;
-    byte   cb     [CB_Size];
-    ulong  dat_buf[3];
-    ulong  sctSize;
+    os9err   err;
+    byte     cb     [CB_Size];
+    uint32_t dat_buf[3];
+    uint32_t sctSize;
     
     cb[0]= CmdSense;
     cb[1]= (scsi->LUN & 0x07)<<5;
@@ -620,16 +620,16 @@ os9err Get_DSize( scsi_dev* scsi, ulong *totScts )
 
 
 
-os9err ReadFromSCSI( scsi_dev* scsi, ulong sectorNr, ulong nSectors,
-                                     ulong len,      byte* buffer )
+os9err ReadFromSCSI( scsi_dev* scsi, uint32_t sectorNr, uint32_t nSectors,
+                                     uint32_t len,      byte* buffer )
 {
-    os9err err;
-    byte   cb[CB_Size];
-    ulong* l;
-    int    ii;
+    os9err   err;
+    byte     cb[CB_Size];
+    uint32_t* l;
+    int      ii;
 
     for (ii=0; ii<NTries; ii++) {
-        l= (ulong*)&cb[0]; *l= os9_long( sectorNr); /* cb0,cb1,cb2,cb3 */
+        l= (uint32_t*)&cb[0]; *l= os9_long( sectorNr); /* cb0,cb1,cb2,cb3 */
                     cb[0]= CmdRead;    /* and overwrite cb0 field */
                     cb[1]= (cb[1] & 0x1F) | ((scsi->LUN & 0x07)<<5); // upper 3 bits are LUN
                     cb[4]= nSectors;
@@ -651,16 +651,16 @@ os9err ReadFromSCSI( scsi_dev* scsi, ulong sectorNr, ulong nSectors,
 
 
 
-os9err WriteToSCSI( scsi_dev* scsi, ulong sectorNr, ulong nSectors,
-                                    ulong len,      byte* buffer )
+os9err WriteToSCSI( scsi_dev* scsi, uint32_t sectorNr, uint32_t nSectors,
+                                    uint32_t len,      byte* buffer )
 {
-    os9err err;
-    byte   cb[CB_Size];
-    ulong* l;
-    int    ii;
+    os9err   err;
+    byte     cb[CB_Size];
+    uint32_t* l;
+    int      ii;
 
     for (ii=0; ii<NTries; ii++) {
-        l= (ulong*)&cb[0]; *l= os9_long( sectorNr ); /* cb0,cb1,cb2,cb3 */
+        l= (uint32_t*)&cb[0]; *l= os9_long( sectorNr ); /* cb0,cb1,cb2,cb3 */
                     cb[0]= CmdWrite;   /* and overwrite cb0 field */
                     cb[1]= (cb[1] & 0x1F) | ((scsi->LUN & 0x07)<<5); // upper 3 bits are LUN
                     cb[4]= nSectors;

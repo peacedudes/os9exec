@@ -1346,12 +1346,11 @@ os9err setprior(ushort pid, ushort newprior)
  * Note: procs[pid] must be already prepared (by new_process())
  */
 os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
-                 byte*  paramptr, ulong  paramsiz, ulong memplus,
+                 byte*  paramptr, uint32_t paramsiz, uint32_t memplus,
                  ushort numpaths, ushort grp, ushort usr, ushort prior )
 {
     byte         *mp,*p,*p2;
-    ulong*       a;
-    ulong        memsiz, cnt;
+    uint32_t     memsiz, cnt;
     ushort       err, mty;
     mod_exec*    theModule;
     process_typ* cp= &procs[newpid];
@@ -1464,8 +1463,7 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
     rp->d[6]= memsiz; /* total initial memory allocation */
 
     /* prepare sigdat content */
-     a= (ulong*)&cp->sigdat[0x12];
-    *a= os9_long(cp->memtop-paramsiz);
+    SET_OS9L(cp->sigdat, 0x12, cp->memtop - paramsiz);
 
     /* check for stdout filter and init */
     cp->stdoutfilter= initfilterfunc( Mod_Name( theModule ), (char*)paramptr, (void**)&cp->filtermem);

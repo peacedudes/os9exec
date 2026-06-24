@@ -407,10 +407,10 @@ Boolean SameBlk( byte *a, byte *b, ulong size )
 ulong DatMod_Size( ulong namsize, ulong datsize )
 {
     ulong dsize= sizeof(struct modhcom) /* module header */
-               + sizeof(ulong)          /* data offset */
+               + sizeof(uint32_t)       /* data offset (4-byte OS-9 field) */
                + datsize                /* the data segment */
                + namsize                /* module name */
-               + sizeof(ulong);         /* CRC */
+               + sizeof(uint32_t);      /* CRC (4-byte OS-9 field) */
     
     dsize= (dsize+15) - ((dsize+15) % 16); // OS-9 data module sizes are divisible by 16
     return  dsize;
@@ -699,9 +699,9 @@ static void fill_s( char** b, char* s )
 static void go_thru_list( char* v0, char* b0, ulong inetAddr )
 /* adapt "localhost" at the "inetdb" module */
 {
-    char    *v, *b, *blk, *bBlk;
-    ulong   *ipa;
-    short   i, jump;
+    char      *v, *b, *blk, *bBlk;
+    uint32_t  *ipa;
+    short      i, jump;
     
     short   n     = os9_word( *(short*)v0 );
     Boolean lFound= false;
@@ -713,8 +713,8 @@ static void go_thru_list( char* v0, char* b0, ulong inetAddr )
     
     v= v0;
     for (i=0; i<n; i++) {
-        blk= v;         v+= sizeof(short); jump= os9_word( *(short*)blk );
-        ipa= (ulong*)v; v+= sizeof(ulong); /* get the inetaddr */
+        blk= v;             v+= sizeof(short);    jump= os9_word( *(short*)blk );
+        ipa= (uint32_t*)v;  v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
 
         while (true) {
             if (ustrcmp( v,"localhost" )==0) {
@@ -726,20 +726,20 @@ static void go_thru_list( char* v0, char* b0, ulong inetAddr )
             if (*v==NUL) break;
         } /* while */
         if (lFound) break;
-        
+
         blk+= jump;
-        v   = blk; 
+        v   = blk;
     } /* for */
     if (!lFound) return; /* probably not enough room to put "localhost" in */
-    
+
     v= v0;
     b= b0;
     for (i=0; i<n; i++) {
-        blk =         v;  v+= sizeof(short); jump= os9_word( *(short*)blk );
-        ipa = (ulong*)v;  v+= sizeof(ulong); /* get the inetaddr */
+        blk =             v;  v+= sizeof(short);    jump= os9_word( *(short*)blk );
+        ipa = (uint32_t*)v;   v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
 
-        bBlk=    b;       b+= sizeof(short);
-        *(ulong*)b= *ipa; b+= sizeof(ulong); /* get the inetaddr */
+        bBlk=         b;       b+= sizeof(short);
+        *(uint32_t*)b= *ipa;   b+= sizeof(uint32_t); /* copy 4-byte inetaddr */
 
     //  printf( "%3d %3d %08X '%s'\n", i, jump, os9_long( *ipa ), v );
 
@@ -770,10 +770,10 @@ static void adapt_inetdb( mod_exec* mh, ulong inetAddr, ulong dns1, ulong dns2, 
     
  /* ------- hosts field adaption --------- */    
     b0= (char* ) mh + OFFS_HOSTS;
-    b0= (char* ) mh + os9_long( *(ulong*)b0 ); /* get start position of "hosts" field */
-    
-    bL= (char* ) mh + OFFS_HOSTS + sizeof(ulong);
-    bL= (char* ) mh + os9_long( *(ulong*)bL ); /* get end   position of "hosts" field */
+    b0= (char* ) mh + os9_long( *(uint32_t*)b0 ); /* get start position of "hosts" field */
+
+    bL= (char* ) mh + OFFS_HOSTS + sizeof(uint32_t);
+    bL= (char* ) mh + os9_long( *(uint32_t*)bL ); /* get end   position of "hosts" field */
   
                       size= bL-b0;
     v0=      get_mem( size );
@@ -787,8 +787,8 @@ static void adapt_inetdb( mod_exec* mh, ulong inetAddr, ulong dns1, ulong dns2, 
     
         
  /* ------- DNS field adaption --------- */    
-    bp = (char* ) mh + OFFS_DNS;                  
-    bp = (char* ) mh + os9_long( *(ulong*)bp ); /* get start position of "resolv.conf" field */
+    bp = (char* ) mh + OFFS_DNS;
+    bp = (char* ) mh + os9_long( *(uint32_t*)bp ); /* get start position of "resolv.conf" field */
     bp+= 2;       hp= (short*)bp;
     bp+= 2;
 
@@ -1196,7 +1196,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         os9modules[mid].isBuiltIn = isBuiltIn;
         debugprintf(dbgModules,dbgNorm,
           ("# load_module: (found) mid=%d, theModuleP=%08lX, ^theModuleP=%08lX\n",
-              mid, (ulong) theModuleP, os9_long( *(ulong*)theModuleP )));
+              mid, (ulong) theModuleP, os9_long( *(uint32_t*)theModuleP )));
    
         os9modules[mid].linkcount= 1; /* module is loaded and linked */
         
@@ -1540,11 +1540,10 @@ void mod_crc( mod_exec* m )
 /* prepare data for execution of OS9 executable module/trap handler
  * returns msiz(actual size) and mp(actual base pointer, unbiased)
  */
-os9err prepData(ushort pid, mod_exec *theModule, ulong memplus, ulong *msiz, byte **mp)
+os9err prepData(ushort pid, mod_exec *theModule, uint32_t memplus, uint32_t *msiz, byte **mp)
 {
-   ulong memsz,offs;
-   byte *p,*p2,*bp;
-   ulong cnt;
+   uint32_t memsz, offs, cnt;
+   byte    *p, *p2, *bp;
    int k;
    
    /* -- allocate memory for data */
@@ -1606,8 +1605,8 @@ os9err prepData(ushort pid, mod_exec *theModule, ulong memplus, ulong *msiz, byt
 
 
 
-os9err install_traphandler( ushort pid, ushort trapidx, 
-                            char *mpath, ulong addmem, traphandler_typ **traphandler )
+os9err install_traphandler( ushort pid, ushort trapidx,
+                            char *mpath, uint32_t addmem, traphandler_typ **traphandler )
 /* install a traphandler */
 {
     mod_exec *theModule; /* OS-9 trap handler module header */

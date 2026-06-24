@@ -172,17 +172,17 @@ typedef struct {
   char    alias[OS9PATHLEN];	 /* device's alias name */
 
   int      nr;					 /* own reference number (array index) */
-  ulong    sctSize;			     /* sector size for this device */
+  uint32_t sctSize;			     /* sector size for this device */
   ushort   mapSize;              /* size of allocation map */
   byte     pdtyp;                /* device type: hard disk, floppy */
   ushort   sas;				     /* sector allocation size */
-  ulong    root_fd_nr;           /* sector nr of root fd */
-  ulong    clusterSize;          /* cluster size (allocation) */
-  ulong    totScts;              /* total   number of sectors */
-  ulong    imgScts;              /* current number of sectors at this image */
+  uint32_t root_fd_nr;           /* sector nr of root fd */
+  uint32_t clusterSize;          /* cluster size (allocation) */
+  uint32_t totScts;              /* total   number of sectors */
+  uint32_t imgScts;              /* current number of sectors at this image */
   ushort   last_diskID;          /* last disk ID, inherited by new paths */
-  ulong    last_alloc;           /* the last allocation was here */
-  ulong	   currPos;			     /* current position at image */
+  uint32_t last_alloc;           /* the last allocation was here */
+  uint32_t currPos;			     /* current position at image */
   ulong    rMiss, rTot,		     /* device statistics */
            wMiss, wTot;
   ushort   sp_img;			     /* syspath number of image file */
@@ -335,7 +335,7 @@ static os9err ReadSector( rbfdev_typ* dev, ulong sectorNr,
 {
     os9err  err= 0;
     Boolean pos_already;
-    ulong    sect     = dev->sctSize;
+    uint32_t sect     = dev->sctSize;
     ulong    pos      =     sectorNr*sect; // get position and length to read
     ulong    len      =     nSectors*sect;
     ulong    img      = dev->imgScts*sect;
@@ -435,7 +435,7 @@ static os9err WriteSector( rbfdev_typ* dev, ulong sectorNr,
 {
     os9err  err= 0;
     Boolean pos_already, extendIt= false;
-    ulong    sect     = dev->sctSize;
+    uint32_t sect     = dev->sctSize;
     ulong    pos      =     sectorNr*sect;     // get position and length to write
     ulong    len      =     nSectors*sect;
     uint32_t img      = (uint32_t)(dev->imgScts*sect);
@@ -630,7 +630,7 @@ static os9err DevSize( rbfdev_typ* dev )
 {
     os9err   err;
     uint32_t size;
-    ulong    ssize;
+    uint32_t ssize;
 
     /* should be defined already for the RAM disk */
  // #ifdef RAM_SUPPORT

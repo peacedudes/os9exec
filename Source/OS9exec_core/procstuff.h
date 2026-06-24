@@ -93,7 +93,7 @@ void lw_pid( ttydev_typ* mco );
 
 os9err setprior( ushort pid, ushort newprior);
 os9err prepFork( ushort pid,      char* mpath,    ushort mid,
-                 byte*  paramptr, ulong paramsiz, ulong memplus, 
+                 byte*  paramptr, uint32_t paramsiz, uint32_t memplus,
                  ushort numpaths, ushort grp, ushort usr, ushort prior );
 
 /* eof */
