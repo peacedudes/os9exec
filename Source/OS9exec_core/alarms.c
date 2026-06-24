@@ -215,14 +215,14 @@ static os9err Alarm_AtDate( ushort pid, uint32_t *aId, ushort aCode, uint32_t aT
 /* A$AtDate call: 3 */
 {
 	uint32_t iTime, iDate, aTicks;
-	ulong    gt_time, gt_date;
+	uint32_t gt_time, gt_date;
 	int      dayOfWk, currentTick;
 	int      mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
     byte       tc[4];
     uint32_t* tcp= (uint32_t*)&tc[0];
 
 	Get_Time( &gt_time,&gt_date, &dayOfWk,&currentTick, false,false );
-	iTime= (uint32_t)gt_time;  iDate= (uint32_t)gt_date;
+	iTime= gt_time;  iDate= gt_date;
 
     *tcp = os9_long( aTime );         /* get time */
     aTime= tc[1]*3600+tc[2]*60+tc[3]; /* seconds since midnight */
@@ -247,12 +247,12 @@ static os9err Alarm_AtJul( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTi
 /* A$AtJul call: 4 */
 {
 	uint32_t iTime, iDate, aTicks;
-	ulong    gt_time, gt_date;
+	uint32_t gt_time, gt_date;
 	int      dayOfWk, currentTick;
 	int      mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
 
 	Get_Time( &gt_time,&gt_date, &dayOfWk,&currentTick, false,false );
-	iTime= (uint32_t)gt_time;  iDate= (uint32_t)gt_date;
+	iTime= gt_time;  iDate= gt_date;
 
 	/* alarms in the past are not allowed */
 	if (aDate <iDate)       return E_PARAM;

@@ -2764,7 +2764,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     
     #ifdef RBF_CACHE
   //char            vvv[OS9PATHLEN];
-    ulong           fd_hash;   
+    uint32_t        fd_hash;
     dirtable_entry* mP= NULL;
     #endif
 
@@ -3107,10 +3107,10 @@ os9err pRdelete( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
     ulong       dfd;
     
     #ifdef RBF_CACHE
-    ulong           fd_hash;
+    uint32_t        fd_hash;
     dirtable_entry* mP= NULL;
     #endif
-    
+
         err= usrpath_open( pid,&path, fRBF, pathname,*modeP ); 
     if (err) return err;
         spP= get_syspath ( pid, procs[ pid ].usrpaths[ path ] ); /* get spP for fd sects */

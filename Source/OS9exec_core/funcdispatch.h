@@ -85,8 +85,8 @@ typedef os9err os9func_typ(regs_type *rp, ushort cpid);
 typedef struct {
             os9func_typ *func;
             char *name;
-            ulong inregs;
-            ulong outregs;
+            uint32_t inregs;
+            uint32_t outregs;
         } funcdispatch_entry;
 
 #define NUMFCALLS   0x61

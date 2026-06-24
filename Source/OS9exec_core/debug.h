@@ -110,8 +110,8 @@ extern char triggername[TRIGNAMELEN];           /* debug trigger name */
 #define RCHK_MEM 0x04
 #define RCHK_MOD 0x08
 
-Boolean out_of_mods(ulong addr);
-Boolean out_of_mem(ushort pid,ulong addr);
+Boolean out_of_mods(os9addr_t addr);
+Boolean out_of_mem(ushort pid, os9addr_t addr);
 
 
 #if defined NODEBUG
@@ -128,7 +128,7 @@ Boolean out_of_mem(ushort pid,ulong addr);
   #define debugprintf( a,b,c ) if (debugcheck(a,b)) _debugprintf c;
 
   ushort  debug_halt ( ushort haltmask );
-  void    regcheck   ( ushort pid, char *nam,ulong reg,ushort mode );
+  void    regcheck   ( ushort pid, char *nam, uint32_t reg, ushort mode );
   void    trigcheck  ( char  *msg, char *name );
 #endif
 
@@ -139,8 +139,8 @@ os9err debug_help ( ushort pid, int argc, char **argv );
 void   dumpregs   ( ushort pid );
 ushort debugwait  ( void );
 
-void showonereg(ulong value, Boolean isa, ushort regnum, ushort lenspec);
-void show_maskedregs(regs_type *rp, ulong regmask);
+void showonereg(uint32_t value, Boolean isa, ushort regnum, ushort lenspec);
+void show_maskedregs(regs_type *rp, uint32_t regmask);
 
 char* get_stat_name(ushort stat);
 char* get_ev_name  (ushort ev);

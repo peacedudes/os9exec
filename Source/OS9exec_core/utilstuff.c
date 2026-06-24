@@ -325,7 +325,7 @@ int ustrncmp( const char *s1, const char *s2, ushort n )
 
 
 
-void os9_long_inc( unsigned int* a, ulong increment )
+void os9_long_inc( unsigned int* a, uint32_t increment )
 /* increment ulong field <a> dependent on big/little endian */
 {   *a= os9_long( os9_long( *a ) + increment );
 } /* os9_long_inc */
@@ -544,7 +544,7 @@ os9err c2os9err(int cliberr,ushort suggestion)
 
 
 
-ulong j_date(int d, int m, int y)
+uint32_t j_date(int d, int m, int y)
 /* this routine returns the number of days
  * since January 1, 4713 B.C.              
  * it is used by the F$Time call.
@@ -562,7 +562,7 @@ ulong j_date(int d, int m, int y)
 
 
 
-void g_date(ulong jdn, int *dp, int *mp, int *yp )
+void g_date(uint32_t jdn, int *dp, int *mp, int *yp )
 /* this routine returns the date from julian day number */
 { 
   long fct;
@@ -653,13 +653,12 @@ void GetTim( struct tm* tim )
 
 
 
-void Get_Time( ulong *cTime, ulong *cDate, int *dayOfWk, int *currentTick,
+void Get_Time( uint32_t *cTime, uint32_t *cDate, int *dayOfWk, int *currentTick,
                Boolean asGregorian, Boolean withTicks )
 {
     struct tm tim; /* Important Note: internal use of <tm> as done in OS-9 */
   //byte   tc[4];
-  //ulong* tcp= (ulong*)&tc[0];
-    ulong  ct0;
+    int    ct0;
     int    y, m, d, tsm, ssm, syTick;
     
   //process_typ* cp= &procs[ currentpid ];
@@ -1019,10 +1018,10 @@ char* OS9exec_Name( void )
 } /* OS9exec_Name */
 
 
-ulong Pipe_NReady( pipechan_typ* p )
+uint32_t Pipe_NReady( pipechan_typ* p )
 {
-  ulong  n= p->pwp-p->prp;
-  if       (p->pwp<p->prp) n+= p->size; /* wrapper */
+  uint32_t n= (uint32_t)(p->pwp-p->prp);
+  if        (p->pwp<p->prp) n+= p->size; /* wrapper */
   return n;
 } /* Pipe_NReady */
 
@@ -1364,8 +1363,8 @@ static int HashF( char* name )
 } // HashF
 
 
-os9err FD_ID( const char* pathname, dirent_typ* dEnt, 
-              ulong      *fdID,     dirtable_entry** mH )
+os9err FD_ID( const char* pathname, dirent_typ* dEnt,
+              uint32_t   *fdID,     dirtable_entry** mH )
             //ulong *id, long dirid,  char* fName )
 {
   #ifdef MACOS9
@@ -1378,7 +1377,7 @@ os9err FD_ID( const char* pathname, dirent_typ* dEnt,
 //direntry* m;
   Boolean   doit;
   ulong     liCnt= 0;
-  ulong     dirid;
+  uint32_t  dirid;
   
   #define MAXLICNT ( 0x00800000 / MAXDIRS )
 
@@ -1499,7 +1498,7 @@ os9err FD_ID( const char* pathname, dirent_typ* dEnt,
 
 
 
-os9err FD_Name( ulong fdID, char* *pathnameP )
+os9err FD_Name( uint32_t fdID, char* *pathnameP )
 // get back the real <volID> and <objID> for Mac file system
 {
   os9err          err= 0;
@@ -1545,8 +1544,8 @@ os9err Flush_Dir( ushort cpid, ushort* pathP, const char* nmS )
   char            fullName[OS9PATHLEN];
   int             oLen;
   dirtable_entry* mP= NULL;
-  ulong           fd_hash;
-    
+  uint32_t        fd_hash;
+
   err=   usrpath_open( cpid,  pathP, fRBF, nmS, 0x81 ); if (err) return err;
   spP=   get_syspath ( cpid, procs[ cpid ].usrpaths[ *pathP ] ); // get spP for fd sects
 
@@ -1591,7 +1590,7 @@ os9err Flush_Entry( ushort cpid, const char* name )
   ushort          path;
   syspath_typ*    spP;
   char            tmp[ OS9PATHLEN ];
-  ulong           fd_hash;
+  uint32_t        fd_hash;
   dirtable_entry* mP= NULL;
   
   if (name[ 0 ]=='/'  || 
@@ -1770,7 +1769,7 @@ void seekD0( syspath_typ* spP )
 
 
 
-ulong DirSize( syspath_typ* spP )
+uint32_t DirSize( syspath_typ* spP )
 /* get the virtual OS-9 dir size in bytes */
 {
     int         cnt= 0;
@@ -1837,7 +1836,7 @@ int stat_( const char* pathname, struct stat *buf )
 
 
 
-Boolean DirName( const char* pathname, ulong fdsect, char* result, Boolean useInodes )
+Boolean DirName( const char* pathname, uint32_t fdsect, char* result, Boolean useInodes )
 // Only Linux StartDir uses useInodes = true
 {
   Boolean ok= false;
@@ -1850,7 +1849,7 @@ Boolean DirName( const char* pathname, ulong fdsect, char* result, Boolean useIn
     DIR*            d;
     dirent_typ*     dEnt;
     dirtable_entry* mP= NULL;
-    ulong           fd;
+    uint32_t        fd;
     Boolean         okINO;
 
     #ifdef __MACH__
@@ -1952,9 +1951,9 @@ Boolean DirName( const char* pathname, ulong fdsect, char* result, Boolean useIn
 
 
 
-ulong My_FD( const char* pathname )
+uint32_t My_FD( const char* pathname )
 {
-  ulong fd= 0;
+  uint32_t fd= 0;
 
   #ifdef MACOS9
     #pragma unused(pathname)

@@ -347,7 +347,7 @@ os9err new_process(ushort parentid, ushort *newpid, ushort numpaths)
     ushort       npid, k;
     process_typ  *cp, *pap;
 	int			 dayOfWk, currentTick;
-	ulong        timbeg, datbeg;
+	uint32_t     timbeg, datbeg;
     
     /* --- find empty process descriptor */
     debugprintf(dbgProcess,dbgNorm,("# new_process: parent=%d wants to create child\n",parentid));

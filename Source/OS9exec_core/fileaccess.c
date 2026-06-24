@@ -684,9 +684,8 @@ os9err pFwriteln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
 os9err pFopt( ushort pid, syspath_typ* spP, byte *buffer )
 {
   os9err err= pRBFopt( pid,spP, buffer );
-  ulong  fdID;
-  ulong* l;
-    
+  uint32_t fdID;
+
   #ifdef MACOS9
     FSSpec*         spc= &spP->u.disk.spec;
     CInfoPBRec      cipb;
@@ -719,7 +718,7 @@ os9err pFopt( ushort pid, syspath_typ* spP, byte *buffer )
   //upe_printf( "FD_ID '%s' '%s' fdPos=%08X\n", spP->fullName, dEnt.d_name, fdpos );                  
   #endif
     
-  l= (ulong*)&buffer[ PD_FD ]; *l= os9_long( fdID )<<BpB; /* LSN of file */
+  SET_OS9L(buffer, PD_FD, fdID << BpB); /* LSN of file */
   return err;
 } /* pFopt */
 
@@ -2413,7 +2412,7 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
     dirent_typ*     dEnt;
     dirtable_entry* mP= NULL;
     int             len;
-    ulong           fdpos;
+    uint32_t        fdpos;
     Boolean         topFlag= false;
       
     #ifdef windows32

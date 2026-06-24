@@ -559,7 +559,7 @@ Boolean async_pending = false;
 short   defSCSIAdaptNo= -1; // unknown
 short   defSCSIBusNo  =  0; // first
 l2_typ  l2;
-ulong   my_inetaddr   = 0x7F000001; /* loopback by default: 127.0.0.1 */
+uint32_t my_inetaddr  = 0x7F000001; /* loopback by default: 127.0.0.1 */
 
 
 /* jump back environment for SEGV exceptions */

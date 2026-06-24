@@ -495,7 +495,7 @@ os9err OS9_F_Time( regs_type *rp, _pid_ )
     ushort  mode       = loword(rp->d[0]);
     Boolean asGregorian= (mode & 0x1)==0;
     Boolean withTicks  = (mode & 0x2)!=0;
-    ulong   aTime, aDate;
+    uint32_t aTime, aDate;
     int     dayOfWk, currentTick;
     
     Get_Time( &aTime,&aDate, &dayOfWk,&currentTick, asGregorian,withTicks );

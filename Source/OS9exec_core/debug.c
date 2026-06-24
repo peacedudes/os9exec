@@ -166,7 +166,7 @@ Boolean debugcheck( ushort mask, ushort level )
 
 
 // check if address is outside process' allocated memory
-Boolean out_of_mem( ushort pid, ulong addr )
+Boolean out_of_mem( ushort pid, os9addr_t addr )
 {
   ulong     base;
   pmem_typ* cm= &pmem[ pid ];
@@ -183,7 +183,7 @@ Boolean out_of_mem( ushort pid, ulong addr )
 
 
 // check if address is outside any OS9 module
-Boolean out_of_mods( ulong addr )
+Boolean out_of_mods( os9addr_t addr )
 {
   ushort    k;
   mod_exec* mp;
@@ -201,7 +201,7 @@ Boolean out_of_mods( ulong addr )
 
 /* check for passing of bad register arguments */
 #ifndef NODEBUG
-void regcheck(ushort pid,char *nam,ulong reg,ushort mode)
+void regcheck(ushort pid,char *nam,uint32_t reg,ushort mode)
 {
     Boolean problem=false;
     
@@ -210,14 +210,14 @@ void regcheck(ushort pid,char *nam,ulong reg,ushort mode)
             /* check for unused data reg */
             if ((reg & 0xFFFFFFF0) == 0xDDDDDDD0) {
                 problem=true;
-                uphe_printf("regcheck: %s = $%08lX seems to be uninitialized data reg (pid=%d)\n",nam,reg,pid);
+                uphe_printf("regcheck: %s = $%08X seems to be uninitialized data reg (pid=%d)\n",nam,reg,pid);
             }
         }
         if (mode & RCHK_ARU) {
             /* check for unused addr reg */
             if ((reg & 0xFFFFFFF0) == 0xAAAAAAA0) {
                 problem=true;
-                uphe_printf("regcheck: %s = $%08lX seems to be uninitialized address reg (pid=%d)\n",nam,reg,pid);
+                uphe_printf("regcheck: %s = $%08X seems to be uninitialized address reg (pid=%d)\n",nam,reg,pid);
             }
         }
         if (mode & (RCHK_MEM+RCHK_MOD)) {
@@ -226,7 +226,7 @@ void regcheck(ushort pid,char *nam,ulong reg,ushort mode)
             if (RCHK_MEM && !out_of_mem(pid,reg)) { problem=false; goto ok; }
             if (RCHK_MOD && !out_of_mods(reg)) { problem=false; goto ok; }
         ok:
-            if (problem) uphe_printf("regcheck: %s = $%08lX (pid=%d) is out of: %s %s\n",nam,reg,pid,mode & RCHK_MEM ? "[allocated memory]" : "",mode & RCHK_MOD ? "[all OS9 modules]" : "");
+            if (problem) uphe_printf("regcheck: %s = $%08X (pid=%d) is out of: %s %s\n",nam,reg,pid,mode & RCHK_MEM ? "[allocated memory]" : "",mode & RCHK_MOD ? "[all OS9 modules]" : "");
         }
         if (problem) {
             debug_halt(dbgWarnings);
@@ -802,36 +802,36 @@ goon:
 
 
 /* show one reg in specified length */
-void showonereg(ulong value, Boolean isa, ushort regnum, ushort lenspec)
+void showonereg(uint32_t value, Boolean isa, ushort regnum, ushort lenspec)
 {
     char        *format;
     static char tmp[OS9PATHLEN]; /* static buffer to allow path display in error tracebacks */
-    
+
     lenspec &= 0x03;
     if (lenspec) {
         if (!isa) {
             /* data register */
             switch (lenspec) {
-                case 1 : format="D%d.b=$%02lX "; value &= 0xFF;   break;
-                case 2 : format="D%d.w=$%04lX "; value &= 0xFFFF; break;
-                case 3 : format="D%d.l=$%lX "  ;                  break;
+                case 1 : format="D%d.b=$%02X "; value &= 0xFF;   break;
+                case 2 : format="D%d.w=$%04X "; value &= 0xFFFF; break;
+                case 3 : format="D%d.l=$%X "  ;                  break;
             }
             upe_printf(format,     regnum,value);
         }
         else {
             /* address register */
-            upe_printf("A%d=$%lX ",regnum,value);
+            upe_printf("A%d=$%X ",regnum,value);
             if (lenspec==2) { /* not all incoming strings are null terminated */
-                nullterm( (char*)&tmp,(char*)value, OS9PATHLEN );
+                nullterm( (char*)&tmp,(char*)FROM68K(value), OS9PATHLEN );
                 upe_printf("\"%s\" ", tmp );
             }
         }
-    }   
+    }
 } /* showonereg */
 
 
 /* show multiple regs according to bitmask */
-void show_maskedregs(regs_type *rp, ulong regmask)
+void show_maskedregs(regs_type *rp, uint32_t regmask)
 {
     ushort k;
     

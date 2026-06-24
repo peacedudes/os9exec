@@ -120,7 +120,7 @@ int  pustrcmp( const char* s1,const char* s2 );
 int  ustrncmp( const char* s1,const char* s2, ushort n );
 
 
-void os9_long_inc ( unsigned int* a, ulong increment );
+void os9_long_inc ( unsigned int* a, uint32_t increment );
 void set_os9_state( ushort cpid, pstate_typ state, const char* callingProc );
 
 os9err host2os9err( OSErr hosterr, ushort suggestion );
@@ -128,14 +128,14 @@ os9err c2os9err   ( int   cliberr, ushort suggestion );
 os9err os9error   ( os9err err );
 
 
-ulong  j_date  (            int  d,  int  m,  int  y  );
-void   g_date  ( ulong jdn, int *dp, int *mp, int *yp );
+uint32_t j_date  (              int  d,  int  m,  int  y  );
+void     g_date  ( uint32_t jdn, int *dp, int *mp, int *yp );
 
 void   TConv   ( time_t u, struct tm* tim );
 time_t UConv             ( struct tm* tim );
 void   GetTim            ( struct tm* tim );
 
-void   Get_Time( ulong *cTime, ulong *cDate, int *dayOfWk, int *currentTick, 
+void   Get_Time( uint32_t *cTime, uint32_t *cDate, int *dayOfWk, int *currentTick,
                  Boolean asGregorian, Boolean withTicks );
 
 ulong GetScreen( char mode );
@@ -164,7 +164,7 @@ os9err  pRBFopt     ( ushort pid, syspath_typ*, byte* buffer );
 void    LastCh_Bit7 ( char* name, Boolean setIt);
 void    Console_Name( int term_id, char* consname );
 char*   OS9exec_Name( void );
-ulong   Pipe_NReady ( pipechan_typ* p );
+uint32_t Pipe_NReady ( pipechan_typ* p );
 
 Boolean AbsPath      ( const char* pathname );
 void    GetOS9Dev    ( const char* pathname, char* cmp_entry );
@@ -180,9 +180,9 @@ Boolean FileFound    ( const char* pathname );
 void    CutUp              ( char* pathname, const char* prev );
 void    EatBack            ( char* pathname );
 
-os9err  FD_ID        ( const char* pathname, dirent_typ* dEnt, 
-                       ulong      *fdID,     dirtable_entry** mH );
-os9err  FD_Name      ( ulong       fdID,     char* *pathnameP );
+os9err  FD_ID        ( const char* pathname, dirent_typ* dEnt,
+                       uint32_t   *fdID,     dirtable_entry** mH );
+os9err  FD_Name      ( uint32_t    fdID,     char* *pathnameP );
 
 os9err  Flush_Dir    ( ushort cpid, ushort* pathP, const char* nmS );
 os9err  Flush_Entry  ( ushort cpid,                const char* nmS );
@@ -192,13 +192,13 @@ void    Flush_FDCache( const char* pathname );
   os9err DirNthEntry       ( syspath_typ*, int n, dirent_typ** dEnt );
   os9err RemoveAppledouble ( syspath_typ* );
   void   seekD0            ( syspath_typ* );
-  ulong  DirSize           ( syspath_typ* );
+  uint32_t DirSize         ( syspath_typ* );
 #endif
 
 
 int     stat_        ( const char* pathname, struct stat *buf );
-Boolean DirName      ( const char* pathname, ulong fdsect, char* result, Boolean useInodes );
-ulong   My_FD        ( const char* pathname );
+Boolean DirName      ( const char* pathname, uint32_t fdsect, char* result, Boolean useInodes );
+uint32_t My_FD       ( const char* pathname );
 void    MakeOS9Path  (       char* pathname );
 
 Boolean SamePathBegin( const char* pathname, const char* cmp );

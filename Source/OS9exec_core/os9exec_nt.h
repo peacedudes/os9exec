@@ -711,12 +711,12 @@ typedef struct {
 /* NOTE: this is structure is also used for the tty/pty system which is in fact   */
 /* a cross connected pipe (writing will be done into (each other's) sp_lock pipe) */
 typedef struct {
-            ulong     size;               /* size of pipe buffer */
+            uint32_t  size;               /* size of pipe buffer */
             byte*     buf;                /* pointer to pipe buffer */
             byte*     prp;                /* pipe read pointer */
             byte*     pwp;                /* pipe write pointer */
-            ulong     bread;              /* number of bytes read so far */
-            ulong     bwritten;           /* number of bytes read so far */
+            uint32_t  bread;              /* number of bytes read so far */
+            uint32_t  bwritten;           /* number of bytes written so far */
             ushort    consumers;          /* number of waiting consumers for this pipe */
             ushort    sp_lock;            /* if <> 0, tty/pty to this system path nr */
             Boolean   do_lf;
@@ -821,7 +821,7 @@ typedef struct {
     {
       ushort  fAddressType;   // always AF_INET
       ushort  fPort;          // Port number 
-      ulong   fHost;          // Host address in net byte order
+      uint32_t fHost;         // Host address in net byte order
       byte    fUnused[8];     // Traditional unused bytes
     };
 
@@ -1405,7 +1405,7 @@ extern Boolean async_pending;
 extern short   defSCSIAdaptNo;
 extern short   defSCSIBusNo;
 extern l2_typ  l2;
-extern ulong   my_inetaddr;
+extern uint32_t my_inetaddr;
 
 /* jump back environment for SEGV exceptions */
 extern jmp_buf main_env;
