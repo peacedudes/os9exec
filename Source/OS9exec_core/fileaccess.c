@@ -1112,8 +1112,11 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
       debugprintf(dbgFiles,dbgNorm,("# pFopen: trying to %s '%s', mode=$%04hX\n",
                                      cre ? "create":"open", pp,*modeP));
 
-      err= AdjustPath( pp,adapted, cre ); if (err) return err;
-      pp=                 adapted; 
+      err= AdjustPath( pp,adapted, cre );
+      /* OS-9 I$Create = open-or-create; file already existing is not an error for pFopen */
+      if (cre && err == E_CEF) err = 0;
+      if (err) return err;
+      pp=                 adapted;
 
       if (cre) {
           /* --- create */
