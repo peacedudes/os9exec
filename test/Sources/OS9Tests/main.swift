@@ -209,6 +209,63 @@ noError("load+unlink: echo",
 // sleep
 noError("sleep: zero seconds",   "sleep 0")
 
+// system info — extended
+check("events: lists events",    contains: "OS-9",    "events")
+noError("irqs: runs",            "irqs")
+check("mfree: shows memory",     contains: "K",       "mfree")
+check("tmode: shows settings",   contains: "baud",    "tmode")
+check("xmode: shows settings",   contains: "baud",    "xmode /term")
+
+// file tools
+check("hasher: produces hash",   contains: "/dd/startup",  "hasher /dd/startup")
+noError("sizeh0: runs",          "sizeh0 768")
+check("finder: finds file",      contains: "startup", "finder /dd -n=startup")
+
+// binary exchange roundtrip
+check("binex+exbin: roundtrip",  contains: "Good CRC",
+    "binex /dd/CMDS/echo /dd/t_echo.x",
+    "exbin /dd/t_echo.x /dd/t_echo2",
+    "ident /dd/t_echo2",
+    "del /dd/t_echo.x", "del /dd/t_echo2")
+
+// build a shell script from a file (stdin redirect avoids interactive stdin conflict)
+check("build: creates script file", contains: "t_bscript",
+    "echo echo built >/dd/t_bld_in",
+    "build /dd/t_bscript </dd/t_bld_in",
+    "dir /dd ! grep t_bscript",
+    "del /dd/t_bscript", "del /dd/t_bld_in")
+
+// module save/restore
+check("save: writes module file", contains: "echo",
+    "load /dd/CMDS/echo",
+    "save echo",
+    "dir /dd/CMDS ! grep echo",
+    "del /dd/echo",
+    "unlink echo")
+
+// disk integrity
+check("dcheck: disk intact",     contains: "intact",  "dcheck /dd")
+
+// commands requiring args (usage / graceful failure)
+check("mactype: shows usage",    contains: "macintosh",   "mactype")
+check("tsmon: shows usage",      contains: "tsmon",       "tsmon")
+check("os9gen: no device",       contains: "os9gen",      "os9gen")
+noError("cfp: shows help",       "cfp")
+
+// disk save generates a restore script
+check("dsave: generates script", contains: "Copy",        "dsave /dd")
+
+// module integrity checker
+check("fixmod: good CRC",        contains: "CRC matches", "fixmod /dd/CMDS/echo")
+
+// inline help system
+check("help: shows function",    contains: "Function",    "help")
+
+// development tools — graceful no-input behaviour
+check("r68: no input",           contains: "no input",    "r68")
+check("cc: no files",            contains: "no files",    "cc")
+check("l68: no root psect",      contains: "no root",     "l68")
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 print("\nResults: \(passed) passed, \(failed) failed")
