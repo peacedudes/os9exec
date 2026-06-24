@@ -66,7 +66,7 @@ UAE_SUPPRESS = -Wno-unused-variable -Wno-unused-but-set-variable \
 
 VPATH = $(CORE):$(PLAT):Source/OS9execMPW:$(APPEMU):$(UAE)
 
-.PHONY: all clean
+.PHONY: all clean test
 
 all: $(OBJDIR) os9exec
 
@@ -87,3 +87,6 @@ $(OBJDIR):
 
 clean:
 	rm -rf $(OBJDIR) os9exec
+
+test: os9exec
+	swift run --package-path test

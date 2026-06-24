@@ -4,8 +4,19 @@
 /Source/OS9exec_core/os9defs/*.h
 /Source/OS9exec_core/h0
 
+# Adapted OS-9 headers (user-derived from originals; not redistributable pending permission)
+/Source/OS9exec_core/os9defs/orig/
+
 # Build output
 /Output/
+/build/
+/os9exec
+/test/.build/
+
+# Disk images and test data
+/dd
+/h0
+/h0_files/
 
 # Claude Code per-user local settings (machine-specific allowlist)
 /.claude/settings.local.json
