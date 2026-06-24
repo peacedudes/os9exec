@@ -86,7 +86,7 @@ static os9err OS9_I_OpenCreate( regs_type *rp, ushort cpid, Boolean cre )
     
     ushort    xmode =  mode | ( cre ? poCreateMask:0 ); /* add the create flag */
     ushort    path;
-    ulong     size= 0; /* the default value, if size bit is not set */
+    uint32_t  size= 0; /* the default value, if size bit is not set */
     ptype_typ type;
     char      pipename[OS9NAMELEN];
     char*     co= cre ? "I$Create":"I$Open";
