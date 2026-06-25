@@ -443,8 +443,6 @@ os9err new_process(ushort parentid, ushort *newpid, ushort numpaths)
                 cp->x.dev  = pap->x.dev;
                 cp->x.lsn  = pap->x.lsn;
                 strncpy( cp->x.path, pap->x.path, OS9PATHLEN );
-                fprintf(stderr,"# new_process: pid=%d inherits x.dev=%d x.lsn=%lu x.path='%s' from pap=%d\n",
-                        npid, cp->x.dev, (unsigned long)cp->x.lsn, cp->x.path, (int)(pap-procs));
             
                 #ifdef macintosh
                   cp->x.volID= pap->x.volID; 

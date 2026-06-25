@@ -1066,7 +1066,6 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
 
         err= 0;
         if (bootPos==0) {     // for <bootPos> > 0, it's already opened for boot reading
-              fprintf(stderr,"# load_module: usrpath_open type=%d name='%s' mode=0x%x\n", type, name, mode);
               err= usrpath_open( pid, &path,type, name,mode );
           if (err)
             return os9error( linkstyle ? E_MNF:err ); /* as the real OS-9 */
@@ -1074,7 +1073,6 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
 
         if (bootSiz==0) {
               err= usrpath_getstat( pid,path,SS_Size, NULL,NULL,NULL,&dsize,NULL );
-          fprintf(stderr,"# load_module: SS_Size err=%d dsize=%lu\n", err, (unsigned long)dsize);
           if (err) return err;
         }
         else {
@@ -1092,7 +1090,6 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         theModuleP= pp;
 
             err= usrpath_read ( pid, path, &loadbytes, theModuleP, false );
-        fprintf(stderr,"# load_module: usrpath_read err=%d loadbytes=%lu dsize=%lu\n", err, (unsigned long)loadbytes, (unsigned long)dsize);
         if (err || loadbytes<dsize) {
           if (bootPos==0) err= usrpath_close( pid, path );
           return E_READ;
@@ -1207,18 +1204,6 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         /* make sure that module is ok */
         /* --- check module SYNC parity and CRC */
             sync= os9_word(theModuleP->_mh._msync);
-        { const unsigned char* b= (const unsigned char*)theModuleP;
-          fprintf(stderr,"# load_module: theModuleP=%p bytes=[%02x %02x %02x %02x  %02x %02x %02x %02x  %02x %02x %02x %02x  %02x %02x %02x %02x] sync=%04x MODSYNC=%04x\n",
-                (void*)theModuleP,
-                b[0],b[1],b[2],b[3],b[4],b[5],b[6],b[7],
-                b[8],b[9],b[10],b[11],b[12],b[13],b[14],b[15],
-                (unsigned)sync, (unsigned)MODSYNC);
-          fprintf(stderr,"# load_module: sizeof_mh=%zu off_msync=%zu off_msize=%zu sizeof_msize=%zu\n",
-                sizeof(theModuleP->_mh),
-                (size_t)((char*)&theModuleP->_mh._msync - (char*)theModuleP),
-                (size_t)((char*)&theModuleP->_mh._msize - (char*)theModuleP),
-                sizeof(theModuleP->_mh._msize));
-        }
         if (sync!=MODSYNC) {
             /* bad module sync */
             debugprintf(dbgModules,dbgNorm,
@@ -1227,7 +1212,6 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         } /* if */
 
             par= calc_parity( (ushort*)theModuleP, 24 );
-        fprintf(stderr,"# load_module: parity check result=%04x (should be 0)\n",(unsigned)par);
         if (par!=0) {
             /* bad header parity */
             debugprintf(dbgModules,dbgNorm,
@@ -1236,7 +1220,6 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         } /* if */
         
             modSize= os9_long(theModuleP->_mh._msize);
-        fprintf(stderr,"# load_module: modSize=%lu dsize=%lu\n",(unsigned long)modSize,(unsigned long)dsize);
         if (modSize>dsize) {
             debugprintf(dbgModules,dbgNorm,
               ("# load_module: bad size: %d>%d, E_BMID\n", modSize,dsize ));
@@ -1244,7 +1227,6 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         } /* if */
 
         	crc= calc_crc( (byte*)theModuleP, modSize, 0xFFFFFFFF );
-        fprintf(stderr,"# load_module: crc=%08lx (should be ff800fe3)\n",(unsigned long)crc);
         if (crc!=0xFF800FE3) {
             debugprintf(dbgModules,dbgNorm,
               ("# load_module: bad crc, crc result=$%08lX (should be $FF800FE3)\n",crc));
