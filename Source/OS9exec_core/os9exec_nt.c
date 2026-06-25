@@ -1010,14 +1010,12 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
 	#endif
 	
 	char*  p= egetenv( envname ); /* get path for default module loading dir */
-	if    (p==NULL) { fprintf(stderr,"# GetCurPaths('%s'): egetenv=NULL\n",envname); return; }
+	if    (p==NULL) return;
 
 	strcpy( tmp, p ); p= tmp; /* make a local copy */
 	MakeOS9Path( p );
-    fprintf(stderr,"# GetCurPaths('%s'): path='%s' type=%d\n",envname,p,drP->type);
 
         drP->type= IO_Type( 1,           p,mode ); // get device type: Mac/PC or RBF
-    fprintf(stderr,"# GetCurPaths('%s'): IO_Type=%d\n",envname,drP->type);
     if (drP->type==fRBF) {
 		        change_dir( 1,drP->type, p,mode ); // set the types at procid 0
 		return;
@@ -2532,8 +2530,6 @@ ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
 
 mainabort:
   get_error_strings( cp->oerr, &errnam,&errdesc );
-  fprintf(stderr, "os9exec: OS-9 error #%03d:%03d (%s): '%s'\n#   %s\n",
-                   cp->oerr>>8,cp->oerr &0xFF,errnam, my_toolname, errdesc );
   upho_printf( "Emulation could not start due to OS-9 error #%03d:%03d (%s): '%s'\n#   %s\n",
                 cp->oerr>>8,cp->oerr &0xFF,errnam, my_toolname, errdesc );
   err= 3; /* MPW system/missing resource error */

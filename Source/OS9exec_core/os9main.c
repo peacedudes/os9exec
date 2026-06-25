@@ -499,6 +499,8 @@ Boolean setup_term()
     #ifdef UNIX
       struct termios modes;
 
+      if (!isatty(0)) return true; /* stdin is a pipe — skip terminal setup silently */
+
       reply = tcgetattr(0, &modes);           /* retrieve terminal attrs */
       if (reply == 0) {
           /*
@@ -545,8 +547,9 @@ void restore_term()
 {
     #ifdef UNIX
       int reply;
-    
       struct termios modes;
+
+      if (!isatty(0)) return; /* stdin is a pipe — nothing to restore */
 
       modes = savedmodes;
       reply = tcsetattr(0, TCSAFLUSH, &modes);
