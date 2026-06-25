@@ -455,7 +455,7 @@ static void os9_usage(char *name)
     upho_printf("               only writing command line to stdout; -fo causes\n");        
     upho_printf("               cmd line generation for execution with 'os9' MPW tool)\n");     
     upho_printf("   -x width    define MGR screen width\n" );
-    upho_printf("   -y height   define MGR screen width\n" );
+    upho_printf("   -y height   define MGR screen height\n" );
     upho_printf("   -z          define MGR fullscreen mode\n" );
     upho_printf("   -g ip_addr  open   MGR screen at IP address\n");
     upho_printf("   -u          user defined option\n" );
