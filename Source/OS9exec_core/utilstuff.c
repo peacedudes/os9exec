@@ -2513,8 +2513,12 @@ static Boolean OS9_Device( char* os9path, ushort mode, ptype_typ *typeP )
     if (!IsDir(mode) && err==E_FNA) { *typeP= fNone; return false; }
     if (!err && !isFolder)          { *typeP= fRBF;  return true;  }
 
+    /* host path is a directory — honour that before checking SCSI/device descriptors;
+       a device-descriptor module with the same name must not override a real host dir */
+    if (isFolder && IsDir(mode))    { *typeP= fDir;  return true;  }
+
     /* searching for SCSI after searching file image !! */
-    if (SCSI_Device( os9path, &adapt, &bus, &id, &lun, &ssize, &sas,&pdtyp, typeP ) || 
+    if (SCSI_Device( os9path, &adapt, &bus, &id, &lun, &ssize, &sas,&pdtyp, typeP ) ||
                                   *typeP!=fNone ) return true;
     return false;
 } /* OS9_Device */
@@ -2660,7 +2664,7 @@ ptype_typ IO_Type(ushort pid, char* os9path, ushort mode)
         else             type= fFile;
     } while (false);
 
-    debugprintf( dbgFMgrType,dbgNorm,("# IO_Type (out): '%s' %s\n", 
+    debugprintf( dbgFMgrType,dbgNorm,("# IO_Type (out): '%s' %s\n",
                                          os9path, TypeStr(type)) );
     return type;
 } /* IO_Type */
