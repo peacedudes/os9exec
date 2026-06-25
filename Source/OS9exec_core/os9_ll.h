@@ -195,9 +195,10 @@ typedef unsigned int ulong32;
 
 
 #ifdef USE_UAEMU
-  /* buffer for interupt stack */
-  #define TRAPFRAMEBUFLEN 128 /* should be fairly enough for all stack frames */
-  extern ulong trapframebuf[TRAPFRAMEBUFLEN];
+  /* scratch supervisor stack for UAE exception frames; allocated inside the
+     68k arena so ISP holds a valid 32-bit arena offset, not a host pointer */
+  #define TRAPFRAMEBUFLEN 128
+  extern os9addr_t trapstack_isp; /* 68k address of top of supervisor scratch stack */
 #endif
 
 

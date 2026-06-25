@@ -214,8 +214,6 @@
 
 #include "os9exec_incl.h"
 
-ulong trapframebuf[TRAPFRAMEBUFLEN];
-
 /* process routines */
 /* ================ */
 
@@ -376,7 +374,7 @@ os9err new_process(ushort parentid, ushort *newpid, ushort numpaths)
             }
             #ifdef USE_UAEMU
             /* make sure that ISP ist ready for exception stack frames */
-            cp->os9regs.isp= (ulong) &trapframebuf[TRAPFRAMEBUFLEN];
+            cp->os9regs.isp= trapstack_isp;
             #endif
             
             /* there was no last systemcall */

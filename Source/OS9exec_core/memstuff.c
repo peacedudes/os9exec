@@ -145,6 +145,10 @@ unsigned char* emul_base = NULL;             /* arena base (referenced by memory
 static unsigned char* emul_next = NULL;      /* bump pointer for fresh allocations */
 static unsigned char* emul_end  = NULL;      /* one past the end of the arena */
 
+#ifdef USE_UAEMU
+os9addr_t trapstack_isp = 0; /* 68k address of top of supervisor scratch stack */
+#endif
+
 
 static void* emul_alloc( ulong memsz )
 /* bump-allocate a zeroed block from the 68k arena; NULL if exhausted */
@@ -170,6 +174,14 @@ void init_all_mem(void)
         }
         emul_next= emul_base + EMUL_RESERVED; /* keep the low page out of circulation */
         emul_end = emul_base + EMUL_ARENA_SIZE;
+
+        #ifdef USE_UAEMU
+        {   /* reserve supervisor scratch stack for UAE exception frames */
+            unsigned char* ts= (unsigned char*)emul_alloc( TRAPFRAMEBUFLEN * sizeof(ulong) );
+            if (ts)
+                trapstack_isp= TO68K( ts + TRAPFRAMEBUFLEN * sizeof(ulong) );
+        }
+        #endif
     } /* if */
     
     #ifdef REUSE_MEM
