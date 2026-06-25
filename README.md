@@ -11,113 +11,25 @@ Source repository: <https://sourceforge.net/p/os9exec/git_code/ci/master/tree/>
 License: GNU General Public License v2 (see source file headers)
 
 
-## Command compatibility
+## Compatibility
 
-All 88 commands in the `CMDS` directory have been exercised. The table
-below summarises findings.
+General OS-9/68k programs run correctly. The emulator exercises the full
+syscall surface — file I/O, process management, module loading, pipes,
+events, signals, and the shell — and these all behave as expected.
 
-### Works correctly
+What you have in your `CMDS` directory depends on your disk image; the
+commands there are yours to discover with `-h`. People who have OS-9
+software are not newbies.
 
-| Command | Notes |
-|---------|-------|
-| `attr` | show / set file permissions |
-| `binex` / `exbin` | binary ↔ Motorola S-record exchange |
-| `build` | create shell scripts (use `< file` redirect to avoid interactive stdin) |
-| `cc` / `c68` / `cpp` | C compiler driver and parser — runs; needs `/dd/defs/` include files |
-| `cfp` | show disk catalog |
-| `cmp` | compare files |
-| `compress` / `expand` | Lempel-Ziv compress/expand |
-| `copy` | copy files |
-| `count` | count lines/words/chars |
-| `date` | display current date/time |
-| `dcheck` | verify RBF disk structure |
-| `deiniz` | detach device (shows usage without args) |
-| `del` | delete file |
-| `deldir` | delete directory (use `-q` to suppress per-file prompts) |
-| `devs` | list open devices |
-| `dir` | list directory |
-| `dsave` | generate disk-restore shell script |
-| `dump` | hex dump |
-| `echo` | print arguments |
-| `events` | list active OS-9 events |
-| `expand` | see `compress` |
-| `fact` | arbitrary-precision factorial — runs indefinitely from a starting value |
-| `finder` | find files by name |
-| `fixmod` | recalculate module CRC / parity |
-| `free` | show disk free space |
-| `grep` | search for pattern |
-| `hasher` | compute file hash |
-| `help` | inline help for any command |
-| `ident` | display module header |
-| `iniz` | attach device (shows usage without args) |
-| `irqs` | list IRQ handlers |
-| `l68` | linker — runs; reports no input gracefully |
-| `link` | link module already in memory |
-| `list` | print file contents |
-| `load` | load module from disk |
-| `login` | attempts chdir to `/h0` home; fails if H0 disk not mounted |
-| `mactype` | show/set Macintosh file type |
-| `make` | make utility — correctly reports missing makefile |
-| `makdir` | create directory |
-| `math` | this is a **trap handler module**, not a shell command |
-| `mdir` | list loaded modules |
-| `menuitem` | insert Macintosh menu item (Ultrascience extension) |
-| `merge` | concatenate files |
-| `mfree` | show memory free |
-| `moded` | OS-9 module editor — interactive, reads from terminal |
-| `newmenu` | install Macintosh menu (Ultrascience extension) |
-| `o68` | object file tool — reads from stdin when no args given |
-| `os9gen` | write OS-9 boot record — requires device arg |
-| `pd` | print current directory |
-| `pr` | format file for printing |
-| `printenv` | print environment variables |
-| `procs` | list processes |
-| `qsort` | sort stdin |
-| `r68` | macro assembler — reports "no input file" without args |
-| `rename` | rename file |
-| `save` | save module to file |
-| `sizeh0` | size an H0 disk image |
-| `sleep` | sleep N seconds |
-| `tee` | copy stdin to file and stdout |
-| `tmode` | show/set terminal mode |
-| `touch` | create/update file |
-| `tr` | translate characters |
-| `tsmon` | timesharing terminal monitor |
-| `unlink` | unlink module from memory |
-| `xmode` | extended terminal mode display |
+### Known not working
 
-### Interactive only (not scriptable)
-
-| Command | Notes |
-|---------|-------|
-| `break` | drops into the os9exec built-in debugger |
-| `code` | interactive hex encoder |
-| `debug` | 68k machine-level debugger |
-| `edt` | line-oriented text editor |
-| `romsplit` | ROM image splitter — reads interactively |
-| `testmon` | monitor/terminal hardware test |
-| `umacs` | Emacs-like editor — requires `TERM` environment variable |
-
-### Hardware-dependent (not emulated)
-
-| Command | Requires |
-|---------|----------|
-| `backup` | raw device access (`/dd@`) |
-| `com` | serial port |
-| `format` | raw writable device |
-| `frestore` / `fsave` | tape drive (`/mt0`) |
-| `kermit` | serial port |
-| `maps` | SSM (Sound/Screen Manager) module |
-| `rdump` | raw device |
-| `tape` | tape drive |
-
-### Known bugs
-
-| Command | Issue |
-|---------|-------|
-| `screen` | Crashes in `F$CpyMem` with A0 = 0xFFFFFFF2; the program uses Mac QuickDraw globals (negative A5-relative offsets) which are not present in the emulation |
-| `setime` | Accepts only 2-digit years; goes into infinite input loop on bad format |
-| `c68` | Reads from stdin when no file args given (hangs in non-interactive use) |
+| Item | Issue |
+|------|-------|
+| `screen` | Crashes in `F$CpyMem` (A0 = 0xFFFFFFF2); uses Mac QuickDraw globals at negative A5-relative offsets not present in the emulation |
+| `setime` | Accepts only 2-digit years; goes into infinite loop on bad date format |
+| `c68` | Reads from stdin when no file args given — hangs in non-interactive use |
+| `break` / interactive debugger | Terminal is left in raw mode after exit; shell becomes unresponsive |
+| Raw device commands | `backup`, `format`, `rdump`, `frestore`/`fsave`, `tape`, `com`, `kermit` — require physical hardware or raw device access not emulated |
 
 ### Shell features
 
@@ -130,8 +42,10 @@ below summarises findings.
 
 - macOS 14+ on Apple Silicon (arm64)
 - Xcode Command Line Tools (`xcode-select --install`)
-- A licensed OS-9 disk image (RBF format) mounted as `dd` in the repo root,
-  or pointed to by the `OS9DISK` environment variable
+- Something for `/dd`: an RBF disk image, or simply a host directory
+  containing OS-9 binaries. A minimal setup is one directory with one
+  OS-9 executable module — no full OS-9 installation required.
+  Point `OS9DISK` at it, or place/symlink it as `dd` in the repo root.
 - The four adapted OS-9 header files in `Source/OS9exec_core/os9defs/`
   (see below — these are not included due to copyright)
 
