@@ -860,8 +860,11 @@ void get_hw()
   #ifdef macintosh
     hw_site= "Mac";
      
-    #ifdef __INTEL__
-      hw_name = "IntelMac XCode"; 
+    #ifdef __ARM64__
+      hw_name = "macOS arm64";
+      platform= "arm64";
+    #elif defined __INTEL__
+      hw_name = "IntelMac XCode";
       platform= "x86";
     #else
       #ifndef powerc

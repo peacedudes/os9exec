@@ -69,9 +69,13 @@
   #define    UNIX
   #define    USE_UAEMU
   
-  // Support Intel Macs
+  // Distinguish arm64 from Intel (both are little-endian on Apple Silicon)
   #ifndef __BIG_ENDIAN__
-    #define __INTEL__
+    #if defined __arm64__ || defined __aarch64__
+      #define __ARM64__
+    #else
+      #define __INTEL__
+    #endif
   #endif
 #endif
 

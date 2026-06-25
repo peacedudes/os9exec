@@ -108,7 +108,7 @@ void getversion( unsigned short *ver,
   #else
     // simply hardwired for all other platforms
     *ver=    3;
-    *rev= 0x39; /* V3.39 */
+    *rev= 0x40; /* V3.40 — arm64 port */
   #endif
 } // getversion
 
