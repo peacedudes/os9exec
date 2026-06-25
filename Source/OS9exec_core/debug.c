@@ -624,6 +624,9 @@ extern int m68k_os9trace;
 static ulong listbase=0;
 static int disasm=0;
 
+extern void    restore_term(void);
+extern Boolean setup_term(void);
+
 /* wait for debug confirmation */
 ushort debugwait( void )
 {
@@ -647,23 +650,23 @@ ushort debugwait( void )
                          currentpid, currentpid>=MAXPROCESSES ? " **NONE**" : "", debug[0],debug[1],debug[2], debughalt, triggername);
         clearerr(stdin); /* to make sure we don't get into an endless loop */
         
-        #ifdef TERMINAL_CONSOLE
+        #if defined(TERMINAL_CONSOLE) && defined(CON_SUPPORT)
           cp= inp;
-          
-          #ifdef CON_SUPPORT
-            do {
-                do { ConsGetc(cp);
-                } while (!devIsReady);
-
-                ConsPutcEdit(*cp, true,CR); /* do echo */
-                if          (*cp!=CR) cp++;
-            } while         (*cp!=CR);
-          #endif
-        
+          do {
+              do { ConsGetc(cp);
+              } while (!devIsReady);
+              ConsPutcEdit(*cp, true,CR); /* do echo */
+              if          (*cp!=CR) cp++;
+          } while         (*cp!=CR);
              *cp= NUL; /* string termination */
           if (cp==inp) continue;
         #else
-          if (fgets(inp,INPLEN,stdin)==NULL) continue;
+          /* fgets needs a cooked terminal; temporarily restore if on a real tty */
+          { Boolean on_tty= isatty(0);
+            if (on_tty) restore_term();
+            if (fgets(inp,INPLEN,stdin)==NULL) { if (on_tty) setup_term(); continue; }
+            if (on_tty) setup_term();
+          }
         #endif
         
         switch (tolower(inp[0])) {
