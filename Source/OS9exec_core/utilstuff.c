@@ -2517,6 +2517,26 @@ static Boolean OS9_Device( char* os9path, ushort mode, ptype_typ *typeP )
        a device-descriptor module with the same name must not override a real host dir */
     if (isFolder && IsDir(mode))    { *typeP= fDir;  return true;  }
 
+    /* If the path doesn't resolve on the host (E_PNNF — new file being created, or subpath
+       inside a host-directory device), distinguish host-dir from RBF by resolving just the
+       two-char device prefix.  If the prefix maps to a host directory (e.g., OS9H2 or the
+       auto-discovered /h2 folder), the path belongs to the host-filesystem managers.
+       RBF image files (e.g., OS9DISK → /dd file) are NOT directories, so parsepath on
+       "/dd" returns a file path, PathFound() returns false, and we fall through to SCSI. */
+    if (err==E_PNNF) {
+        const char *op = os9path;
+        if (*op==PSEP) op++;
+        if (op[0]!=NUL && op[1]!=NUL && (op[2]==PSEP || op[2]==NUL)) {
+            char devpath[4] = { PSEP, op[0], op[1], NUL };
+            char hostdev[OS9PATHLEN];
+            char *dp        = devpath;
+            if (!parsepath(0, &dp, hostdev, false) && PathFound(hostdev)) {
+                if (IsDir(mode)) { *typeP= fDir;  return true;  }
+                else             { *typeP= fNone; return false; }
+            }
+        }
+    }
+
     /* searching for SCSI after searching file image !! */
     if (SCSI_Device( os9path, &adapt, &bus, &id, &lun, &ssize, &sas,&pdtyp, typeP ) ||
                                   *typeP!=fNone ) return true;
