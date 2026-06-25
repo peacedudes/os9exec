@@ -650,7 +650,9 @@ ushort debugwait( void )
         #if defined(TERMINAL_CONSOLE) && defined(CON_SUPPORT)
           cp= inp;
           do {
-              do { ConsGetc(cp);
+              /* clearerr resets the EOF flag getchar() sets on each VTIME timeout,
+               * allowing read() to be called again on the next ConsGetc iteration. */
+              do { clearerr(stdin); ConsGetc(cp);
               } while (!devIsReady);
               ConsPutcEdit(*cp, true,CR); /* do echo */
               if          (*cp!=CR) cp++;
@@ -658,20 +660,19 @@ ushort debugwait( void )
              *cp= NUL; /* string termination */
           if (cp==inp) continue;
         #else
-          /* Read one char at a time, matching ConsGetc's raw read(0,...) approach.
-           * ConsGetc bypasses the stdio buffer, so fgets(stdin) is unreliable here.
-           * We echo manually because the terminal is in no-echo raw mode. */
+          /* Non-CON_SUPPORT path: read() directly since stdio is unreliable here. */
           { int  n;
             char rc;
             cp= inp;
             do {
-                do { n= read(0, &rc, 1); } while (n==0); /* spin past VTIME timeouts */
-                if (n<0) break;                          /* fd error / EOF */
+                n= read(0, &rc, 1);
+                if (n==0) continue;
+                if (n<0) break;
                 if (rc=='\r' || rc=='\n') { write(1,"\r\n",2); break; }
                 if ((rc==0x7f || rc=='\b') && cp>inp) { cp--; write(1,"\b \b",3); continue; }
-                if (rc < 0x20) continue;                /* ignore other control chars */
+                if (rc < 0x20) continue;
                 *cp++= rc;
-                write(1,&rc,1);                         /* echo */
+                write(1,&rc,1);
             } while (cp < inp+INPLEN-1);
             *cp= NUL;
             if (cp==inp) continue;
