@@ -442,26 +442,33 @@ void show_modules( char* cmp )
     mod_exec *mod;
     char*    nam;
     int      k;
-    char     exeo[10];
-    char     dats[10];
-    char     stck[10];
+    char     adrs[16];
+    char     exeo[32];
+    char     dats[32];
+    char     stck[32];
     char*    mtyp;
-    
-    upo_printf("mID lnk T   Module Type execoffs  datasiz stacksiz Name\n");
-    upo_printf("--- --- - -------- ---- -------- -------- -------- ----------------------------\n");
+    uint32_t modsize, nameoff;
+
+    upo_printf("mID lnk T     68kAddr Type execoffs  datasiz stacksiz Name\n");
+    upo_printf("--- --- - ----------- ---- -------- -------- -------- ----------------------------\n");
 
     for (k=0; k<MAXMODULES; k++) {
             mod= os9mod(k);
-        if (mod!=NULL) {    
-            nam= Mod_Name( mod );
-            
+        if (mod!=NULL) {
+            modsize= os9_long(mod->_mh._msize);
+            nameoff= os9_long(mod->_mh._mname);
+            if (nameoff == 0 || nameoff >= modsize)
+                nam= "<bad-name>";
+            else
+                nam= Mod_Name( mod );
+
             if (cmp==NULL || ustrcmp( nam,cmp )==0) {
                 debugprintf(dbgUtils,dbgNorm,("# imdir: %3d '%s'\n", k,nam ));
-                
+
                 sprintf( exeo,"%8X",           os9_long(mod->_mexec )       );
                 sprintf( dats,"%7.2fk", (float)os9_long(mod->_mdata )/KByte );
                 sprintf( stck,"%7.2fk", (float)os9_long(mod->_mstack)/KByte );
-        
+
                 mtyp= Mod_TypeStr( mod );
                 if (ustrcmp( mtyp,"Prog" )!=0 &&
                     ustrcmp( mtyp,"Trap" )!=0) {
@@ -469,13 +476,17 @@ void show_modules( char* cmp )
                      strcpy( dats,"-" );
                      strcpy( stck,"-" );
                 }
-        
-                upo_printf("%3d %3d %c %8lX %4s %8s %8s %8s %s\n",
+
+                if (os9modules[k].isBuiltIn)
+                    strcpy(adrs, "  (builtin)");
+                else
+                    sprintf(adrs, " $%08X", TO68K(mod));
+
+                upo_printf("%3d %3d %c %11s %4s %8s %8s %8s %s\n",
                             k,
                             os9modules[k].linkcount,
                             os9modules[k].isBuiltIn ? 'I':'M',
-                        
-                            (ulong)mod,
+                            adrs,
                             mtyp,
                             exeo,
                             dats,

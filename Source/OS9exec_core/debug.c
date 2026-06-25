@@ -581,11 +581,13 @@ static void dumpmem(ulong *memptrP,int numlines)
     for (k=0; k<numlines; k++) {
         uphe_printf("%08lX: ",*memptrP);
         for (i=0;i<16;i++) {
-            upe_printf("%02X ",*((byte *)(*memptrP+i)));
+            byte* hp= (byte*)FROM68K(*memptrP+i);
+            upe_printf("%02X ", hp ? *hp : 0xEE);
         }
         upe_printf(" ");
         for (i=0;i<16;i++) {
-            char c=*((byte *)(*memptrP+i));
+            byte* hp= (byte*)FROM68K(*memptrP+i);
+            char c= hp ? *hp : '?';
             upe_printf("%c",isprint(c) ? c : '.');
         }
         upe_printf("\n");
