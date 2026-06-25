@@ -568,7 +568,15 @@ void dumpregs(ushort pid)
     uphe_printf(" PC=%08X SR=%04X\n",rp->pc,rp->sr);
 
     #ifdef USE_UAEMU
-      if (pid<MAXPROCESSES) m68k_disasm( rp->pc, &aa,2, (dbg_func)console_out );
+      if (pid<MAXPROCESSES) {
+          /* m68kpc_offset = addr - m68k_getpc() wraps to a huge value when the
+           * saved process PC differs from the current UAE PC, causing get_iword_1
+           * to access far outside the arena.  Set UAE PC to rp->pc first. */
+          uaecptr save_pc= m68k_getpc();
+          m68k_setpc(rp->pc);
+          m68k_disasm( rp->pc, &aa,2, (dbg_func)console_out );
+          m68k_setpc(save_pc);
+      }
     #endif
 } /* dumpregs */
 
@@ -750,19 +758,20 @@ ushort debugwait( void )
             case 'x' : extra=true; goto goon;
 
             #ifdef USE_UAEMU
-              /* %%% hacky */
               case 'i' : if (sscanf(&inp[1],"%lx", &listbase)<1) {
                                 listbase=m68k_getpc();
                          }
-                         
-                         m68k_disasm( listbase,
-                           (uaecptr*)&listbase, 10,(dbg_func)console_out );
+                         { uaecptr sv= m68k_getpc(); m68k_setpc((uaecptr)listbase);
+                           m68k_disasm( listbase, (uaecptr*)&listbase, 10,(dbg_func)console_out );
+                           m68k_setpc(sv); }
                          disasm=1;
                          break;
-                         
-              case '.' : if (disasm) m68k_disasm( listbase,
-                                       (uaecptr*)&listbase, 10,(dbg_func)console_out );
-                         else dumpmem( &listbase,10 );
+
+              case '.' : if (disasm) {
+                             uaecptr sv= m68k_getpc(); m68k_setpc((uaecptr)listbase);
+                             m68k_disasm( listbase, (uaecptr*)&listbase, 10,(dbg_func)console_out );
+                             m68k_setpc(sv);
+                         } else dumpmem( &listbase,10 );
                          break;
                          
               case 'e' : m68k_dumpstate( (uaecptr*)&listbase,false ); break;
