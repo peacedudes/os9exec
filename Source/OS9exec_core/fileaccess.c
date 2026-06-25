@@ -1654,7 +1654,7 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
     #define   FDS 16
     byte      fdbeg[FDS];                  /* buffer for preparing FD */
     byte*     att     = (byte*) &fdbeg[0]; /* the position of the attr field */
-    ulong*    sizeP   = (ulong*)&fdbeg[9]; /* the position of the size field */
+    uint32_t* sizeP   = (uint32_t*)&fdbeg[9]; /* the position of the size field */
     Boolean   isFolder= false;
     ulong     u       = 0;
     struct tm tim;

@@ -934,7 +934,8 @@ os9err OS9_F_GBlkMp( regs_type *rp, _pid_ )
  *          d1.w = error
  */
 {
-    ulong **b, memsz;
+    uint32_t *b;
+    ulong memsz;
    
 //  #ifdef powerc
 //  Gestalt( gestaltPhysicalRAMSize, &totalMem ); /* not all defs visible for MPW ... */
@@ -951,7 +952,7 @@ os9err OS9_F_GBlkMp( regs_type *rp, _pid_ )
     rp->d[2]= totalMem;
     rp->d[3]= memsz;
 
-    b= (ulong**)FROM68K(rp->a[0]); *b= NULL; /* no segments available */
+    b= (uint32_t*)FROM68K(rp->a[0]); *b= 0; /* no segments available */
     return 0;
 } /* OS9_F_GBlkMp */
 
