@@ -8,6 +8,7 @@ OBJDIR  = build
 
 CFLAGS  = -g -Wall \
           -DTERMINAL_CONSOLE \
+          -DINT_CMD \
           -I$(CORE) \
           -I$(CORE)/os9defs \
           -I$(PLAT) \

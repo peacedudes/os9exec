@@ -1673,9 +1673,11 @@ int isintcommand( const char* name, Boolean *isNative, void** modBaseP )
     const char* cut= name + strlen( name ) - 1;
   #endif
   
-  int index= 0;  
+  int index= 0;
   *isNative= false;
   *modBaseP= NULL;
+
+  if (!with_intcmds) return -1; /* -i option: all internal commands disabled */
   
   #if defined NATIVE_SUPPORT || defined PTOC_SUPPORT
    // get the pure file name from eventual abs path name

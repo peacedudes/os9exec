@@ -1366,29 +1366,17 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
     /* save main module ID */
     cp->mid=  mid;
     setprior( newpid,prior );
-    
+
     /* inherit group and user */
     cp->pd._group= os9_word( grp );
     cp->pd._user = os9_word( usr );
-    
-    /* -- get pointer to main module */
-    theModule= os9mod( mid );
 
-    /* -- prepare data area, for internal commands as well */
-    debugprintf(dbgProcess,dbgDetail,("# prepFork: extra memory=%ld (= paramsiz:%ld + memplus:%ld)\n",
-                                    memplus+paramsiz, paramsiz,memplus));
-    err= prepData( newpid,theModule,memplus+paramsiz, &memsiz, &mp ); if (err) return err; /* no room for data */
-
-    /* -- copy parameter area, for internal commands as well */
-    p= paramptr;        p2= mp+memsiz-paramsiz;
-    cp->my_args= TO68K(p2); /* parameter area start (68k offset) */
-
-    regcheck( newpid,"Param writing start",TO68K(p2),            RCHK_MEM );
-    regcheck( newpid,"Param writing end",  TO68K(p2)+paramsiz-1, RCHK_MEM );
-    for (cnt=0; cnt<paramsiz; cnt++) *(p2++)= *(p++);
-    
     cp->isIntUtil= false; /* no internal command by default */
-    
+
+    /* Check for internal commands BEFORE touching the module or allocating 68k memory.
+       Internal commands run as C functions and need neither prepData nor 68k register setup.
+       This also handles commands with no OS-9 binary (ihelp, icmds, iprocs, ...) that
+       were previously unreachable because link_load failed before prepFork was ever called. */
     #ifdef INT_CMD
           cp->isIntUtil= isintcommand( mpath, &cp->isNative, &modBase )>=0;
       if (cp->isIntUtil) {
@@ -1398,36 +1386,48 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
         /* prepare args */
         prepArgs( (char*)paramptr, &argc,&arguments );
         arguments[0]= (char*)mpath;  /* set module name */
-        
-      //if  (!cp->isNative) {            
+
         if (pp->pd._cid!=0 &&
             pp->pd._cid!=newpid)       /* already children available */
             cp->pd._sid= pp->pd._cid;  /* take child as sibling */
-      //} // if
-        
-        svid= currentpid;  
+
+        svid= currentpid;
         pp->pd._cid= os9_word(newpid); /* this is the child */
         currentpid =          newpid;  /* use the correct identification */
-          
+
         /* execute command */
         err= callcommand( mpath,newpid,svid, argc,arguments, &asThread );
         release_mem                             ( arguments );
-        
-        if (asThread) 
+
+        if (asThread)
           currentpid= svid; // don't change current pid for threads
         else {
           /* simulate successful F$Exit of internal command */
-          
-        //pp->pd._cid= cp->pd._sid; /* restore former child id */
-        //cp->exiterr= 0;
           cp->exiterr= err;
           kill_process( newpid );
           err= 0;
         } // if
-         
+
         return err; /* internal-tool "fork" return value */
       } /* if isintcommand */
     #endif
+
+    /* get pointer to main module — must be valid for real OS-9 binaries */
+    theModule= os9mod( mid );
+    if (theModule==NULL) return os9error(E_MNF);
+
+    /* -- prepare data area */
+    debugprintf(dbgProcess,dbgDetail,("# prepFork: extra memory=%ld (= paramsiz:%ld + memplus:%ld)\n",
+                                    memplus+paramsiz, paramsiz,memplus));
+    err= prepData( newpid,theModule,memplus+paramsiz, &memsiz, &mp ); if (err) return err; /* no room for data */
+
+    /* -- copy parameter area */
+    p= paramptr;        p2= mp+memsiz-paramsiz;
+    cp->my_args= TO68K(p2); /* parameter area start (68k offset) */
+
+    regcheck( newpid,"Param writing start",TO68K(p2),            RCHK_MEM );
+    regcheck( newpid,"Param writing end",  TO68K(p2)+paramsiz-1, RCHK_MEM );
+    for (cnt=0; cnt<paramsiz; cnt++) *(p2++)= *(p++);
 
     /* check if module is executeable and */
     /* check if this module is not in the "black list" of OS9exec */

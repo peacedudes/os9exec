@@ -267,7 +267,6 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
     p= nullterm(mpath,(char*)FROM68K(rp->a[0]),OS9PATHLEN);
     debugprintf(dbgModules,dbgNorm,
       ("# F$Load: requested %sload of '%s', mode=$%04X\n", exedir ? "exec ":"", mpath,mode ));
-
     /* --- really load module, anyway */
     err= load_module( cpid,mpath,&mid, exedir ); if (err) return err;
     
@@ -308,6 +307,23 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
     p= nullterm( mname,(char*)FROM68K(rp->a[0]),OS9NAMELEN );
     debugprintf(dbgModules,dbgNorm,("# F$Link: requested link to '%s', type/lang=$%04X\n",mname,tylan));
 
+
+    #ifdef INT_CMD
+    {
+        Boolean isNative_ = false;
+        void*   modBase_  = NULL;
+        if (isintcommand(mname, &isNative_, &modBase_) >= 0) {
+            /* Internal command: don't look up a real OS-9 module; return plausible
+             * register values so the shell proceeds to F$Fork, where we intercept. */
+            retword(rp->d[0])= tylan;  /* echo back requested type/lang */
+            retword(rp->d[1])= 0;
+            rp->a[0]= TO68K(p);
+            rp->a[1]= 0;
+            rp->a[2]= 0;
+            return 0;
+        }
+    }
+    #endif
 
     /* --- really link (that is, load without path, and always from exe dir) */
     err= link_module( cpid,mname,&mid ); if (err) return err; /* link-style errors */
@@ -1396,7 +1412,12 @@ os9err OS9_F_Fork( regs_type *rp, ushort cpid )
   np=              &procs[ newpid ]; // is valid, even if error
 
   do {
-    err= link_load ( cpid, mpath,&newmid );            if (err) break;
+    err= link_load ( cpid, mpath,&newmid );
+    #ifdef INT_CMD
+    if (err) { newmid= 0; err= 0; } /* no binary — prepFork will try isintcommand; returns E_MNF if not internal */
+    #else
+    if (err) break;
+    #endif
     err= prepFork( newpid, mpath, newmid,
                            (byte*)FROM68K(rp->a[1]),rp->d[2],rp->d[1], 
                            numpaths, grp,usr, prior ); if (err) break;
@@ -1535,6 +1556,9 @@ os9err OS9_F_Chain( regs_type *rp, ushort cpid )
     if (prior==0) prior= os9_word( cp->pd._prior );
     
     if (!err) err= link_load( cpid, mpath, &newmid );
+    #ifdef INT_CMD
+    if  (err) { newmid= 0; err= 0; } /* no binary — prepFork will try isintcommand */
+    #endif
     if (!err) err= prepFork ( cpid, mpath,  newmid,
                               paramptr, rp->d[2], rp->d[1], 
                               numpaths, grp,usr, prior );
