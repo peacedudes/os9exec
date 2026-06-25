@@ -265,14 +265,14 @@ void show_processes(void)
             if (cp->mid==MAXMODULES) strcpy( mIDs,"-" );
             else                    sprintf( mIDs, "%d", cp->mid );
             
-            upo_printf("%3s %c %3d %3d %3d %3s $%08lX %5d $%08lX $%08lX %-12s %s\n",
+            upo_printf("%3s %c %3d %3d %3d %3s $%08X %5d $%08X $%08X %-12s %s\n",
                         idstr,
                         sta,
                os9_word(cp->pd._pid),
                os9_word(cp->pd._sid),
                os9_word(cp->pd._cid),
                         mIDs,
-                        (ulong) mod,
+                        mod ? TO68K(mod) : 0u,
                os9_word(cp->pd._prior),
                         cp->memstart,
                         cp->memtop,

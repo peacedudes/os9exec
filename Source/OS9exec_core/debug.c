@@ -168,16 +168,16 @@ Boolean debugcheck( ushort mask, ushort level )
 // check if address is outside process' allocated memory
 Boolean out_of_mem( ushort pid, os9addr_t addr )
 {
-  ulong     base;
+  uint32_t  base68k;
   pmem_typ* cm= &pmem[ pid ];
-    
+
   ushort k;
   for  ( k=0; k<MAXMEMBLOCKS; k++ ) {
     if (cm->m[ k ].base &&
-        addr   >= (base= (ulong)cm->m[ k ].base) &&
-        addr   <   base       + cm->m[ k ].size) return false; // ok, pointer points within range
+        (base68k= TO68K(cm->m[ k ].base)) <= addr &&
+        addr < base68k + (uint32_t)cm->m[ k ].size) return false;
   } // for
-  
+
   return true; // out of range
 } // out_of_mem
 
@@ -187,12 +187,12 @@ Boolean out_of_mods( os9addr_t addr )
 {
   ushort    k;
   mod_exec* mp;
-    
+
   for (k=0; k<MAXMODULES; k++) {
         mp= os9mod( k );
     if (mp &&
-        addr >= (ulong)mp &&                           // ok, pointer points within range
-        addr <  (ulong)mp + os9_long( mp->_mh._msize )) return false; // not out of range
+        addr >= TO68K(mp) &&
+        addr <  TO68K(mp) + os9_long( mp->_mh._msize )) return false;
   } // for
 
   return true; // out of range
@@ -443,6 +443,7 @@ void debug_procdump( process_typ* cp, int cpid )
 
       /* Show the failing instruction. */
       #ifdef USE_UAEMU
+         m68k_setpc(rp->pc);
          upo_printf(" Executing: -->");
          m68k_disasm(rp->pc, &aa, 1, (dbg_func)upo_printf);
          upo_printf("               ");
@@ -462,12 +463,12 @@ void debug_procdump( process_typ* cp, int cpid )
        // mb= &cp->os9memblocks[i];
           mb= &cm->m[ i ];
       if (mb->base != 0) {
-         upo_printf("              %12s %03d %08X - %08X %7ld bytes\n",
+         upo_printf("              %12s %03d %08X - %08X %7lu bytes\n",
                     prefix,
                     i,
-                    mb->base,
-             (ulong)mb->base + mb->size,
-                    mb->size);
+                    TO68K(mb->base),
+                    TO68K(mb->base) + (uint32_t)mb->size,
+                    (unsigned long)mb->size);
          prefix = "";
       }
    }
@@ -569,25 +570,25 @@ void dumpregs(ushort pid)
 
     #ifdef USE_UAEMU
       if (pid<MAXPROCESSES) {
-          /* m68kpc_offset = addr - m68k_getpc() wraps to a huge value when the
-           * saved process PC differs from the current UAE PC, causing get_iword_1
-           * to access far outside the arena.  Set UAE PC to rp->pc first. */
-          uaecptr save_pc= m68k_getpc();
+          /* Point UAE PC at the saved process PC so m68kpc_offset comes out 0.
+           * Do NOT restore afterward — OS9exec's syscall-return path restores
+           * UAE state from the saved os9regs; forcing it back here would set
+           * UAE PC to whatever stale value m68k_getpc() held inside the handler,
+           * causing the process to resume from the wrong address. */
           m68k_setpc(rp->pc);
-          m68k_disasm( rp->pc, &aa,2, (dbg_func)console_out );
-          m68k_setpc(save_pc);
+          m68k_disasm( rp->pc, &aa, 2, (dbg_func)console_out );
       }
     #endif
 } /* dumpregs */
 
 
 /* show memory */
-static void dumpmem(ulong *memptrP,int numlines)
+static void dumpmem(uint32_t *memptrP,int numlines)
 {
     int k,i;
 
     for (k=0; k<numlines; k++) {
-        uphe_printf("%08lX: ",*memptrP);
+        uphe_printf("%08X: ",*memptrP);
         for (i=0;i<16;i++) {
             byte* hp= (byte*)FROM68K(*memptrP+i);
             upe_printf("%02X ", hp ? *hp : 0xEE);
@@ -631,7 +632,7 @@ static void regs_in_debugger( regs_type *rp )
 extern int m68k_os9trace;
 #endif
 
-static ulong listbase=0;
+static uint32_t listbase=0;
 static int disasm=0;
 
 /* wait for debug confirmation */
@@ -758,19 +759,17 @@ ushort debugwait( void )
             case 'x' : extra=true; goto goon;
 
             #ifdef USE_UAEMU
-              case 'i' : if (sscanf(&inp[1],"%lx", &listbase)<1) {
+              case 'i' : if (sscanf(&inp[1],"%x", &listbase)<1) {
                                 listbase=m68k_getpc();
                          }
-                         { uaecptr sv= m68k_getpc(); m68k_setpc((uaecptr)listbase);
-                           m68k_disasm( listbase, (uaecptr*)&listbase, 10,(dbg_func)console_out );
-                           m68k_setpc(sv); }
+                         m68k_setpc(listbase);
+                         m68k_disasm( listbase, (uaecptr*)&listbase, 10, (dbg_func)console_out );
                          disasm=1;
                          break;
 
               case '.' : if (disasm) {
-                             uaecptr sv= m68k_getpc(); m68k_setpc((uaecptr)listbase);
-                             m68k_disasm( listbase, (uaecptr*)&listbase, 10,(dbg_func)console_out );
-                             m68k_setpc(sv);
+                             m68k_setpc(listbase);
+                             m68k_disasm( listbase, (uaecptr*)&listbase, 10, (dbg_func)console_out );
                          } else dumpmem( &listbase,10 );
                          break;
                          
@@ -781,7 +780,7 @@ ushort debugwait( void )
               case '.' : dumpmem(&listbase,8); break;
             #endif
 
-            case 'l' : if (sscanf(&inp[1],"%lx", &listbase)<1) {
+            case 'l' : if (sscanf(&inp[1],"%x", &listbase)<1) {
                             #ifdef USE_UAEMU
                                 listbase=m68k_areg(regs,7);                         
                             #else
