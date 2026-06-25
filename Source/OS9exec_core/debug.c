@@ -321,11 +321,7 @@ void debug_procdump( process_typ* cp, int cpid )
    mod_exec*                  tme;
    pmem_typ*                  cm= &pmem[ cpid ];
 
-   #ifdef USE_UAEMU
-      uaecptr aa;
-   #endif
-
-   /* trap segfaults within this function to avoid looping*/ 
+   /* trap segfaults within this function to avoid looping*/
    if (++depth > 1) {
       upo_printf("*** BUSERR during process dump: Emulation terminated\n");
       exit(0);
@@ -442,13 +438,7 @@ void debug_procdump( process_typ* cp, int cpid )
       upo_printf("               PC=%08X SR=%04X\n", rp->pc, rp->sr);
 
       /* Show the failing instruction. */
-      #ifdef USE_UAEMU
-         m68k_setpc(rp->pc);
-         upo_printf(" Executing: -->");
-         m68k_disasm(rp->pc, &aa, 1, (dbg_func)upo_printf);
-         upo_printf("               ");
-         m68k_disasm(aa, &aa, 1, (dbg_func)upo_printf);
-      #endif
+      /* UAE disassembly not yet available in this build */
    }
 
    /* Static memory */
@@ -545,11 +535,7 @@ void dumpregs(ushort pid)
 {
    int k;
     regs_type *rp;
-    
-    #ifdef USE_UAEMU
-	  uaecptr aa;
-    #endif
-    
+
     if (pid>=MAXPROCESSES) {
         #ifdef USE_UAEMU
           rp= (regs_type*)&regs; /* UAE */
@@ -568,22 +554,6 @@ void dumpregs(ushort pid)
     uphe_printf(" An="); for (k=0;k<8;k++) upe_printf("%08X ",rp->a[k]); upe_printf("\n");
     uphe_printf(" PC=%08X SR=%04X\n",rp->pc,rp->sr);
 
-    #ifdef USE_UAEMU
-      if (pid<MAXPROCESSES) {
-          /* Save the three PC-related regs fields, point UAE at the saved
-           * process PC for disassembly, then restore exactly — llm_os9_go
-           * saved this state when the OS9 trap fired and needs it intact so
-           * the process resumes from the correct post-trap address. */
-          uae_u32  sv_pc      = regs.pc;
-          uae_u8  *sv_pc_p    = regs.pc_p;
-          uae_u8  *sv_pc_oldp = regs.pc_oldp;
-          m68k_setpc(rp->pc);
-          m68k_disasm( rp->pc, &aa, 2, (dbg_func)console_out );
-          regs.pc      = sv_pc;
-          regs.pc_p    = sv_pc_p;
-          regs.pc_oldp = sv_pc_oldp;
-      }
-    #endif
 } /* dumpregs */
 
 
@@ -764,26 +734,10 @@ ushort debugwait( void )
             case 'x' : extra=true; goto goon;
 
             #ifdef USE_UAEMU
-              case 'i' : if (sscanf(&inp[1],"%x", &listbase)<1) {
-                                listbase=m68k_getpc();
-                         }
-                         { uae_u32  sv_pc      = regs.pc;
-                           uae_u8  *sv_pc_p    = regs.pc_p;
-                           uae_u8  *sv_pc_oldp = regs.pc_oldp;
-                           m68k_setpc(listbase);
-                           m68k_disasm( listbase, (uaecptr*)&listbase, 10, (dbg_func)console_out );
-                           regs.pc = sv_pc; regs.pc_p = sv_pc_p; regs.pc_oldp = sv_pc_oldp; }
-                         disasm=1;
+              case 'i' : upe_printf("Disassembly not yet available in this build\n");
                          break;
 
-              case '.' : if (disasm) {
-                             uae_u32  sv_pc      = regs.pc;
-                             uae_u8  *sv_pc_p    = regs.pc_p;
-                             uae_u8  *sv_pc_oldp = regs.pc_oldp;
-                             m68k_setpc(listbase);
-                             m68k_disasm( listbase, (uaecptr*)&listbase, 10, (dbg_func)console_out );
-                             regs.pc = sv_pc; regs.pc_p = sv_pc_p; regs.pc_oldp = sv_pc_oldp;
-                         } else dumpmem( &listbase,10 );
+              case '.' : dumpmem( &listbase,10 );
                          break;
                          
               case 'e' : m68k_dumpstate( (uaecptr*)&listbase,false ); break;
