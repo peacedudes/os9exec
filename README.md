@@ -138,6 +138,11 @@ below summarises findings.
 
 ## Build
 
+**Requirements:** Xcode Command Line Tools (`xcode-select --install`) —
+provides Apple clang and GNU make. No other tools are needed for the build
+itself. (`gtimeout`, from Homebrew `coreutils`, is used by the test suite
+but not the build.)
+
 ```sh
 make
 ```
@@ -157,6 +162,89 @@ the emulator as `/dd`. `OS9CMDS` and `OS9MDIR` can override the default
 command and module search paths.
 
 Send ESC (`\033`) on a line by itself to exit the shell cleanly.
+
+
+## Devices and host filesystem
+
+OS9exec maps two-character OS-9 device names to host paths at startup.
+
+**`/dd`** — the default drive  
+Resolved via the `OS9DISK` environment variable. If `OS9DISK` is not set,
+os9exec looks for a file or directory named `dd` in the directory it was
+launched from. If `dd` is an RBF image file it is mounted automatically;
+if it is a directory, host files inside it are accessible directly.
+
+**`/hX`** — host directory slots (X = any single character: `0`–`9`, `a`–`z`, …)  
+Each `/hX` device maps to the env var `OS9HX`. For example:
+
+```sh
+export OS9H1=/Users/me/os9work
+export OS9H2=/Volumes/OldDisk
+./os9exec shell
+# now /h1 and /h2 are live inside the emulator
+```
+
+If `OS9HX` is not set, os9exec looks for a directory named `hX` relative to
+its launch directory (and one level up). `/h0` has one extra fallback: if
+nothing is found it attempts to auto-mount the `dd` RBF image as `/h0`,
+which accommodates OS-9 programs that address the default drive as `/h0`
+rather than `/dd`. A symlink `h0 → dd` in the launch directory also works
+and is what the original docs recommend.
+
+Files and directories anywhere on the host filesystem can be reached through
+any `/hX` slot — there is no restriction to the `dd` subtree.
+
+
+## Useful options
+
+```
+os9exec [-options] <command> [args]
+```
+
+| Option | Effect |
+|--------|--------|
+| `-v` | Ctrl-C kills the emulator immediately (otherwise OS-9 processes intercept it) |
+| `-i` | Disable built-in emulator commands (see below) |
+| `-m n[k\|M]` | Give the first OS-9 process extra static storage |
+| `-mm n[k\|M]` | Give **all** OS-9 processes extra static storage |
+| `-p prio` | Run first process at priority `prio` (default 128) |
+| `-x width` | Set MGR screen width (passed to OS-9 via `F$GProDsc`) |
+| `-y height` | Set MGR screen height |
+| `-t` | Enable timing measurements |
+| `-d[n] msk` | Set debug info mask at level n (see `-dh` for mask values) |
+| `-ih` | Print built-in command list and exit |
+| `-h` | Print full option list and exit |
+
+Options may use `-` or `/` as the prefix (e.g., `/v` is the same as `-v`).
+
+
+## Built-in emulator commands
+
+When `INT_CMD` is defined at build time (the default in this port), os9exec
+intercepts a set of command names before the OS-9 shell can fail on them.
+They run as C functions inside the emulator and are visible to the shell like
+any other program:
+
+| Command | What it does |
+|---------|--------------|
+| `ihelp` / `icmds` | List all built-in commands |
+| `iprocs` | Show running OS-9 processes |
+| `imdir` | Show loaded OS-9 modules |
+| `ipaths` | Show open path list |
+| `imem` | Show memory block list |
+| `idevs` | Show mounted devices |
+| `ihit` | Show directory cache hit rate |
+| `idbg` / `debughalt` | Enter the emulator debug menu |
+| `stop` / `shutdown` | Exit os9exec cleanly |
+| `rename` | Rename a file or directory (host-filesystem aware) |
+| `move` | Move files or directories |
+| `ls` | Directory listing in extended format |
+| `mount` / `unmount` | Mount or unmount an RBF image |
+| `systime` | Emulation timing display |
+| `iquit` | Set the quit flag |
+| `icrash` | Access an invalid address (crash test) |
+
+Pass `-i` to disable all of these and use only real OS-9 binaries.
 
 
 ## Test
