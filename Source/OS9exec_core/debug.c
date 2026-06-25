@@ -624,9 +624,6 @@ extern int m68k_os9trace;
 static ulong listbase=0;
 static int disasm=0;
 
-extern void    restore_term(void);
-extern Boolean setup_term(void);
-
 /* wait for debug confirmation */
 ushort debugwait( void )
 {
@@ -661,11 +658,23 @@ ushort debugwait( void )
              *cp= NUL; /* string termination */
           if (cp==inp) continue;
         #else
-          /* fgets needs a cooked terminal; temporarily restore if on a real tty */
-          { Boolean on_tty= isatty(0);
-            if (on_tty) restore_term();
-            if (fgets(inp,INPLEN,stdin)==NULL) { if (on_tty) setup_term(); continue; }
-            if (on_tty) setup_term();
+          /* Read one char at a time, matching ConsGetc's raw read(0,...) approach.
+           * ConsGetc bypasses the stdio buffer, so fgets(stdin) is unreliable here.
+           * We echo manually because the terminal is in no-echo raw mode. */
+          { int  n;
+            char rc;
+            cp= inp;
+            do {
+                do { n= read(0, &rc, 1); } while (n==0); /* spin past VTIME timeouts */
+                if (n<0) break;                          /* fd error / EOF */
+                if (rc=='\r' || rc=='\n') { write(1,"\r\n",2); break; }
+                if ((rc==0x7f || rc=='\b') && cp>inp) { cp--; write(1,"\b \b",3); continue; }
+                if (rc < 0x20) continue;                /* ignore other control chars */
+                *cp++= rc;
+                write(1,&rc,1);                         /* echo */
+            } while (cp < inp+INPLEN-1);
+            *cp= NUL;
+            if (cp==inp) continue;
           }
         #endif
         
