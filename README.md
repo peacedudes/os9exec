@@ -7,6 +7,7 @@ This branch (`arm64-uae-integration`) ports it to **macOS on Apple Silicon**
 and fixing all 64-bit data-width bugs introduced by the LP64 memory model.
 
 Original project: <http://www.synthesis.ch/os9exec>  
+Source repository: <https://sourceforge.net/p/os9exec/git_code/ci/master/tree/>  
 License: GNU General Public License v2 (see source file headers)
 
 
