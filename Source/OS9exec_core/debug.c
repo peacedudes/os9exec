@@ -570,13 +570,18 @@ void dumpregs(ushort pid)
 
     #ifdef USE_UAEMU
       if (pid<MAXPROCESSES) {
-          /* Point UAE PC at the saved process PC so m68kpc_offset comes out 0.
-           * Do NOT restore afterward — OS9exec's syscall-return path restores
-           * UAE state from the saved os9regs; forcing it back here would set
-           * UAE PC to whatever stale value m68k_getpc() held inside the handler,
-           * causing the process to resume from the wrong address. */
+          /* Save the three PC-related regs fields, point UAE at the saved
+           * process PC for disassembly, then restore exactly — llm_os9_go
+           * saved this state when the OS9 trap fired and needs it intact so
+           * the process resumes from the correct post-trap address. */
+          uae_u32  sv_pc      = regs.pc;
+          uae_u8  *sv_pc_p    = regs.pc_p;
+          uae_u8  *sv_pc_oldp = regs.pc_oldp;
           m68k_setpc(rp->pc);
           m68k_disasm( rp->pc, &aa, 2, (dbg_func)console_out );
+          regs.pc      = sv_pc;
+          regs.pc_p    = sv_pc_p;
+          regs.pc_oldp = sv_pc_oldp;
       }
     #endif
 } /* dumpregs */
@@ -762,14 +767,22 @@ ushort debugwait( void )
               case 'i' : if (sscanf(&inp[1],"%x", &listbase)<1) {
                                 listbase=m68k_getpc();
                          }
-                         m68k_setpc(listbase);
-                         m68k_disasm( listbase, (uaecptr*)&listbase, 10, (dbg_func)console_out );
+                         { uae_u32  sv_pc      = regs.pc;
+                           uae_u8  *sv_pc_p    = regs.pc_p;
+                           uae_u8  *sv_pc_oldp = regs.pc_oldp;
+                           m68k_setpc(listbase);
+                           m68k_disasm( listbase, (uaecptr*)&listbase, 10, (dbg_func)console_out );
+                           regs.pc = sv_pc; regs.pc_p = sv_pc_p; regs.pc_oldp = sv_pc_oldp; }
                          disasm=1;
                          break;
 
               case '.' : if (disasm) {
+                             uae_u32  sv_pc      = regs.pc;
+                             uae_u8  *sv_pc_p    = regs.pc_p;
+                             uae_u8  *sv_pc_oldp = regs.pc_oldp;
                              m68k_setpc(listbase);
                              m68k_disasm( listbase, (uaecptr*)&listbase, 10, (dbg_func)console_out );
+                             regs.pc = sv_pc; regs.pc_p = sv_pc_p; regs.pc_oldp = sv_pc_oldp;
                          } else dumpmem( &listbase,10 );
                          break;
                          
