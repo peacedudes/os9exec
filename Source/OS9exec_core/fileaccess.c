@@ -1397,7 +1397,7 @@ os9err pFpos( _pid_, syspath_typ* spP, uint32_t *posP )
     file_typ* f= &spP->u.disk.u.file;
     return host2os9err( GetFPos( f->refnum, (long *)posP),E_SEEK );
   #else
-    *posP= (ulong) ftell( spP->stream );
+    *posP= (uint32_t) ftell( spP->stream );
   //fgetpos( spP->stream,  posP );   /* save current position */
     return 0;
   #endif
@@ -1429,7 +1429,7 @@ os9err pFsize( _pid_, syspath_typ* spP, uint32_t* sizeP )
      
     fgetpos( spP->stream,  &tmp_pos );   /* save current position */
     fseek  ( spP->stream,0,SEEK_END );   /* go to EOF */
-    *sizeP= (ulong)ftell( spP->stream ); /* get position now = file size */
+    *sizeP= (uint32_t)ftell( spP->stream ); /* get position now = file size */
   //fgetpos( spP->stream,  sizeP    );   /* get position now = file size */
     fsetpos( spP->stream,  &tmp_pos );   /* restore position */
   #endif

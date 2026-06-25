@@ -1549,7 +1549,7 @@ void usrpath_printf( ushort pid, ushort up, const char* format, ... )
     char buffer[MAXPRINTFLEN];
     va_list vp= NULL;
     va_start    (vp,format);
-    vsprintf(buffer,format,vp);
+    vsnprintf(buffer,MAXPRINTFLEN,format,vp);
     va_end                (vp);
 
     usrpath_puts( pid,up,buffer, true );
@@ -1561,7 +1561,7 @@ void upo_printf( const char* format, ... )
     char buffer[MAXPRINTFLEN];
     va_list vp= NULL;
     va_start    (vp,format);
-    vsprintf(buffer,format,vp);
+    vsnprintf(buffer,MAXPRINTFLEN,format,vp);
     va_end                (vp);
 
     usrpath_puts( currentpid,usrStdout,buffer, true );
@@ -1577,7 +1577,7 @@ void upho_printf( const char* format, ... )
     
     va_list vp= NULL;
     va_start    (vp,format);
-    vsprintf(b,     format,vp);
+    vsnprintf(b,MAXPRINTFLEN-2,format,vp);
     va_end                (vp);
 
     buffer[ 0 ]= '#';
@@ -1591,7 +1591,7 @@ void upe_printf( const char* format, ... )
     char buffer[MAXPRINTFLEN];
     va_list vp= NULL;
     va_start    (vp,format);
-    vsprintf(buffer,format,vp);
+    vsnprintf(buffer,MAXPRINTFLEN,format,vp);
     va_end                (vp);
 
     usrpath_puts( currentpid,usrStderr,buffer, false );
@@ -1606,7 +1606,7 @@ void uphe_printf( const char* format, ... )
     
     va_list vp= NULL;
     va_start    (vp,format);
-    vsprintf(b,     format,vp);
+    vsnprintf(b,MAXPRINTFLEN-2,format,vp);
     va_end                (vp);
 
     buffer[ 0 ]= '#';
@@ -1622,7 +1622,7 @@ void main_printf( const char* format, ... )
     char buffer[MAXPRINTFLEN];
     va_list vp= NULL;
     va_start    (vp,format);
-    vsprintf(buffer,format,vp);
+    vsnprintf(buffer,MAXPRINTFLEN,format,vp);
     va_end                (vp);
 
     usrpath_puts( currentpid,MAXUSRPATHS,buffer, true );

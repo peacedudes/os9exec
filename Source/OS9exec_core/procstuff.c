@@ -214,6 +214,8 @@
 
 #include "os9exec_incl.h"
 
+ulong trapframebuf[TRAPFRAMEBUFLEN];
+
 /* process routines */
 /* ================ */
 
