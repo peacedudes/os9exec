@@ -207,6 +207,15 @@
 
 
 #include "os9exec_incl.h"
+#ifdef USE_UAEMU
+  #include "config.h"
+  #include "options.h"
+  #include "luzstuff.h"
+  #include "memory.h"
+  #include "readcpu.h"
+  #include "newcpu.h"
+  #include "compiler.h"
+#endif
 
 /* OS-9 system call routines */
 /* ========================= */
@@ -1957,6 +1966,9 @@ os9err OS9_F_SysDbg( _rp_, _pid_ )
  */
 {
   if (quitFlag) stop_os9exec(); /* --- and never come back */
+#ifdef USE_UAEMU
+  rp->pc = m68k_getpc(); /* advance past OS9 trap so process resumes correctly */
+#endif
   debugwait();
   return 0;
 } /* OS9_F_SysDbg */
