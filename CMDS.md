@@ -21,11 +21,11 @@ the os9exec arm64 emulator.
 | `dsave` | Generate a shell script to recreate a directory tree | ✓ |
 | `free` | Report free space on a disk device (works on RBF; zero-divide crash on native host directory) | ✓ |
 | `makdir` | Create a directory | ✓ |
-| `mv` | Move a file (requires RBF directory-write; does not work with host-directory `/dd`) | — |
+| `mv` | Move a file (requires RBF directory-write; fails E_BMODE on native `/dd`; use built-in `move` instead) | — |
 | `pd` | Print current working directory | ✓ |
 | `rename` | Rename a file within a directory | ✓ |
 | `touch` | Create a file or update its timestamp | ✓ |
-| `undel` | Undelete a file (RBF-specific; no-op on host directories) | — |
+| `undel` | Undelete a file (RBF-specific; works on RBF image, no-op on host directories) | ✓ |
 
 ### Text and data tools
 
@@ -35,7 +35,7 @@ the os9exec arm64 emulator.
 | `compress` | Compress a file in place (LZH format) | ✓ |
 | `count` | Count lines, words, and bytes in a file | ✓ |
 | `dump` | Hex dump of a file | ✓ |
-| `edt` | Line-oriented text editor (requires TERM environment variable) | — |
+| `edt` | Line-oriented text editor; works without TERM | ✓ |
 | `expand` | Decompress a file compressed by `compress` | ✓ |
 | `grep` | Search files for a regular expression | ✓ |
 | `list` | Display a text file (like `cat`) | ✓ |
@@ -54,7 +54,7 @@ the os9exec arm64 emulator.
 |---------|-------------|--------|
 | `binex` | Convert binary module to Motorola S-record (hex) format | ✓ |
 | `cudo` | Convert OS-9/68k module to OS-9000 format (modifies file in place) | ✓ |
-| `dcheck` | Verify RBF disk integrity (requires RBF disk image, not host directory) | — |
+| `dcheck` | Verify RBF disk integrity (works on RBF image; requires `/hX` with a disk image) | ✓ |
 | `editmod` | Show or edit module header fields | ✓ |
 | `exbin` | Convert Motorola S-record back to binary module | ✓ |
 | `fixmod` | Recalculate and fix module header CRC and parity | ✓ |
@@ -94,8 +94,8 @@ the os9exec arm64 emulator.
 |---------|-------------|--------|
 | `break` | Halt timesharing and enter debugger (terminal left in raw mode on exit) | |
 | `echo` | Write text to stdout | ✓ |
-| `make` | Build targets from a Makefile | |
-| `on` | Execute a command on a named device | |
+| `make` | Build targets from a Makefile; fails gracefully if no `makefile` present | ✓ |
+| `on` | Execute a command on a remote host (requires SPF network stack) | — |
 | `os9gen` | Write OS-9 boot track to a device (requires raw device access) | — |
 | `shell` | Start a new interactive OS-9 shell | ✓ |
 | `sleep` | Suspend execution for N seconds | ✓ |
@@ -106,18 +106,18 @@ the os9exec arm64 emulator.
 |---------|-------------|--------|
 | `backup` | Back up an RBF disk to tape (requires tape hardware) | — |
 | `diskcache` | Configure disk sector cache | |
-| `dpsplit` | Split DPIO device descriptors | |
+| `dpsplit` | Split DPIO device descriptors into sub-parts | ✓ |
 | `format` | Low-level format a disk (requires hardware) | — |
 | `frestore` | Restore a filesystem from tape (requires tape hardware) | — |
 | `fsave` | Dump a filesystem to tape (requires tape hardware) | — |
 | `mount` | Mount an RBF disk image as a device | ✓ |
-| `p2init` | Initialize an OS-9 Phase 2 module | |
-| `partdgen` | Generate a PC-format partition descriptor | |
-| `partition` | Partition a large hard disk | |
+| `p2init` | Link and initialize an OS-9 Phase 2 module | ✓ |
+| `partdgen` | Generate a PC-format partition descriptor | ✓ |
+| `partition` | Partition a large (>4GB) hard disk | ✓ |
 | `pcformat` | Format a PC-style floppy (requires hardware) | — |
 | `tape` | Tape drive control (requires hardware) | — |
-| `tapegen` | Generate a tape boot track | |
-| `tapestart` | Start tape streaming | |
+| `tapegen` | Generate a tape boot track (requires `/mt0` tape device) | — |
+| `tapestart` | Start tape streaming (requires `/mt0` tape device) | — |
 
 ### Terminal and I/O tools
 
@@ -131,13 +131,12 @@ the os9exec arm64 emulator.
 | `kermit` | Kermit file transfer over serial (requires hardware) | — |
 | `tmode` | Show or set terminal mode parameters | ✓ |
 | `tsmon` | Timesharing terminal monitor | ✓ |
-| `xmode` | Show or set extended terminal parameters | |
+| `xmode` | Show or set extended SCF/GFM device descriptor parameters (needs descriptor modules loaded) | ✓ |
 
 ### Miscellaneous
 
 | Command | What it does | Status |
 |---------|-------------|--------|
-| `chown` | See File tools | |
 | `csl` | C Shell (requires external csl module not included) | — |
 | `math` | Math library (requires external math module not included) | — |
 | `maui` | Microware MAUI graphics (requires MAUI module not included) | — |
