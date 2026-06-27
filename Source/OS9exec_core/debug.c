@@ -806,26 +806,38 @@ ushort debugwait( void )
                              else { upe_printf("No process PC available\n"); break; }
                          }
                          if (bad_addr(listbase)) break;
-                         { int n;
+                         { int n; Boolean hit_term = false;
                            for (n = 0; n < 10; n++) {
                                Boolean term = is_flow_terminator(listbase);
                                regs.pc = listbase;
                                regs.pc_p = regs.pc_oldp = get_real_address(listbase);
                                m68k_disasm(listbase,(uaecptr*)&listbase,1,disasm_upe_out);
-                               if (term || bad_addr(listbase)) break;
+                               if (term) { hit_term = true; break; }
+                               if (bad_addr(listbase)) break;
+                           }
+                           if (hit_term && emul_base + (uae_u32)listbase < emul_end) {
+                               upe_printf("# (flow ends — bytes that follow, not necessarily code:)\n");
+                               uint32_t peek = listbase;
+                               dumpmem(&peek, 2);
                            }
                          }
                          disasm=1;
                          break;
 
               case '.' : if (disasm) {
-                             int n;
+                             int n; Boolean hit_term = false;
                              for (n = 0; n < 10; n++) {
                                  Boolean term = is_flow_terminator(listbase);
                                  regs.pc = listbase;
                                  regs.pc_p = regs.pc_oldp = get_real_address(listbase);
                                  m68k_disasm(listbase,(uaecptr*)&listbase,1,disasm_upe_out);
-                                 if (term || bad_addr(listbase)) break;
+                                 if (term) { hit_term = true; break; }
+                                 if (bad_addr(listbase)) break;
+                             }
+                             if (hit_term && emul_base + (uae_u32)listbase < emul_end) {
+                                 upe_printf("# (flow ends — bytes that follow, not necessarily code:)\n");
+                                 uint32_t peek = listbase;
+                                 dumpmem(&peek, 2);
                              }
                          } else
                              dumpmem(&listbase,10);
