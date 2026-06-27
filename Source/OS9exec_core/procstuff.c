@@ -272,7 +272,7 @@ void show_processes(void)
                os9_word(cp->pd._sid),
                os9_word(cp->pd._cid),
                         mIDs,
-                        mod ? TO68K(mod) : 0u,
+                        (mod && !os9modules[cp->mid].isBuiltIn) ? TO68K(mod) : 0u,
                os9_word(cp->pd._prior),
                         cp->memstart,
                         cp->memtop,

@@ -326,12 +326,13 @@ void show_mem( ushort npid, Boolean mem_unused, Boolean mem_fulldisp )
                     //  m= &procs[pid].os9memblocks[k];
                         m= &pmem[ pid ].m[ k ];
                     if (m->base!=NULL) {
-                        upo_printf("%2d%c  %5d  $%08lX  $%08lX  $%08lX\n",
+                        upo_printf("%2d%c  %5d  $%08X  $%08X  $%08X\n",
                                     pid,
                                     pid==currentpid ? '*' : ' ',
-                                    k,      m->base,
-                                                      m->size,
-                                    (ulong) m->base + m->size);
+                                    k,
+                                    TO68K(m->base),
+                                    (uint32_t)m->size,
+                                    TO68K(m->base) + (uint32_t)m->size);
                     }
                 }
             }
