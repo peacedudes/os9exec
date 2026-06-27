@@ -286,7 +286,7 @@ int lastint_no;
 #define get_iword_1(o) get_word(regs.pc + (regs.pc_p - regs.pc_oldp) + (o))
 #define get_ilong_1(o) get_long(regs.pc + (regs.pc_p - regs.pc_oldp) + (o))
 
-uae_s32 ShowEA (int reg, amodes mode, wordsizes size, char *buf, void (*debug_out)() )
+uae_s32 ShowEA (int reg, amodes mode, wordsizes size, char *buf, void (*debug_out)(const char *, ...))
 {
     uae_u16 dp;
     uae_s8 disp8;
@@ -1468,7 +1468,7 @@ static void m68k_verify (uaecptr addr, uaecptr *nextpc)
     }
 }
 
-void m68k_disasm (uaecptr addr, uaecptr *nextpc, int cnt, void (*debug_out)())
+void m68k_disasm (uaecptr addr, uaecptr *nextpc, int cnt, void (*debug_out)(const char *, ...))
 {
     uaecptr newpc = 0;
     m68kpc_offset = addr - m68k_getpc ();
@@ -1530,9 +1530,9 @@ void m68k_disasm (uaecptr addr, uaecptr *nextpc, int cnt, void (*debug_out)())
 void m68k_dumpstate (uaecptr *nextpc, int to_logfile)
 {
     int i;
-    void (*debug_out)() = NULL;
-    if( to_logfile ) debug_out= (dbg_func)write_log;
-    else             debug_out= (dbg_func)console_out;
+    void (*debug_out)(const char *, ...) = NULL;
+    if( to_logfile ) debug_out= write_log;
+    else             debug_out= console_out;
 
     
     for (i = 0; i < 8; i++){

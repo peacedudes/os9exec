@@ -139,6 +139,23 @@
 /* debugging support */
 /* ================= */
 
+/* Wrappers with correct variadic prototypes for passing to m68k_disasm.
+   The dbg_func typedef is void(*)(void) which on arm64 causes the compiler
+   to not pass variadic args through the pointer call; these wrappers carry
+   the correct signature so va_start works inside the target printf. */
+#ifdef USE_UAEMU
+static void disasm_upe_out(const char *fmt, ...) {
+    char buf[512]; va_list ap;
+    va_start(ap, fmt); vsnprintf(buf, sizeof(buf), fmt, ap); va_end(ap);
+    upe_printf("%s", buf);
+}
+static void disasm_upo_out(const char *fmt, ...) {
+    char buf[512]; va_list ap;
+    va_start(ap, fmt); vsnprintf(buf, sizeof(buf), fmt, ap); va_end(ap);
+    upo_printf("%s", buf);
+}
+#endif
+
 ushort debug[DEBUGLEVELS]= { 0,0,0 };   /* debug level array  */
 ushort debughalt= 0;                    /* debug halt bitmask */
 
@@ -438,7 +455,16 @@ void debug_procdump( process_typ* cp, int cpid )
       upo_printf("               PC=%08X SR=%04X\n", rp->pc, rp->sr);
 
       /* Show the failing instruction. */
-      /* UAE disassembly not yet available in this build */
+      #ifdef USE_UAEMU
+      {  uaecptr aa;
+         regs.pc = rp->pc;
+         regs.pc_p = regs.pc_oldp = get_real_address(rp->pc);
+         upo_printf(" Executing: -->");
+         m68k_disasm(rp->pc, &aa, 1, disasm_upo_out);
+         upo_printf("               ");
+         m68k_disasm(aa,     &aa, 1, disasm_upo_out);
+      }
+      #endif
    }
 
    /* Static memory */
@@ -554,6 +580,14 @@ void dumpregs(ushort pid)
     uphe_printf(" An="); for (k=0;k<8;k++) upe_printf("%08X ",rp->a[k]); upe_printf("\n");
     uphe_printf(" PC=%08X SR=%04X\n",rp->pc,rp->sr);
 
+    #ifdef USE_UAEMU
+    if (pid < MAXPROCESSES && !procs[pid].isIntUtil) {
+        uaecptr aa;
+        regs.pc = rp->pc;
+        regs.pc_p = regs.pc_oldp = get_real_address(rp->pc);
+        m68k_disasm(rp->pc, &aa, 2, disasm_upe_out);
+    }
+    #endif
 } /* dumpregs */
 
 
@@ -734,10 +768,23 @@ ushort debugwait( void )
             case 'x' : extra=true; goto goon;
 
             #ifdef USE_UAEMU
-              case 'i' : upe_printf("Disassembly not yet available in this build\n");
+              case 'i' : if (sscanf(&inp[1],"%x",&listbase)<1) {
+                             if (currentpid<MAXPROCESSES && !procs[currentpid].isIntUtil)
+                                 listbase= procs[currentpid].os9regs.pc;
+                             else { upe_printf("No process PC available\n"); break; }
+                         }
+                         regs.pc = listbase;
+                         regs.pc_p = regs.pc_oldp = get_real_address(listbase);
+                         m68k_disasm(listbase,(uaecptr*)&listbase,10,disasm_upe_out);
+                         disasm=1;
                          break;
 
-              case '.' : dumpmem( &listbase,10 );
+              case '.' : if (disasm) {
+                             regs.pc = listbase;
+                             regs.pc_p = regs.pc_oldp = get_real_address(listbase);
+                             m68k_disasm(listbase,(uaecptr*)&listbase,10,disasm_upe_out);
+                         } else
+                             dumpmem(&listbase,10);
                          break;
                          
               case 'e' : m68k_dumpstate( (uaecptr*)&listbase,false ); break;
