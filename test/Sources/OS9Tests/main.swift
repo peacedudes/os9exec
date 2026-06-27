@@ -147,13 +147,14 @@ noError("attr: shows attrs",     "attr /dd/t_echo2")
 check("ident: identifies mod",   contains: "echo",     "ident /dd/t_echo2")
 noError("del: file cleanup",     "del /dd/t_echo2")
 
-// text commands (/dd/startup is a known text file on the disk)
-check("list: shows content",     contains: "OS-9",     "list /dd/startup")
-check("count: line count",       contains: "17",       "count /dd/startup")
-check("grep: finds pattern",     contains: "shell",    "grep shell /dd/startup")
-check("grep: no match silent",   absent:   "shell",    "grep ZZZNOTFOUND /dd/startup")
-check("merge: combines files",   contains: "OS-9",
-    "merge /dd/startup /dd/startup")
+// text commands — create a one-line fixture; each check runs in its own os9exec process
+// so the echo that creates the file is never in the same output as the check
+noError("text fixture: create",                            "echo OS-9 test line >/dd/t_text")
+check("list: shows content",   contains: "OS-9 test line", "list /dd/t_text")
+noError("count: counts lines",                             "count /dd/t_text")
+check("grep: finds pattern",   contains: "OS-9 test line", "grep OS-9 /dd/t_text")
+check("grep: no match silent", absent:   "OS-9 test line", "grep ZZZNOTFOUND /dd/t_text")
+check("merge: combines files", contains: "OS-9 test line", "merge /dd/t_text /dd/t_text")
 
 // dump
 check("dump: shows hex",         contains: "4afc",     "dump /dd/CMDS/echo")
@@ -176,8 +177,8 @@ check("tee: copies to file",     contains: "teetest",
 noError("del: tee cleanup",      "del /dd/t_tee")
 
 // compress / expand
-check("compress+expand: roundtrip", contains: "OS-9",
-    "copy /dd/startup /dd/t_comp",
+check("compress+expand: roundtrip", contains: "OS-9 test line",
+    "copy /dd/t_text /dd/t_comp",
     "compress /dd/t_comp",
     "expand /dd/t_comp",
     "list /dd/t_comp")
@@ -191,7 +192,7 @@ check("qsort: sorts lines",      contains: "apple",
     "del /dd/t_qs1", "del /dd/t_qs2")
 
 // pr
-check("pr: formats output",      contains: "OS-9",    "pr /dd/startup")
+check("pr: formats output",      contains: "OS-9 test line", "pr /dd/t_text")
 
 // system info
 noError("date: runs",            "date")
@@ -243,8 +244,9 @@ check("os9gen: no device",       contains: "os9gen",      "os9gen")
 noError("cfp: shows help",       "cfp")
 
 // attr: show file attribute string
-check("attr: module attrs",      contains: "--e-r",       "attr -re /dd/CMDS/echo")
-check("attr: data file attrs",   contains: "rewr",        "attr -re /dd/startup")
+check("attr: module attrs",      contains: "--e-r",  "attr -re /dd/CMDS/echo")
+noError("attr: data file attrs",                     "attr -re /dd/t_text")
+noError("text fixture: cleanup",                     "del /dd/t_text")
 
 // help: specific command help
 check("help dir: options listed", contains: "recursive",  "help dir")
@@ -286,6 +288,43 @@ noError("paths: runs",                "paths")
 
 // what: scan module for embedded strings
 noError("what: runs on module",       "what /dd/CMDS/echo")
+
+// cudo: convert OS-9/68k module to OS-9000 format (test on a copy — cudo modifies in place)
+check("cudo: converts module format", contains: "converting",
+    "copy /dd/CMDS/echo /dd/t_cudo",
+    "cudo /dd/t_cudo",
+    "del /dd/t_cudo")
+
+// editmod: module field editor — shows version when run with no args
+check("editmod: shows version",  contains: "module editor",  "editmod")
+
+// chown: change file owner (0.0 is a no-op without super-user, but still prints confirmation)
+check("chown: changes ownership", contains: "Changed owner",
+    "touch /dd/t_own",
+    "chown 0.0 /dd/t_own",
+    "del /dd/t_own")
+
+// deiniz / iniz: detach and reattach a device
+noError("deiniz: detaches device",  "deiniz /dd")
+noError("iniz: reattaches device",  "iniz /dd")
+
+// padrom: pad a file with 0xFF to a target size
+noError("padrom: pads file",
+    "touch /dd/t_padrom",
+    "padrom 512 /dd/t_padrom",
+    "del /dd/t_padrom")
+
+// mkdatmod: shows help when run without required args
+check("mkdatmod: shows usage",   contains: "OS-9 data module",  "mkdatmod")
+
+// pwrstat: power management utility — shows help when run with no args
+check("pwrstat: shows usage",    contains: "Power Management",  "pwrstat")
+
+// tar: create and list an archive
+check("tar: create and list", contains: "echo",
+    "tar -cf /dd/t_tar /dd/CMDS/echo",
+    "tar -tf /dd/t_tar",
+    "del /dd/t_tar")
 
 // ── Results ───────────────────────────────────────────────────────────────────
 
