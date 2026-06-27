@@ -1123,6 +1123,7 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
     char         cmp[OS9PATHLEN],
                  ali[OS9PATHLEN],
                  tmp[OS9PATHLEN],
+                 imgpath[OS9PATHLEN],
                  ers[12], *q, *p, *v;
     rbfdev_typ*  dev;
     ptype_typ    type;
@@ -1163,6 +1164,7 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
 
         strcpy( ali,""       ); /* no alias defined by default */
         strcpy( cmp,pathname ); /* default in case of error */
+        strcpy( imgpath,pathname ); /* host path for Open_Image; overridden on win_unix */
 
             abs=        AbsPath( pathname );
         if (abs && InstalledDev( pathname,curpath, fu, &cdv )) {
@@ -1241,7 +1243,14 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
                     #elif defined win_unix
                       if (err) return E_UNIT; /* GetRBFName called earlier */
                       strcpy( cmp,rbfname );
-              
+                      /* Expand short OS-9 device path (e.g. /h0) to full host path.
+                         Open_Image must receive the host path so IO_Type returns fFile
+                         instead of fRBF (via InstalledDev shortcut), allowing pDopen to
+                         open the image as a raw byte stream. IsRoot("/h0") && isFile
+                         would otherwise make the nested pRopen return E_FNA. */
+                      { char *ip= pathname;
+                        if (parsepath( pid, &ip, imgpath, false )) strcpy( imgpath,pathname ); }
+
                     #else
                       /* %%% some fixed devices defined currently */
                       GetOS9Dev( pathname, (char*)&cmp );
@@ -1410,9 +1419,9 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
         
         if (IsSCSI(dev)) break; /* no more actions for SCSI */
             
-        type    = IO_Type( pid, pathname, poRead );
+        type    = IO_Type( pid, imgpath, poRead );
         wProtect= mnt_wProtect;
-            
+
         /* inherit write protection to sub device */
         if (!wProtect && type==fRBF && InstalledDev( pathname,curpath, false, &cdv ))
              wProtect= rbfdev[cdv].wProtected;
@@ -1420,10 +1429,10 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
         /* try to open in read/write mode first (if not asking for wProtection */
         /* if not possible, open it readonly */
         if (!wProtect) {
-               err= Open_Image( pid,dev, type,pathname, poUpdate ); 
+               err= Open_Image( pid,dev, type,imgpath, poUpdate );
           if (!err) { opened= true; break; }
         }
-               err= Open_Image( pid,dev, type,pathname, poRead );
+               err= Open_Image( pid,dev, type,imgpath, poRead );
         if   (!err) { opened= true; dev->wProtected= true; }
     } while (false);
 
