@@ -654,6 +654,28 @@ static Boolean bad_addr(uint32_t addr)
     return false;
 }
 
+/* True if the 68k opcode at addr is an unconditional flow terminator —
+ * RTS/RTD/RTE/RTR, unconditional BRA, JMP, the ILLEGAL instruction, or an
+ * A/F-line trap.  Execution never falls through to the next sequential byte
+ * after any of these, so disassembling past them produces garbage output. */
+static Boolean is_flow_terminator(uint32_t addr)
+{
+    if (emul_base + (uae_u32)addr + 1 >= emul_end) return true;
+    uae_u8 *p  = get_real_address(addr);
+    uint16_t op = ((uint16_t)p[0] << 8) | p[1];
+    switch (op) {
+        case 0x4E73: case 0x4E74: case 0x4E75: case 0x4E77: /* RTE RTD RTS RTR */
+        case 0x4AFC:                                          /* ILLEGAL */
+            return true;
+    }
+    uint8_t hi = (uint8_t)(op >> 8);
+    if (hi == 0x60)               return true;  /* BRA (all displacements) */
+    if ((op & 0xFFC0) == 0x4EC0)  return true;  /* JMP (all EA modes) */
+    if (hi >= 0xA0 && hi <= 0xAF) return true;  /* A-line (always illegal here) */
+    if (hi >= 0xF0)               return true;  /* F-line (always illegal here) */
+    return false;
+}
+
 /* wait for debug confirmation */
 ushort debugwait( void )
 {
@@ -784,16 +806,27 @@ ushort debugwait( void )
                              else { upe_printf("No process PC available\n"); break; }
                          }
                          if (bad_addr(listbase)) break;
-                         regs.pc = listbase;
-                         regs.pc_p = regs.pc_oldp = get_real_address(listbase);
-                         m68k_disasm(listbase,(uaecptr*)&listbase,10,disasm_upe_out);
+                         { int n;
+                           for (n = 0; n < 10; n++) {
+                               Boolean term = is_flow_terminator(listbase);
+                               regs.pc = listbase;
+                               regs.pc_p = regs.pc_oldp = get_real_address(listbase);
+                               m68k_disasm(listbase,(uaecptr*)&listbase,1,disasm_upe_out);
+                               if (term || bad_addr(listbase)) break;
+                           }
+                         }
                          disasm=1;
                          break;
 
               case '.' : if (disasm) {
-                             regs.pc = listbase;
-                             regs.pc_p = regs.pc_oldp = get_real_address(listbase);
-                             m68k_disasm(listbase,(uaecptr*)&listbase,10,disasm_upe_out);
+                             int n;
+                             for (n = 0; n < 10; n++) {
+                                 Boolean term = is_flow_terminator(listbase);
+                                 regs.pc = listbase;
+                                 regs.pc_p = regs.pc_oldp = get_real_address(listbase);
+                                 m68k_disasm(listbase,(uaecptr*)&listbase,1,disasm_upe_out);
+                                 if (term || bad_addr(listbase)) break;
+                             }
                          } else
                              dumpmem(&listbase,10);
                          break;
