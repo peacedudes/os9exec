@@ -127,10 +127,18 @@
 #if !defined macintosh && defined __MACH__
   #define MACOSX
   #define macintosh
-  
-  // Support Intel Macs
+
+  /* Both Intel and Apple Silicon Macs are little-endian; distinguish them
+   * so get_hw() can report "macOS arm64" and the ARM64-specific code paths
+   * (e.g. no x86 assembly in UAE) compile correctly.
+   * __INTEL__ is kept as the shared "little-endian Mac" flag for the
+   * os9_long / loword byte-swap macros — ARM64 needs the same LE<->BE
+   * conversions as x86, just without the bswapl instruction. */
   #ifndef __BIG_ENDIAN__
-    #define __INTEL__
+    #if defined __arm64__ || defined __aarch64__
+      #define __ARM64__   /* platform ID used by get_hw() */
+    #endif
+    #define __INTEL__     /* LE byte-swap needed on both x86 and ARM64 */
   #endif
 #endif
 
