@@ -1853,14 +1853,16 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
         case SS_SendTo : err= ((pfunc_p3a_t)s->_SS_SendTo )( pid,spP, d1,d2,*a); break; /* $77 */
         case SS_PCmd   : err= ((pfunc_pa_t )s->_SS_PCmd   )( pid,spP,      *a ); break; /* $7A */
 
-        /* general block read */
-        case SS_BlkRd: /* normal sw goes automatically to read/write if error */
+        /* general block read — RBF only; non-block devices return E_UNIT */
+        case SS_BlkRd:
+            if (spP->type != fRBF) { err= os9error(E_UNIT); break; }
             err= syspath_read ( pid,path, d2,(char*)*a0, false );
             *d1= *d2; /* return param must be here */
             break;
-            
-        /* general block write */
+
+        /* general block write — RBF only */
         case SS_BlkWr:
+            if (spP->type != fRBF) { err= os9error(E_UNIT); break; }
             err= syspath_write( pid,path, d2,(char*)*a0, false );
             *d1= *d2; /* return param must be here */
             break;

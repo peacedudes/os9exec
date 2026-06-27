@@ -186,6 +186,7 @@
 
 #ifdef win_unix
   #include <utime.h>
+  #include <sys/statvfs.h>
 #endif
 
 
@@ -218,6 +219,7 @@ os9err pHgetFDInf( ushort pid, syspath_typ*, uint32_t *maxbytP,
 
 os9err pFsetsz   ( ushort pid, syspath_typ*, uint32_t *sizeP );
 os9err pHsetFD   ( ushort pid, syspath_typ*,                   byte* buffer );
+os9err pHdsize   ( ushort pid, syspath_typ*, uint32_t *size, uint32_t *dtype );
 
 
 
@@ -261,6 +263,7 @@ void init_File( fmgr_typ* f )
     gs->_SS_Ready = (pathopfunc_typ)pFready;
     gs->_SS_FD    = (pathopfunc_typ)pHgetFD;
     gs->_SS_FDInf = (pathopfunc_typ)pHgetFDInf;
+    gs->_SS_DSize = (pathopfunc_typ)pHdsize;
 
     /* setstat */
     ss->_SS_Size  = (pathopfunc_typ)pFsetsz;
@@ -297,6 +300,7 @@ void init_Dir( fmgr_typ* f )
     gs->_SS_Ready= (pathopfunc_typ)pUnimp;      /* not used */
     gs->_SS_FD   = (pathopfunc_typ)pHgetFD;
     gs->_SS_FDInf= (pathopfunc_typ)pHgetFDInf;
+    gs->_SS_DSize= (pathopfunc_typ)pHdsize;
 
     /* setstat */
     ss->_SS_Size = (pathopfunc_typ)pBadMode; /* not allowed */
@@ -802,6 +806,23 @@ os9err pHvolnam( _pid_, syspath_typ* spP, char* volname )
     return 0;
 } /* pHvolnam*/
 
+
+#ifdef win_unix
+os9err pHdsize( ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
+/* Return host-filesystem total capacity as a 256-byte-sector count.
+ * Prevents free(1) from dividing by zero when /dd is a native directory. */
+{
+    struct statvfs st;
+    const char*    path = *spP->fullName ? spP->fullName : ".";
+
+    if (statvfs(path, &st) != 0) return os9error(E_UNIT);
+
+    /* Express in 256-byte sectors (the RBF default sector size). */
+    *size  = (uint32_t)((unsigned long long)st.f_blocks * st.f_frsize / 256);
+    *dtype = 0;
+    return 0;
+} /* pHdsize */
+#endif
 
 
 #ifdef win_unix

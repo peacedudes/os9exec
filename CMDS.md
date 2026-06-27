@@ -19,7 +19,7 @@ the os9exec arm64 emulator.
 | `deldir` | Delete a directory | ✓ |
 | `dir` | List directory contents | ✓ |
 | `dsave` | Generate a shell script to recreate a directory tree | ✓ |
-| `free` | Report free space on a disk device | |
+| `free` | Report free space on a disk device (works on RBF; zero-divide crash on native host directory) | ✓ |
 | `makdir` | Create a directory | ✓ |
 | `mv` | Move a file (requires RBF directory-write; does not work with host-directory `/dd`) | — |
 | `pd` | Print current working directory | ✓ |
