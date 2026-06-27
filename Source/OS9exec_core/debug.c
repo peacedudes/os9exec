@@ -644,6 +644,16 @@ extern int m68k_os9trace;
 static uint32_t listbase=0;
 static int disasm=0;
 
+/* Returns true and prints an error if addr is outside the 68k arena. */
+static Boolean bad_addr(uint32_t addr)
+{
+    if (emul_base + (uae_u32)addr >= emul_end) {
+        upe_printf("Address $%08X is outside the OS-9 memory space\n", addr);
+        return true;
+    }
+    return false;
+}
+
 /* wait for debug confirmation */
 ushort debugwait( void )
 {
@@ -773,6 +783,7 @@ ushort debugwait( void )
                                  listbase= procs[currentpid].os9regs.pc;
                              else { upe_printf("No process PC available\n"); break; }
                          }
+                         if (bad_addr(listbase)) break;
                          regs.pc = listbase;
                          regs.pc_p = regs.pc_oldp = get_real_address(listbase);
                          m68k_disasm(listbase,(uaecptr*)&listbase,10,disasm_upe_out);
@@ -796,11 +807,12 @@ ushort debugwait( void )
 
             case 'l' : if (sscanf(&inp[1],"%x", &listbase)<1) {
                             #ifdef USE_UAEMU
-                                listbase=m68k_areg(regs,7);                         
+                                listbase=m68k_areg(regs,7);
                             #else
                                 listbase=procs[currentpid].os9regs.a[7];
                                 #endif
                           }
+                          if (bad_addr(listbase)) break;
                           disasm=0;
                           dumpmem(&listbase,8); 
                           break;
