@@ -67,9 +67,23 @@ UAE_SUPPRESS = -Wno-unused-variable -Wno-unused-but-set-variable \
 
 VPATH = $(CORE):$(PLAT):Source/OS9execMPW:$(APPEMU):$(UAE)
 
-.PHONY: all clean test
+.PHONY: all prod clean test
 
 all: $(OBJDIR) os9exec
+
+# Production build: optimised, no debug symbols.
+# Usage: make prod   (rebuilds from scratch with -O2)
+prod:
+	$(MAKE) -B CFLAGS="-O2 -Wall \
+	          -DTERMINAL_CONSOLE \
+	          -DINT_CMD \
+	          -I$(CORE) \
+	          -I$(CORE)/os9defs \
+	          -I$(PLAT) \
+	          -ISource/Platforms \
+	          -I$(UAE) \
+	          -I$(APPEMU)"
+
 
 os9exec: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
