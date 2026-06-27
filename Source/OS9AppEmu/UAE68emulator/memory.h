@@ -123,10 +123,15 @@ extern void map_banks(addrbank *bank, int first, int count);
    pointers were 32 bits wide (see memstuff.c for the full rationale).
    Declared here, before the access macros that call get_real_address. */
 extern unsigned char *emul_base;
+extern unsigned char *emul_end;
 
 static __inline__ uae_u8 *get_real_address(uaecptr addr)
 {
-    return (uae_u8 *)(emul_base + addr);
+    /* 68k addresses > arena size are invalid; clamp to avoid reading past the
+     * arena (e.g. when ShowEA dereferences a memory-indirect EA whose base
+     * was computed from garbage data beyond a RTS). */
+    uae_u8 *p = emul_base + (uae_u32)addr;
+    return (p < emul_end) ? p : emul_base;
 }
 
 //#ifndef NO_INLINE_MEMORY_ACCESS

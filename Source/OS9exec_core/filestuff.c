@@ -369,7 +369,7 @@ static void disp_line( ushort pid, ushort sp, char* ups, syspath_typ* spP,
                     else { 
                       n= Pipe_NReady( p );
                       if (p->size>=1000) sprintf( szs, "%1.0fk", (float)(p->size/1024) );
-                      else               sprintf( szs, "%3lu",           p->size       );
+                      else               sprintf( szs, "%3u",            p->size       );
 
                                sprintf( aa, "%c>%d:%s", p->broken? '/':'-', p->sp_lock, szs );
                       if (n>0) sprintf( aa, "%s:%d",    aa, n );

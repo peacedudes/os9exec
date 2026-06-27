@@ -143,7 +143,7 @@ pmem_typ     pmem    [ MAXPROCESSES ];
 
 unsigned char* emul_base = NULL;             /* arena base (referenced by memory.h) */
 static unsigned char* emul_next = NULL;      /* bump pointer for fresh allocations */
-static unsigned char* emul_end  = NULL;      /* one past the end of the arena */
+       unsigned char* emul_end  = NULL;      /* one past the end of the arena */
 
 #ifdef USE_UAEMU
 os9addr_t trapstack_isp = 0; /* 68k address of top of supervisor scratch stack */
