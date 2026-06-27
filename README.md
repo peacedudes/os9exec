@@ -202,9 +202,12 @@ address or process ID. The address is always a **68k virtual address** in hex
 | `q` | Quit the entire emulator immediately |
 
 `t` resets itself after each step — type it again to step the next instruction.  The
-full register dump (`m68k_dumpstate`) shows D0–D7, A0–A7, USP/ISP, SR flags, and FP
-registers.  Steps execute whichever process the scheduler picks next, so in a
-multitasking context you may step a different process than expected.
+full register dump shows D0–D7, A0–A7, USP/ISP, SR flags, and FP registers.
+
+**For reliable single-stepping of one program:** enter the debugger via `break`
+rather than `idbg`.  `break` prints "WARNING: Timesharing HALTED" and suspends the
+scheduler — after that, `t` steps only your process and cannot jump to another.
+Entering via `idbg` leaves timesharing running, so steps may execute any ready process.
 
 ### Diagnostic logging — debug mask
 
