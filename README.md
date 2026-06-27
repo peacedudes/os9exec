@@ -161,6 +161,212 @@ any other program:
 Pass `-i` to disable all of these and use only real OS-9 binaries.
 
 
+## CMDS catalog
+
+The `dd/CMDS` directory contains 175 binaries from an official OS-9/68k network
+release disk widely distributed at trade shows and online.  The table below
+documents what each command does and how it behaves under this emulator.
+
+Status key: **✓** works · **~** works but needs arguments or config · **✗** not emulated (hardware/missing module) · **⚠** requires network stack or daemon
+
+### File and directory tools
+
+| Command | What it does | Status |
+|---------|-------------|--------|
+| `attr` | Show or set file attributes and permissions | ✓ |
+| `chown` | Change file ownership (group.user) | ~ needs args |
+| `cmp` | Compare two files byte-by-byte | ~ needs args |
+| `copy` | Copy files or directories | ✓ |
+| `del` | Delete files | ~ needs args |
+| `deldir` | Delete a directory | ~ needs args |
+| `dir` | List directory contents | ✓ |
+| `dsave` | Generate a shell script to recreate a directory tree | ~ reads stdin |
+| `free` | Report free space on a disk device | ~ shows 0 for host dirs |
+| `makdir` | Create a directory | ~ needs args |
+| `mv` | Move (rename across dirs) a file — wraps `copy`+`del` | ~ needs args |
+| `pd` | Print current working directory | ✗ crashes emulator |
+| `rename` | Rename a file within a directory | ~ needs args |
+| `touch` | Create a file or update its timestamp | ✓ |
+| `undel` | Undelete a file (RBF-specific) | ~ needs RBF device |
+
+### Text and data tools
+
+| Command | What it does | Status |
+|---------|-------------|--------|
+| `build` | Build a short text file from standard input | ✓ |
+| `count` | Count lines, words, bytes in a file | ~ needs file arg |
+| `dump` | Hex dump of a file | ✓ |
+| `edt` | Line-oriented text editor | ~ needs terminal TERM set |
+| `grep` | Search files for a regular expression | ~ needs args |
+| `list` | Display a text file (like `cat`) | ~ needs file arg |
+| `merge` | Concatenate files | ~ needs file args |
+| `pr` | Format and paginate a file for printing | ~ needs file arg |
+| `qsort` | In-memory quick sort (reads stdin or file) | ~ reads stdin if no arg |
+| `tee` | Copy stdin to stdout and one or more files simultaneously | ~ reads stdin |
+| `tr` | Translate character sets | ~ reads stdin |
+| `umacs` | Micro-Emacs editor | ✗ needs TERM environment variable |
+| `what` | Extract embedded `@(#)` version strings from a binary | ~ needs file arg |
+
+### Module and binary tools
+
+| Command | What it does | Status |
+|---------|-------------|--------|
+| `binex` | Convert binary module to Motorola S-record (hex) format | ~ needs file arg |
+| `cudo` | Convert OS-9/68k module to OS-9000 format | ✓ |
+| `dcheck` | Verify RBF disk integrity | ✓ (with RBF image) |
+| `editmod` | Edit module header fields | ~ needs args |
+| `exbin` | Convert Motorola S-record back to binary | ~ needs file arg |
+| `expand` | Decompress a file compressed by `compress` | ~ needs `.lzh` file |
+| `fixmod` | Recalculate and fix module header CRC/parity | ✓ |
+| `ident` | Display module header information | ~ needs file arg |
+| `link` | Link a module into memory from the module directory | ~ needs args |
+| `load` | Load a module from disk into memory | ~ needs args |
+| `mkdatmod` | Package a host file into an OS-9 data module | ~ needs args |
+| `moded` | Module field editor (needs `moded.fields` config) | ✗ missing config file |
+| `padrom` | Pad a ROM image file to a target size with `0xFF` | ~ needs args |
+| `romsplit` | Split a ROM image into 2 or 4 interleaved files | ~ needs file arg |
+| `save` | Save an in-memory module to a file | ~ needs args |
+| `unlink` | Unlink a module from memory | ~ needs args |
+
+### System information
+
+| Command | What it does | Status |
+|---------|-------------|--------|
+| `date` | Display the current date and time | ✓ |
+| `debug` | Launch OS-9 symbolic debugger front-end | ~ needs program arg |
+| `deiniz` | Detach (de-initialize) a device | ~ needs device name |
+| `devs` | List mounted devices | ✓ (with minor unimplemented syscall warning) |
+| `events` | List OS-9 system events | ✓ |
+| `help` | Display help text for OS-9 utilities | ✓ |
+| `iniz` | Initialize (attach) a device | ~ needs device name |
+| `irqs` | Display IRQ assignments | ✗ F$SysID not implemented |
+| `maps` | Show SSM memory allocation map | ✗ SSM not emulated |
+| `mdir` | List all loaded modules and their attributes | ✓ |
+| `mfree` | Show total free RAM | ✓ (shows 0 for host-dir `/dd`) |
+| `paths` | List open paths for all processes | ✓ |
+| `printenv` | Display environment variables | ✓ (empty in default session) |
+| `procs` | List running OS-9 processes | ✓ |
+| `setime` | Set system date and time | ✗ loops on bad date; kill with ^C |
+
+### Shell and process tools
+
+| Command | What it does | Status |
+|---------|-------------|--------|
+| `break` | Halt timesharing and enter debugger | ✓ (terminal left in raw mode on exit) |
+| `echo` | Echo text to stdout, with hex-to-ASCII conversion option | ✓ |
+| `make` | Build targets from a Makefile | ~ needs Makefile |
+| `on` | Execute a command on a remote host | ⚠ network |
+| `os9gen` | Write OS-9 boot track to a device | ✗ needs raw device |
+| `paths` | List open file paths | ✓ |
+| `shell` | Start a new interactive OS-9 shell | ✓ |
+| `sleep` | Suspend execution for N seconds | ✓ |
+
+### Disk and storage tools
+
+| Command | What it does | Status |
+|---------|-------------|--------|
+| `backup` | Back up an RBF disk to tape | ✗ hardware |
+| `diskcache` | Configure disk sector cache | ~ no-op without driver |
+| `dpsplit` | Split DPIO device descriptors | ~ needs descriptor |
+| `format` | Low-level format a disk | ✗ hardware |
+| `frestore` | Restore from tape created by `fsave` | ✗ hardware |
+| `fsave` | Dump filesystem to tape | ✗ hardware |
+| `mount` | Mount an RBF disk image as a device | ✓ |
+| `p2init` | Initialize an OS-9 Phase 2 module | ~ needs module |
+| `padrom` | Pad file to ROM size | ~ needs args |
+| `partdgen` | Generate PC-format partition descriptor | ~ needs args |
+| `partition` | Partition a large (>4 GB) hard disk | ~ needs device |
+| `pcformat` | Format a PC-style floppy | ✗ hardware |
+| `tape` | Tape drive control | ✗ hardware |
+| `tapegen` | Generate tape boot track | ✗ hardware |
+| `tapestart` | Start tape streaming | ✗ hardware |
+
+### Terminal and I/O tools
+
+| Command | What it does | Status |
+|---------|-------------|--------|
+| `bfed` | Binary file editor (screen-oriented) | ✗ needs TERM environment variable |
+| `cfp` | Floating-point coprocessor utility | ~ shows usage |
+| `cio` | Communications I/O module | ✗ module not present |
+| `code` | Return hex keycode of a terminal keypress | ~ interactive |
+| `com` | Serial port communication | ✗ hardware |
+| `kermit` | Kermit file transfer over serial | ✗ hardware |
+| `tmode` | Show or set terminal mode parameters | ✓ |
+| `xmode` | Show or set extended terminal parameters | ✓ |
+
+### Miscellaneous tools
+
+| Command | What it does | Status |
+|---------|-------------|--------|
+| `attr` | See File tools above | ✓ |
+| `csl` | C Shell (needs external module) | ✗ module not present |
+| `cudo` | See Module tools above | ✓ |
+| `math` | Math library access (needs math module) | ✗ module not present |
+| `maui` | Microware MAUI graphics (needs MAUI module) | ✗ module not present |
+| `mbdump` | Display network Mbuf statistics | ⚠ network |
+| `mbinstall` | Install network buffer allocation software | ⚠ network |
+| `mshell` | Remote network shell | ⚠ network |
+| `ndbmod` | Network database module tool | ⚠ network |
+| `pwrstat` | Power management status utility | ~ shows usage |
+| `su` | Switch user identity (needs `/dd/password` file) | ✗ missing password file |
+| `tar` | Tape archive (`tar t`/`x`/`c`) | ~ needs tape device for write |
+| `tsmon` | Timesharing terminal monitor | ~ shows usage |
+| `undel` | Undelete file (RBF-specific) | ~ needs RBF |
+
+### Network tools (require a live OS-9 network stack)
+
+These commands require SPF (Serial Port Framework) network drivers or TCP/IP
+daemons that are not present in the emulated environment.  They are listed for
+completeness; none will connect to anything.
+
+| Command | What it does |
+|---------|-------------|
+| `arp` | Display or modify ARP cache |
+| `beam` | Send a short UDP message to a host |
+| `bootpd` / `bootptest` | BOOTP server / test client |
+| `chat` | Modem/serial chat script runner |
+| `dhcp` | DHCP client |
+| `dird` | Remote `dir` server |
+| `ex1_rcv` / `ex1_snd` / `example3` | ITE network programming examples |
+| `exportfs` | NFS export manager |
+| `ftp` / `ftpd` / `ftpdc` | FTP client / daemon / connector |
+| `hostname` | Get or set system hostname |
+| `idbdump` / `idbgen` | Dump or generate internet database module |
+| `ifconfig` | Configure network interfaces |
+| `inetd` | Internet super-daemon |
+| `ipstart` | Start the IP network stack |
+| `lmm` | Load module manager (network) |
+| `login` | Login with password authentication |
+| `mountd` | NFS mount daemon |
+| `mrecv` / `msend` / `msgd` / `rmsg` | Interprocess messaging |
+| `netstat` | Show network statistics |
+| `nfsc` / `nfsd` / `nfsstat` | NFS client / server / statistics |
+| `on` | Execute command on remote host |
+| `pcnfsd` | PC NFS daemon |
+| `ping` | ICMP echo test |
+| `portmap` | RPC port mapper daemon |
+| `pppauth` / `pppd` | PPP authentication / daemon |
+| `rcopy` | Copy file over network |
+| `rdir` | Remote directory listing |
+| `rexd` / `rexdc` | Remote execution daemon / connector |
+| `rldd` / `rload` | Remote loader |
+| `route` / `routed` | Routing table / routing daemon |
+| `rpcdbgen` / `rpcdump` / `rpcgen` / `rpchost` / `rpcinfo` | RPC tools |
+| `rpr` | Remote print |
+| `rsort` / `sortd` | Remote sort / sort daemon |
+| `rstatd` / `rup` / `rusers` / `rusersd` | Remote status daemons |
+| `showmount` | Show NFS mounts |
+| `spf_test` | SPF network stack test |
+| `spfndpd` / `spfndpdc` / `spfnppd` / `spfnppdc` | SPF network protocol daemons |
+| `spray` / `sprayd` | Network packet spray test |
+| `su` | Switch user (needs password file) |
+| `target` | Network target service |
+| `tcprecv` / `tcpsend` | TCP send/receive test programs |
+| `telnet` / `telnetd` / `telnetdc` | Telnet client / daemon / connector |
+| `tftpd` / `tftpdc` | TFTP daemon / connector |
+| `undpd` / `undpdc` | UDP daemon / connector |
+
+
 ## Emulator debugger
 
 Run `idbg` from the OS-9 shell (or set a stop mask — see below) to enter the

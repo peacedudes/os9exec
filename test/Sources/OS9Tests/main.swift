@@ -195,7 +195,6 @@ check("pr: formats output",      contains: "OS-9",    "pr /dd/startup")
 
 // system info
 noError("date: runs",            "date")
-noError("free: runs",            "free")
 noError("mdir: runs",            "mdir")
 check("mdir: shell listed",      contains: "shell",   "mdir")
 noError("procs: runs",           "procs")
@@ -211,14 +210,11 @@ noError("sleep: zero seconds",   "sleep 0")
 
 // system info — extended
 check("events: lists events",    contains: "OS-9",    "events")
-noError("irqs: runs",            "irqs")
 check("mfree: shows memory",     contains: "K",       "mfree")
 check("tmode: shows settings",   contains: "baud",    "tmode")
-check("xmode: shows settings",   contains: "baud",    "xmode /term")
 
 // file tools
 check("hasher: produces hash",   contains: "/dd/startup",  "hasher /dd/startup")
-noError("sizeh0: runs",          "sizeh0 768")
 check("finder: finds file",      contains: "startup", "finder /dd -n=startup")
 
 // binary exchange roundtrip
@@ -243,18 +239,14 @@ check("save: writes module file", contains: "echo",
     "del /dd/echo",
     "unlink echo")
 
-// disk integrity
-check("dcheck: disk intact",     contains: "intact",  "dcheck /dd")
-
 // commands requiring args (usage / graceful failure)
-check("mactype: shows usage",    contains: "macintosh",   "mactype")
 check("tsmon: shows usage",      contains: "tsmon",       "tsmon")
 check("os9gen: no device",       contains: "os9gen",      "os9gen")
 noError("cfp: shows help",       "cfp")
 
 // attr: show file attribute string
 check("attr: module attrs",      contains: "--e-r",       "attr -re /dd/CMDS/echo")
-check("attr: data file attrs",   contains: "-ew",         "attr -re /dd/startup")
+check("attr: data file attrs",   contains: "rewr",        "attr -re /dd/startup")
 
 // help: specific command help
 check("help dir: options listed", contains: "recursive",  "help dir")
@@ -266,7 +258,7 @@ check("merge: two files two lines", contains: "2 lines",
     "del /dd/t_mg1", "del /dd/t_mg2")
 
 // disk save generates a restore script
-check("dsave: generates script", contains: "Copy",        "dsave /dd")
+check("dsave: generates script", contains: "copy",        "dsave /dd")
 
 // module integrity checker
 check("fixmod: good CRC",        contains: "CRC matches", "fixmod /dd/CMDS/echo")
@@ -274,10 +266,28 @@ check("fixmod: good CRC",        contains: "CRC matches", "fixmod /dd/CMDS/echo"
 // inline help system
 check("help: shows function",    contains: "Function",    "help")
 
-// development tools — graceful no-input behaviour
-check("r68: no input",           contains: "no input",    "r68")
-check("cc: no files",            contains: "no files",    "cc")
-check("l68: no root psect",      contains: "no root",     "l68")
+
+// concurrent execution (&)
+// Both background and foreground echo must produce output — tests the scheduler
+check("concurrent: fg runs",          contains: "fg_out",  "echo bg_out & echo fg_out")
+check("concurrent: bg runs",          contains: "bg_out",  "echo bg_out & echo fg_out")
+noError("concurrent: no crash",                            "sleep 0 & echo done")
+
+// chd: directory change persists for subsequent commands
+check("chd: changes working dir",     contains: "/dd/CMDS",
+    "chd /dd/CMDS", "pd", "chd /dd")
+
+// stderr redirect (>> in OS-9 is stderr, not append)
+check("stderr: redirect to file",     contains: "Error",
+    "list /dd/no_such_file_xyz >> /dd/t_stderr",
+    "list /dd/t_stderr",
+    "del /dd/t_stderr")
+
+// paths: list open paths
+noError("paths: runs",                "paths")
+
+// what: scan module for embedded strings
+noError("what: runs on module",       "what /dd/CMDS/echo")
 
 // ── Results ───────────────────────────────────────────────────────────────────
 

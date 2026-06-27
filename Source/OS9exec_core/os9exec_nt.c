@@ -1621,8 +1621,9 @@ static Boolean TCALL_or_Exception( process_typ* cp, regs_type* crp, ushort cpid 
 			
 		    debugprintf( dbgTrapHandler,dbgNorm,("# main loop: [pid=%d] ready to kill\n", cpid ));
 			cp->exiterr=vect-FIRSTEXCEPTION+E_BUSERR; /* set exit code */
-          //            if (!debugcheck(dbgAnomaly,dbgNorm)) /* dump proc if not debugging */
-		  //    debug_procdump(cp, cpid);
+            uphe_printf( "# Exception: pid=%d vector=$%02X err=#%03d:%03d — process will be killed (x to continue)\n",
+                         cpid, vect, cp->exiterr>>8, cp->exiterr&0xFF );
+            debug_halt( dbgAnomaly ); /* stop BEFORE kill so registers and i are live */
 			kill_process(cpid); /* kill the process, change currentpid */
 			/* show exception */
 			debugprintf(dbgTrapHandler,dbgNorm,("# main loop: Process pid=%d aborted: Exception vector=$%02X, err=#%03d\n",
@@ -2201,7 +2202,7 @@ static void setup_exception( loop_proc lo )
     
     sigaction( SIGSEGV, &sa, NULL ); // catch SEG faults
     sigaction( SIGBUS,  &sa, NULL ); // ... and others as well
-    sigaction( SIGFPE,  &sa, NULL ); 
+    sigaction( SIGFPE,  &sa, NULL );
   #endif
   
   do {

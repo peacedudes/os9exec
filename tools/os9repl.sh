@@ -76,7 +76,7 @@ delta() {
 
 cmd_start() {
     tmux kill-session -t "$SESSION" 2>/dev/null || true
-    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "./os9exec shell"
+    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9DISK='$REPO/dd' ./os9exec /dd/CMDS/shell"
     printf '[starting os9exec...]\n'
     if wait_prompt; then
         printf '[ready]\n'

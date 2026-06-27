@@ -1241,7 +1241,7 @@ void CutUp( char* pathname, const char* prev )
             #ifndef UNIX
             case PATHDELIM:
             #endif
-            case PSEP     : *q= NUL; strcat( pathname,qs ); break; /* cut "/./" anywhere */
+            case PSEP     : memmove( q, qs, strlen(qs)+1 ); break; /* cut "/./" anywhere */
 
             case '.'      : v= qs;
                          // i= 0;
@@ -1264,8 +1264,7 @@ void CutUp( char* pathname, const char* prev )
                                                   } // if
                                                 } // while
 
-                                                *q= NUL; /* concatenate at the new position */
-                                                strcat( pathname, qs );
+                                                memmove( q, qs, strlen(qs)+1 ); /* concatenate at the new position */
                                                 q--;
                                                 break;
 
