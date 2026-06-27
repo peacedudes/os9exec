@@ -197,8 +197,14 @@ address or process ID. The address is always a **68k virtual address** in hex
 | Command | What it does |
 |---------|--------------|
 | `x` | Resume — return to the OS-9 shell and continue running |
+| `t` | Single-step one 68k instruction, then re-enter the debugger with a full register dump |
 | `k xx` | Kill process `xx` (send it a fatal signal) |
 | `q` | Quit the entire emulator immediately |
+
+`t` resets itself after each step — type it again to step the next instruction.  The
+full register dump (`m68k_dumpstate`) shows D0–D7, A0–A7, USP/ISP, SR flags, and FP
+registers.  Steps execute whichever process the scheduler picks next, so in a
+multitasking context you may step a different process than expected.
 
 ### Diagnostic logging — debug mask
 
