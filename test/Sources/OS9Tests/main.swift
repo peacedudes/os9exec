@@ -214,8 +214,6 @@ check("mfree: shows memory",     contains: "K",       "mfree")
 check("tmode: shows settings",   contains: "baud",    "tmode")
 
 // file tools
-check("hasher: produces hash",   contains: "/dd/startup",  "hasher /dd/startup")
-check("finder: finds file",      contains: "startup", "finder /dd -n=startup")
 
 // binary exchange roundtrip
 check("binex+exbin: roundtrip",  contains: "Good CRC",

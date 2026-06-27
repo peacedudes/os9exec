@@ -65,6 +65,43 @@ Produces `os9exec` in the repo root. The build uses Apple clang with the
 UAE 68000 engine; `-m32` is not used.
 
 
+## Quickstart — using the Microware OS-9/68k SDK
+
+The commands in the `CMDS catalog` section below come from the Microware
+OS-9/68k SDK (the 68000 CMDS directory found on network and developer
+distributions).  If you have a licensed copy, here is how to set up a
+working `dd/` directory:
+
+```sh
+# 1. Create the disk directory next to the os9exec binary
+mkdir -p dd/CMDS
+
+# 2. Copy the OS-9 utilities from your SDK
+#    Adjust the path to match where your SDK is mounted or unpacked.
+#    A common layout is OS9/68000/CMDS inside the disk image or archive.
+cp /path/to/sdk/OS9/68000/CMDS/* dd/CMDS/
+
+# 3. Create a minimal startup script (optional but recommended)
+#    OS-9 uses carriage return (0x0D) as its line ending.
+printf '* OS-9 startup\r\nchd /dd\r\nshell\r\n' > dd/startup
+
+# 4. Run the shell
+OS9DISK=$(pwd)/dd ./os9exec /dd/CMDS/shell
+```
+
+You can also symlink your SDK's CMDS directory instead of copying:
+
+```sh
+ln -s /path/to/sdk/OS9/68000/CMDS dd/CMDS
+```
+
+The `dd/` directory (or any path pointed to by `OS9DISK`) does not need to
+be an RBF disk image — a plain host directory works fine for running
+utilities.  RBF images are only required for commands that manipulate the
+disk structure itself (`dcheck`, `format`, `free` reporting disk usage,
+etc.).
+
+
 ## Run
 
 ```sh
@@ -163,9 +200,10 @@ Pass `-i` to disable all of these and use only real OS-9 binaries.
 
 ## CMDS catalog
 
-The `dd/CMDS` directory contains 175 binaries from an official OS-9/68k network
-release disk widely distributed at trade shows and online.  The table below
-documents what each command does and how it behaves under this emulator.
+The commands below are from the Microware OS-9/68k SDK — specifically the
+`OS9/68000/CMDS` directory found on network and developer distributions of
+OS-9/68k 3.x.  The table documents what each command does and how it behaves
+under this emulator.
 
 Status key: **✓** works · **~** works but needs arguments or config · **✗** not emulated (hardware/missing module) · **⚠** requires network stack or daemon
 
@@ -184,7 +222,7 @@ Status key: **✓** works · **~** works but needs arguments or config · **✗*
 | `free` | Report free space on a disk device | ~ shows 0 for host dirs |
 | `makdir` | Create a directory | ~ needs args |
 | `mv` | Move (rename across dirs) a file — wraps `copy`+`del` | ~ needs args |
-| `pd` | Print current working directory | ✗ crashes emulator |
+| `pd` | Print current working directory | ✓ |
 | `rename` | Rename a file within a directory | ~ needs args |
 | `touch` | Create a file or update its timestamp | ✓ |
 | `undel` | Undelete a file (RBF-specific) | ~ needs RBF device |
