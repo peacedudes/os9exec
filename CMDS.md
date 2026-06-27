@@ -12,15 +12,15 @@ the os9exec arm64 emulator.
 | Command | What it does | Status |
 |---------|-------------|--------|
 | `attr` | Show or set file attributes and permissions | ✓ |
-| `chown` | Change file ownership (group.user) | |
-| `cmp` | Compare two files byte-by-byte | |
+| `chown` | Change file ownership (group.user) | ✓ |
+| `cmp` | Compare two files byte-by-byte | ✓ |
 | `copy` | Copy files or directories | ✓ |
-| `del` | Delete files | |
-| `deldir` | Delete a directory | |
+| `del` | Delete files | ✓ |
+| `deldir` | Delete a directory | ✓ |
 | `dir` | List directory contents | ✓ |
-| `dsave` | Generate a shell script to recreate a directory tree | |
+| `dsave` | Generate a shell script to recreate a directory tree | ✓ |
 | `free` | Report free space on a disk device | |
-| `makdir` | Create a directory | |
+| `makdir` | Create a directory | ✓ |
 | `mv` | Move a file (requires RBF directory-write; does not work with host-directory `/dd`) | — |
 | `pd` | Print current working directory | ✓ |
 | `rename` | Rename a file within a directory | ✓ |
@@ -33,35 +33,35 @@ the os9exec arm64 emulator.
 |---------|-------------|--------|
 | `build` | Build a short text file from standard input | ✓ |
 | `compress` | Compress a file in place (LZH format) | ✓ |
-| `count` | Count lines, words, and bytes in a file | |
+| `count` | Count lines, words, and bytes in a file | ✓ |
 | `dump` | Hex dump of a file | ✓ |
 | `edt` | Line-oriented text editor (requires TERM environment variable) | — |
 | `expand` | Decompress a file compressed by `compress` | ✓ |
-| `grep` | Search files for a regular expression | |
-| `list` | Display a text file (like `cat`) | |
-| `merge` | Concatenate files | |
-| `pr` | Format and paginate a text file | |
-| `qsort` | In-memory quick sort (reads stdin or file) | |
+| `grep` | Search files for a regular expression | ✓ |
+| `list` | Display a text file (like `cat`) | ✓ |
+| `merge` | Concatenate files | ✓ |
+| `pr` | Format and paginate a text file | ✓ |
+| `qsort` | In-memory quick sort (reads stdin or file) | ✓ |
 | `tar` | Create, list, or extract tar archives | ✓ |
-| `tee` | Copy stdin to stdout and to a file simultaneously | |
-| `tr` | Translate or delete characters | |
+| `tee` | Copy stdin to stdout and to a file simultaneously | ✓ |
+| `tr` | Translate or delete characters | ✓ |
 | `umacs` | Micro-Emacs editor (requires TERM environment variable) | — |
-| `what` | Extract embedded `@(#)` version strings from a binary | |
+| `what` | Extract embedded `@(#)` version strings from a binary | ✓ |
 
 ### Module and binary tools
 
 | Command | What it does | Status |
 |---------|-------------|--------|
-| `binex` | Convert binary module to Motorola S-record (hex) format | |
+| `binex` | Convert binary module to Motorola S-record (hex) format | ✓ |
 | `cudo` | Convert OS-9/68k module to OS-9000 format (modifies file in place) | ✓ |
 | `dcheck` | Verify RBF disk integrity (requires RBF disk image, not host directory) | — |
 | `editmod` | Show or edit module header fields | ✓ |
-| `exbin` | Convert Motorola S-record back to binary module | |
+| `exbin` | Convert Motorola S-record back to binary module | ✓ |
 | `fixmod` | Recalculate and fix module header CRC and parity | ✓ |
-| `ident` | Display module header information | |
-| `link` | Link a module into memory by name | |
+| `ident` | Display module header information | ✓ |
+| `link` | Link a module into memory by name | ✓ |
 | `load` | Load a module from disk into memory | ✓ |
-| `mkdatmod` | Package a file into an OS-9 data module | |
+| `mkdatmod` | Package a file into an OS-9 data module | ✓ |
 | `moded` | Module field editor (requires `moded.fields` config file, not included) | — |
 | `padrom` | Pad a file to a target size with `0xFF` | ✓ |
 | `romsplit` | Split a ROM image into interleaved files | |
