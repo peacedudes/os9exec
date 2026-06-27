@@ -320,11 +320,14 @@ check("mkdatmod: shows usage",   contains: "OS-9 data module",  "mkdatmod")
 // pwrstat: power management utility — shows help when run with no args
 check("pwrstat: shows usage",    contains: "Power Management",  "pwrstat")
 
-// tar: create and list an archive
-check("tar: create and list", contains: "echo",
-    "tar -cf /dd/t_tar /dd/CMDS/echo",
-    "tar -tf /dd/t_tar",
-    "del /dd/t_tar")
+// tar: create, extract, verify round-trip
+check("tar: roundtrip", contains: "tar_test_content",
+    "echo tar_test_content >/dd/t_tar_src",
+    "tar -cf /dd/t_tar /dd/t_tar_src",
+    "del /dd/t_tar_src",
+    "tar -xf /dd/t_tar",
+    "list /dd/t_tar_src",
+    "del /dd/t_tar_src", "del /dd/t_tar")
 
 // ── Results ───────────────────────────────────────────────────────────────────
 
