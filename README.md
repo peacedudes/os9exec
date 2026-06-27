@@ -161,6 +161,98 @@ any other program:
 Pass `-i` to disable all of these and use only real OS-9 binaries.
 
 
+## Emulator debugger
+
+Run `idbg` from the OS-9 shell (or set a stop mask — see below) to enter the
+emulator's interactive debugger.  The prompt looks like:
+
+```
+# Pid=3: dbgmsk=$0001,$0000,$0000 stop=$0000 trigger='' (type ?<Enter> for hlp)
+```
+
+Commands are single letters, case-insensitive, optionally followed by an
+address or process ID. The address is always a **68k virtual address** in hex
+(no `$` prefix needed, e.g. `i 1000`).
+
+### Inspection commands
+
+| Command | What it does |
+|---------|--------------|
+| `r` | Show 68k registers (D0–D7, A0–A7, PC, SR) for the current process |
+| `r xx` | Same, for process ID `xx` |
+| `i` | Disassemble 10 instructions starting at PC |
+| `i xxx` | Disassemble 10 instructions from address `xxx` |
+| `l` | Hex dump 64 bytes (8 lines) starting at A7 (top of stack) |
+| `l xxx` | Hex dump 64 bytes from address `xxx` |
+| `.` | Continue the previous `i` or `l` — shows the next block |
+| `p` | List all OS-9 processes (PID, state, name, module address) |
+| `v` | Show memory map for the current process |
+| `v xx` | Memory map for process `xx` |
+| `m` | List all loaded OS-9 modules |
+| `f` | List open paths (files, devices, pipes) for all processes |
+| `f xx` | Open paths for process `xx` only |
+
+### Flow control
+
+| Command | What it does |
+|---------|--------------|
+| `x` | Resume — return to the OS-9 shell and continue running |
+| `k xx` | Kill process `xx` (send it a fatal signal) |
+| `q` | Quit the entire emulator immediately |
+
+### Diagnostic logging — debug mask
+
+The emulator can print detailed trace output for specific subsystems as OS-9
+programs run.  The mask is a hex bit-field; combine values with `+`.
+
+```
+d xx        set the normal-level debug mask to xx (e.g. d 6 → syscalls + file manager)
+d 1, xx     set detail-level mask
+d 2, xx     set deep-level mask
+dh          print the full list of mask bits
+```
+
+Common mask bits (from `dh`):
+
+| Value | What it traces |
+|-------|---------------|
+| `0001` | Anomalies: unhandled exceptions and unimplemented syscalls (on by default) |
+| `0002` | Every syscall entry and return status |
+| `0004` | File manager type selection |
+| `0008` | Process creation and death |
+| `0010` | Task switching |
+| `0020` | Module link / load / unlink |
+| `0040` | Memory allocation and deallocation |
+| `0200` | File open/close/read/write operations |
+| `0400` | Error generation and translation |
+| `1000` | Warnings for partially-emulated functions |
+| `8000` | General warnings |
+
+Example — trace syscalls and file operations:
+
+```
+d 202
+```
+
+To turn off all logging: `d 0`
+
+### Stop mask — automatic debugger entry
+
+The stop mask tells the emulator to drop into the debugger automatically when
+a matching condition occurs, without needing to run `idbg` manually.
+
+```
+s x     set the stop mask to x (same bit values as the debug mask)
+```
+
+The most useful value is `s 1` — breaks into the debugger on any anomaly
+(bus error, address error, unimplemented syscall).  This is the quickest way
+to catch a crash at the point where it happens rather than discovering it
+after the fact.
+
+Turn off automatic breaks with `s 0`.
+
+
 ## Interactive REPL (tmux helper)
 
 `tools/os9repl.sh` wraps os9exec in a detached tmux session and lets you (or
