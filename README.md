@@ -161,6 +161,59 @@ any other program:
 Pass `-i` to disable all of these and use only real OS-9 binaries.
 
 
+## Interactive REPL (tmux helper)
+
+`tools/os9repl.sh` wraps os9exec in a detached tmux session and lets you (or
+an automated tool such as Claude) drive it interactively — one command at a
+time — without losing the shell or the debugger between calls.
+
+**Requirements:** `tmux` (install via Homebrew: `brew install tmux`).
+
+```sh
+# First time: build, then start the session
+make
+./tools/os9repl.sh start
+
+# Send shell commands; only the new output is printed
+./tools/os9repl.sh send "dir /dd"
+./tools/os9repl.sh send "echo hello"
+
+# Enter the debugger and inspect process state
+./tools/os9repl.sh send "idbg"
+./tools/os9repl.sh send "p"          # process table
+./tools/os9repl.sh send "v"          # memory map
+./tools/os9repl.sh send "i 1000"     # disassemble from address $1000
+./tools/os9repl.sh send "q"          # quit debugger
+
+# See the full scrollback (useful after a crash)
+./tools/os9repl.sh peek
+
+# Rebuild and restart in one step
+./tools/os9repl.sh restart
+
+# Stop the session
+./tools/os9repl.sh stop
+```
+
+Both the OS-9 shell prompt (`$`) and the emulator debugger prompt (`for hlp)`)
+are recognised, so `send` works without modification whether you are at the
+shell or inside `idbg`/`debughalt`.
+
+**For Claude instances:** invoke `tools/os9repl.sh` via `Bash` tool calls
+instead of running os9exec directly. The session persists across tool calls so
+context is not lost between commands.
+
+### Copyright notice — disk image content
+
+OS-9 software (binaries, libraries, shell scripts) stored in your disk image
+may be copyright Microware Systems Corporation or other parties. Everything
+observable through the REPL — directory listings, file contents, program
+output — reflects what is in your image. Do not use this tool to extract,
+reproduce, or redistribute copyrighted content without appropriate
+authorisation. The authors of os9exec make no representation about the
+licensing status of any content you supply as a disk image.
+
+
 ## Test
 
 Requires Swift (ships with Xcode):
