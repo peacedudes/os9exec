@@ -139,7 +139,7 @@
 
 #define E_ILLFNC    0x40 /* illegal function code */
 #define E_NOTNUM    0x42 /* not a number */
-#define E_ILLARG    22   /* illegal argument (= POSIX EINVAL) */
+#define E_ILLARG    0x43 /* illegal argument */
 
 /* ── os9exec internal codes (also defined in os9exec_nt.h) ─────────────── */
 /* Guard with #ifndef so the two definitions coexist without conflict.      */
