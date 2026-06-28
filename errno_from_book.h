@@ -137,8 +137,8 @@
 /* These appear in the switch before the hardware-exception block.          */
 /* Best-effort values; build will expose any conflicts.                     */
 
-#define E_ILLFNC    2    /* illegal function code */
-#define E_NOTNUM    8    /* not a number */
+#define E_ILLFNC    0x40 /* illegal function code */
+#define E_NOTNUM    0x42 /* not a number */
 #define E_ILLARG    22   /* illegal argument (= POSIX EINVAL) */
 
 /* ── os9exec internal codes (also defined in os9exec_nt.h) ─────────────── */
