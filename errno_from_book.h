@@ -39,8 +39,6 @@
 #define E_TRACE     109  /* trace (exception 9) */
 #define E_1010      110  /* line-1010 emulator (exception 10) */
 #define E_1111      111  /* line-1111 emulator (exception 11) */
-#define E_FMTERR    114  /* stack frame format error (exception 14) */
-
 /* TRAP instructions: exceptions 32-47 → 132-147 */
 #define E_TRAP      132  /* TRAP #0 (OS-9 syscall not set up); user traps: E_TRAP+n */
 
@@ -138,6 +136,7 @@
 /* Best-effort values; build will expose any conflicts.                     */
 
 #define E_ILLFNC    0x40 /* illegal function code */
+#define E_FMTERR    0x41 /* format error */
 #define E_NOTNUM    0x42 /* not a number */
 #define E_ILLARG    0x43 /* illegal argument */
 
