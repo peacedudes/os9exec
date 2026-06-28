@@ -107,7 +107,8 @@
 
 #define E_KWNMOD    231  /* module already known — book explicit */
 #define E_BMCRC     232  /* bad module CRC */
-#define E_SIGNAL    233  /* signal error */
+#define E_SIGNAL    233  /* signal error (formerly E_USIGP) */
+#define E_USIGP     E_SIGNAL
 #define E_NEMOD     234  /* module not found / wrong type — book explicit */
 #define E_BNAM      235  /* bad module name */
 #define E_BMHP      236  /* bad module header parity — book explicit */

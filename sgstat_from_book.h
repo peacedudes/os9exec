@@ -25,6 +25,51 @@
 #ifndef SGSTAT_FROM_BOOK_H
 #define SGSTAT_FROM_BOOK_H
 
+#include <stdint.h>
+#include <stddef.h>
+
+/* ── SCF options section struct ─────────────────────────────────────────── */
+/* Layout derived from the initializer in utilstuff.c (init_consoleopts)    */
+/* and the PD_ offset table.  Fields used by name in the codebase are given */
+/* their canonical _sgs_ names; unused slots get placeholder names.         */
+/* Total size = 128 bytes (OPTSECTSIZE).                                     */
+
+struct _sgs {
+    uint8_t  _sgs_dtp;    /* 0x00  PD_DTP   device type (0=SCF) */
+    uint8_t  _sgs_case;   /* 0x01  PD_UPC   upper-case-only flag */
+    uint8_t  _sgs_backsp; /* 0x02  PD_BSO   backspace output style */
+    uint8_t  _sgs_dlo;    /* 0x03  PD_DLO   delete-line output style */
+    uint8_t  _sgs_echo;   /* 0x04  PD_EKO   echo flag */
+    uint8_t  _sgs_alf;    /* 0x05  PD_ALF   auto-linefeed flag */
+    uint8_t  _sgs_nul;    /* 0x06  PD_NUL   null count after CR */
+    uint8_t  _sgs_pause;  /* 0x07  PD_PAU   page-pause flag */
+    uint8_t  _sgs_page;   /* 0x08  PD_PAG   page length in lines */
+    uint8_t  _sgs_bspch;  /* 0x09  PD_BSP   backspace key character */
+    uint8_t  _sgs_dlnch;  /* 0x0A  PD_DEL   delete-line key character */
+    uint8_t  _sgs_eorch;  /* 0x0B  PD_EOR   end-of-record (CR) character */
+    uint8_t  _sgs_eofch;  /* 0x0C  PD_EOF   end-of-file character */
+    uint8_t  _sgs_rprch;  /* 0x0D  PD_RPR   reprint-line key */
+    uint8_t  _sgs_dulnch; /* 0x0E  PD_DUP   duplicate-last-line key */
+    uint8_t  _sgs_pscch;  /* 0x0F  PD_PSC   pause-scroll key */
+    uint8_t  _sgs_kbich;  /* 0x10  PD_INT   keyboard interrupt character */
+    uint8_t  _sgs_kbach;  /* 0x11  PD_QUT   keyboard quit/abort character */
+    uint8_t  _sgs_bsech;  /* 0x12  PD_BSE   backspace echo character */
+    uint8_t  _sgs_ovfch;  /* 0x13  PD_OVF   line-overflow character */
+    uint8_t  _sgs_par;    /* 0x14  PD_PAR   parity/format code */
+    uint8_t  _sgs_bau;    /* 0x15  PD_BAU   baud rate code */
+    uint16_t _sgs_d2p;    /* 0x16  PD_D2P   offset to output device name */
+    uint8_t  _sgs_xon;    /* 0x18  PD_XON   XON character */
+    uint8_t  _sgs_xoff;   /* 0x19  PD_XOFF  XOFF character */
+    uint8_t  _sgs_tab;    /* 0x1A  PD_TAB   tab character */
+    uint8_t  _sgs_tabs;   /* 0x1B  PD_TABS  tab field size */
+    uint32_t _sgs_tbl;    /* 0x1C  PD_TBL   device table address (os9exec use) */
+    uint16_t _sgs_col;    /* 0x20  PD_Col   current column number */
+    uint8_t  _sgs_err;    /* 0x22  PD_Err   last I/O error */
+    uint8_t  _sgs_spare[93]; /* 0x23  spare to end of 128-byte options section */
+};
+
+typedef char _sgs_size_check[(sizeof(struct _sgs) == 128) ? 1 : -1];
+
 /* ── Options section anchor ─────────────────────────────────────────────── */
 /* PD_OPT is the absolute offset of the options section in the path         */
 /* descriptor; PthOffs is the same value, used by os9exec_nt.h arithmetic.  */
