@@ -232,11 +232,13 @@ make
 
 Produces `os9exec` in the repo root. For an optimised build: `make prod`.
 
-The four OS-9 header files in `Source/OS9exec_core/os9defs/` are derived from
-*The OS-9 Guru* (Galactic Industrial) and committed to this repo as
-`*_from_book.h` files. They cover `procid`, `module`, `errno`, and `sgstat`
-structs. The `os9defs/` directory contains only symlinks to these files; no
-proprietary Microware headers are required.
+Four header files are required in `Source/OS9exec_core/os9defs/` to build:
+`module.h`, `procid.h`, `errno.h`, and `sgstat.h` (or symlinks to equivalents).
+These cover the core OS-9/68k struct layouts. Supply them from a licensed
+OS-9 system or derive them from *The OS-9 Guru* (Galactic Industrial) — see
+`Source/OS9exec_core/os9defs/defs_files.txt` for field-by-field guidance.
+No proprietary Microware source is required; the book's published descriptions
+are sufficient. The pre-built binary runs without them.
 
 
 ## Interactive REPL helper
