@@ -24,18 +24,11 @@ RUN apt-get update && apt-get install -y \
     libc6 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /os9exec
-
 # Copy binary from builder
 COPY --from=builder /build/os9exec /usr/local/bin/os9exec
 
-# Copy disk image and sample directory
-COPY --from=builder /build/dd ./dd
-COPY --from=builder /build/h0 ./h0
+# os9exec looks for ./dd by default
+# User mounts their OS-9 binaries at runtime:
+#   docker run -v /path/to/your/os9:/dd -it os9exec
 
-# Set environment
-ENV OS9DISK=/os9exec/dd
-
-# Default to shell (uses OS-9 PATH to find it)
 ENTRYPOINT ["os9exec"]
-CMD ["shell"]
