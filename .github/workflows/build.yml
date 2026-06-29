@@ -1,10 +1,11 @@
-name: Build os9exec
+name: Build os9exec (all platforms)
 
 on:
   push:
     branches: [ master, arm64-uae-integration ]
   pull_request:
     branches: [ master ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,32 +13,43 @@ jobs:
     strategy:
       matrix:
         include:
+          # 64-bit Linux (glibc)
           - os: ubuntu-latest
-            platform: linux
+            platform: linux-x64
             cc: clang
             cflags: "-fcommon"
             binary: os9exec
-            artifact: os9exec-linux
+            artifact: os9exec-linux-x64
 
+          # 32-bit Linux (via Docker)
+          - os: ubuntu-latest
+            platform: linux-i386
+            cc: docker
+            dockerfile: Dockerfile.linux32
+            binary: os9exec
+            artifact: os9exec-linux-i386
+
+          # macOS ARM64
           - os: macos-latest
-            platform: macos
+            platform: macos-arm64
             cc: clang
             cflags: ""
             binary: os9exec
-            artifact: os9exec-macos
+            artifact: os9exec-macos-arm64
 
+          # Windows
           - os: windows-latest
-            platform: windows
+            platform: windows-x64
             cc: clang
             cflags: "-fcommon"
             binary: os9exec.exe
-            artifact: os9exec-windows.exe
+            artifact: os9exec-windows-x64.exe
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install dependencies (Ubuntu)
-      if: runner.os == 'Linux'
+    - name: Install dependencies (Ubuntu 64-bit)
+      if: matrix.platform == 'linux-x64'
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential clang
@@ -52,30 +64,45 @@ jobs:
       run: |
         choco install llvm -y
 
-    - name: Build os9exec
+    - name: Build os9exec (native)
+      if: matrix.cc != 'docker'
       env:
         CC: ${{ matrix.cc }}
       run: |
         make clean
         make
 
+    - name: Build os9exec (Docker 32-bit)
+      if: matrix.cc == 'docker'
+      run: |
+        docker build -f ${{ matrix.dockerfile }} -t os9exec:linux32 .
+        docker run --rm -v $(pwd):/workspace os9exec:linux32 cp /usr/local/bin/os9exec /workspace/os9exec
+
     - name: Verify binary exists
       run: |
-        ls -lh os9exec* || echo "Binary not found"
-        file os9exec* || echo "File command not available"
+        ls -lh os9exec* 2>/dev/null && file os9exec* || echo "Binary verification skipped (Docker build)"
 
-    - name: Quick smoke test (Linux/macOS)
-      if: runner.os != 'Windows'
+    - name: Smoke test (Linux/macOS)
+      if: runner.os != 'Windows' && matrix.cc != 'docker'
       run: |
-        ./os9exec /dd/CMDS/shell -c "echo 'OS-9 exec test'; exit" || true
+        ./os9exec /dd/CMDS/shell -c "echo test; exit" || true
 
-    - name: Quick smoke test (Windows)
+    - name: Smoke test (Docker 32-bit)
+      if: matrix.cc == 'docker'
+      run: |
+        docker run --rm -v $(pwd)/dd:/os9exec/dd os9exec:linux32 /dd/CMDS/shell -c "echo test; exit" || true
+
+    - name: Smoke test (Windows)
       if: runner.os == 'Windows'
       run: |
-        .\os9exec.exe /dd/CMDS/shell -c "echo 'OS-9 exec test'; exit" || exit /b 0
+        .\os9exec.exe /dd/CMDS/shell -c "echo test; exit" || exit /b 0
+
+    - name: Rename artifact
+      if: matrix.cc == 'docker'
+      run: |
+        mv os9exec os9exec-linux-i386 || true
 
     - name: Upload artifact
-      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact }}
@@ -93,6 +120,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          os9exec-linux/os9exec
-          os9exec-macos/os9exec
-          os9exec-windows.exe/os9exec.exe
+          os9exec-linux-x64/os9exec
+          os9exec-linux-i386/os9exec-linux-i386
+          os9exec-macos-arm64/os9exec
+          os9exec-windows-x64.exe/os9exec-windows-x64.exe

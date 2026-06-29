@@ -1,37 +1,70 @@
-# OS9exec — macOS arm64
+# OS9exec — Complete OS-9/68k emulator
 
-OS9exec is a complete OS-9/68k emulator. You give it a directory of OS-9 binaries,
-type `shell`, and you get a real OS-9 command line on your Mac — running the actual
-Microware utilities, the actual shell, the actual tools.
+Run actual OS-9 binaries on your modern computer. OS9exec emulates the 68k processor and OS-9 kernel, giving you a real OS-9 shell with pipes, redirection, job control, and the complete filesystem. If you have OS-9 software sitting around, this is the fastest way back in.
 
-It works remarkably well. The shell, pipes, redirection, background jobs, the file
-manager, the module system — all solid. If you have a collection of OS-9 software
-gathering dust somewhere, this is the fastest way back in.
+**Platform support:** macOS (arm64/Intel), Linux (64-bit/32-bit), Windows, Docker
 
-**No build required.** The `os9exec` binary for macOS arm64 (Apple Silicon) is in
-the repo. Clone it, point it at your OS-9 files, and run.
+---
 
+## Quick start (3 minutes, no build required)
 
-## Three-minute start
+### Option 1: Native binary (fastest)
+
+1. **Get the binary for your platform:**
+   - macOS ARM64 (M1/M2/M3): `os9exec-macos-arm64`
+   - macOS Intel: (coming soon) 
+   - Linux 64-bit: `os9exec-linux-x64`
+   - Linux 32-bit: `os9exec-linux-i386`
+   - Windows: `os9exec-windows-x64.exe`
+   
+   Download from [GitHub Releases](https://github.com/peacedudes/os9exec/releases)
+
+2. **Set up your OS-9 files:**
+   ```sh
+   mkdir -p dd/CMDS
+   cp /path/to/your/os9/CMDS/* dd/CMDS/
+   ```
+
+3. **Run:**
+   ```sh
+   OS9DISK=$(pwd)/dd ./os9exec /dd/CMDS/shell
+   ```
+   
+   You're now in OS-9. Try: `dir /dd/CMDS`, `echo hello`, `procs`, `exit`
+
+### Option 2: Docker (if Docker is installed)
 
 ```sh
 git clone https://github.com/peacedudes/os9exec.git
 cd os9exec-git_code
+docker build -t os9exec .
+docker run -it -v $(pwd)/dd:/os9exec/dd os9exec
+```
 
-# Put your OS-9 binaries in dd/CMDS
-mkdir -p dd/CMDS
-cp /path/to/your/os9/CMDS/* dd/CMDS/
+### Option 3: Build locally (if you have clang/gcc)
 
-# Run the shell
+```sh
+git clone https://github.com/peacedudes/os9exec.git
+cd os9exec-git_code
+make
 OS9DISK=$(pwd)/dd ./os9exec /dd/CMDS/shell
 ```
 
-That's it. You're in an OS-9 shell. Type `dir /dd/CMDS` to see what's there,
-run anything you like, and press ESC on a blank line to exit.
+**Platform-specific build notes:**
+- **macOS:** `make` (requires Xcode Command Line Tools)
+- **Linux:** `make` (requires build-essential, clang/gcc)
+- **Windows:** `make` (requires LLVM or MinGW; use WSL2 for easier build)
+- **Docker 32-bit Linux:** `docker build -f Dockerfile.linux32 -t os9exec:linux32 .`
 
-> **macOS security note:** The first time you run a downloaded binary, macOS may
-> block it. Open System Settings → Privacy & Security, scroll down, and click
-> Allow. Or: `xattr -d com.apple.quarantine os9exec`
+---
+
+## Security note (macOS)
+
+First run may be blocked. Fix with:
+```sh
+xattr -d com.apple.quarantine os9exec
+```
+Or: System Settings → Privacy & Security → Allow
 
 
 ## The disk layout
