@@ -8,6 +8,15 @@ Run actual OS-9 binaries on your modern computer. OS9exec emulates the 68k proce
 
 ## Quick start
 
+### Choose your path
+
+| Want | Use |
+|------|-----|
+| **Simplest, fastest start** | Option 1: Download binary |
+| **Have Docker installed** | Option 2: Pull pre-built image |
+| **macOS 26+ with Apple Container** | Option 3: Native container tool |
+| **Want to build from source** | Option 4: `make` locally |
+
 ### What you need
 
 **OS9exec itself:** Available from [GitHub Releases](https://github.com/peacedudes/os9exec/releases) or build locally (see below).
