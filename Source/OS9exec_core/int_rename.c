@@ -77,14 +77,12 @@
  *
  */
 
-
 /* OS9exec/nt internal rename */
 /* ========================== */
 
 /* global includes */
 #include "os9exec_incl.h"
-
-
+#include <ctype.h>
 
 static void usage( char* name, _pid_ )
 {
@@ -93,7 +91,6 @@ static void usage( char* name, _pid_ )
     upe_printf( "Options:\n" );
     upe_printf( "     -x       path starts from execution dir\n" );
 } /* usage */
-
 
 /*
 static os9err Flush_Dir( ushort cpid, ushort* pathP, const char* nmS )
@@ -143,7 +140,6 @@ static os9err Flush_Dir( ushort cpid, ushort* pathP, const char* nmS )
   return err;
 } // Flush_Dir
 */
-
 
 /* internal "rename" command for OS9exec/nt */
 os9err int_rename( ushort cpid, int argc, char **argv )
@@ -209,7 +205,6 @@ os9err int_rename( ushort cpid, int argc, char **argv )
         upe_printf("Error: two arguments required\n"); return 1;
     }
 
-
     /* first get file/dir to be renamed */
                nameP= nargv[0];
     strcpy(nmS,nameP);
@@ -224,7 +219,6 @@ os9err int_rename( ushort cpid, int argc, char **argv )
         len= strlen( newName );
     if (len>DIRNAMSZ)
                   return _errmsg( E_BPNAM,"name too long \"%s\"", newName );
-
 
         type= IO_Type( cpid,nmS, 0x00 ); /* get the device type: Mac/PC or RBF */
     if (type==fRBF) {
@@ -311,6 +305,5 @@ os9err int_rename( ushort cpid, int argc, char **argv )
     
     return err;
 } /* int_rename */
-
 
 /* eof */

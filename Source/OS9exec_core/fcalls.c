@@ -203,10 +203,8 @@
  *
  */
 
-
-
-
 #include "os9exec_incl.h"
+#include <ctype.h>
 #ifdef USE_UAEMU
   #include "config.h"
   #include "options.h"
@@ -219,8 +217,6 @@
 
 /* OS-9 system call routines */
 /* ========================= */
-
-
 
 os9err OS9_F_Exit( regs_type* rp, ushort cpid )
 /* F$Exit
@@ -243,8 +239,6 @@ os9err OS9_F_Exit( regs_type* rp, ushort cpid )
                                      cpid, PStateStr( cp ), cp->exiterr ));
   return 0;
 } /* OS9_F_Exit */
-
-
 
 os9err OS9_F_Load( regs_type *rp, ushort cpid )
 {
@@ -289,8 +283,6 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
     return 0;
 } /* OS9_F_Load */
 
-
-
 os9err OS9_F_Link( regs_type *rp, ushort cpid )
 /* F$Link:
  * Input:   d0.w=desired type/language
@@ -315,7 +307,6 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
        
     p= nullterm( mname,(char*)FROM68K(rp->a[0]),OS9NAMELEN );
     debugprintf(dbgModules,dbgNorm,("# F$Link: requested link to '%s', type/lang=$%04X\n",mname,tylan));
-
 
     #ifdef INT_CMD
     {
@@ -352,8 +343,6 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
     return 0;
 } /* OS9_F_Link */
 
-
-
 os9err OS9_F_UnLink( regs_type *rp, _pid_ )
 /* F$UnLink:
  * Input:   (a2)=pointer to module
@@ -374,8 +363,6 @@ os9err OS9_F_UnLink( regs_type *rp, _pid_ )
                                        mid, rp->a[2], os9modules[mid].linkcount ));
     return 0; /* returns ok, as long as module found */
 } /* OS9_F_UnLink */
-
-
 
 os9err OS9_F_UnLoad( regs_type *rp, _pid_ )
 /* F$UnLoad:
@@ -399,8 +386,6 @@ os9err OS9_F_UnLoad( regs_type *rp, _pid_ )
                                        mid,mname,os9modules[mid].linkcount ));
     return 0;
 } /* OS9_F_UnLoad */
-
-
 
 os9err OS9_F_SRqMem( regs_type *rp, ushort cpid )
 /* F$SRqMem:
@@ -436,8 +421,6 @@ os9err OS9_F_SRqMem( regs_type *rp, ushort cpid )
     return 0;
 } /* OS9_F_SRqMem */
 
-
-
 os9err OS9_F_SRtMem( regs_type *rp, ushort cpid )
 /* F$SRtMem:
  * Input:   d0.l=block size
@@ -457,8 +440,6 @@ os9err OS9_F_SRtMem( regs_type *rp, ushort cpid )
    memsz=(memsz+15) & 0xFFFFFFF0; /* round up to next 16-byte boundary */
    return os9free(cpid,bp,memsz);
 } /* OS9_F_SRtMem */
-
-
 
 os9err OS9_F_STrap( regs_type *rp, ushort cpid )
 /* F$STrap:
@@ -502,8 +483,6 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
     return 0;
 } /* OS9_F_STrap */
 
-
-
 os9err OS9_F_Time( regs_type *rp, _pid_ )
 /* F$Time:
  * Input:   d0.w=time format (0=gregorian, 1=julian, 2/3=same with ticks)
@@ -538,7 +517,6 @@ os9err OS9_F_Time( regs_type *rp, _pid_ )
     return 0;
 } /* OS9_F_Time */
 
-
 os9err OS9_F_STime( regs_type *rp, ushort cpid )
 /* F$STime:
  * Input:   d0.l=current time (00hhmmss)
@@ -564,7 +542,6 @@ os9err OS9_F_STime( regs_type *rp, ushort cpid )
     
   return 0;
 } /* OS9_F_STime */
-
 
 os9err OS9_F_Event( regs_type *rp, ushort cpid )
 {
@@ -629,8 +606,6 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
     return err;
 } /* OS9_F_Event */
 
-
-
 os9err OS9_F_Julian( regs_type *rp, _pid_ )
 /* F$Julian:
  * Input:   d0.l=current time (00hhmmss)
@@ -652,8 +627,6 @@ os9err OS9_F_Julian( regs_type *rp, _pid_ )
     
     return 0;
 } /* OS9_F_Julian */
-
-
 
 os9err OS9_F_Gregor( regs_type *rp, _pid_ )
 /* F$Gregor:
@@ -685,8 +658,6 @@ os9err OS9_F_Gregor( regs_type *rp, _pid_ )
     return 0;
 } /* OS9_F_Gregor */
 
-
-
 os9err OS9_F_ID( regs_type *rp, ushort cpid )
 /* F$ID:
  * Input:   none
@@ -705,8 +676,6 @@ os9err OS9_F_ID( regs_type *rp, ushort cpid )
     return 0;
 } /* OS9_F_ID */
 
-
-
 os9err OS9_F_SUser( regs_type *rp, ushort cpid )
 /* F$SUser:
  * Input:   d1.l=Desired group / user ID number
@@ -721,9 +690,6 @@ os9err OS9_F_SUser( regs_type *rp, ushort cpid )
     pd->_user = os9_word( loword( rp->d[1] ) );
     return 0;
 } /* OS9_F_SUser */
-
-
-
 
 os9err OS9_F_Send( regs_type *rp, ushort cpid )
 /* F$Send:
@@ -740,9 +706,6 @@ os9err OS9_F_Send( regs_type *rp, ushort cpid )
     debugprintf(dbgProcess,dbgNorm,("# F$Send: pid=%d is sending signal %d to pid=%d\n",cpid,loword(rp->d[1]),loword(rp->d[0])));
     return send_signal(loword(rp->d[0]), loword(rp->d[1]));
 } /* OS9_F_Send */
-
-
-
 
 os9err OS9_F_Icpt( regs_type *rp, ushort cpid )
 /* F$Icpt:
@@ -764,8 +727,6 @@ os9err OS9_F_Icpt( regs_type *rp, ushort cpid )
           cpid,os9_long((ulong)cp->pd._sigvec),cp->icpta6));
     return 0;
 } /* OS9_F_Icpt */
-
-
 
 os9err OS9_F_RTE( _rp_, ushort cpid )
 /* F$RTE:
@@ -831,8 +792,6 @@ os9err OS9_F_RTE( _rp_, ushort cpid )
     return err;
 } /* OS9_F_RTE */
 
-
-
 os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
 /* F$GPrDBT:
  * Input:   d1.l = maximum number of bytes to copy
@@ -869,8 +828,6 @@ os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
     rp->d[1]= (long)ptr - (long)FROM68K(rp->a[0]); /* bytes written (host span) */
     return 0;
 } /* OS9_F_GPrDBT */
-
-
 
 os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
 /* F$GPrDsc:
@@ -955,8 +912,6 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
   return 0;
 } // OS9_F_GPrDsc
 
-
-
 os9err OS9_F_GBlkMp( regs_type *rp, _pid_ )
 /* F$GBlkMp:
  * Input:   d0.l= address to begin reporting segments
@@ -992,8 +947,6 @@ os9err OS9_F_GBlkMp( regs_type *rp, _pid_ )
     b= (uint32_t*)FROM68K(rp->a[0]); *b= 0; /* no segments available */
     return 0;
 } /* OS9_F_GBlkMp */
-
-
 
 os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 /* F$SetSys:
@@ -1143,8 +1096,6 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
     return 0;
 } /* OS9_F_SetSys */
 
-
-
 os9err OS9_F_GModDr( regs_type *rp, _pid_ )
 /* F$GModDr:
  * Input:   d1.l = Maximum number of bytes to copy
@@ -1166,8 +1117,6 @@ os9err OS9_F_GModDr( regs_type *rp, _pid_ )
     return 0;
 } /* OS9_F_GModDr */
 
-
-
 os9err OS9_F_CpyMem( regs_type *rp, _pid_ )
 /* F$CpyMem:
  * Input:   d0.w = process ID of external memory's owner
@@ -1186,8 +1135,6 @@ os9err OS9_F_CpyMem( regs_type *rp, _pid_ )
     debugprintf(dbgMemory,dbgDeep,("# F$CpyMem: copied %ld bytes from $%lX to %$lX\n", cnt,src,dst ));
     return 0;
 } /* OS9_F_CpyMem */
-
-
 
 os9err OS9_F_TLink( regs_type *rp, ushort cpid )
 /* F$TLink
@@ -1250,8 +1197,6 @@ os9err OS9_F_TLink( regs_type *rp, ushort cpid )
     return err;
 } /* OS9_F_TLink */
 
-
-
 os9err OS9_F_DatMod( regs_type *rp, _pid_ )
 /* F$DatMod:
  * Input:   d0.l=size of data reuired (not including header or CRC)
@@ -1300,7 +1245,6 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
         pp= get_mem( msz );
     if (pp==NULL) return os9error(E_NORAM); /* not enough memory */
 
-
 //  #ifdef macintosh
 //    theModuleH= pp;
 //    
@@ -1347,7 +1291,6 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
     mod_crc( theModule );
     os9modules[mid].linkcount= 1;                 /* module is created and linked */
 
-
     theModule= (mod_exec*)get_module_ptr( mid );
     retword(rp->d[0])=os9_word(theModule->_mh._mtylan);
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
@@ -1358,8 +1301,6 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
 
     return 0;
 } /* OS9_F_DatMod */
-
-
 
 os9err OS9_F_Fork( regs_type *rp, ushort cpid )
 /* F$Fork
@@ -1509,8 +1450,6 @@ os9err OS9_F_Fork( regs_type *rp, ushort cpid )
   */
 } /* OS9_F_Fork */
 
-
-
 extern int m68k_os9singlestep;
 
 /* Snapshot child registers into the debugger's register frame buffer.
@@ -1545,7 +1484,6 @@ void save_debug_regs( ushort pid )
       base[0x44] = (v>> 8)&0xFF; base[0x45] =  v     &0xFF; }
     base[0x46] = 0; base[0x47] = 0;
 } /* save_debug_regs */
-
 
 os9err OS9_F_DFork( regs_type *rp, ushort cpid )
 /* F$DFork: Fork a child process for debugging.
@@ -1607,8 +1545,6 @@ os9err OS9_F_DFork( regs_type *rp, ushort cpid )
     return err;
 } /* OS9_F_DFork */
 
-
-
 os9err OS9_F_DExec( regs_type *rp, ushort cpid )
 /* F$DExec: Single-step the debug child by one 68k instruction.
  * Input:  D0.W = child PID
@@ -1633,8 +1569,6 @@ os9err OS9_F_DExec( regs_type *rp, ushort cpid )
     return 0;
 } /* OS9_F_DExec */
 
-
-
 os9err OS9_F_DExit( regs_type *rp, ushort cpid )
 /* F$DExit: Kill the debug child.
  * Input:  D0.W = child PID
@@ -1649,8 +1583,6 @@ os9err OS9_F_DExit( regs_type *rp, ushort cpid )
     kill_process(childpid);
     return 0;
 } /* OS9_F_DExit */
-
-
 
 os9err OS9_F_Chain( regs_type *rp, ushort cpid )
 /* F$Chain
@@ -1740,7 +1672,6 @@ os9err OS9_F_Chain( regs_type *rp, ushort cpid )
 
     return 0; /* that's it */
 } /* OS9_F_Chain */
-
 
 os9err OS9_F_Wait( regs_type *rp, ushort cpid )
 /* F$Wait
@@ -1854,7 +1785,6 @@ os9err OS9_F_Wait( regs_type *rp, ushort cpid )
   return os9error( E_NOCHLD );
 } /* OS9_F_Wait */
 
-
 os9err OS9_F_Sleep( regs_type *rp, ushort cpid )
 /* F$Sleep
  * Input:   none
@@ -1900,8 +1830,6 @@ os9err OS9_F_Sleep( regs_type *rp, ushort cpid )
   return 0;
 } /* OS9_F_Sleep */
 
-
-
 os9err OS9_F_Alarm( regs_type *rp, ushort cpid )
 /* F$Alarm
  * Input:   d0.l=Alarm ID (or zero)
@@ -1928,8 +1856,6 @@ os9err OS9_F_Alarm( regs_type *rp, ushort cpid )
     return err;
 } /* OS9_F_Alarm */
 
-
-
 os9err OS9_F_Sigmask( regs_type *rp, ushort cpid )
 /* F$SigMask */
 {
@@ -1937,8 +1863,6 @@ os9err OS9_F_Sigmask( regs_type *rp, ushort cpid )
     sig_mask( cpid, level );
     return 0;
 } /* OS9_F_Sigmask*/
-
-
 
 os9err OS9_F_CRC( regs_type *rp, _pid_ )
 /* F$CRC
@@ -1959,8 +1883,6 @@ os9err OS9_F_CRC( regs_type *rp, _pid_ )
 
   return 0;
 } /* OS9_F_CRC */
-
-
 
 os9err OS9_F_SetCRC( regs_type *rp, _pid_ )
 /* F$SetCRC
@@ -1983,8 +1905,6 @@ os9err OS9_F_SetCRC( regs_type *rp, _pid_ )
 
     return 0;
 } /* OS9_F_SetCRC */
-
-
 
 os9err OS9_F_PrsNam( regs_type *rp, _pid_ )
 /* F$PrsNam
@@ -2016,8 +1936,6 @@ os9err OS9_F_PrsNam( regs_type *rp, _pid_ )
     retword(rp->d[1])=n; /* size of path element */
     return 0;
 } /* OS9_F_PrsNam */
-
-
 
 os9err OS9_F_CmpNam( regs_type *rp, _pid_ )
 /* F$CmpNam
@@ -2087,8 +2005,6 @@ os9err OS9_F_CmpNam( regs_type *rp, _pid_ )
     return os9error(E_DIFFER);
 } /* OS9_F_CmpNam */
 
-
-
 os9err OS9_F_PErr( regs_type *rp, _pid_ )
 /* F$PErr
  * Input:   d0.w=Error message path number (0=none)
@@ -2110,8 +2026,6 @@ os9err OS9_F_PErr( regs_type *rp, _pid_ )
     return 0;
 } /* OS9_F_PErr */
 
-
-
 os9err OS9_F_SysDbg( _rp_, _pid_ )
 /* F$SysDbg
  * Input : none
@@ -2126,7 +2040,6 @@ os9err OS9_F_SysDbg( _rp_, _pid_ )
   return 0;
 } /* OS9_F_SysDbg */
 
-
 os9err OS9_F_Panic( _rp_, ushort cpid )
 /* F$Panic
  * Input : none
@@ -2137,7 +2050,6 @@ os9err OS9_F_Panic( _rp_, ushort cpid )
   debugwait();
   return 0;
 } /* OS9_F_Panic */
-
 
 os9err OS9_F_SSvc( _rp_, _pid_ )
 /* F$SSvc
@@ -2151,7 +2063,6 @@ os9err OS9_F_SSvc( _rp_, _pid_ )
 //ulong suser= rp->a[ 3 ];
   return 0;
 } /* OS9_F_SSvc */
-
 
 os9err OS9_F_Permit( _rp_, _pid_ )
 /* F$Permit:
@@ -2167,7 +2078,6 @@ os9err OS9_F_Permit( _rp_, _pid_ )
   return 0;
 } /* OS9_F_Permit */
 
-
 os9err OS9_F_SPrior( regs_type *rp, _pid_ )
 /* F$SPrior:
  * Input:   d0.w=process ID
@@ -2178,7 +2088,6 @@ os9err OS9_F_SPrior( regs_type *rp, _pid_ )
   return setprior( loword( rp->d[ 0 ] ),
                    loword( rp->d[ 1 ] ));
 } /* OS9_F_SPrior */
-
 
 /* --------------------------------------------------------- */
 os9err OS9_F_Dummy( _rp_, ushort cpid )
@@ -2192,8 +2101,6 @@ os9err OS9_F_Dummy( _rp_, ushort cpid )
   return 0;
 } /* OS9_F_Dummy */
 
-
-
 os9err OS9_F_SDummy( _rp_, ushort cpid )
 /* F$SDummy:
  * Silent dummy, does not warn except when dbgPartial is on
@@ -2204,8 +2111,6 @@ os9err OS9_F_SDummy( _rp_, ushort cpid )
                                       get_syscall_name(cp->lastsyscall), cpid ));
   return 0;
 } /* OS9_F_SDummy */
-
-
 
 os9err OS9_F_UnImp( _rp_, ushort cpid )
 /* F$UnImp
@@ -2218,8 +2123,6 @@ os9err OS9_F_UnImp( _rp_, ushort cpid )
   return E_UNKSVC;
 } /* OS9_F_Unimp */
 
-
-
 os9err OS9_F_SUnImp( _rp_, ushort cpid )
 /* F$SUnImp
  * Silent Unimplemented system call, returns E_UNKSVC
@@ -2230,7 +2133,5 @@ os9err OS9_F_SUnImp( _rp_, ushort cpid )
                                       get_syscall_name(cp->lastsyscall), cpid ));
   return E_UNKSVC;
 } /* OS9_F_SUnImp */
-
-
 
 /* eof */

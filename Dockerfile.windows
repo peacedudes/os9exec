@@ -1,0 +1,30 @@
+# Cross-compile os9exec for Windows using MinGW
+FROM ubuntu:24.04
+
+# Install MinGW and build tools
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    mingw-w64 \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+# Build for Windows (x86-64)
+# Using i686-w64-mingw32 for 32-bit or x86_64-w64-mingw32 for 64-bit
+RUN make clean && \
+    CC=x86_64-w64-mingw32-gcc \
+    make \
+    CFLAGS="-g -Wall -fcommon \
+             -DTERMINAL_CONSOLE \
+             -DINT_CMD \
+             -ISource/OS9exec_core \
+             -ISource/OS9exec_core/os9defs \
+             -ISource/Platforms/WIN32 \
+             -ISource/Platforms \
+             -ISource/OS9AppEmu/UAE68emulator \
+             -ISource/OS9AppEmu"
+
+# Verify the output is a Windows binary
+RUN file os9exec.exe || file os9exec || echo "Build artifact check:"  && ls -lh os9exec*

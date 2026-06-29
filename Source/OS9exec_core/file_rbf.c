@@ -154,14 +154,14 @@
 
 // #define RBF_CACHE
 
-
 /* This file contains the RBF Emulator */
 #include "os9exec_incl.h"
+#include <ctype.h>
 #include "filescsi.h"
+#include <ctype.h>
 
 #define  FD_Header_Size 16 // size of FD header
 #define  SegSize         5 // number of bytes per segment
-
 
 /* the RBF device entry itself */			
 typedef struct {
@@ -204,7 +204,6 @@ typedef struct {
 /* the RBF devices */
 rbfdev_typ  rbfdev[MAXRBFDEV];		
 
-
 /* OS9exec builtin module, defined as constant array */
 const byte RAM_zero[] = {
     0x00,0x20,0x00,0x00,0x04,0x00,0x00,0x01,0x00,0x00,0x05,0x00,0x00,0xbf,0x00,0x00,  // . ...........?..
@@ -224,8 +223,6 @@ const byte RAM_zero[] = {
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  // ................
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00   // ................
 };    
-
-
 
 /* --- local procedure definitions for object definition ------------------- */
 void   init_RBF  ( fmgr_typ* f );
@@ -259,7 +256,6 @@ os9err pRWTrk    ( ushort pid, syspath_typ*, uint32_t *trackNr );
 
 void init_RBF_devs();
 /* ------------------------------------------------------------------------- */
-
 
 void init_RBF( fmgr_typ* f )
 /* install all procedures of the RBF file manager */
@@ -303,8 +299,6 @@ void init_RBF( fmgr_typ* f )
 
 /* --------------------------------------------------------- */
 
-
-
 void init_RBF_devs()
 /* initialize them all to not installed */
 {
@@ -320,14 +314,11 @@ void init_RBF_devs()
   } // for
 } /* init_RBF_devs */
 
-
-
 // -----------------------------------------------------------------------
 
 static Boolean IsSCSI( rbfdev_typ* dev )
 { return dev->scsi.ID!=NO_SCSI;
 } /* IsSCSI */
-
 
 static os9err ReadSector( rbfdev_typ* dev, ulong sectorNr, 
                                            ulong nSectors, byte* buffer )
@@ -426,8 +417,6 @@ static os9err ReadSector( rbfdev_typ* dev, ulong sectorNr,
 
     return err;
 } /* ReadSector */
-
-
 
 static os9err WriteSector( rbfdev_typ* dev, ulong sectorNr, 
                                             ulong nSectors, byte* buffer )
@@ -539,10 +528,6 @@ static os9err WriteSector( rbfdev_typ* dev, ulong sectorNr,
     return err;
 } /* WriteSector */
 
-
-
-
-
 // ----------------------------------------------------------------
 // utility procs
 
@@ -571,8 +556,6 @@ static os9err CutOS9Path( char** p, char* cmp_entry )
     return err;
 } /* CutOS9Path */
 
-
-
 static void GetBuffers( _rbf_, syspath_typ* spP )
 {
 //Boolean pp= spP->fd_sct==NULL || spP->rw_sct==NULL;
@@ -592,8 +575,6 @@ static void GetBuffers( _rbf_, syspath_typ* spP )
 //                     spP->nr, dev->sctSize, spP->fd_sct,spP->rw_sct );
 } /* GetBuffers */
 
-
-
 static void ReleaseBuffers( syspath_typ* spP )
 {
 //upe_printf( "Relbuffers %d %08X %08X\n", spP->nr, spP->fd_sct,spP->rw_sct);
@@ -601,8 +582,6 @@ static void ReleaseBuffers( syspath_typ* spP )
   if (spP->fd_sct!=NULL) release_mem( spP->fd_sct ); spP->fd_sct= NULL;
   if (spP->rw_sct!=NULL) release_mem( spP->rw_sct ); spP->rw_sct= NULL;
 } /* ReleaseBuffers */
-
-
 
 static os9err ReleaseIt( ushort pid, rbfdev_typ* dev )
 {
@@ -620,8 +599,6 @@ static os9err ReleaseIt( ushort pid, rbfdev_typ* dev )
     
   return err;
 } /* ReleaseIt */
-
-
 
 static os9err DevSize( rbfdev_typ* dev )
 /* get the size of the device as numbers of sectors
@@ -662,7 +639,6 @@ static os9err DevSize( rbfdev_typ* dev )
     return err;
 } /* DevSize */
 
-
 static os9err ChkIntegrity( rbfdev_typ* dev, syspath_typ* spP, 
                             byte* mysct, Boolean ignore )
 {
@@ -681,8 +657,6 @@ static os9err ChkIntegrity( rbfdev_typ* dev, syspath_typ* spP,
     
     return 0;
 } /* ChkIntegrity */
-
-
 
 static os9err GetTop( ushort pid, rbfdev_typ* dev )
 {
@@ -736,7 +710,6 @@ static os9err GetTop( ushort pid, rbfdev_typ* dev )
   return err;
 } /* GetTop */
 
-
 static os9err GetFull( ushort pid, rbfdev_typ* dev )
 {
   os9err   err = 0;
@@ -750,7 +723,6 @@ static os9err GetFull( ushort pid, rbfdev_typ* dev )
 //upo_printf( "FULL AGAIN err=%d\n", err );
   return err;
 } /* GetFull */
-
 
 static os9err RootLSN( _pid_, rbfdev_typ* dev, syspath_typ* spP, Boolean ignore )
 {
@@ -807,8 +779,6 @@ static os9err RootLSN( _pid_, rbfdev_typ* dev, syspath_typ* spP, Boolean ignore 
     return err;
 } /* RootLSN */
 
-
-
 static void CutPath( char* s )
 {
   int  ii,len= strlen( s );
@@ -816,7 +786,6 @@ static void CutPath( char* s )
      if (s[ii]==PSEP) { strcpy( s,&s[ii+1] ); break; }
   } /* for */
 } /* CutPath */
-
 
 static os9err Open_Image( ushort pid, rbfdev_typ* dev, ptype_typ type, char* pathName, 
                           ushort mode )
@@ -894,8 +863,6 @@ static os9err Open_Image( ushort pid, rbfdev_typ* dev, ptype_typ type, char* pat
     return 0;                                                         
 } /* Open_Image */
 
-
-
 Boolean InstalledDev( const char* os9path, const char* curpath,
                       Boolean fullsearch, ushort *cdv )
 /* expect OS-9 notation */
@@ -947,8 +914,6 @@ Boolean InstalledDev( const char* os9path, const char* curpath,
     return false;
 } /* InstalledDev */
 
-
-
 static Boolean MWrong( int cdv )
 /* check if already installed on a different device */
 {
@@ -964,8 +929,6 @@ static Boolean MWrong( int cdv )
     
   return false;
 } /* MWrong */
-
-
 
 // #ifdef RAM_SUPPORT
 static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
@@ -1112,8 +1075,6 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
     return 0;
 } /* PrepareRAM */
 // #endif
-
-
 
 static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP, 
                           ushort cdv, char* pathname, char* curpath, ushort mode, Boolean *new_inst )
@@ -1470,9 +1431,6 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
     return err;
 } /* DeviceInit */
 
-
-
-
 static void mount_usage( char* name, _pid_ )
 {
     upe_printf( "Syntax:   %s <image_file> [<device>]\n", name );
@@ -1495,8 +1453,6 @@ static void mount_usage( char* name, _pid_ )
     upe_printf( "    -c=<num>     cluster size (default: 1) for RAM disk\n" );
     upe_printf( "    -d=<device>  create RAM disk as a copy of <device>\n" );
 } /* mount_usage */
-
-
 
 os9err MountDev( ushort pid, char* name, char* mnt_dev, char* devCopy, short adapt,
                              ushort scsibus, short scsiID, ushort scsiLUN, 
@@ -1575,8 +1531,6 @@ os9err MountDev( ushort pid, char* name, char* mnt_dev, char* devCopy, short ada
     if   (!err) err= syspath_close( pid, sp );
     return err;
 } /* MountDev */
-
-
 
 os9err int_mount( ushort pid, int argc, char** argv )
 /* mount an RBF image partition file */
@@ -1719,16 +1673,12 @@ os9err int_mount( ushort pid, int argc, char** argv )
     return err;
 } /* int_mount */
 
-
-
-
 static void unmount_usage( char* name, _pid_ )
 {
     upe_printf( "Syntax:   %s <device>\n", name );
     upe_printf( "Function: unmount an RBF image file\n" );
     upe_printf( "Options:  None\n" );
 } /* unmount_usage */
-
 
 os9err int_unmount( ushort pid, int argc, char** argv )
 /* unmount an RBF image partition file */
@@ -1804,8 +1754,6 @@ os9err int_unmount( ushort pid, int argc, char** argv )
     return err;
 } /* int_unmount */
 
-
-
 static Boolean Mega( long long size, float *r )
 {
     #define MegaLim 10000.0;
@@ -1814,8 +1762,6 @@ static Boolean Mega( long long size, float *r )
     m= *r>MegaLim; if (m) *r= *r  /KByte;
     return m;
 } // Mega
-
-
 
 static char* Kb( char* v, long long size )
 {
@@ -1829,7 +1775,6 @@ static char* Kb( char* v, long long size )
   if (r>=  10) { sprintf( v, "%.2f%s", r,unit ); return v; }
                  sprintf( v, "%.3f%s", r,unit ); return v;
 } // Kb
-
 
 static void Disp_RBF_DevsLine( rbfdev_typ* rb, char* name, Boolean statistic )
 {
@@ -1878,8 +1823,6 @@ static void Disp_RBF_DevsLine( rbfdev_typ* rb, char* name, Boolean statistic )
                      v );
 } /* Disp_RBF_DevsLine */
 
-
-
 void Disp_RBF_Devs( Boolean statistic )
 {
     rbfdev_typ* r;
@@ -1893,8 +1836,6 @@ void Disp_RBF_Devs( Boolean statistic )
         }
     }
 } /* Disp_RBF_Devs */
-
-
 
 /* ------------------------------------------------------------------------------ */
 
@@ -1932,14 +1873,10 @@ static void AdaptPath( rbfdev_typ* dev, char** pathP )
     } /* while */
 } /* AdaptPath */
 
-
-
-
 /* ---------------------------------------------------------------- */
 static ulong DirLSN( os9direntry_typ* dir_entry )
 {   return os9_long( dir_entry->fdsect );
 } /* DirLSN */
-
 
 os9err ReadFD( syspath_typ* spP )
 /* read the current file description sector */
@@ -1952,7 +1889,6 @@ os9err ReadFD( syspath_typ* spP )
     return 0;
 } /* ReadFD */
 
-
 static os9err WriteFD( syspath_typ* spP )
 /* write the current file description sector */
 {   
@@ -1964,25 +1900,20 @@ static os9err WriteFD( syspath_typ* spP )
     return 0;
 } /* WriteFD */
 
-
-
 static ulong FDSize( syspath_typ* spP )
 /* get the file size  */
 {   return GET_OS9L(spP->fd_sct, 9);
 } /* FDSize */
-
 
 static void Set_FDSize( syspath_typ* spP, ulong size )
 /* set the file size  */
 {   SET_OS9L(spP->fd_sct, 9, size);
 } /* Set_FDSize */
 
-
 static byte FDAtt( syspath_typ* spP )
 /* get the file attributes  */
 {   return spP->fd_sct[0];  
 } /* FDAtt */
-
 
 static void Set_FDAtt( syspath_typ* spP, byte att )
 /* set the file attributes  */
@@ -1994,12 +1925,10 @@ static void Set_FDAtt( syspath_typ* spP, byte att )
     if (rbf->fd_nr!=dev->root_fd_nr) spP->fd_sct[0]= att;   
 } /* Set_FDAtt */
 
-
 static void Set_FDLnk( syspath_typ* spP, byte lnk )
 /* set the link count */
 { spP->fd_sct[8]= lnk;    
 } /* Set_FDLnk */
-
 
 static os9err FD_Segment( syspath_typ* spP, byte *attr, ulong *size, ulong *totsize, 
                                            ulong *sect, ulong *slim, ulong *pref )
@@ -2039,7 +1968,6 @@ static os9err FD_Segment( syspath_typ* spP, byte *attr, ulong *size, ulong *tots
                                      *size, *totsize, *sect ));
   return 0;
 } /* FD_Segment */
-
 
 static os9err GetThem( rbfdev_typ* dev, ulong pos, ulong scs, Boolean get_them )
 /* Allocate the bits at the allocation map */
@@ -2090,8 +2018,6 @@ static os9err GetThem( rbfdev_typ* dev, ulong pos, ulong scs, Boolean get_them )
     return 0;
 } /* GetThem */
 
-
-
 static os9err BlkSearch( rbfdev_typ* dev, ulong uscs, ulong mpsct, ulong mploc,
                          Boolean *found,  ulong *pos, ulong *scs )
 /* Search for a block with the given size       */
@@ -2132,8 +2058,6 @@ static os9err BlkSearch( rbfdev_typ* dev, ulong uscs, ulong mpsct, ulong mploc,
     *scs= scsmax;
     return 0;
 } /* BlkSearch */
-
-
 
 static os9err AllocateBlocks( syspath_typ* spP, ulong uscs, ulong *posP, ulong *scsP,
                                                 ulong prefpos )
@@ -2192,8 +2116,6 @@ static os9err AllocateBlocks( syspath_typ* spP, ulong uscs, ulong *posP, ulong *
   return err;
 } /* AllocateBlocks */
 
-
-
 static os9err DeallocateBlocks( syspath_typ* spP )
 {
     rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr];
@@ -2218,8 +2140,6 @@ static os9err DeallocateBlocks( syspath_typ* spP )
     
     return 0;
 } /* DeallocateBlocks */
-
-
 
 static os9err ReleaseBlocks( syspath_typ* spP, ulong lastPos )
 {
@@ -2266,8 +2186,6 @@ static os9err ReleaseBlocks( syspath_typ* spP, ulong lastPos )
   err= WriteFD( spP );
   return err;
 } /* ReleaseBlocks */
-
-
 
 static os9err AdaptAlloc_FD( syspath_typ* spP, ulong pos, ulong scs )
 {
@@ -2320,8 +2238,6 @@ static os9err AdaptAlloc_FD( syspath_typ* spP, ulong pos, ulong scs )
   GetThem( dev, pos,scs, false );
   return E_SLF;
 } /* AdaptAlloc_FD */
-
-
 
 static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
                           Boolean lnmode, Boolean wMode )
@@ -2532,8 +2448,6 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     return err;
 } /* DoAccess */
 
-
-
 static os9err Create_FD( syspath_typ* spP, byte att, ulong size )
 {
     rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr];
@@ -2548,8 +2462,6 @@ static os9err Create_FD( syspath_typ* spP, byte att, ulong size )
     Set_FDSize    ( spP, size ); /* file size  */
     return WriteFD( spP );       /* write FD sector */
 } /* Create_FD */
-
-
 
 static os9err OpenDir( rbfdev_typ* dev, ulong dfd, ushort *sp )
 {
@@ -2578,7 +2490,6 @@ static os9err OpenDir( rbfdev_typ* dev, ulong dfd, ushort *sp )
     return err; 
 } /* OpenDir */
 
-
 static os9err CloseDir( ushort sp )
 {
     os9err       err;
@@ -2588,8 +2499,6 @@ static os9err CloseDir( ushort sp )
     err= syspath_close( 0,sp );
     return err;
 } /* CloseDir */
-
-
 
 static void Fill_DirEntry( os9direntry_typ* dir_entry, char* name, ulong fd )
 {
@@ -2610,8 +2519,6 @@ static void Fill_DirEntry( os9direntry_typ* dir_entry, char* name, ulong fd )
                      dir_entry->fdsect= os9_long( fd );
     }
 } /* Fill_DirEntry */
-
-
 
 static os9err Access_DirEntry( rbfdev_typ* dev, ulong dfd,  ulong fd,
                                                 char* name, uint32_t *deptr )
@@ -2656,15 +2563,11 @@ static os9err Access_DirEntry( rbfdev_typ* dev, ulong dfd,  ulong fd,
     return err;
 } /* Access_DirEntry */
 
-
-
 static os9err Delete_DirEntry( rbfdev_typ* dev, ulong fd,  char* name )
 {   /* file sector 0 deletes the file */
     uint32_t d; /* no interest in this value here */
     return Access_DirEntry( dev, fd, 0, name, &d );
 } /* Delete_DirEntry */
-
-
 
 static os9err touchfile_RBF( syspath_typ* spP, Boolean creDat )
 {
@@ -2685,8 +2588,6 @@ static os9err touchfile_RBF( syspath_typ* spP, Boolean creDat )
     
     return WriteFD( spP );
 } /* touchfile_RBF */
-
-
 
 static os9err CreateNewFile( syspath_typ* spP, byte fileAtt, char* name, ulong csize )
 {
@@ -2731,15 +2632,11 @@ static os9err CreateNewFile( syspath_typ* spP, byte fileAtt, char* name, ulong c
     return err;
 } /* CreateNewFile */
 
-
 static os9err ConvertToDir( syspath_typ* spP )
 {
   Set_FDAtt     ( spP, 0xbf );  /* as directory */    
   return WriteFD( spP );
 } /* ConvertToDir */
-
-
-
 
 /* ------------------------------------------------------------ */
 /* visible procs */
@@ -2873,7 +2770,6 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     } while (false);
     if (err) return err;
 
-
     rbf->fddir= rbf->fd_nr;
     rbf->deptr= 0;
     err= CutOS9Path( &p, (char*)&cmp_entry ); if (err) return err;
@@ -2894,7 +2790,6 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
             }
             break; /* leave loop also, if file has been correctly created */
         } /* if */
-
 
         debugprintf(dbgFiles,dbgDetail,("# RBF path : \"%s\" \"%s\"\n", 
                                            cmp_entry,dir_entry.name ));
@@ -2967,8 +2862,6 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     return err;
 } /* pRopen */
 
-
-
 os9err pRclose( ushort pid, syspath_typ* spP )
 {
     os9err      err=  0;
@@ -3013,28 +2906,21 @@ os9err pRclose( ushort pid, syspath_typ* spP )
     return err;
 } /* pRclose */
 
-
-
 os9err pRread( _pid_, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return DoAccess( spP, lenP,buffer, false,false );
 } /* pRread */
-
 
 os9err pRreadln ( _pid_, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return DoAccess( spP, lenP,buffer, true, false );
 } /* pRreadln */
 
-
 os9err pRwrite  ( _pid_, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return DoAccess( spP, lenP,buffer, false,true );
 } /* pRwrite */
 
-
 os9err pRwriteln( _pid_, syspath_typ* spP, uint32_t *lenP, char* buffer )
 {   return DoAccess( spP, lenP,buffer, true, true );
 } /* pRwriteln */
-
-
 
 os9err pRseek( _pid_, syspath_typ* spP, uint32_t *posP )
 /* seek to new file position <posP> */
@@ -3049,8 +2935,6 @@ os9err pRseek( _pid_, syspath_typ* spP, uint32_t *posP )
       
   return 0;
 } /* pRseek */
-
-
 
 os9err pRchd( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
 {
@@ -3097,8 +2981,6 @@ os9err pRchd( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
     return 0;
 } /* pRchd */
 
-
-
 os9err pRdelete( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
 {
     os9err      err, cer;
@@ -3135,8 +3017,6 @@ os9err pRdelete( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
     return err;
 } /* pRdelete */
 
-
-
 os9err pRmakdir( ushort pid, syspath_typ* spP, _modeP_, char* pathname )
 {
     os9err   err;
@@ -3161,8 +3041,6 @@ os9err pRmakdir( ushort pid, syspath_typ* spP, _modeP_, char* pathname )
     err= usrpath_close(pid, path);                                  return err;
 } /* pRmakdir */
 
-
-
 os9err pRpos( _pid_, syspath_typ* spP, uint32_t *posP )
 /* get current file position <posP> */
 {
@@ -3173,7 +3051,6 @@ os9err pRpos( _pid_, syspath_typ* spP, uint32_t *posP )
     debugprintf(dbgFiles,dbgNorm,("# RBF pos: '%s' %d\n", dev->name, *posP ));
     return 0;
 } /* pRpos */
-
 
 os9err pReof( _pid_, syspath_typ* spP )
 /* get current file position <posP> */
@@ -3187,7 +3064,6 @@ os9err pReof( _pid_, syspath_typ* spP )
     if (isEOF) return os9error(E_EOF);
     else       return 0;
 } /* pReof */
-
 
 /* get options for RBF file */
 os9err pRopt(ushort pid, syspath_typ* spP, byte *buffer)
@@ -3216,15 +3092,10 @@ os9err pRopt(ushort pid, syspath_typ* spP, byte *buffer)
     return err;
 } /* pRopt */
 
-
-
 os9err pRready( _pid_, _spP_, uint32_t *n )
 /* check ready */
 {   *n= 1; return 0;
 } /* pRready */
-
-
-
 
 os9err pRgetFD( _pid_, syspath_typ* spP, uint32_t *maxbytP, byte *buffer )
 /* get the current FD sector of the opened path */
@@ -3235,8 +3106,6 @@ os9err pRgetFD( _pid_, syspath_typ* spP, uint32_t *maxbytP, byte *buffer )
     memcpy( buffer, spP->fd_sct, *maxbytP); /* copy to the buffer */
     return 0;
 } /* pRgetFD */
-
-
 
 os9err pRgetFDInf( _pid_, syspath_typ* spP, uint32_t *maxbytP,
                                                        uint32_t *fdinf, byte *buffer )
@@ -3253,8 +3122,6 @@ os9err pRgetFDInf( _pid_, syspath_typ* spP, uint32_t *maxbytP,
     return 0;
 } /* pRgetFDInf */
 
-
-
 os9err pRsetFD( _pid_, syspath_typ* spP, byte *buffer )
 /* set the current FD sector */
 {
@@ -3265,8 +3132,6 @@ os9err pRsetFD( _pid_, syspath_typ* spP, byte *buffer )
     memcpy( spP->fd_sct, buffer, maxbyt );  /* copy to the buffer */
     return WriteFD( spP );
 } /* pRsetFD */
-
-
 
 os9err pRsize( ushort pid, syspath_typ* spP, uint32_t *sizeP )
 /* get the size of a file */
@@ -3295,8 +3160,6 @@ os9err pRsize( ushort pid, syspath_typ* spP, uint32_t *sizeP )
     return err;
 } /* pRsize */
 
-
-
 os9err pRdsize(ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
 /* get the size of the device as numbers of sectors */
 /* the <dtype> field will be returned as 0, to avoid problems with "castype" */
@@ -3312,8 +3175,6 @@ os9err pRdsize(ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
     return 0;
 } /* pRdsize */
 
-
-
 os9err pRsetsz( _pid_, syspath_typ* spP, uint32_t *size )
 /* set the size of a file */
 {
@@ -3327,16 +3188,12 @@ os9err pRsetsz( _pid_, syspath_typ* spP, uint32_t *size )
     return WriteFD( spP );
 } /* pRsetsz */
 
-
-
 os9err pRsetatt( _pid_, syspath_typ* spP, uint32_t *attr )
 /* set the attributes of a file */
 {
     Set_FDAtt     ( spP, (byte)*attr ); /* byte ordering is already correct */
     return WriteFD( spP );
 } /* pRsetatt */
-
-
 
 os9err pRnam( ushort pid, syspath_typ* spP, char* volname )
 /* get device name of RBF device */
@@ -3351,7 +3208,6 @@ os9err pRnam( ushort pid, syspath_typ* spP, char* volname )
     debugprintf( dbgFiles,dbgNorm,("# RBF name: %s\n", volname ));
     return 0;
 } /* pRnam*/
-
 
 os9err pRWTrk( ushort pid, syspath_typ* spP, uint32_t* trackNr )
 /* get device name of RBF device */
@@ -3374,7 +3230,4 @@ os9err pRWTrk( ushort pid, syspath_typ* spP, uint32_t* trackNr )
     return 0;
 } /* pRWTrk*/
 
-
-
 /* eof */
-

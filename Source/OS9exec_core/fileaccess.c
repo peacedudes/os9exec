@@ -181,14 +181,13 @@
  *
  */
 
-
 #include "os9exec_incl.h"
+#include <ctype.h>
 
 #ifdef win_unix
   #include <utime.h>
   #include <sys/statvfs.h>
 #endif
-
 
 /* Macintosh, PC and Linux File System access */
 /* ========================================== */
@@ -220,8 +219,6 @@ os9err pHgetFDInf( ushort pid, syspath_typ*, uint32_t *maxbytP,
 os9err pFsetsz   ( ushort pid, syspath_typ*, uint32_t *sizeP );
 os9err pHsetFD   ( ushort pid, syspath_typ*,                   byte* buffer );
 os9err pHdsize   ( ushort pid, syspath_typ*, uint32_t *size, uint32_t *dtype );
-
-
 
 void   init_Dir  ( fmgr_typ* f );
 os9err pDopen    ( ushort pid, syspath_typ*, ushort  *modeP,  const char* pathname );
@@ -273,7 +270,6 @@ void init_File( fmgr_typ* f )
     ss->_SS_WTrk  = (pathopfunc_typ)pUnimp; /* not used */
 } /* init_File */
 
-
 void init_Dir( fmgr_typ* f )
 /* install all procedures of the transparent file manager for directories */
 {
@@ -313,15 +309,11 @@ void init_Dir( fmgr_typ* f )
 
 /* -------------------------------------------------------- */
 
-
-
 #ifndef USE_UAEMU
   static void assert( Boolean b )
   {   if (!b) printf( "Assert Error\n" ); 
   }
 #endif
-
-
 
 /* input from file */
 os9err pFread( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
@@ -382,8 +374,6 @@ os9err pFread( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
     /* ok, return # of chars read to caller */
     *n= cnt; return 0;
 } /* pFread */
-
-
 
 /* input line from file */
 os9err pFreadln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
@@ -507,8 +497,6 @@ os9err pFreadln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
     return 0;
 } /* pFreadln */
 
-
-
 /* output to file */
 os9err pFwrite( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
 {
@@ -570,8 +558,6 @@ os9err pFwrite( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
   *n= cnt;
   return 0;
 } /* pFwrite */
-
-
 
 /* output to file */
 os9err pFwriteln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
@@ -639,8 +625,6 @@ os9err pFwriteln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
   return 0;
 } /* pFwriteln */
 
-
-
 #ifdef MACOS9
   // Get deP->fdSect from <volid>,<objid>,<dirid>
   static void assign_fdsect( os9direntry_typ *deP, short volid, long objid, long dirid )
@@ -683,8 +667,6 @@ os9err pFwriteln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
   } /* assign_fdsect */
 #endif
 
-
-
 os9err pFopt( ushort pid, syspath_typ* spP, byte *buffer )
 {
   os9err err= pRBFopt( pid,spP, buffer );
@@ -726,13 +708,10 @@ os9err pFopt( ushort pid, syspath_typ* spP, byte *buffer )
   return err;
 } /* pFopt */
 
-
-
 /* check ready */
 os9err pFready( _pid_, _spP_, uint32_t *n )
 {   *n= 1; return 0;
 } /* pFready */
-
 
 /* get device name from HFS object */
 os9err pHvolnam( _pid_, syspath_typ* spP, char* volname )
@@ -806,7 +785,6 @@ os9err pHvolnam( _pid_, syspath_typ* spP, char* volname )
     return 0;
 } /* pHvolnam*/
 
-
 #ifdef win_unix
 os9err pHdsize( ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
 /* Return host-filesystem total capacity as a 256-byte-sector count.
@@ -823,7 +801,6 @@ os9err pHdsize( ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
     return 0;
 } /* pHdsize */
 #endif
-
 
 #ifdef win_unix
   static void Set_FileDate( syspath_typ* spP, time_t t )
@@ -888,7 +865,6 @@ os9err pHdsize( ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
   } /* Set_FileDate */
 #endif
 
-
 #ifdef MACFILES
   static os9err touchfile( ushort pid, syspath_typ* spP )
   {
@@ -908,7 +884,6 @@ os9err pHdsize( ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
     return pHsetFD( pid,spP, fdbeg );
   } /* touchfile */
 
-
   typedef struct {
       char*   p;
       OSType* creator;
@@ -927,7 +902,6 @@ os9err pHdsize( ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
   	  return false;
   } /* TCSuff */
 
-
   static Boolean TCCWIE( VType* v, char* suffix )
   {   return TCSuff( v,suffix, 'CWIE','TEXT' ); /* CodeWarrior text */
   } /* TCCWIE */
@@ -936,7 +910,6 @@ os9err pHdsize( ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
   static Boolean TCRBFi( VType* v, char* suffix )
   {   return TCSuff( v,suffix, 'os9a','RBFi' ); /* CodeWarrior text */
   } /* TCRBFi */
-
 
   static void Get_Creator_And_Type( FSSpec* spc, OSType *creator, OSType *type )
   {
@@ -1009,7 +982,6 @@ os9err pHdsize( ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
    			  TCSuff( &v, "",         'os9a','PROG' );         // default
   } /* Get_Creator_And_Type */
 #endif 
-
 
 os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname )
 {
@@ -1208,8 +1180,6 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
     return 0;
 } /* pFopen */
 
-
-
 /* close a file */
 os9err pFclose( _pid_, syspath_typ* spP )
 {
@@ -1255,7 +1225,6 @@ os9err pFclose( _pid_, syspath_typ* spP )
     
     return 0;
 } /* pFclose */
-
 
 os9err pFseek( _pid_, syspath_typ* spP, uint32_t *posP )
 /* seek within a file */
@@ -1341,8 +1310,6 @@ os9err pFseek( _pid_, syspath_typ* spP, uint32_t *posP )
     #endif
 } /* pFseek */
 
-
-
 os9err pFdelete( ushort pid, _spP_, ushort *modeP, char* pathname )
 {
     os9err  err;    
@@ -1409,8 +1376,6 @@ os9err pFdelete( ushort pid, _spP_, ushort *modeP, char* pathname )
     return host2os9err( oserr,E_SHARE );  
 } /* pFdelete */
 
-
-
 /* get file position */
 os9err pFpos( _pid_, syspath_typ* spP, uint32_t *posP )
 {   
@@ -1423,8 +1388,6 @@ os9err pFpos( _pid_, syspath_typ* spP, uint32_t *posP )
     return 0;
   #endif
 } /* pFpos */
-
-
 
 /* get file size */
 os9err pFsize( _pid_, syspath_typ* spP, uint32_t* sizeP )
@@ -1457,8 +1420,6 @@ os9err pFsize( _pid_, syspath_typ* spP, uint32_t* sizeP )
       
   return err;
 } /* pFsize */
-
-
 
 /* set file size */
 os9err pFsetsz( ushort pid, syspath_typ* spP, uint32_t *sizeP )
@@ -1641,7 +1602,6 @@ os9err pFsetsz( ushort pid, syspath_typ* spP, uint32_t *sizeP )
 } /* pFsetsz */
  
 
-
 os9err pFeof( _pid_, syspath_typ* spP )
 /* check for EOF */
 {
@@ -1664,7 +1624,6 @@ os9err pFeof( _pid_, syspath_typ* spP )
 
   return 0;
 } /* pFeof */
-
 
 // attempt to improve things a little
 #define NEW_LUZ_FD_IMPL 1
@@ -1962,8 +1921,6 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
 //  }
 } /* getFD */
 
-
-
 static void setFD( syspath_typ* spP, void* fdl, byte *buffer )
 /* adapt cipb with info of FD */
 // void setFD(CInfoPBRec *cipbP, ushort maxbyt, byte *buffer)
@@ -2018,7 +1975,6 @@ static void setFD( syspath_typ* spP, void* fdl, byte *buffer )
     #endif
 } /* setFD */
 
-
 /* get file descriptor for object */
 os9err pHgetFD( _pid_, syspath_typ* spP, uint32_t *maxbytP, byte *buffer )
 {
@@ -2046,7 +2002,6 @@ os9err pHgetFD( _pid_, syspath_typ* spP, uint32_t *maxbytP, byte *buffer )
     return 0;
 } /* pHgetFD */
 
-
 /* set file descriptor for object */
 /* %%% currently only the file date will be set */
 os9err pHsetFD( _pid_, syspath_typ* spP, byte *buffer )
@@ -2072,9 +2027,7 @@ os9err pHsetFD( _pid_, syspath_typ* spP, byte *buffer )
       return E_UNKSVC;
     #endif
 
-
     setFD( spP, fdl, buffer);
-
 
     #ifdef MACFILES
       err= setCipb( fdl, spc ); /* and write it back */
@@ -2089,8 +2042,6 @@ os9err pHsetFD( _pid_, syspath_typ* spP, byte *buffer )
     return err;
 } /* pHsetFD */
 /* adapt time/date of a file */
-
-
 
 /* get file descriptor for file specified by "sector" */
 os9err pHgetFDInf( _pid_, syspath_typ* spP, uint32_t *maxbytP,
@@ -2194,8 +2145,6 @@ os9err pHgetFDInf( _pid_, syspath_typ* spP, uint32_t *maxbytP,
     return 0;
 } /* pHgetFDInf */
 
-
-
 /* Directory file emulation */
 /* ------------------------ */
 
@@ -2284,7 +2233,6 @@ os9err pDopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
     return err;
 } /* pDopen */
 
-
 /* not used for Mac */
 os9err pDclose( _pid_, syspath_typ* spP )
 {
@@ -2300,7 +2248,6 @@ os9err pDclose( _pid_, syspath_typ* spP )
     
     return err;
 } /* pDclose */
-
 
 #ifdef MACOS9
   static os9err get_dir_entry( ushort index, os9direntry_typ *deP, syspath_typ *spP )
@@ -2420,8 +2367,6 @@ os9err pDclose( _pid_, syspath_typ* spP )
     return 0;
   } /* get_dir_entry */
 #endif
-
-
 
 /* read from (simulated) directory file */
 os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
@@ -2549,15 +2494,12 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
   return 0;
 } /* pDread */
 
-
 /* get pointer position */
 os9err pDpos( _pid_, syspath_typ* spP, uint32_t *posP )
 {
     *posP= spP->u.disk.u.dir.pos;
     return 0;
 } /* pDpos */
-
-
 
 /* get size of directory file */
 os9err pDsize( _pid_, syspath_typ* spP, uint32_t *sizeP )
@@ -2581,8 +2523,6 @@ os9err pDsize( _pid_, syspath_typ* spP, uint32_t *sizeP )
     
     return err;
 } /* pDsize */
-
-
 
 /* set read position */
 os9err pDseek( ushort pid, syspath_typ* spP, uint32_t *posP )
@@ -2630,8 +2570,6 @@ os9err pDseek( ushort pid, syspath_typ* spP, uint32_t *posP )
     spP->u.disk.u.dir.pos= *posP;
     return 0;
 } /* pDseek */
-
-
 
 os9err pDchd( ushort pid, _spP_, ushort *modeP, char* pathname )
 {
@@ -2694,8 +2632,6 @@ os9err pDchd( ushort pid, _spP_, ushort *modeP, char* pathname )
     
     return 0; /* ok */
 } /* pDchd */
-
-
 
 os9err pDmakdir( ushort pid, _spP_, ushort *modeP, char* pathname )
 {
@@ -2760,8 +2696,6 @@ os9err pDmakdir( ushort pid, _spP_, ushort *modeP, char* pathname )
   return host2os9err( oserr, E_WRITE );
 } /* pDmakdir */
 
-
-
 #if defined MACOS9 && defined powerc && !defined MPW
   static OSErr FSRename_Unique( FSRef* srcRef, FSRef* dstRef, FSRef* newRef )
   {
@@ -2805,8 +2739,6 @@ os9err pDmakdir( ushort pid, _spP_, ushort *modeP, char* pathname )
     return oserr;
   } // FSRename_Unique
 #endif
-
-
 
 os9err pDsetatt( ushort pid, syspath_typ* spP, ulong *attr )
 {
@@ -3000,8 +2932,6 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, ulong *attr )
     return err;
 } /* pDsetatt */
 
-
-
 /* check for EOF */
 os9err pDeof( ushort pid, syspath_typ* spP )
 {
@@ -3012,6 +2942,4 @@ os9err pDeof( ushort pid, syspath_typ* spP )
     return 0; 
 } /* pDeof */
 
-
 /* eof */
-

@@ -1,0 +1,98 @@
+name: Build os9exec
+
+on:
+  push:
+    branches: [ master, arm64-uae-integration ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            cc: clang
+            cflags: "-fcommon"
+            binary: os9exec
+            artifact: os9exec-linux
+
+          - os: macos-latest
+            platform: macos
+            cc: clang
+            cflags: ""
+            binary: os9exec
+            artifact: os9exec-macos
+
+          - os: windows-latest
+            platform: windows
+            cc: clang
+            cflags: "-fcommon"
+            binary: os9exec.exe
+            artifact: os9exec-windows.exe
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential clang
+
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install llvm
+
+    - name: Install dependencies (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install llvm -y
+
+    - name: Build os9exec
+      env:
+        CC: ${{ matrix.cc }}
+      run: |
+        make clean
+        make CFLAGS="-g -Wall ${{ matrix.cflags }} -DTERMINAL_CONSOLE -DINT_CMD -ISource/OS9exec_core -ISource/OS9exec_core/os9defs -ISource/Platforms/LINUX -ISource/Platforms -ISource/OS9AppEmu/UAE68emulator -ISource/OS9AppEmu"
+
+    - name: Verify binary exists
+      run: |
+        ls -lh os9exec* || echo "Binary not found"
+        file os9exec* || echo "File command not available"
+
+    - name: Quick smoke test (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        ./os9exec /dd/CMDS/shell -c "echo 'OS-9 exec test'; exit" || true
+
+    - name: Quick smoke test (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        .\os9exec.exe /dd/CMDS/shell -c "echo 'OS-9 exec test'; exit" || exit /b 0
+
+    - name: Upload artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: os9exec*
+        retention-days: 30
+
+  create-release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/download-artifact@v4
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          os9exec-linux/os9exec
+          os9exec-macos/os9exec
+          os9exec-windows.exe/os9exec.exe

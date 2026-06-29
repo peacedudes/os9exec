@@ -6,7 +6,7 @@ UAE     = Source/OS9AppEmu/UAE68emulator
 APPEMU  = Source/OS9AppEmu
 OBJDIR  = build
 
-CFLAGS  = -g -Wall \
+CFLAGS  = -g -Wall -fcommon \
           -DTERMINAL_CONSOLE \
           -DINT_CMD \
           -I$(CORE) \
@@ -86,7 +86,7 @@ prod:
 
 
 os9exec: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ -lm
 
 $(OBJDIR)/cpuemu.o: $(UAE)/cpuemu.c
 	$(CC) $(CFLAGS) $(UAE_SUPPRESS) -c $< -o $@

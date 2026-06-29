@@ -59,14 +59,12 @@
  *
  */
 
-
 /* OS9exec/nt internal dir */
 /* ======================= */
 
 /* global includes */
 #include "os9exec_incl.h"
-
-
+#include <ctype.h>
 
 #ifndef MACOS9
   os9err int_dir(ushort pid, int argc, char **argv)
@@ -93,7 +91,6 @@
   /* special mac includes */
   #include <Finder.h>
 
-
 static void usage( char* name, ushort /* pid */ )
 {
     upe_printf("Usage:    %s [options] [dirname]\n",name);
@@ -102,14 +99,11 @@ static void usage( char* name, ushort /* pid */ )
     upe_printf("          -e       extended dir listing\n");
 } /* usage */
 
-
-
 static void Two( char* vv, int ii )
 {
     if (ii<10) sprintf( vv, "0%d", ii );
     else       sprintf( vv,  "%d", ii );
 } /* Two */
-
 
 /* internal "dir" command for OS9exec/nt */
 os9err int_dir(ushort pid, int argc, char **argv)

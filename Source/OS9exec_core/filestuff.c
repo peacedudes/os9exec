@@ -147,7 +147,6 @@
  *
  */
 
-
 /* "filestuff.c"
  * Interface to the different output systems
  *
@@ -157,6 +156,7 @@
  */
 
 #include "os9exec_incl.h"
+#include <ctype.h>
 
 /* arm64: pathopfunc_typ uses ... (variadic) which misaligns registers on arm64
  * when calling non-variadic callees. Each dispatch site casts to the concrete
@@ -170,7 +170,6 @@ typedef os9err (*pfunc_p2_t )(ushort, syspath_typ*, uint32_t*, uint32_t*);    /*
 typedef os9err (*pfunc_pa_t )(ushort, syspath_typ*, void*);                   /* 1 byte* arg */
 typedef os9err (*pfunc_p2a_t)(ushort, syspath_typ*, uint32_t*, void*);        /* uint32_t* + byte* */
 typedef os9err (*pfunc_p3a_t)(ushort, syspath_typ*, uint32_t*, uint32_t*, void*); /* 2 uint32_t* + byte* */
-
 
 /* I/O routines */
 /* ============ */
@@ -198,11 +197,8 @@ typedef      void (*init_func)( fmgr_typ* f );
 void conn_FMgr( ptype_typ type, fmgr_typ* f, init_func i );
 /* ------------------------------------------------ */
 
-
-
 /* routine dispatch table for path operations */
 fmgr_typ* fmgr_op[fARRSZ];
-
 
 void init_None( fmgr_typ* f )
 /* initialize all file manager routines to "pUnimp", 
@@ -223,7 +219,6 @@ void init_None( fmgr_typ* f )
     f->del         = (pathopfunc_typ)pUnimp;
     f->makdir      = (pathopfunc_typ)pUnimp;
 
-
     /* driver's getstt */
     gs->_SS_Size   = (pathopfunc_typ)pUnimp;
     gs->_SS_Opt    = (pathopfunc_typ)pUnimp;
@@ -240,7 +235,6 @@ void init_None( fmgr_typ* f )
     gs->_SS_LBlink = (pathopfunc_typ)pUnimp; /* /L2 specific function */
     
     gs->_SS_Undef  = (pathopfunc_typ)pUnimp; /* any other getstat */
-
 
     /* driver's setstat */
     ss->_SS_Size   = (pathopfunc_typ)pUnimp;
@@ -268,8 +262,6 @@ void init_None( fmgr_typ* f )
 
 /* --------------------------------------------------------- */
 
-
-
 void conn_FMgr( ptype_typ type, fmgr_typ* f, init_func i )
 /* connect a specific file manager */
 {   
@@ -278,14 +270,12 @@ void conn_FMgr( ptype_typ type, fmgr_typ* f, init_func i )
     i            ( f ); /* just call function <i> with fmgr_typ */
 } /* conn_FMgr */
 
-
 void init_fmgrs(void)
 {
     ptype_typ type;
     
     conn_FMgr  ( fNone,&fmgr_none, init_None );               /* the default system: no operation */
     for (type=fNone; type<fARRSZ; type++) fmgr_op[type]= &fmgr_none;   /* init all fmgrs to fNone */
-
 
     #ifdef CON_SUPPORT /* console support */
       conn_FMgr( fCons,&fmgr_cons, init_Cons ); /* connect console and pty  routines (consio)     */
@@ -318,8 +308,6 @@ void init_fmgrs(void)
     #endif
 } /* init_fmgrs */
    
-
-
 
 /* ----------------------------------------------------------------------------- */
 
@@ -407,7 +395,6 @@ static void disp_line( ushort pid, ushort sp, char* ups, syspath_typ* spP,
     upo_printf("\n" ); /* close the line */
 } /* disp_line */
 
-
 void show_files( ushort pid )
 /* show files, if pid!=MAXPROCESSES only files of given pid */
 {
@@ -478,8 +465,6 @@ void show_files( ushort pid )
     } /* for */
 } /* show_files */
 
-
-
 static void CheckH0( char* name, char* p, char** p3 )
 {
     #ifdef RBF_SUPPORT
@@ -504,8 +489,6 @@ static void CheckH0( char* name, char* p, char** p3 )
        #endif
     #endif
 } /* CheckH0 */
-
-
 
 static void TwoCharDev( char* p, char** p3, char* tmp )
 /* --- two-char device name */
@@ -562,8 +545,6 @@ static void TwoCharDev( char* p, char** p3, char* tmp )
     debugprintf(dbgFiles,dbgNorm,( "# TwoCharDev: path='%s'\n", *p3 ));
 } /* TwoCharDev */
 
-
-
 os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean *ispath )
 /* macintosh:
  * parses path, converts it into MacOS format: / and .. are replaced by appropriate number of :)
@@ -601,7 +582,6 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
       Boolean addIt;
       char    vv[OS9PATHLEN];
     #endif
-
 
     if (debugcheck(dbgFiles,dbgNorm)) {
         nullterm( (char*)&tmp,*inp, OS9PATHLEN );
@@ -752,7 +732,6 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
     /* remember for error tracebacks */
     lastpathparsed= pathbuf;
     strncpy(out,pathbuf,OS9PATHLEN);
-
 
     #else
     /* NOT MACINOTSH */
@@ -955,14 +934,12 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
     return 0; /* no error (no bad pathlists possible) */
 } /* parsepathext */
 
-
 /* same as parsepathext, but uses default settings for file-only paths */
 os9err parsepath(ushort pid, char **inp, char *out, Boolean exedir)
 {
     Boolean isPath;
     return parsepathext( pid,inp,out,exedir, &isPath );
 } /* parsepath */
-
 
 /* Generic I/O routines */
 /* -------------------- */
@@ -972,32 +949,25 @@ os9err pUnimp( _pid_, _spP_ )
 {   return os9error(E_UNKSVC);
 } /* pUnimp */
 
-
 /* unimplemented function, but that's OS9-conformant and therefore not to be alerted */
 os9err pUnimpOk( _pid_, _spP_ )
 {   return E_UNKSVC+E_OKFLAG;
 } /* pUnimpOk */
-
 
 /* bad mode */
 os9err pBadMode( _pid_, _spP_ )
 {   return os9error(E_BMODE);
 } /* pBadMode */
 
-
 /* no operation (allowed, but useless) */
 os9err pNop( _pid_, _spP_ )
 {   return 0;
 } /* pNop */
 
-
-
 /* unavailable 'open' function, as in OS-9 */
 os9err pNoModule( _pid_, _spP_ )
 {   return os9error(E_MNF);
 } /* pNoModule */
-
-
 
 /* get SCF device name from file */
 os9err pSCFnam( _pid_, syspath_typ* spP, char* volname )
@@ -1026,11 +996,8 @@ os9err pSCFnam( _pid_, syspath_typ* spP, char* volname )
     return 0;
 } /* pSCFnam */
 
-
-
 /* Unified I/O routines */
 /* ==================== */
-
 
 /* initialize system paths */
 void init_syspaths()
@@ -1122,7 +1089,6 @@ void init_syspaths()
     pSCFnam  ( 0, spP,  spP->name );
     spP->linkcount= 1;
 
-
     /* title output thru process 0 */
     #ifdef MPW
       cp->usrpaths[usrStdin ]= sysStdin;
@@ -1134,8 +1100,6 @@ void init_syspaths()
       cp->usrpaths[usrStderr]= sysStdin;
     #endif
 } /* init_syspaths */
-
-
 
 syspath_typ* get_syspathd( ushort pid, ushort sp )
 /* get_syspath */
@@ -1165,8 +1129,6 @@ syspath_typ* get_syspathd( ushort pid, ushort sp )
     return spP;
 } /* get_syspathd */
 
-
-
 syspath_typ* get_syspath( ushort pid, ushort sp )
 /* get_syspath */
 /* get pointer to valid syspath entry, return NULL if none */
@@ -1180,8 +1142,6 @@ syspath_typ* get_syspath( ushort pid, ushort sp )
     
     return spP;
 } /* get_syspath */
-
-
 
 static void showbuff( syspath_typ* spP, byte* buffer, ulong len )
 {
@@ -1225,7 +1185,6 @@ static void showbuff( syspath_typ* spP, byte* buffer, ulong len )
     in_recursion= false;
 } /* showbuff */
 
-
 os9err syspath_close( ushort pid, ushort sp )
 /* close system path
  * Note: if pid is invalid, all paths will be closed
@@ -1264,8 +1223,6 @@ os9err syspath_close( ushort pid, ushort sp )
     return err;
 } /* syspath_close */
 
-
-
 // close user path
 os9err usrpath_close( ushort pid, ushort up )
 {
@@ -1290,8 +1247,6 @@ os9err usrpath_close( ushort pid, ushort up )
   return err;
 } // usrpath_close 
 
-
-
 os9err usrpath_link( ushort pid, ushort up, const char* ident )
 /* link system path (when a new user path number is created for the same syspath) */
 {
@@ -1312,8 +1267,6 @@ os9err usrpath_link( ushort pid, ushort up, const char* ident )
                                      up,sp, spP->linkcount));
     return 0;
 } /* usrpath_link */
-
-
 
 /* allocate a new syspath number */
 os9err syspath_new( ushort *sp, ptype_typ type )
@@ -1352,8 +1305,6 @@ os9err syspath_new( ushort *sp, ptype_typ type )
     return os9error(E_PTHFUL); /* no more system paths */   
 } /* syspath_new */
 
-
-
 os9err usrpath_new( ushort pid, ushort* up, ptype_typ type )
 {
     os9err  err;
@@ -1377,8 +1328,6 @@ os9err usrpath_new( ushort pid, ushort* up, ptype_typ type )
     
     return os9error(E_PTHFUL); /* no more user paths available */
 } /* usrpath_new */
-
-
 
 os9err syspath_open( ushort pid, ushort *sp, ptype_typ type, const char* pathname, ushort mode )
 /* open system path */
@@ -1416,7 +1365,6 @@ os9err syspath_open( ushort pid, ushort *sp, ptype_typ type, const char* pathnam
   return err;
 } /* syspath_open */
 
-
 os9err usrpath_open( ushort pid,ushort *up, ptype_typ type, const char* pathname, ushort mode )
 /* open new user path */
 {
@@ -1443,7 +1391,6 @@ os9err usrpath_open( ushort pid,ushort *up, ptype_typ type, const char* pathname
     debugprintf(dbgFiles,dbgNorm,("# usrpath_open: no more userpaths can be opened: E_PTHFUL\n")); 
     return os9error(E_PTHFUL); /* no more user paths */
 } /* usrpath_open */
-
 
 /* write to a syspath */
 os9err syspath_write( ushort pid,ushort spnum, uint32_t *len, void* buffer, Boolean wrln )
@@ -1496,8 +1443,6 @@ os9err usrpath_write(ushort pid,ushort up, uint32_t *len, void* buffer, Boolean 
     return syspath_write(pid,procs[pid].usrpaths[up],len,buffer,wrln);
 } /* usrpath_write */
 
-
-
 /* print to user path */
 static void usrpath_puts( ushort pid, ushort up, char* s, Boolean direct )
 {
@@ -1541,13 +1486,11 @@ static void usrpath_puts( ushort pid, ushort up, char* s, Boolean direct )
     in_recursion= sv;
 } /* usrpath_puts */
 
-
-
 void usrpath_printf( ushort pid, ushort up, const char* format, ... )
 /* printf to OS9 user path */
 {
     char buffer[MAXPRINTFLEN];
-    va_list vp= NULL;
+    va_list vp;
     va_start    (vp,format);
     vsnprintf(buffer,MAXPRINTFLEN,format,vp);
     va_end                (vp);
@@ -1555,11 +1498,10 @@ void usrpath_printf( ushort pid, ushort up, const char* format, ... )
     usrpath_puts( pid,up,buffer, true );
 } /* usrpath_printf */
 
-
 void upo_printf( const char* format, ... )
 {
     char buffer[MAXPRINTFLEN];
-    va_list vp= NULL;
+    va_list vp;
     va_start    (vp,format);
     vsnprintf(buffer,MAXPRINTFLEN,format,vp);
     va_end                (vp);
@@ -1567,15 +1509,13 @@ void upo_printf( const char* format, ... )
     usrpath_puts( currentpid,usrStdout,buffer, true );
 } /* upo_printf */
 
-
-
 void upho_printf( const char* format, ... )
 /* usr path with hash std output printing */
 {
     char  buffer[MAXPRINTFLEN];
     char* b= &buffer[ 2 ];
     
-    va_list vp= NULL;
+    va_list vp;
     va_start    (vp,format);
     vsnprintf(b,MAXPRINTFLEN-2,format,vp);
     va_end                (vp);
@@ -1585,11 +1525,10 @@ void upho_printf( const char* format, ... )
     usrpath_puts( currentpid,usrStdout,buffer, true );
 } /* upho_printf */
 
-
 void upe_printf( const char* format, ... )
 {
     char buffer[MAXPRINTFLEN];
-    va_list vp= NULL;
+    va_list vp;
     va_start    (vp,format);
     vsnprintf(buffer,MAXPRINTFLEN,format,vp);
     va_end                (vp);
@@ -1597,14 +1536,13 @@ void upe_printf( const char* format, ... )
     usrpath_puts( currentpid,usrStderr,buffer, false );
 } /* upe_printf */
 
-
 void uphe_printf( const char* format, ... )
 /* usr path with hash error output printing */
 {
     char  buffer[MAXPRINTFLEN];
     char* b= &buffer[ 2 ];
     
-    va_list vp= NULL;
+    va_list vp;
     va_start    (vp,format);
     vsnprintf(b,MAXPRINTFLEN-2,format,vp);
     va_end                (vp);
@@ -1614,13 +1552,11 @@ void uphe_printf( const char* format, ... )
     usrpath_puts( currentpid,usrStderr,buffer, false );
 } /* uphe_printf */
 
-
-
 void main_printf( const char* format, ... )
 /* main path error output printing */
 {
     char buffer[MAXPRINTFLEN];
-    va_list vp= NULL;
+    va_list vp;
     va_start    (vp,format);
     vsnprintf(buffer,MAXPRINTFLEN,format,vp);
     va_end                (vp);
@@ -1628,14 +1564,11 @@ void main_printf( const char* format, ... )
     usrpath_puts( currentpid,MAXUSRPATHS,buffer, true );
 } /* main_printf */
 
-
-
 /* copyright notice */
 void copyright(void)
 {
     upe_printf( "(c) 1993-2007 by luz/bfo (luz@synthesis.ch / bfo@synthesis.ch)\n");
 } /* copyright */
-
 
    
 /* read from a syspath */
@@ -1678,8 +1611,6 @@ os9err usrpath_read(ushort pid,ushort up, uint32_t *len, void* buffer, Boolean r
     return syspath_read(pid,procs[pid].usrpaths[up],len,buffer,rdln);
 } /* usrpath_read */
 
-
-
 os9err syspath_seek(ushort pid,ushort spnum, uint32_t pos)
 /* seek from a syspath */
 {
@@ -1698,8 +1629,6 @@ os9err usrpath_seek(ushort pid,ushort up, uint32_t pos)
     return syspath_seek( pid,procs[pid].usrpaths[up],pos );
 } /* usrpath_seek */
 
-
-
 static os9err etc_path( _pid_, _spP_, _d2_, byte* a0 )
 /* %%% this is a very straight forward implementation for OS9TCP/inetd */
 {
@@ -1715,8 +1644,6 @@ static os9err etc_path( _pid_, _spP_, _d2_, byte* a0 )
 
     return 0;
 } /* etc_path */
-
-
 
 os9err syspath_getstat( ushort pid, ushort sp, ushort func,
                         ulong* a0, _d0_, uint32_t* d1, uint32_t* d2, uint32_t* d3 )
@@ -1766,23 +1693,17 @@ os9err syspath_getstat( ushort pid, ushort sp, ushort func,
     return err;
 } /* syspath_getstat */
 
-
-
 os9err syspath_gs_size ( ushort pid, ushort sp, uint32_t *size )
 {   return syspath_getstat( pid,sp, SS_Size,  NULL, NULL,NULL,size,NULL );
 } /* syspath_gs_size */
-
 
 os9err syspath_gs_devnm( ushort pid, ushort sp,  char* name )
 {   return syspath_getstat( pid,sp, SS_DevNm, (ulong*)&name, NULL,NULL,NULL,NULL );
 } /* syspath_gs_devnm */
 
-
 os9err syspath_gs_ready( ushort pid, ushort sp, uint32_t *cnt )
 {   return syspath_getstat( pid,sp, SS_Ready, NULL, NULL,cnt, NULL,NULL );
 } /* syspath_gs_ready */
-
-
 
    
 os9err usrpath_getstat( ushort pid, ushort up, ushort func,
@@ -1792,8 +1713,6 @@ os9err usrpath_getstat( ushort pid, ushort up, ushort func,
     if (up>=MAXUSRPATHS) return os9error(E_BPNUM);
     return syspath_getstat( pid,procs[pid].usrpaths[up],func, a0, d0,d1,d2,d3 );
 } /* usrpath_getstat */
-
-
 
 /* SetStat from syspath */
 os9err syspath_setstat( ushort pid, ushort path, ushort func,
@@ -1894,8 +1813,6 @@ os9err usrpath_setstat(ushort pid,ushort up, ushort func,
     return syspath_setstat( pid,procs[pid].usrpaths[up],func, a0,a1, d0,d1,d2,d3 );
 } /* usrpath_setstat */
 
-
-
 os9err get_locations( ushort pid, ptype_typ type, const char* pathname,
                       Boolean doCreate, Boolean *asDir,
                       uint32_t *fdP, uint32_t *dfdP, uint32_t *dcpP, uint32_t *sSct )
@@ -1929,8 +1846,6 @@ os9err get_locations( ushort pid, ptype_typ type, const char* pathname,
     err= usrpath_close( pid,path ); return err;
 } /* get_locations */
 
-
-
 static os9err doCmd( pathopfunc_typ cmd, ushort pid, ptype_typ type, ushort mode,
                                          const char* pathname, const char* txt )
 {
@@ -1940,26 +1855,20 @@ static os9err doCmd( pathopfunc_typ cmd, ushort pid, ptype_typ type, ushort mode
     return err;
 } /* doCmd */
 
-
 os9err change_dir ( ushort pid, ptype_typ type, const char* pathname, ushort mode )
 /* Change a directory */
 {   return doCmd( fmgr_op[type]->chd,    pid,type, mode,pathname, "change_dir"  );
 } /* change_dir */
-
 
 os9err delete_file( ushort pid, ptype_typ type, const char* pathname, ushort mode )
 /* Delete a file */
 {   return doCmd( fmgr_op[type]->del, pid,type, mode,pathname, "delete_file" );
 } /* delete_file */
 
-
 os9err make_dir   ( ushort pid, ptype_typ type, const char* pathname, ushort mode )
 /* Create a directory */
 {   return doCmd( fmgr_op[type]->makdir, pid,type, mode,pathname, "make_dir"    );
 } /* make_dir */
-
-
-
 
 void init_usrpaths( ushort pid )
 /* initialize process' list of open paths */
@@ -1967,8 +1876,6 @@ void init_usrpaths( ushort pid )
     int  k;
     for (k=0; k<MAXUSRPATHS; k++) procs[pid].usrpaths[k]= 0; /* no paths yet */
 } /* init_usrpaths */
-
-
 
 void close_usrpaths( ushort pid )
 /* close all process <pid>'s open paths */
@@ -1981,8 +1888,6 @@ void close_usrpaths( ushort pid )
         //  *spN= 0;                     /* and invalidate to avoid double closing */
     } /* for */ 
 } /* close_usrpaths */
-
-
 
 void close_syspaths(void)
 /* close all OS9exec's system paths */
@@ -2001,6 +1906,4 @@ void close_syspaths(void)
     #endif
 } /* close_syspaths */
 
-
 /* eof */
-

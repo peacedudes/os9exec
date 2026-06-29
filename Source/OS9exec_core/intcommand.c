@@ -190,12 +190,12 @@
  *
  */
 
-
 /* OS9exec/nt 2.0 internal commands */
 /* ================================ */
 
 /* global includes */
 #include "os9exec_incl.h"
+#include <ctype.h>
 
 #ifdef UNIX
   #include <dlfcn.h> // MacOSX and Linux DLL functionality
@@ -209,15 +209,12 @@
   #include "native_interface.h"
 #endif
 
-
 /* global vars */
 ushort icmpid; /* current internal command's PID */
 char *icmname; /* current internal command's name = argv[0] */
 /* -------------------------- */
 
-
 #define Mx 10
-
 
 // ---------------------------------------------------------------------
 #ifdef MACOS9
@@ -229,8 +226,6 @@ char *icmname; /* current internal command's name = argv[0] */
       return 0;
   } /* int_debugger */
 #endif
-
-
 
 static os9err int_stop( ushort pid, _argc_, _argv_ )
 /* "stop/shutdown": exit from the OS9exec emulator */
@@ -248,8 +243,6 @@ static os9err int_stop( ushort pid, _argc_, _argv_ )
     
     return(E_PERMIT);         /* not super user: reject the stop command */
 } /* int_stop */
-
-
 
 static void idbg_usage( char* name )
 {
@@ -269,8 +262,6 @@ static void idbg_usage( char* name )
   upe_printf( "    -y=<height>  define MGR screen height\n" );
   upe_printf( "    -z           define MGR fullscreen mode\n" );
 } // idbg_usage
-
-
 
 void Change_DbgPath( int argc, char** argv, char** pp, ushort* kp )
 { 
@@ -313,8 +304,6 @@ void Change_DbgPath( int argc, char** argv, char** pp, ushort* kp )
     dbgOut=  dbgPath;
   } // if
 } // Change_DbgPath
-
-
 
 static os9err int_debughalt( ushort pid, int argc, char** argv )
 /* OS9exec debug halt */
@@ -465,14 +454,10 @@ static os9err int_debughalt( ushort pid, int argc, char** argv )
     return 0;
 } /* int_debughalt */
 
-
-
 /* show procs */
 static os9err int_procs( _pid_, _argc_, _argv_ ) { 
   show_processes(); return 0;
 } /* int_procs */
-
-
 
 /* show modules */
 static os9err int_mdir( _pid_, int argc, char **argv )
@@ -482,16 +467,12 @@ static os9err int_mdir( _pid_, int argc, char **argv )
   show_modules( cmp ); return 0;
 } /* int_mdir */
 
-
-
 static void ipaths_usage( char* name )
 {
   upe_printf( "Syntax:   %s [<pid>]\n", name );
   upe_printf( "Function: Print OS9exec system paths\n" );
   upe_printf( "Options:  None.\n" );
 } /* ipaths_usage */
-
-
 
 /* OS9exec internal path list */
 static os9err int_paths( _pid_, int argc, char **argv )
@@ -528,8 +509,6 @@ static os9err int_paths( _pid_, int argc, char **argv )
   return 0;
 } /* int_paths */
 
-
-
 static void imem_usage( char* name )
 {
   upe_printf( "Syntax:   %s [<opts>]\n", name );
@@ -538,8 +517,6 @@ static void imem_usage( char* name )
   upe_printf( "    -i=<pid> show memory of <pid>\n" );
   upe_printf( "    -u       show unused memory\n" );
 } // imem_usage
-
-
 
 static os9err int_mem( _pid_, int argc, char** argv )
 /* "imem": OS9exec internal allocated memory */
@@ -589,14 +566,10 @@ static os9err int_mem( _pid_, int argc, char** argv )
     show_mem( my_pid,mem_unused,mem_fulldisp ); return 0;
 } /* int_mem */
 
-
-
 /* int_unused: commented out, no longer referenced
 static os9err int_unused( _pid_, _argc_, _argv_ )
 {  show_unused(); return 0;
 } */
-
-
 
 static void idevs_usage( char* name )
 {
@@ -606,8 +579,6 @@ static void idevs_usage( char* name )
   upe_printf( "    -r    show RBF devices only\n" );
   upe_printf( "    -s    show statistic values\n" );
 } /* idevs_usage */
-
-
 
 static void devs_printf( syspath_typ* spP, char* driv, char* fmgr )
 {
@@ -619,8 +590,6 @@ static void devs_printf( syspath_typ* spP, char* driv, char* fmgr )
   upo_printf( "%-10s %-8s %-7s %2d\n", 
                StrBlk_Pt( s,Mx ), StrBlk_Pt( d,8 ), fmgr, spP->nr );
 } /* devs_printf */
-
-
 
 static os9err int_devs( _pid_, int argc, char** argv )
 /* idevs": OS9exec internal devices */
@@ -704,8 +673,6 @@ static os9err int_devs( _pid_, int argc, char** argv )
     
     return 0;
 } /* int_devs */
-
-
 
 // ---------------------------------------------------------------------------------
 #if defined NATIVE_SUPPORT || defined PTOC_SUPPORT
@@ -830,7 +797,6 @@ static os9err int_devs( _pid_, int argc, char** argv )
     //first= false;
     } // loop
 
-
     /* These are the rquired plugin functions: */
               err= DLL_Func( p->fDLL,   "Module_Version", (void**)        &fModVersion );
     if (!err) err= DLL_Func( p->fDLL,  "Next_NativeProg", (void**)&p-> next_NativeProg );
@@ -854,8 +820,6 @@ static os9err int_devs( _pid_, int argc, char** argv )
     return 0;
   } // ConnectDLL
 
-
-
   // ---------------------------------------------------------------------------------
   static char** MyElem( int i, Boolean addIt )
   // Get an element, dependent on <addIt>
@@ -863,7 +827,6 @@ static os9err int_devs( _pid_, int argc, char** argv )
     if (addIt) return &includeList[ i ];
     else       return &excludeList[ i ];
   } // MyElem
-
 
   // Check, if include list ( <asInclude> = true  ) or
   //           exclude list ( <asInclude> = false ) is empty
@@ -887,8 +850,6 @@ static os9err int_devs( _pid_, int argc, char** argv )
     return ( bp || p->pEnabled ) && ! p->pDisabled;
   } // Native_Enabled
 #endif
-
-
 
 // Returns true, if at least one native program can be used
 Boolean Native_Possible( Boolean hardCheck )
@@ -914,7 +875,6 @@ Boolean Native_Possible( Boolean hardCheck )
 } // Native_Possible
   
 
-
 // Returns true, if at least one plugin is connected
 Boolean Plugin_Possible( Boolean hardCheck )
 {
@@ -939,8 +899,6 @@ Boolean Plugin_Possible( Boolean hardCheck )
   return false;
 } // Plugin_Possible
 
-
-
 #if defined NATIVE_SUPPORT || defined PTOC_SUPPORT
   static void native_usage( const char* name, const char* swMode )
   {
@@ -958,8 +916,6 @@ Boolean Plugin_Possible( Boolean hardCheck )
     upe_printf( "    -i   display include list\n" );
     upe_printf( "    -x      \"    exclude   \" \n" );
   } // native_usage
-
-
 
   static void display_nativeList( Boolean asInclude )
   {
@@ -982,8 +938,6 @@ Boolean Plugin_Possible( Boolean hardCheck )
     if (Native_Empty( asInclude )) upe_printf( "<none>" );
                                    upe_printf( "\n" );
   } // display_nativeList
-
-
 
   void display_pluginList( Boolean dispTitle, Boolean atStartup )
   {
@@ -1080,8 +1034,6 @@ Boolean Plugin_Possible( Boolean hardCheck )
                upe_printf( "\n" );
     */
   } // display_pluginList
-
-
 
   static void ShiftDown( int i, Boolean addIt )
   // Close the gap of a removed element
@@ -1262,13 +1214,10 @@ Boolean Plugin_Possible( Boolean hardCheck )
     return 0;
   } // int_xx
 
-
   static os9err int_on ( _pid_, int argc, char** argv ) 
   {      return int_xx (            argc,        argv,  true ); }
   static os9err int_off( _pid_, int argc, char** argv ) 
   {      return int_xx (            argc,        argv, false ); }
-
-
 
   // ---------------------------------------------------------------------------------
   static os9err int_native( _pid_, int argc, char** argv )
@@ -1329,8 +1278,6 @@ Boolean Plugin_Possible( Boolean hardCheck )
     return 0;
   } // int_native
 
-
-
   // ---------------------------------------------------------------------------------
   static void plugin_usage( char* name )
   {
@@ -1343,8 +1290,6 @@ Boolean Plugin_Possible( Boolean hardCheck )
     upe_printf( "\n" );
     upe_printf( "    -l                display list\n" );
   } // plugin_usage
-
-
 
   static os9err int_plugin( _pid_, int argc, char** argv )
   // Switch on/off plugin DLLs
@@ -1397,15 +1342,11 @@ Boolean Plugin_Possible( Boolean hardCheck )
     return 0;
   } // int_plugin
 
-
-
   // ---------------------------------------------------------------------------------
   static os9err int_thread  ( _pid_, _argc_, _argv_ ) { ptocThread= true;  return 0; }
   static os9err int_nothread( _pid_, _argc_, _argv_ ) { ptocThread= false; return 0; }
   static os9err int_arb     ( _pid_, _argc_, _argv_ ) { fullArb   = true;  return 0; }
   static os9err int_noarb   ( _pid_, _argc_, _argv_ ) { fullArb   = false; return 0; }
-
-
 
   // ---------------------------------------------------------------------------------
   static os9err native_calls( ushort pid, _argc_, char** argv )
@@ -1457,8 +1398,6 @@ Boolean Plugin_Possible( Boolean hardCheck )
   } // native_calls
 #endif
 
-
-
 static os9err int_hit( _pid_, _argc_, _argv_ ) 
 {
   const int NBlk= 4;
@@ -1507,7 +1446,6 @@ static os9err int_hit( _pid_, _argc_, _argv_ )
   return 0;
 } // int_hit
 
-
 static os9err int_crash( _pid_, _argc_, _argv_ )
 {   
   ulong* a;
@@ -1519,19 +1457,13 @@ static os9err int_crash( _pid_, _argc_, _argv_ )
   return 0;
 } /* int_crash */
 
-
-
 static os9err int_quit( _pid_, _argc_, _argv_ )
 {   quitFlag= true; return 0;
 } /* int_quit */
 
-
-
 static os9err int_ignored( _pid_, _argc_, _argv_ )
 {   return 0; /* do nothing */
 } /* int_ignored */
-
-
 
 /* Command table */
 /* ------------- */
@@ -1543,8 +1475,6 @@ typedef struct {
           intcmdfunc iRoutine;
           char*      iHelpText;
         } cmdtable_typ;
-
-
 
 cmdtable_typ commandtable[] =
 {
@@ -1600,7 +1530,6 @@ cmdtable_typ commandtable[] =
   { NULL, NULL, NULL } /* terminator */
 };
 
-
 /* show available internal commands */
 os9err int_help( ushort pid, _argc_, _argv_ )
 {
@@ -1620,8 +1549,6 @@ os9err int_help( ushort pid, _argc_, _argv_ )
   if (pid==0) upo_printf("\n");
   return 0;
 } /* int_help */
-
-
 
 /* Routines */
 /* -------- */
@@ -1655,8 +1582,6 @@ static int IntCmdIndex( const char* name )
     index++;
   } /* loop */
 } // IntCmdIndex
-
-
 
 // checks if command is internal
 // -1 if not,
@@ -1716,13 +1641,11 @@ int isintcommand( const char* name, Boolean *isNative, void** modBaseP )
   return index;
 } // isintcommand
 
-
-
 /* print error message in OS-9 format */
 os9err _errmsg(os9err err, char* format, ...)
 {
     char obuf[300];
-    va_list vp= NULL;
+    va_list vp;
     va_start(vp,format);
     upe_printf("%s: ",icmname);
     vsprintf(obuf,format,vp);
@@ -1731,8 +1654,6 @@ os9err _errmsg(os9err err, char* format, ...)
     upe_printf(obuf);
     return err;
 } /* _errmsg */
-
-
 
 os9err prepArgs( char *arglist, ushort *argcP, char*** argP )
 /* prepare arguments for internal commands
@@ -1814,8 +1735,6 @@ os9err prepArgs( char *arglist, ushort *argcP, char*** argP )
   return 0;
 } /* prepArgs */
 
-
-
 static void large_pipe_connect( ushort pid, syspath_typ* spC )
 {
     #ifdef PIP_SUPPORT
@@ -1851,8 +1770,6 @@ static void large_pipe_connect( ushort pid, syspath_typ* spC )
       #endif
     #endif
 } /* large_pipe_connect */
-
-
 
 #ifdef THREAD_SUPPORT
   typedef struct {
@@ -1895,7 +1812,6 @@ static void large_pipe_connect( ushort pid, syspath_typ* spC )
     return NULL;
   } // IntCmdThread
 
-
   static void PrepareParams( ushort pid, int index, int argc, char** argv, ThreadVars** t )
   {
     int   blk = sizeof(ThreadVars) + argc*sizeof(void*);
@@ -1924,7 +1840,6 @@ static void large_pipe_connect( ushort pid, syspath_typ* spC )
     } // for
   } // PrepareParams
 #endif
-
 
 /* executes internal command */
 os9err callcommand( char* name, ushort pid, ushort parentid, int argc, char** argv, Boolean* asThread )
@@ -2016,7 +1931,6 @@ os9err callcommand( char* name, ushort pid, ushort parentid, int argc, char** ar
     return err;
 } /* callcommand */
 
-
 /* call of external Win/DOS commands for OS9exec/nt */
 os9err call_hostcmd( char* cmdline, ushort pid, int moreargs, char **argv )
 {
@@ -2092,5 +2006,3 @@ os9err call_hostcmd( char* cmdline, ushort pid, int moreargs, char **argv )
 } /* call_hostcmd */
 
 /* eof */
-
-

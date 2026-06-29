@@ -71,21 +71,19 @@
  *
  */
 
-
 /* OS9exec/nt internal move */
 /* ======================== */
 /* based on LuZ's PD move for OS9 V2.1 */
 
-
 /* global includes */
 #include "os9exec_incl.h"
-
+#include <ctype.h>
 
 /* special mac includes */
 #ifdef MACOS9
 #include <Finder.h>
+#include <ctype.h>
 #endif
-
 
 /* Version/Revision (of LuZ's PD move for OS-9)
    2.0 : 88-08-15 : first version in C
@@ -93,7 +91,6 @@
 */
 #define VERSION 2
 #define REVISION 1
-
 
 /* Edition History
    ---------------
@@ -104,7 +101,6 @@
 */
 
 #define EDITION 4
-
 
 /* global variables */
 /* ================ */
@@ -118,10 +114,8 @@ static int   wild, quiet, dodir, rewrite;
 static char *wilddir;
 static int   exe_dir;
 
-
 /* program code */
 /* ============ */
-
 
 /**** display program usage */
 static void usage (char *pname)
@@ -135,7 +129,6 @@ static void usage (char *pname)
   upe_printf("          -x : look in execution directory for source\n");
   upe_printf("          -r : rewrite destination\n");
 } /* usage */
-
 
 /**** analyze command line options */
 static os9err options (int argc,char *argv[])
@@ -173,8 +166,6 @@ static os9err options (int argc,char *argv[])
   return 0;
 } /* options */
 
-
-
 static os9err separate(char **dnp,char **fnp)
 /**** separate file and directory name
  Input  : dnp = ptr to pathlist string (pointer)
@@ -198,8 +189,6 @@ static os9err separate(char **dnp,char **fnp)
   *dnp="."; /* default directory name */
   return 0;
 } /* separate */
-
-
 
 static os9err move_file( ushort cpid, char *fromdir,char *fromname,
                                       char   *todir,char   *toname )
@@ -263,7 +252,6 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
     if (len>DIRNAMSZ)
         return _errmsg( E_BPNAM,"name too long \"%s\"\n", destname );
 
-
     asDirS= false;   
 //  typeS= IO_Type( cpid,nameS, 0x00 ); /* get the device type: Mac/PC or RBF */
 //  typeD= IO_Type( cpid,nameD, 0x00 );
@@ -313,7 +301,6 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
     if (!dodir && asDirS)
         /* it's a dir, return error => don't move, but it's ok */
         return _errmsg( 0, "directory \"%s\" NOT moved\n",nmS );
-
 
     if (isRBF) {        err= usrpath_open( cpid,&pathD, typeD,nmD,0x01 ); 
         if (err==E_FNA) err= usrpath_open( cpid,&pathD, typeD,nmD,0x81 );
@@ -482,8 +469,6 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
     
     return 0;
 } /* move_file */
-
-
 
 /* main program */
 os9err int_move( ushort cpid, int argc, char **argv )

@@ -121,14 +121,15 @@
  *
  */
 
-
 /* includes */
 /* ======== */
 
 #include "os9exec_incl.h"
+#include <ctype.h>
 
 #ifdef UNIX
 #include <termios.h>
+#include <ctype.h>
 #endif
 
 /* statics */
@@ -143,15 +144,11 @@ ulong iniprior;             /* priority for first process */
 struct termios savedmodes;  /* saved terminal attributes     */
 #endif
 
-
 /* locally defined procedures */
 Boolean F_Avail( const char* pathname );
 void    restore_term(void);
 Boolean setup_term(void);
 /* -------------------------- */
-
-
-
 
 /* default standard output filter */
 /* ============================== */
@@ -177,8 +174,6 @@ void writeline(char *linebuf, FILE *stream)
     fflush   (stream);
 } /* writeline */
 
-
-
 Boolean F_Avail( const char* pathname )
 {
     struct  stat info;
@@ -197,8 +192,6 @@ Boolean F_Avail( const char* pathname )
                                                                         info.st_size, info.st_mode ));
     return ok;
 } /* F_Avail */
-
-
 
 char* egetenv( const char* name )
 {
@@ -229,7 +222,6 @@ char* egetenv( const char* name )
         Boolean isWin= false;
       #endif
     #endif
-
 
     #ifdef MACTERMINAL
       for (k=0; k<ENVSIZE; k++) {
@@ -338,8 +330,6 @@ char* egetenv( const char* name )
     #endif
 } /* egetenv */
 
-
-
 /* advance cursor and force time slicing */
 void eAdvanceCursor(void)
 {
@@ -357,8 +347,6 @@ void eAdvanceCursor(void)
       #error not implemented
     #endif
 } /* eAdvanceCursor */
-
-
 
 /* spin cursor (event processing) */
 void eSpinCursor (short incr)
@@ -391,8 +379,6 @@ void eSpinCursor (short incr)
     #endif
 } /* eSpinCursor */
 
-
-
 /* os9 utility program */
 /* =================== */
 
@@ -410,8 +396,6 @@ static void show_wish(void)
     upho_printf("Lukas Zeller, September 1996\n");
      upo_printf("\n");
 } /* show_wish */
-
-
 
 /* display os9 usage */
 static void os9_usage(char *name)
@@ -468,8 +452,6 @@ static void os9_usage(char *name)
      upo_printf("\n");
 } /* os9_usage */
 
-
-
 static void GetStartTick()
 {
 //  struct tm tim; /* Important Note: internal use of <tm> as done in OS-9 */
@@ -486,8 +468,6 @@ static void GetStartTick()
     startTick= GetSystemTick();
     /* now the tick counter is synchronised to the second changing, as in OS-9 */
 } /* GetStartTick */
-
-
 
 /* Set the the terminal for unbuffered, no-echo operation.
    If errors are found they will be reported but the function
@@ -539,7 +519,6 @@ Boolean setup_term()
     return (reply == 0);
 } // setup_term
 
-
 /* Restore the original terminal operation.
    It is invoked as part of the exit() function, so
    thje error report isn't followed by an exit() */
@@ -558,8 +537,6 @@ void restore_term()
                     strerror(errno));
     #endif
 } // restore_term
-
-
 
 // main program
 void os9_main( int argc, char **argv, char **envp )
@@ -813,4 +790,3 @@ void os9_main( int argc, char **argv, char **envp )
   exit  ( err );
 } // os9_main
 /* eof */
-

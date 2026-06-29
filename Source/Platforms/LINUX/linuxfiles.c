@@ -56,12 +56,11 @@
  *
  */
 
-
 /* Linux specific file handling */
 #include "os9exec_incl.h"
+#include <ctype.h>
 #include <utime.h>
-
-
+#include <ctype.h>
 
 void Conv_to_2e( char* pathname, char** qP, char** qsP )
 /* ":2e" must be treated as "." and vice versa */
@@ -129,7 +128,6 @@ Boolean CaseSens( char* pathname, char* filename, Boolean *reduS )
     debugprintf( dbgFiles,dbgNorm,("# CaseSens: (out) '%s' %d\n", pathname,ok ));
     return ok;
 } /* CaseSens */
-
 
 os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
 /* Adjusts a <pathname> to <adname> by supporting linux features 
@@ -211,8 +209,6 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
     return err;
 } /* AdjustPath */
 
-
-
 void CheckDir( DIR* d )
 {
     dirent_typ* dEnt;
@@ -229,6 +225,4 @@ void CheckDir( DIR* d )
   //printf( "%08x EOF\n", pos );
 } /* CheckDir */
 
-
 /* eof */
-

@@ -106,12 +106,11 @@
  *
  */
 
-
 /* Console I/O routines */
 /* ==================== */
 
 #include "os9exec_incl.h"
-
+#include <ctype.h>
 
 /* --- local procedure definitions for object definition ------------------- */
 void   init_Cons ( fmgr_typ* f );
@@ -170,7 +169,6 @@ void init_Cons( fmgr_typ* f )
     ss->_SS_Attr = (pathopfunc_typ)pNop;         /* ignored */
 } /* init_Cons */
 
-
 void init_NIL( fmgr_typ* f )
 {
     gs_typ* gs= &f->gs;
@@ -198,7 +196,6 @@ void init_NIL( fmgr_typ* f )
     ss->_SS_Opt  = (pathopfunc_typ)pNop;         /* ignored */
     ss->_SS_Attr = (pathopfunc_typ)pNop;         /* ignored */
 } /* init_NIL */
-
 
 void init_SCF( fmgr_typ* f )
 /* currently implemented for support of the /vmod driver only */
@@ -234,8 +231,6 @@ void init_SCF( fmgr_typ* f )
 } /* init_SCF */
 
 /* --------------------------------------------------------- */
-
-
 
 /* standard output write. Used only when TERMINAL_CONSOLE is not defined. */
 #ifndef TERMINAL_CONSOLE
@@ -282,8 +277,6 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
 } /* stdwrite */
 #endif /* TERMINAL_CONSOLE */
 
-
-
 #ifdef TERMINAL_CONSOLE
   /* put char to console and perform CR/LF expansion etc. */
   void ConsPutc( char c )
@@ -306,8 +299,6 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
       #endif
   } /* ConsPutc */
 
-
-
   void ConsPutcEdit( char c, Boolean alf, char eorch )
   /* put char to console and perform CR/LF expansion etc. */
   {
@@ -315,8 +306,6 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
       if (alf && c!=NUL && c==eorch) ConsPutc( LF );
   } /* ConsPutcEdit */
 #endif
-
-
 
 #ifdef TERMINAL_CONSOLE
 /* get char from console and perform CR/LF conversion */
@@ -369,7 +358,6 @@ Boolean ConsGetc( char* c )
 
     return true;
 } /* ConsGetc */
-
 
 static os9err ConsRead( ushort pid, syspath_typ* spP,
                         uint32_t *maxlenP, char* buffer, Boolean edit, char endchar )
@@ -521,7 +509,6 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
 } /* ConsRead */
 #endif
 
-
 /* returns index for numbered descriptors like tty00,01,02... */
 static Boolean ConsId( char* name, char* family, int range, int offs, int *result )
 {
@@ -537,8 +524,6 @@ static Boolean ConsId( char* name, char* family, int range, int offs, int *resul
 
     return false;
 } /* ConsId */
-
-
 
 os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
 /* routine for opening serial devices */
@@ -578,8 +563,6 @@ os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
     return 0;
 } /* pCOpen */
 
-
-
 os9err pSopen( _pid_, syspath_typ* spP, _modeP_, char* name )
 /* routine for opening SCF devices */
 {   
@@ -594,8 +577,6 @@ os9err pSopen( _pid_, syspath_typ* spP, _modeP_, char* name )
     return reply;
 } /* pSopen */
 
-
-
 os9err pSBlink( _pid_, _spP_, uint32_t *d2 )
 /* specific "/L2" blink command, as defined in "led_Drv" */
 {
@@ -609,7 +590,6 @@ os9err pSBlink( _pid_, _spP_, uint32_t *d2 )
      return 0;
 } /* pSBlink */
 
-
 os9err pGBlink( _pid_, _spP_, uint32_t *d2 )
 /* specific "/L2" blink command, as defined in "led_Drv" */
 {
@@ -622,8 +602,6 @@ os9err pGBlink( _pid_, _spP_, uint32_t *d2 )
      *(ww+3)= os9_word(l2.ratio2);
      return 0;
 } /* pGBlink */
-
-
 
 os9err pCclose( ushort pid, syspath_typ* spP )
 {
@@ -675,13 +653,11 @@ os9err pCclose( ushort pid, syspath_typ* spP )
     return 0;
 } /* pCclose */
 
-
 /* Close an SCF device, resetting the terminal modes to pre-open values */
 os9err pSclose( _pid_, _spP_ )
 {
   return 0;
 } /* pSclose */
-
 
 /* input character wise from console */
 os9err pConsIn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
@@ -695,8 +671,6 @@ os9err pConsIn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
       return pUnimp  ( pid,spP );
     #endif
 } /* pConsIn */
-
-
 
 os9err pConsInLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
 /* input line from console */
@@ -714,7 +688,6 @@ os9err pConsInLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer 
       static char readbuf[RDBUFLEN];
       int cerr;
       ulong inputticks= GetSystemTick();
-
 
       /* interactive input line from stdin */
       cnt=*maxlenP; /* max number of chars to get */
@@ -750,14 +723,10 @@ os9err pConsInLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer 
     return err;
 } /* pConsInLn */
 
-
-
 os9err pEOF( _pid_, _spP_, _maxlenP_, _buffer_ )
 /* read operation for the nil device is alway EOF */
 {   return E_EOF;
 } /* pEOF */
-
-
 
 static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                           uint32_t *maxlenP, char* buffer, Boolean wrln )
@@ -836,12 +805,10 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
     return 0;
 } /* ConsoleOut */
 
-
 os9err pConsOut  ( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
 /* output to console */
 { return ConsoleOut( pid,spP, maxlenP, buffer, false );    
 } /* pConsOut */
-
 
 os9err pConsOutLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer)
 /* output line to console */
@@ -851,16 +818,12 @@ os9err pConsOutLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer
 	return err;
 } /* pConsOutLn */
 
-
-
 os9err pCopt( _pid_, syspath_typ* spP, byte* buffer )
 /* get options from console */
 {
   memcpy( buffer,&spP->opt, OPTSECTSIZE);
   return 0;
 } /* pCopt */
-
-
 
 os9err pCsetopt( _pid_, syspath_typ* spP, byte* buffer )
 /* set console options */
@@ -869,13 +832,9 @@ os9err pCsetopt( _pid_, syspath_typ* spP, byte* buffer )
   return 0;
 } /* pCsetopt */
 
-
-
 os9err pCpos( _pid_, _spP_, uint32_t *posP )
 { *posP= 0; return 0;
 } /* pCpos */
-
-
 
 os9err pCready( _pid_, syspath_typ* spP, uint32_t* n )
 /* check ready */
@@ -895,6 +854,5 @@ os9err pCready( _pid_, syspath_typ* spP, uint32_t* n )
     
     return os9error(E_NOTRDY);
 } /* pCready */
-
 
 /* eof */

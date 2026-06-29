@@ -121,8 +121,8 @@
  *
  */
 
-
 #include "os9exec_incl.h"
+#include <ctype.h>
 
 #ifdef USE_UAEMU
   #include "config.h"
@@ -133,8 +133,6 @@
   #include "newcpu.h"
   #include "compiler.h"
 #endif
-
-
 
 /* debugging support */
 /* ================= */
@@ -164,9 +162,6 @@ char triggername[TRIGNAMELEN] = "";     /* debug trigger name */
 static ushort tempmask;
 /* ---------------------------------------------------------- */
 
-
-
-
 /* debug routines */
 /* ============== */
 
@@ -180,7 +175,6 @@ Boolean debugcheck( ushort mask, ushort level )
            (currentpid==justthis_pid || justthis_pid<1);
 } /* debugcheck */
 #endif
-
 
 // check if address is outside process' allocated memory
 Boolean out_of_mem( ushort pid, os9addr_t addr )
@@ -198,7 +192,6 @@ Boolean out_of_mem( ushort pid, os9addr_t addr )
   return true; // out of range
 } // out_of_mem
 
-
 // check if address is outside any OS9 module
 Boolean out_of_mods( os9addr_t addr )
 {
@@ -214,7 +207,6 @@ Boolean out_of_mods( os9addr_t addr )
 
   return true; // out of range
 } // out_of_mods
-
 
 /* check for passing of bad register arguments */
 #ifndef NODEBUG
@@ -252,7 +244,6 @@ void regcheck(ushort pid,char *nam,uint32_t reg,ushort mode)
 } /* regcheck */
 #endif
 
-
 /* check for trigger name */
 void trigcheck(char *message, char *name)
 {
@@ -265,15 +256,13 @@ void trigcheck(char *message, char *name)
     }
 } /* trigcheck */
 
-
-
 /* debug printf */
 #ifndef NODEBUG
 void _debugprintf(char *format, ...)
 {
     char buffer[MAXPRINTFLEN];
     process_typ* cp= &procs[ currentpid ];
-    va_list vp= NULL;
+    va_list vp;
     
     /* message enabled for that level */
     va_start    (vp,format);
@@ -289,7 +278,6 @@ void _debugprintf(char *format, ...)
 } /* debugprintf */
 #endif
 
-
 #ifndef NODEBUG
   /* halt if enabled by debughalt */
   ushort debug_halt( ushort haltmask )
@@ -299,7 +287,6 @@ void _debugprintf(char *format, ...)
   } /* debug_halt */
 #endif
 
-
 /* prepare debug leveling */
 void debug_prep()
 {
@@ -308,7 +295,6 @@ void debug_prep()
       debug[dbgNorm]   |= debug[dbgDetail]; /* detail also enables normal */
     #endif
 } /* debug_prep */
-
 
 /* Dump the process descriptor */
 void debug_procdump( process_typ* cp, int cpid )
@@ -523,7 +509,6 @@ void debug_procdump( process_typ* cp, int cpid )
    depth = 0;
 }		    
 
-
 os9err debug_help( ushort pid, _argc_, _argv_ )
 /* display debug help, allow internal and external access */
 {
@@ -554,7 +539,6 @@ os9err debug_help( ushort pid, _argc_, _argv_ )
     if (pid==0) upo_printf("\n");
     return 0; /* not really used, but same proc definition as int cmds */
 } /* debug_help */
-
 
 /* show registers */
 void dumpregs(ushort pid)
@@ -590,7 +574,6 @@ void dumpregs(ushort pid)
     #endif
 } /* dumpregs */
 
-
 /* show memory */
 static void dumpmem(uint32_t *memptrP,int numlines)
 {
@@ -613,7 +596,6 @@ static void dumpmem(uint32_t *memptrP,int numlines)
     }
 } /* dumpmem */
 
-
 /* show regs in debugger — called only from MACOS9 context */
 #ifdef MACOS9
 static void regs_in_debugger( regs_type *rp )
@@ -635,7 +617,6 @@ static void regs_in_debugger( regs_type *rp )
     #endif
 } /* regs_in_debugger */
 #endif /* MACOS9 */
-
 
 #ifdef USE_UAEMU
 extern int m68k_os9trace;
@@ -894,7 +875,6 @@ goon:
     return extra;
 } /* debugwait */
 
-
 /* show one reg in specified length */
 void showonereg(uint32_t value, Boolean isa, ushort regnum, ushort lenspec)
 {
@@ -923,7 +903,6 @@ void showonereg(uint32_t value, Boolean isa, ushort regnum, ushort lenspec)
     }
 } /* showonereg */
 
-
 /* show multiple regs according to bitmask */
 void show_maskedregs(regs_type *rp, uint32_t regmask)
 {
@@ -948,7 +927,6 @@ void show_maskedregs(regs_type *rp, uint32_t regmask)
         regmask >>= 2;
     }
 } /* show_maskedregs */
-
 
 /* setstat/getstat names for debugging */
 char* get_stat_name(ushort stat)
@@ -1045,8 +1023,6 @@ char* get_stat_name(ushort stat)
     return name;
 } /* get_stat_name */
 
-
-
 char* get_ev_name(ushort ev)
 {
     char *name;
@@ -1069,8 +1045,6 @@ char* get_ev_name(ushort ev)
     
     return name;
 } /* get_ev_name */
-
-
 
 /* error names for debugging and F$PErr */
 void get_error_strings(os9err err, char **nameP, char **descP)
@@ -1184,7 +1158,6 @@ void get_error_strings(os9err err, char **nameP, char **descP)
     if (descP!=NULL) *descP= desc;
 } /* get_error_strings */
 
-
 /* syscall names for debugging */
 char* get_syscall_name(ushort syscall)
 {   return getfuncentry(syscall)->name;
@@ -1192,8 +1165,3 @@ char* get_syscall_name(ushort syscall)
  
 
 /* eof */
-
-
-
-
-
