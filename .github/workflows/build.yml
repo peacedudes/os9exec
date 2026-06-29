@@ -57,7 +57,7 @@ jobs:
         CC: ${{ matrix.cc }}
       run: |
         make clean
-        make CFLAGS="-g -Wall ${{ matrix.cflags }} -DTERMINAL_CONSOLE -DINT_CMD -ISource/OS9exec_core -ISource/OS9exec_core/os9defs -ISource/Platforms/LINUX -ISource/Platforms -ISource/OS9AppEmu/UAE68emulator -ISource/OS9AppEmu"
+        make
 
     - name: Verify binary exists
       run: |
