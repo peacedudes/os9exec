@@ -15,7 +15,7 @@ the repo. Clone it, point it at your OS-9 files, and run.
 ## Three-minute start
 
 ```sh
-git clone <this-repo>
+git clone https://github.com/peacedudes/os9exec.git
 cd os9exec-git_code
 
 # Put your OS-9 binaries in dd/CMDS

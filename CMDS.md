@@ -73,7 +73,7 @@ the os9exec arm64 emulator.
 | Command | What it does | Status |
 |---------|-------------|--------|
 | `date` | Display the current date and time | ✓ |
-| `debug` | Launch OS-9 symbolic debugger front-end | |
+| `debug` | Launch OS-9 symbolic debugger front-end | ✓ |
 | `deiniz` | Detach (de-initialize) a device | ✓ |
 | `devs` | List mounted devices | ✓ |
 | `events` | List OS-9 system events | ✓ |
