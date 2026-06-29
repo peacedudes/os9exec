@@ -36,19 +36,20 @@ Run actual OS-9 binaries on your modern computer. OS9exec emulates the 68k proce
    
    You're in OS-9! Try: `dir /dd/CMDS`, `echo hello`, `procs`, `exit`
 
-### Option 2: Docker + your OS-9 binaries
+### Option 2: Docker (pre-built image)
 
+Pull the latest image:
+```sh
+docker pull ghcr.io/peacedudes/os9exec:latest
+docker run -it -v /path/to/your/os9:/dd ghcr.io/peacedudes/os9exec:latest /dd/CMDS/shell
+```
+
+Or build locally:
 ```sh
 git clone https://github.com/peacedudes/os9exec.git
 cd os9exec-git_code
 docker build -f docker/Dockerfile -t os9exec .
 docker run -it -v /path/to/your/os9:/dd os9exec /dd/CMDS/shell
-```
-
-For 32-bit Linux:
-```sh
-docker build -f docker/Dockerfile.linux32 -t os9exec:linux32 .
-docker run -it -v /path/to/your/os9:/dd os9exec:linux32 /dd/CMDS/shell
 ```
 
 ### Option 3: Apple Container (native macOS, macOS 26+)
