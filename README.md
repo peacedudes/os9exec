@@ -6,18 +6,22 @@ Run actual OS-9 binaries on your modern computer. OS9exec emulates the 68k proce
 
 ---
 
-## Quick start (3 minutes, no build required)
+## Quick start
 
-### Option 1: Native binary (fastest)
+### What you need
+
+**OS9exec itself:** Available from [GitHub Releases](https://github.com/peacedudes/os9exec/releases) or build locally (see below).
+
+**OS-9 software:** You must provide your own OS-9 binaries (shell, utilities, etc.). These are not included in the repo—they're not ours to distribute. If you have OS-9 software on disk/tape/archive, point os9exec at it. [Legitimate sources exist for hobbyists](https://www.icdia.co.uk/).
+
+### Option 1: Download binary + bring your own OS-9
 
 1. **Get the binary for your platform:**
    - macOS ARM64 (M1/M2/M3): `os9exec-macos-arm64`
-   - macOS Intel: (coming soon) 
+   - macOS Intel: (available in releases)
    - Linux 64-bit: `os9exec-linux-x64`
    - Linux 32-bit: `os9exec-linux-i386`
    - Windows: `os9exec-windows-x64.exe`
-   
-   Download from [GitHub Releases](https://github.com/peacedudes/os9exec/releases)
 
 2. **Set up your OS-9 files:**
    ```sh
@@ -30,35 +34,47 @@ Run actual OS-9 binaries on your modern computer. OS9exec emulates the 68k proce
    OS9DISK=$(pwd)/dd ./os9exec /dd/CMDS/shell
    ```
    
-   You're now in OS-9. Try: `dir /dd/CMDS`, `echo hello`, `procs`, `exit`
+   You're in OS-9! Try: `dir /dd/CMDS`, `echo hello`, `procs`, `exit`
 
-### Option 2: Docker (if Docker is installed)
+### Option 2: Docker + your OS-9 binaries
 
 ```sh
 git clone https://github.com/peacedudes/os9exec.git
 cd os9exec-git_code
 docker build -t os9exec .
-docker run -it -v $(pwd)/dd:/os9exec/dd os9exec
+docker run -it -v /path/to/your/os9:/os9exec/dd os9exec /dd/CMDS/shell
 ```
 
-### Option 3: Build locally (if you have clang/gcc)
+### Option 3: Apple Container (native macOS, macOS 26+)
+
+```sh
+# Install Apple Container from https://github.com/apple/container/releases
+container system start
+
+git clone https://github.com/peacedudes/os9exec.git
+cd os9exec-git_code
+container build -t os9exec:apple .
+container run -it -v /path/to/your/os9:/os9exec/dd os9exec:apple /dd/CMDS/shell
+```
+
+### Option 4: Build locally
 
 ```sh
 git clone https://github.com/peacedudes/os9exec.git
 cd os9exec-git_code
 make
-OS9DISK=$(pwd)/dd ./os9exec /dd/CMDS/shell
+OS9DISK=/path/to/your/os9 ./os9exec /path/to/your/os9/CMDS/shell
 ```
 
-**Platform-specific build notes:**
+**Platform-specific:**
 - **macOS:** `make` (requires Xcode Command Line Tools)
 - **Linux:** `make` (requires build-essential, clang/gcc)
 - **Windows:** `make` (requires LLVM or MinGW; use WSL2 for easier build)
-- **Docker 32-bit Linux:** `docker build -f Dockerfile.linux32 -t os9exec:linux32 .`
+- **Linux 32-bit:** `docker build -f Dockerfile.linux32 -t os9exec:linux32 .`
 
 ---
 
-## Security note (macOS)
+## macOS security note
 
 First run may be blocked. Fix with:
 ```sh
