@@ -64,7 +64,7 @@ the os9exec arm64 emulator.
 | `mkdatmod` | Package a file into an OS-9 data module | ✓ |
 | `moded` | Module field editor (requires `moded.fields` config file, not included) | — |
 | `padrom` | Pad a file to a target size with `0xFF` | ✓ |
-| `romsplit` | Split a ROM image into interleaved files | |
+| `romsplit` | Split a ROM image into interleaved files (hangs when tested; likely expects specific ROM format) | — |
 | `save` | Save an in-memory module to a file | ✓ |
 | `unlink` | Unlink a module from memory | ✓ |
 
@@ -92,7 +92,7 @@ the os9exec arm64 emulator.
 
 | Command | What it does | Status |
 |---------|-------------|--------|
-| `break` | Halt timesharing and enter debugger (terminal left in raw mode on exit) | |
+| `break` | Halt timesharing and enter debugger (leaves terminal in raw mode; unsuitable for non-interactive testing) | — |
 | `echo` | Write text to stdout | ✓ |
 | `make` | Build targets from a Makefile; fails gracefully if no `makefile` present | ✓ |
 | `on` | Execute a command on a remote host (requires SPF network stack) | — |
@@ -105,7 +105,7 @@ the os9exec arm64 emulator.
 | Command | What it does | Status |
 |---------|-------------|--------|
 | `backup` | Back up an RBF disk to tape (requires tape hardware) | — |
-| `diskcache` | Configure disk sector cache | |
+| `diskcache` | Configure disk sector cache (operates silently with no output) | ✓ |
 | `dpsplit` | Split DPIO device descriptors into sub-parts | ✓ |
 | `format` | Low-level format a disk (requires hardware) | — |
 | `frestore` | Restore a filesystem from tape (requires tape hardware) | — |
@@ -126,7 +126,7 @@ the os9exec arm64 emulator.
 | `bfed` | Screen-oriented binary file editor (requires TERM environment variable) | — |
 | `cfp` | Floating-point coprocessor utility | ✓ |
 | `cio` | Communications I/O module (module not present in SDK distribution) | — |
-| `code` | Return hex keycode of a terminal keypress (interactive) | |
+| `code` | Return hex keycode of a terminal keypress (requires interactive terminal input; cannot test non-interactively) | — |
 | `com` | Serial port communication (requires hardware) | — |
 | `kermit` | Kermit file transfer over serial (requires hardware) | — |
 | `tmode` | Show or set terminal mode parameters | ✓ |
