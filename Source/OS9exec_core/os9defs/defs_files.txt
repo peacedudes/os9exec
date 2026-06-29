@@ -19,22 +19,77 @@
 //
 
 
-The original OS-9 DEFS files are not part of the OS9exec source
-due to copyright reasons. The OS9exec project can be compiled only
-if 4 files of an original OS-9 system (V2.4, V2.9 or V3.0) are
-added to this directory:
+IMPORTANT NOTICE — READ BEFORE RELYING ON THESE FILES
+======================================================
 
-  - errno.h
-  - module.h
-  - procid.h
-  - sgstat.h
+This directory contains four header files:
 
-All four must be adapted and renamed with the "_adapted" suffix:
+    module_from_book.h
+    procid_from_book.h
+    sgstat_from_book.h
+    errno_from_book.h
 
-  - errno_adapted.h    (from errno.h)
-  - module_adapted.h   (from module.h)
-  - procid_adapted.h   (from procid.h)
-  - sgstat_adapted.h   (from sgstat.h)
+These are NOT the original Microware OS-9 headers, and they are NOT
+derived from any Microware source material.  They were written from
+scratch by the os9exec maintainers in 2026, using a single publicly
+available secondary source:
+
+    "The OS-9 Guru, Book 1: The Facts"
+    Galactic Industrial Ltd., 1995
+    https://www.icdia.co.uk/books_os9/os9guru/index.html
+    https://archive.org/details/galactic-industrial-the-os-9-guru-1-the-facts
+
+They are a deliberate workaround, chosen specifically to avoid
+distributing copyright material.  The original project (Zeller /
+Forster, 1993–2006) required the builder to supply four adapted files
+from a real OS-9 installation.  This arrangement worked for the
+original authors and their immediate circle, but it creates a
+significant barrier for anyone who does not have access to an OS-9
+system — and it cannot be legally distributed as part of an open-source
+project.  These files are our solution to that problem.
+
+They are a hack.  Here is exactly what that means:
+
+  - Struct layouts were inferred from offset tables and field
+    descriptions in the Guru book, cross-checked against the
+    os9exec source code (struct initialisers, field accesses, and
+    sizeof() assertions that the compiler enforces).
+
+  - Error code values: five are stated explicitly in the book.
+    Hardware-exception codes follow the formula the book gives
+    (100 + 68000 exception number), confirmed by a comment in
+    debug.c.  All remaining values were reconstructed by counting
+    backward from the known anchor values through the error-
+    description switch statement in debug.c; a small number were
+    confirmed by the current maintainer against a copy of the
+    original errno_adapted.h that is no longer in this repository.
+
+  - The files compile cleanly and the emulator behaves correctly
+    for the full set of OS-9 commands we have tested.  We have no
+    reason to believe any value is wrong.  But:
+
+        These files should not be treated as authoritative
+        documentation of OS-9 internals.  They may contain
+        errors in fields or codes that os9exec does not
+        actively exercise.  If you depend on them being
+        correct, verify against genuine Microware documentation.
+
+If the original Microware headers ever become available to this project
+under a suitable licence, these files should be replaced.  The section
+below describes exactly what surgery those originals require.
+
+
+============================================================
+BACKGROUND: What the original files were
+============================================================
+
+The original project required four files from a real OS-9/68000
+installation (V2.4, V2.9, or V3.0) adapted and renamed:
+
+    errno.h     →  errno_adapted.h   (now: errno_from_book.h)
+    module.h    →  module_adapted.h  (now: module_from_book.h)
+    procid.h    →  procid_adapted.h  (now: procid_from_book.h)
+    sgstat.h    →  sgstat_adapted.h  (now: sgstat_from_book.h)
 
 
 ============================================================
@@ -44,7 +99,7 @@ PART 1: Original adaptations (all platforms)
 "errno_adapted.h"
 -----------------
 
-1)  ERRNO_H is already in use, so ERRNO_ADAPTED_H must be used instead.
+1)  ERRNO_H is already in use, so the include guard must change:
 
            #if !defined(_ERRNO_H)
            #define _ERRNO_H
@@ -52,9 +107,8 @@ PART 1: Original adaptations (all platforms)
     ===>   #if !defined(_ERRNO_ADAPTED_H)
            #define _ERRNO_ADAPTED_H
 
-
-2)  <errno> must be changed to <errno2>, as it clashes with the
-    global <errno> of every compile environment.
+2)  <errno> must be renamed <errno2>, as it clashes with the
+    global errno of every compile environment:
 
            extern int errno;
 
@@ -64,8 +118,8 @@ PART 1: Original adaptations (all platforms)
 "procid_adapted.h"
 ------------------
 
-3)  "_except" must be changed to "except", as it clashes with the
-    Windows exception system.
+3)  "_except" must be renamed "except", as it clashes with the
+    Windows exception system:
 
           *_except[10], /* program error exception vectors */
 
@@ -73,14 +127,13 @@ PART 1: Original adaptations (all platforms)
 
 
 ============================================================
-PART 2: arm64 / 64-bit adaptations (module_adapted.h,
-         procid_adapted.h, sgstat_adapted.h)
+PART 2: arm64 / 64-bit adaptations (module, procid, sgstat)
 ============================================================
 
 On arm64 (Apple Silicon and other 64-bit hosts), C's "long" and
-"unsigned long" are 64 bits wide. The OS-9 struct definitions use
+"unsigned long" are 64 bits wide.  The OS-9 struct definitions use
 these types to describe 32-bit fields and pointers in the 68k address
-space. Left unchanged, every such field is 8 bytes instead of 4,
+space.  Left unchanged, every such field is 8 bytes instead of 4,
 corrupting the struct layouts that the emulator maps directly onto
 68k binary data.
 
@@ -91,26 +144,27 @@ The three remaining files — module_adapted.h, procid_adapted.h, and
 sgstat_adapted.h — require these mechanical substitutions applied to
 every struct field declaration:
 
-  short  / unsigned short / ushort   ===>   uint16_t
-  long   / unsigned long  / ulong    ===>   uint32_t
-  <any pointer type>                 ===>   os9addr_t
+    short  / unsigned short / ushort   →   uint16_t
+    long   / unsigned long  / ulong    →   uint32_t
+    <any pointer type>                 →   os9addr_t
 
 os9addr_t is a uint32_t typedef defined in os9main_incl_precomp.h
-before these headers are included. It represents a 32-bit virtual
-address in the 68k emulated address space. Host code translates
+before these headers are included.  It represents a 32-bit virtual
+address in the 68k emulated address space.  Host code translates
 between os9addr_t values and real host pointers using the macros
-TO68K() and FROM68K() defined in os9_ll.h.
+ADDR68K() / DATA68K() and their inverses, defined in os9_ll.h.
 
-The goal is that sizeof() of every OS-9 struct matches the layout
-of the corresponding binary structure in a real OS-9 disk image or
-module file.
+The goal is that sizeof() of every OS-9 struct matches the layout of
+the corresponding binary structure in a real OS-9 disk image or module
+file.  The _from_book.h files use uint16_t / uint32_t / os9addr_t
+directly and include compile-time assertions to enforce this.
 
 
-Summary
--------
-  errno_adapted.h   — guard rename + errno -> errno2 only
-  procid_adapted.h  — above changes + _except rename +
-                      short->uint16_t, long->uint32_t, ptr->os9addr_t
-  module_adapted.h  — short->uint16_t, long->uint32_t, ptr->os9addr_t
-  sgstat_adapted.h  — short->uint16_t, long->uint32_t, ptr->os9addr_t
+Summary of required changes if replacing with genuine Microware files
+----------------------------------------------------------------------
+    errno_adapted.h   — guard rename + errno → errno2
+    procid_adapted.h  — above + _except rename +
+                        short→uint16_t, long→uint32_t, ptr→os9addr_t
+    module_adapted.h  — short→uint16_t, long→uint32_t, ptr→os9addr_t
+    sgstat_adapted.h  — short→uint16_t, long→uint32_t, ptr→os9addr_t
 

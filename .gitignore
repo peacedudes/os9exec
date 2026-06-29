@@ -18,5 +18,8 @@
 /h0
 /h0_files/
 
+# Reference PDFs and research material (large, not redistributable)
+/resources/
+
 # Claude Code per-user local settings (machine-specific allowlist)
 /.claude/settings.local.json
