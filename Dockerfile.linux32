@@ -1,0 +1,35 @@
+# Build os9exec for 32-bit Linux
+FROM i386/ubuntu:20.04 as builder
+
+# Install build dependencies (32-bit)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    clang \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+# Build os9exec (native 32-bit)
+RUN make clean && make
+
+# Runtime stage (32-bit)
+FROM i386/ubuntu:20.04
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libc6 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /os9exec
+
+# Copy binary and disk images
+COPY --from=builder /build/os9exec /usr/local/bin/os9exec
+COPY --from=builder /build/dd ./dd
+COPY --from=builder /build/h0 ./h0
+
+ENV OS9DISK=/os9exec/dd
+
+ENTRYPOINT ["os9exec"]
+CMD ["shell"]
