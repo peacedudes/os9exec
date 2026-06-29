@@ -57,6 +57,10 @@ os9err OS9_F_Load   (regs_type *rp, ushort cpid);
 os9err OS9_F_Link   (regs_type *rp, ushort cpid);
 os9err OS9_F_UnLink (regs_type *rp, ushort cpid);
 os9err OS9_F_Fork   (regs_type *rp, ushort cpid);
+os9err OS9_F_DFork  (regs_type *rp, ushort cpid);
+os9err OS9_F_DExec  (regs_type *rp, ushort cpid);
+os9err OS9_F_DExit  (regs_type *rp, ushort cpid);
+void   save_debug_regs( ushort pid ); /* write child registers into debugger's frame buffer (dbg_regsave_addr[pid]) */
 os9err OS9_F_Wait   (regs_type *rp, ushort cpid);
 os9err OS9_F_Chain  (regs_type *rp, ushort cpid);
 os9err OS9_F_Exit   (regs_type *rp, ushort cpid);

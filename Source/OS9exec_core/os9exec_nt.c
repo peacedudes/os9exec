@@ -2051,7 +2051,6 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
                 regs_type* parent_rp = &procs[ppid].os9regs;
                 parent_rp->d[0] = 0;  /* DExec success */
                 parent_rp->sr &= ~CARRY;
-                /* save_debug_regs updated descriptor binary fields. */
             }
             procs[cpid].wakeUpTick = ULONG_MAX;
             set_os9_state(cpid, pSleeping, "DExec syscall stop");
