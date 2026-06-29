@@ -39,9 +39,15 @@ pane() {
 }
 
 at_prompt() {
+    local content
+    content=$(pane | grep -v '^[[:space:]]*$')
     local last
-    last=$(pane | grep -v '^[[:space:]]*$' | tail -1 | sed 's/[[:space:]]*$//')
-    [ "$last" = '$' ] || printf '%s' "$last" | grep -q 'for hlp)'
+    last=$(printf '%s\n' "$content" | tail -1 | sed 's/[[:space:]]*$//')
+    [ "$last" = '$' ] && return 0
+    printf '%s' "$last" | grep -qE 'for hlp\)|^dbg:|^dis:|^tra:' && return 0
+    # Also check last 5 lines (trace output may follow the prompt on same/next line)
+    printf '%s\n' "$content" | tail -5 | grep -qE '(^|\s)dbg:\s*$|(^|\s)dis:\s*$|(^|\s)tra:\s*$' && return 0
+    return 1
 }
 
 wait_prompt() {
