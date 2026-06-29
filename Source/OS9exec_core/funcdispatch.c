@@ -279,9 +279,11 @@ const funcdispatch_entry fcalltable[NUMFCALLS] =
     { /* 0x1F */ OS9_F_GPrDBT, "F$GPrDBT", a_l(0)+d_l(1),        d_l(1) }, /* Get system global data copy */
     { /* 0x20 */ OS9_F_Julian, "F$Julian", d_l(0)+d_l(1),        d_l(0)+d_l(1) }, /* Convert gregorian to Julian date */
     { /* 0x21 */ OS9_F_TLink,  "F$TLink",  d_w(0)+d_l(1)+a_p(0), a_l(0)+a_l(1)+a_l(2) }, /* Link trap subroutine package */
-    { /* 0x22 */ OS9_F_UnImp,  "F$DFork",  d_w(0),               d_w(1) }, /* Debugging Fork call */
-    { /* 0x23 */ OS9_F_UnImp,  "F$DExec",  d_w(0),               d_w(1) }, /* Debugging execution call (single step) */
-    { /* 0x24 */ OS9_F_UnImp,  "F$DExit",  d_w(0),               d_w(1) }, /* Debugging exit call (kill child) */
+    { /* 0x22 */ OS9_F_DFork,  "F$DFork",  d_w(0)+d_l(1)+d_l(2)+
+                                           d_w(3)+d_w(4)+
+                                           a_p(0)+a_l(1),        d_w(0)+a_l(0) }, /* Debugging Fork call */
+    { /* 0x23 */ OS9_F_DExec,  "F$DExec",  d_w(0),               0      }, /* Debugging execution call (run child) */
+    { /* 0x24 */ OS9_F_DExit,  "F$DExit",  d_w(0),               0      }, /* Debugging exit call (kill child) */
     { /* 0x25 */ OS9_F_DatMod, "F$DatMod", d_l(0)+d_w(1)+d_w(2)+
                                            d_w(3)+a_p(0),        d_w(0)+d_w(1)+a_l(0)+a_l(1)+a_l(2) }, /* Create data module */
     { /* 0x26 */ OS9_F_SetCRC, "F$SetCRC", a_l(0),               0      }, /* Generate valid header and CRC in module */

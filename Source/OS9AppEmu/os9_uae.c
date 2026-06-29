@@ -165,13 +165,13 @@ void handle_os9exec_exception(int nr, uaecptr oldpc)
 ulong llm_os9_go(regs_type *rp)
 {
     ulong r;
-    
+
     currentrp=rp; // save for use in exception handler
     memcpy(&regs,rp,sizeof(regs));
     regs.usp=rp->a[7];
     m68k_setpc(rp->pc); // make sure PC is set ok
     MakeFromSR(); // make sure condition flags are ok
-        
+
     r=m68k_os9go();
     memcpy(rp,&regs,sizeof(regs));
     return r;

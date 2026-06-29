@@ -1260,6 +1260,9 @@ extern  ttydev_typ  ttydev[MAXTTYDEV];
 
 /* the processes */
 extern  process_typ procs[MAXPROCESSES];
+extern  ushort      dbg_parent_pid[MAXPROCESSES];  /* 0 = normal; else PID of debug parent */
+extern  os9addr_t   dbg_regsave_addr[MAXPROCESSES]; /* 68k arena address of debug reg frame */
+extern  byte        dbg_step_pending[MAXPROCESSES]; /* non-zero while parent awaits DExec result */
 extern  uint32_t    prDBT[MAXPROCESSES]; /* big-endian 32-bit process descriptor offsets */
 
 /* the signal queue */

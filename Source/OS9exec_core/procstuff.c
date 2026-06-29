@@ -596,6 +596,13 @@ os9err kill_process( ushort pid )
     //upe_printf( "unused id=%d\n", pid );
       set_os9_state( pid, pUnused, "kill_process" ); /* there's no parent => invalidate descriptor */
     } // if
+
+    /* If a debug parent is waiting on this child, wake it now. */
+    if (dbg_parent_pid[pid] != 0 &&
+        procs[dbg_parent_pid[pid]].state == pSleeping) {
+        set_os9_state(dbg_parent_pid[pid], pActive, "kill_process (dbg wake)");
+        dbg_parent_pid[pid] = 0;
+    }
     
     debugprintf(dbgProcess,dbgNorm,("# kill_process: process killed\n" ));
 

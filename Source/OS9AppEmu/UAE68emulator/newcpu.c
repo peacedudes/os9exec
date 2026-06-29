@@ -1361,6 +1361,7 @@ static __inline__ void m68k_run1 (void)
 
 int m68k_os9trace;
 int m68k_disp= 0;
+int m68k_os9singlestep = 0; /* set to 1 to execute exactly one instruction then stop (F$DExec) */
 
 #undef PROBLEM
 
@@ -1391,6 +1392,11 @@ unsigned long m68k_os9go(void)
 		#endif
 		if (m68k_disp)
 			upe_printf( "%8x %4x\n", regs.pc_p,opcode );
+		if (m68k_os9singlestep) {
+			m68k_os9singlestep = 0;
+			m68_os9go_result    = 0xFBFB0000; /* single-step done token */
+			os9_running         = 0;
+		}
 		if (m68k_os9trace) {
 			uaecptr n;
 		   m68k_dumpstate(&n,0);
