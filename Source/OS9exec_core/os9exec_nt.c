@@ -433,7 +433,10 @@ ttydev_typ  ttydev[MAXTTYDEV];
 
 /* the processes */
 process_typ  procs[MAXPROCESSES];
-uint32_t     prDBT[MAXPROCESSES]; /* big-endian 32-bit process descriptor offsets */
+uint32_t     prDBT[MAXPROCESSES];              /* big-endian 32-bit process descriptor offsets */
+ushort       dbg_parent_pid[MAXPROCESSES];     /* 0 = normal; else PID of debug parent */
+os9addr_t    dbg_regsave_addr[MAXPROCESSES];   /* 68k arena address of debug register frame */
+byte         dbg_step_pending[MAXPROCESSES];   /* non-zero while parent is waiting for DExec result */
 
 /* the signal queue */
 sig_typ     sig_queue;
@@ -1909,8 +1912,30 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
           // --- and now exec syscall
           cp->vector= hiword(resL);
           cp->func  = loword(resL);
+
+          /* Single-step token from F$DExec: snapshot registers, re-sleep child, wake parent. */
+          if (cp->vector == 0xFBFB) {
+              ushort ppid = dbg_parent_pid[cpid];
+              dbg_step_pending[cpid] = 0;
+              save_debug_regs(cpid);
+              /* F$DExec returns A0 = child register frame address (OS-9 convention).
+               * A1-A6 are NOT forwarded to avoid corrupting debug's A6 frame pointer.
+               * PC/SR/A7 are always the parent's own values. */
+              if (ppid != 0 && procs[ppid].state == pSleeping) {
+                  procs[ppid].os9regs.sr &= ~CARRY;
+              }
+              procs[cpid].wakeUpTick = ULONG_MAX;
+              set_os9_state(cpid, pSleeping, "DExec step done");
+              cp->vector = 0;
+              cp->func   = 0;
+              if (ppid != 0 && procs[ppid].state == pSleeping) {
+                  set_os9_state(ppid, pActive, "DExec wake parent");
+                  currentpid = ppid;
+              }
+              continue;
+          }
         } // if
-        
+
         cp->way_to_icpt= false; // now it is done
 				
         // --- safeguarding
@@ -2014,6 +2039,27 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
             crp->sr |= CARRY;
           } // if
         } // if
+
+        /* If a DExec step is in flight and the child just finished a syscall,
+         * stop the child and return control to the debug parent. */
+        if (dbg_step_pending[cpid] &&
+            (cp->state == pActive || cp->state == pWaitRead)) {
+            ushort ppid = dbg_parent_pid[cpid];
+            dbg_step_pending[cpid] = 0;
+            save_debug_regs(cpid);
+            if (ppid != 0 && procs[ppid].state == pSleeping) {
+                regs_type* parent_rp = &procs[ppid].os9regs;
+                parent_rp->d[0] = 0;  /* DExec success */
+                parent_rp->sr &= ~CARRY;
+                /* save_debug_regs updated descriptor binary fields. */
+            }
+            procs[cpid].wakeUpTick = ULONG_MAX;
+            set_os9_state(cpid, pSleeping, "DExec syscall stop");
+            if (ppid != 0 && procs[ppid].state == pSleeping) {
+                set_os9_state(ppid, pActive, "DExec wake parent (syscall)");
+                currentpid = ppid;
+            }
+        }
 
         if (cwti && cp->icpt_signal!=S_Wake && sigp->state!=pDead) {
           sigp->masklevel   = 1;               // not interrupteable during intercept		

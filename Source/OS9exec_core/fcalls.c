@@ -896,9 +896,9 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
   if (cp->state==pUnused) return E_IPRCID; // this is not a valid process
 
   memcpy( &pd,&cp->pd, sizeof(procid) );
-    
+
   pd._usp= os9_long( rp->a[ 7 ] );
-    
+
   // <_state> and <queueid> will be assigned directly
   if (id==cpid) pd._queueid = '*';
     
@@ -939,7 +939,19 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
   pd._blksiz[ 0 ]= os9_long( memsz );
           
   memcpy( (byte*)FROM68K(rp->a[ 0 ]), &pd, loword( rp->d[ 1 ] ) );
-//upe_printf( "pmodul2=%08X\n", os9_long( (ulong)pd._pmodul ) );
+  /* P$DbgReg ($2A8) = address of register frame buffer in debugger's static storage.
+   * P$DbgPar ($2AC) = non-zero when process is being debugged (prevents debug from
+   * treating the process as undebugger).  Both injected here since procid doesn't
+   * carry these fields directly in os9exec. */
+  { ushort req_bytes = loword(rp->d[1]);
+    byte*   buf      = (byte*)FROM68K(rp->a[0]);
+    if (dbg_regsave_addr[id] != 0 && req_bytes >= 0x2B0) {
+        uint32_t frame_be = os9_long(dbg_regsave_addr[id]);
+        memcpy(buf + 0x2A8, &frame_be, 4);
+        uint32_t par_be = os9_long((uint32_t)dbg_parent_pid[id]);
+        memcpy(buf + 0x2AC, &par_be, 4);
+    }
+  }
   return 0;
 } // OS9_F_GPrDsc
 
@@ -1496,6 +1508,147 @@ os9err OS9_F_Fork( regs_type *rp, ushort cpid )
   return       err;
   */
 } /* OS9_F_Fork */
+
+
+
+extern int m68k_os9singlestep;
+
+/* Snapshot child registers into the debugger's register frame buffer.
+ *
+ * Frame layout (72 bytes, OS-9/68k kernel R$ offsets from process.a):
+ *   0x00-0x1F  D0-D7  (8 × uint32 big-endian)
+ *   0x20-0x3F  A0-A7  (8 × uint32 big-endian, A7 = USP)
+ *   0x40-0x41  SR     (uint16 big-endian)
+ *   0x42-0x45  PC     (uint32 big-endian)
+ *   0x46-0x47  fmt    (68010 exception vector word, zero for 68000/020)
+ */
+void save_debug_regs( ushort pid )
+{
+    byte*      base = (byte*)FROM68K(dbg_regsave_addr[pid]);
+    regs_type* rp   = &procs[pid].os9regs;
+    int        r;
+
+    for (r = 0; r < 8; r++) {
+        uint32_t v = rp->d[r];
+        base[r*4]   = (v>>24)&0xFF; base[r*4+1] = (v>>16)&0xFF;
+        base[r*4+2] = (v>> 8)&0xFF; base[r*4+3] =  v     &0xFF;
+    }
+    for (r = 0; r < 8; r++) {
+        uint32_t v = rp->a[r];
+        base[0x20+r*4]   = (v>>24)&0xFF; base[0x20+r*4+1] = (v>>16)&0xFF;
+        base[0x20+r*4+2] = (v>> 8)&0xFF; base[0x20+r*4+3] =  v     &0xFF;
+    }
+    { uint16_t v = rp->sr;
+      base[0x40] = (v>>8)&0xFF; base[0x41] = v&0xFF; }
+    { uint32_t v = rp->pc;
+      base[0x42] = (v>>24)&0xFF; base[0x43] = (v>>16)&0xFF;
+      base[0x44] = (v>> 8)&0xFF; base[0x45] =  v     &0xFF; }
+    base[0x46] = 0; base[0x47] = 0;
+} /* save_debug_regs */
+
+
+os9err OS9_F_DFork( regs_type *rp, ushort cpid )
+/* F$DFork: Fork a child process for debugging.
+ * Same ABI as F$Fork but the child is left in pSleeping state so the
+ * parent (debugger) retains control.  F$DExec resumes it; F$DExit kills it.
+ * Input:  D0.W=type/rev, D1.L=memsize, D2.L=paramsize,
+ *         D3.W=numpaths, D4.W=priority, A0=name, A1=params,
+ *         A2=register frame buffer (in debugger's static storage)
+ * Output: D0.W=child PID
+ */
+{
+    char         mpath[OS9PATHLEN];
+    ushort       newpid, newmid;
+    os9err       err;
+    ushort       numpaths = loword(rp->d[3]);
+    ushort       grp, usr, prior;
+    process_typ* cp = &procs[cpid];
+    process_typ* np;
+    /* A2 = debugger's pre-allocated register frame buffer (kernel source fork.a:
+     * "movea.l R$a2(a5),a2 / move.l a2,P$DbgReg(a0)") */
+    os9addr_t    regbuf = rp->a[2];
+
+    rp->a[0] = TO68K(nullterm(mpath, (char*)FROM68K(rp->a[0]), OS9PATHLEN));
+
+    grp   = os9_word(cp->pd._group);
+    usr   = os9_word(cp->pd._user);
+    prior = loword(rp->d[4]);
+    if (prior == 0) prior = os9_word(cp->pd._prior);
+
+    err = new_process(cpid, &newpid, numpaths); if (err) return err;
+    retword(rp->d[0]) = newpid;
+    np = &procs[newpid];
+
+    do {
+        err = link_load(cpid, mpath, &newmid);
+        #ifdef INT_CMD
+        if (err) { newmid = 0; err = 0; }
+        #else
+        if (err) break;
+        #endif
+        err = prepFork(newpid, mpath, newmid,
+                       (byte*)FROM68K(rp->a[1]), rp->d[2], rp->d[1],
+                       numpaths, grp, usr, prior); if (err) break;
+
+        dbg_regsave_addr[newpid] = regbuf;
+        dbg_parent_pid[newpid]   = cpid;
+        save_debug_regs(newpid);
+        if (!np->isIntUtil) {
+            np->wakeUpTick = MAX_SLEEP;
+            set_os9_state(newpid, pSleeping, "OS9_F_DFork");
+        }
+        return 0;
+    } while (false);
+
+    if (np->state != pDead) {
+        close_usrpaths(newpid);
+        set_os9_state(newpid, pUnused, "OS9_F_DFork");
+    }
+    return err;
+} /* OS9_F_DFork */
+
+
+
+os9err OS9_F_DExec( regs_type *rp, ushort cpid )
+/* F$DExec: Single-step the debug child by one 68k instruction.
+ * Input:  D0.W = child PID
+ * The parent sleeps until the child completes one instruction, calls a
+ * syscall, or dies — whichever comes first.
+ */
+{
+    ushort       childpid = loword(rp->d[0]);
+    process_typ* cp       = &procs[childpid];
+
+    if (cp->state == pUnused) return os9error(E_IPRCID);
+    if (cp->state == pDead  ) return os9error(E_IPRCID);
+
+    /* Park the parent until step completes; MAX_SLEEP prevents do_arbitrate false-wakeup */
+    procs[cpid].wakeUpTick = MAX_SLEEP;
+    set_os9_state(cpid, pSleeping, "OS9_F_DExec parent");
+    /* Arm single-step; child gets one instruction (or one syscall) then stops */
+    dbg_step_pending[childpid] = 1;
+    m68k_os9singlestep         = 1;
+    set_os9_state(childpid, pActive, "OS9_F_DExec child");
+    arbitrate = true;
+    return 0;
+} /* OS9_F_DExec */
+
+
+
+os9err OS9_F_DExit( regs_type *rp, ushort cpid )
+/* F$DExit: Kill the debug child.
+ * Input:  D0.W = child PID
+ */
+{
+    ushort       childpid = loword(rp->d[0]);
+    process_typ* cp       = &procs[childpid];
+
+    if (cp->state == pUnused) return 0; /* already gone */
+    dbg_parent_pid[childpid] = 0;     /* suppress wakeup from kill_process */
+    cp->exiterr = 0;
+    kill_process(childpid);
+    return 0;
+} /* OS9_F_DExit */
 
 
 
