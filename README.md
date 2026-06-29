@@ -41,8 +41,14 @@ Run actual OS-9 binaries on your modern computer. OS9exec emulates the 68k proce
 ```sh
 git clone https://github.com/peacedudes/os9exec.git
 cd os9exec-git_code
-docker build -t os9exec .
-docker run -it -v /path/to/your/os9:/os9exec/dd os9exec /dd/CMDS/shell
+docker build -f docker/Dockerfile -t os9exec .
+docker run -it -v /path/to/your/os9:/dd os9exec /dd/CMDS/shell
+```
+
+For 32-bit Linux:
+```sh
+docker build -f docker/Dockerfile.linux32 -t os9exec:linux32 .
+docker run -it -v /path/to/your/os9:/dd os9exec:linux32 /dd/CMDS/shell
 ```
 
 ### Option 3: Apple Container (native macOS, macOS 26+)
@@ -53,8 +59,8 @@ container system start
 
 git clone https://github.com/peacedudes/os9exec.git
 cd os9exec-git_code
-container build -t os9exec:apple .
-container run -it -v /path/to/your/os9:/os9exec/dd os9exec:apple /dd/CMDS/shell
+container build -f docker/Dockerfile -t os9exec:apple .
+container run -it -v /path/to/your/os9:/dd os9exec:apple /dd/CMDS/shell
 ```
 
 ### Option 4: Build locally

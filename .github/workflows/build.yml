@@ -75,7 +75,7 @@ jobs:
     - name: Build os9exec (Docker 32-bit)
       if: matrix.cc == 'docker'
       run: |
-        docker build -f ${{ matrix.dockerfile }} -t os9exec:linux32 .
+        docker build -f docker/${{ matrix.dockerfile }} -t os9exec:linux32 .
         docker run --rm -v $(pwd):/workspace os9exec:linux32 cp /usr/local/bin/os9exec /workspace/os9exec
 
     - name: Verify binary exists
