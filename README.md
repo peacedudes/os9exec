@@ -96,15 +96,16 @@ registers there after each step. Getting this right in a clean-room emulator req
 reconstructing the kernel's internal calling convention without access to the original
 Microware source.
 
-The reconstruction used *The OS-9 Guru* (Galactic Industrial) as the primary source:
-OS-9 struct layouts were derived from the book's field descriptions and built into
-four new header files (`procid_from_book.h`, `module_from_book.h`, etc.) committed
-to this repo. The F$DFork handshake — specifically that A2 holds the parent's
-register buffer address, stored by the kernel into `P$DbgReg` of the child's process
-descriptor — was confirmed from a fragment of the real kernel's `fork.a` assembly.
-The fix was then a small, precise change: capture `rp->a[2]` at DFork time, write
-child registers there in the correct 72-byte R$ frame layout, and inject `P$DbgPar`
-as a non-zero sentinel so the debugger binary recognises the child as being debugged.
+The reconstruction used [*The OS-9 Guru, Book 1: The Facts*](https://www.icdia.co.uk/books_os9/os9guru/index.html)
+(Galactic Industrial Ltd., 1995; full scan on [Internet Archive](https://archive.org/details/galactic-industrial-the-os-9-guru-1-the-facts))
+as the primary source. OS-9 struct layouts were derived from the book's field
+descriptions and used to reconstruct the correct calling convention. The F$DFork
+handshake — specifically that A2 holds the parent's register-frame buffer address,
+stored by the kernel into `P$DbgReg` of the child's process descriptor — was
+confirmed from a fragment of the real kernel's `fork.a` assembly. The fix was then
+a small, precise change: capture `rp->a[2]` at DFork time, write child registers
+there in the correct 72-byte R$ frame layout, and inject `P$DbgPar` as a non-zero
+sentinel so the debugger binary recognises the child as being debugged.
 
 All of this was done collaboratively with Claude Sonnet 4.6, which identified the
 root cause, cross-referenced the book against the kernel fragment, and wrote the fix.
@@ -211,14 +212,20 @@ See [CMDS.md](CMDS.md) for the full list of known OS-9 commands with status note
 ## Compatibility
 
 The full syscall surface — file I/O, process management, module loading, pipes,
-events, signals, traps, the shell — runs correctly. A few things are not emulated:
+events, signals, traps, the shell — runs correctly.
 
-| Item | Status |
-|------|--------|
-| `screen` | Crashes — uses Mac QuickDraw globals at negative A5-relative offsets |
-| `setime` | Loops on bad date format; accepts only 2-digit years |
-| `c68` | Reads stdin when no file argument given — hangs in non-interactive use |
-| Raw device commands (`backup`, `format`, `tape`, `kermit`, …) | Require physical hardware not emulated |
+**Time:** os9exec has no internal clock. `F$Time` delegates to the host, so `date`
+and file timestamps always reflect the Mac's system time. `setime` accepts a date
+but it has no effect — the host clock is authoritative and cannot be overridden from
+inside the emulator. This is by design: keeping OS-9 time in sync with the host
+filesystem avoids confusion with file modification timestamps.
+
+**Hardware-dependent commands** (`backup`, `format`, `tape`, `kermit`, raw `com`,
+`rdump`, `fsave`/`frestore`) require physical devices that are not emulated and
+will not work.
+
+Everything else in a standard OS-9/68k SDK CMDS directory can be expected to run.
+See [CMDS.md](CMDS.md) for a command-by-command status list.
 
 
 ## Building from source
@@ -264,3 +271,13 @@ Original project: <http://www.synthesis.ch/os9exec>
 Source repository: <https://sourceforge.net/p/os9exec/git_code/ci/master/tree/>  
 arm64 port and debug fix: Robert Doggett, with Claude Sonnet 4.6 (Anthropic)  
 License: GNU General Public License v2 (see source file headers)
+
+### Reference
+
+*The OS-9 Guru, Book 1: The Facts* — Galactic Industrial Ltd., 1995.  
+Landing page: <https://www.icdia.co.uk/books_os9/os9guru/index.html>  
+Full scan: <https://archive.org/details/galactic-industrial-the-os-9-guru-1-the-facts>
+
+This book was the primary reference for reconstructing OS-9 kernel struct layouts
+and system call conventions used in the arm64 port. Galactic Industrial published
+it specifically to enable third-party OS-9 interoperability work.
