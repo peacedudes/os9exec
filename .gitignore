@@ -1,8 +1,13 @@
-# Proprietary OS-9 DEFS headers -- must NEVER be committed (Microware copyright).
-# Supply your own copy locally from a licensed OS-9 system.
-# See Source/OS9exec_core/os9defs/defs_files.txt for which files and how to adapt.
+# Proprietary OS-9 binaries and disk images (not ours to distribute)
+# Users must provide their own OS-9 software for local testing
+/dd/
+/h0
+/h0_files/
+
+# Proprietary OS-9 DEFS headers (Microware copyright)
+# EXCEPT *_from_book.h which are derived from public OS-9 Guru book — those ARE committed
 /Source/OS9exec_core/os9defs/*.h
-/Source/OS9exec_core/h0
+!/Source/OS9exec_core/os9defs/*_from_book.h
 
 # Adapted OS-9 headers (user-derived from originals; not redistributable pending permission)
 /Source/OS9exec_core/os9defs/orig/
@@ -12,11 +17,6 @@
 /build/
 /os9exec
 /test/.build/
-
-# Disk images and test data
-/dd
-/h0
-/h0_files/
 
 # Reference PDFs and research material (large, not redistributable)
 /resources/
