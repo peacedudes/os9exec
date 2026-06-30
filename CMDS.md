@@ -86,16 +86,15 @@ the os9exec arm64 emulator.
 | `paths` | List open paths for all processes | ✓ |
 | `printenv` | Display environment variables | ✓ |
 | `procs` | List running OS-9 processes | ✓ |
-| `setime` | Set system date and time (loops on invalid input; avoid in non-interactive use) | — |
+| `setime` | Set system time (time is taken from the host; any value entered is silently ignored — works as it did in the 1990s) | ✓ |
 
 ### Shell and process tools
 
 | Command | What it does | Status |
 |---------|-------------|--------|
-| `break` | Halt timesharing and enter the OS-9 debugger (same effect as `idbg`) | ✓ |
+| `break` | Halt timesharing and enter the OS-9 debugger | ✓ |
 | `echo` | Write text to stdout | ✓ |
 | `make` | Build targets from a Makefile; fails gracefully if no `makefile` present | ✓ |
-| `on` | Execute a command on a remote host (requires SPF network stack) | — |
 | `os9gen` | Write OS-9 boot track to a device (requires raw device access) | — |
 | `shell` | Start a new interactive OS-9 shell | ✓ |
 | `sleep` | Suspend execution for N seconds | ✓ |
@@ -126,7 +125,7 @@ the os9exec arm64 emulator.
 | `bfed` | Screen-oriented binary file editor (requires TERM environment variable) | — |
 | `cfp` | Floating-point coprocessor utility | ✓ |
 | `cio` | Communications I/O module (module not present in SDK distribution) | — |
-| `code` | Return hex keycode of a terminal keypress (requires interactive terminal input; cannot test non-interactively) | — |
+| `code` | Return hex keycode of terminal keypresses; type keys one at a time, ^E to exit | ✓ |
 | `com` | Serial port communication (requires hardware) | — |
 | `kermit` | Kermit file transfer over serial (requires hardware) | — |
 | `tmode` | Show or set terminal mode parameters | ✓ |
@@ -141,7 +140,8 @@ the os9exec arm64 emulator.
 | `math` | Math library (requires external math module not included) | — |
 | `maui` | Microware MAUI graphics (requires MAUI module not included) | — |
 | `pwrstat` | Power management utility | ✓ |
-| `su` | Switch user identity (requires `/dd/password` file) | — |
+| `login` | Login with password authentication (requires `/dd/password` file and csl) | ✓ |
+| `su` | Switch user identity (requires `/dd/password` file and csl) | ✓ |
 
 ### Network tools
 
@@ -165,7 +165,6 @@ in this emulated environment.  None will connect to anything.
 | `inetd` | Internet super-daemon |
 | `ipstart` | Start the IP network stack |
 | `lmm` | Load module manager |
-| `login` | Login with password authentication |
 | `mbdump` / `mbinstall` | Network buffer statistics / installer |
 | `mountd` | NFS mount daemon |
 | `mrecv` / `msend` / `msgd` / `rmsg` | Interprocess messaging |
