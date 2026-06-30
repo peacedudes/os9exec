@@ -840,18 +840,26 @@ os9err pCready( _pid_, syspath_typ* spP, uint32_t* n )
 /* check ready */
 /* NOTE: is valid for outputs also, when using "dup" */
 {
+    long cnt;
+
     gConsoleID= spP->term_id;
     g_spP     = spP;
 
     if (gConsoleID>=TTY_Base) {
-        if (DevReadyTTY( (long*)n, gConsoleID )) return 0;
+        if (DevReadyTTY( &cnt, gConsoleID )) {
+            *n = (uint32_t)cnt;
+            return 0;
+        }
     }
-    else { 
+    else {
         #ifdef TERMINAL_CONSOLE
-          if  (DevReady( (long*)n ))             return 0;
+          if  (DevReady( &cnt ))  {
+              *n = (uint32_t)cnt;
+              return 0;
+          }
         #endif
     } // if
-    
+
     return os9error(E_NOTRDY);
 } /* pCready */
 

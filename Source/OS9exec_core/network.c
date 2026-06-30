@@ -222,8 +222,8 @@ os9err pNGNam   ( ushort pid, syspath_typ* spP, uint32_t *d1,
                                                 uint32_t *d2,    byte* ispP );
 os9err pNSOpt   ( ushort pid, syspath_typ* spP, uint32_t *d1,    uint32_t *d2  );
 
-os9err pNgPCmd  ( ushort pid, syspath_typ *spP, ulong  *a0 );
-os9err pNsPCmd  ( ushort pid, syspath_typ *spP, ulong  *a0 );
+os9err pNgPCmd  ( ushort pid, syspath_typ *spP, ulong32 *a0 );
+os9err pNsPCmd  ( ushort pid, syspath_typ *spP, ulong32 *a0 );
 /* ------------------------------------------------------------------------- */
 
 
@@ -1183,8 +1183,8 @@ os9err pNaccept( ushort pid, syspath_typ* spP, uint32_t *d1 )
     net=    &spN->u.net;                            /* take the new struct from now on */
     net->ep= epNew;
     net->closeIt= false;
-    
-     cpt= (ulong*)&c;           
+
+     cpt= (uint32_t*)&c;
     *cpt=    net->ipRemote.fHost;                            /* get ip address as name */
     sprintf( spN->name, "%d.%d.%d.%d", c[ 0 ], c[ 1 ], c[ 2 ], c[ 3 ] );
 
@@ -1303,11 +1303,11 @@ static ushort checksum( ushort *buffer, int size )
 
 
 
-os9err pNsPCmd( _pid_, syspath_typ *spP, ulong *a0 )
-{   
+os9err pNsPCmd( _pid_, syspath_typ *spP, ulong32 *a0 )
+{
     OSStatus   err= 0;
     net_typ*   net= &spP->u.net;
-    ulong*     u;
+    ulong32*   u;
     byte*      h;
     IcmpHeader icmp;
 
@@ -1377,8 +1377,8 @@ os9err pNsPCmd( _pid_, syspath_typ *spP, ulong *a0 )
 
 
 
-os9err pNgPCmd( _pid_, syspath_typ *spP, ulong *a0 )
-{   
+os9err pNgPCmd( _pid_, syspath_typ *spP, ulong32 *a0 )
+{
     OSStatus    err= 0;
     long        start_time;
     net_typ*    net= &spP->u.net;

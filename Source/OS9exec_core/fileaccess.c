@@ -1378,10 +1378,13 @@ os9err pFdelete( ushort pid, _spP_, ushort *modeP, char* pathname )
 
 /* get file position */
 os9err pFpos( _pid_, syspath_typ* spP, uint32_t *posP )
-{   
+{
   #ifdef MACFILES
     file_typ* f= &spP->u.disk.u.file;
-    return host2os9err( GetFPos( f->refnum, (long *)posP),E_SEEK );
+    long pos;
+    os9err err = host2os9err( GetFPos( f->refnum, &pos), E_SEEK );
+    if (!err) *posP = (uint32_t)pos;
+    return err;
   #else
     *posP= (uint32_t) ftell( spP->stream );
   //fgetpos( spP->stream,  posP );   /* save current position */
@@ -1393,12 +1396,14 @@ os9err pFpos( _pid_, syspath_typ* spP, uint32_t *posP )
 os9err pFsize( _pid_, syspath_typ* spP, uint32_t* sizeP )
 {
   os9err err= 0;
-    
+
   #if defined MACFILES
     file_typ* f= &spP->u.disk.u.file;
+    long size;
 
-    OSErr oserr= GetEOF( f->refnum, (long*)sizeP );
+    OSErr oserr= GetEOF( f->refnum, &size );
     err= host2os9err( oserr,E_SEEK );
+    if (!err) *sizeP = (uint32_t)size;
 
   #elif defined win_linux
     int    fd= fileno( spP->stream );
@@ -1437,10 +1442,12 @@ os9err pFsetsz( ushort pid, syspath_typ* spP, uint32_t *sizeP )
     #ifdef MACFILES
       OSErr     oserr;
       file_typ* f= &spP->u.disk.u.file;
-      
-      oserr= GetFPos( f->refnum, (long*)&tmp_pos );
+      long pos_l;
+
+      oserr= GetFPos( f->refnum, &pos_l );
+      tmp_pos = (uint32_t)pos_l;
       err= host2os9err( oserr,E_SEEK ); if (err) return err;
-     
+
              GetEOF ( f->refnum, &curSize     );
       oserr= SetEOF ( f->refnum, (long)*sizeP );
       err= host2os9err( oserr,E_SEEK ); if (err) return err;
