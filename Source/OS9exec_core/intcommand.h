@@ -91,7 +91,6 @@
 extern ushort icmpid; /* current internal command's PID */
 
 /* internal commands (in separate files) */
-os9err int_dir   ( ushort pid, int argc, char **argv );
 os9err int_rename( ushort pid, int argc, char **argv );
 os9err int_move  ( ushort pid, int argc, char **argv );
 os9err int_help  ( ushort pid, int argc, char **argv );
