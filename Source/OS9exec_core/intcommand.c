@@ -1482,7 +1482,7 @@ cmdtable_typ commandtable[] =
   { "dhelp",         debug_help,     "shows debug flag information" },
   { "stop/shutdown", int_stop,       "exit from OS9exec" },
   { "rename",        int_rename,     "renames a file or directory (100% compatible)" },
-  { "move",          int_move,       "moves files and directories" },
+  { "move/mv",       int_move,       "moves files and directories" },
   { "ls",            int_dir,        "shows dir in [extended] format" },
 
   #ifdef RBF_SUPPORT

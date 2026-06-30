@@ -21,7 +21,7 @@ the os9exec arm64 emulator.
 | `dsave` | Generate a shell script to recreate a directory tree | ✓ |
 | `free` | Report free space on a disk device (works on RBF; zero-divide crash on native host directory) | ✓ |
 | `makdir` | Create a directory | ✓ |
-| `mv` | Move a file (requires RBF directory-write; fails E_BMODE on native `/dd`; use built-in `move` instead) | — |
+| `mv` | Move a file (requires RBF directory-write; fails E_BMODE on native `/dd`; use built-in `mv` / `move` instead) | — |
 | `pd` | Print current working directory | ✓ |
 | `rename` | Rename a file within a directory | ✓ |
 | `touch` | Create a file or update its timestamp | ✓ |

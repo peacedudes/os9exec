@@ -219,7 +219,15 @@ the file.
 ## Built-in commands
 
 When launched normally, os9exec intercepts a set of names before the OS-9 shell
-can fail on them. They run inside the emulator and look like regular OS-9 programs:
+can fail on them. They run inside the emulator and look like regular OS-9 programs.
+
+Some real OS-9 binaries assume an RBF file system and use low-level disk calls that
+have no equivalent on a host-native directory. `mv` is the primary example: the real
+binary requires RBF directory-write access and fails with `E_BMODE` on `/dd`. The
+built-in replacements work against the host file system directly, so they behave
+correctly regardless of whether the underlying path is a native directory or an RBF
+image. Pass `-i` to suppress all built-ins and use only real OS-9 binaries (note that
+RBF-dependent commands will then fail on native paths).
 
 | Command | What it does |
 |---------|--------------|
@@ -229,11 +237,13 @@ can fail on them. They run inside the emulator and look like regular OS-9 progra
 | `ipaths` | Show open paths |
 | `imem` | Show memory blocks |
 | `idevs` | Show mounted devices |
+| `ihit` | Show directory hash hit rate (cache efficiency) |
 | `idbg` / `debughalt` | Enter the emulator's interactive debugger |
+| `dhelp` | List all debug/stop mask bit values (same as `idbg` → `dh`) |
 | `stop` / `shutdown` | Exit os9exec cleanly |
 | `rename` | Rename a file or directory |
-| `move` | Move files or directories |
-| `ls` | Extended directory listing |
+| `move` / `mv` | Move files or directories (replaces RBF-only real `mv`) |
+| `ls` | Extended directory listing (not yet implemented) |
 | `mount` / `unmount` | Mount or unmount an RBF image at runtime |
 
 Pass `-i` to disable all of these and use only real OS-9 binaries.
