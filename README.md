@@ -252,7 +252,8 @@ Pass `-i` to disable all of these and use only real OS-9 binaries.
 
 - **Host-native `/dd`:** create a symlink from your Mac/Linux shell:
   `ln -s dir /path/to/your/dd/CMDS/ls`
-- **RBF image:** OS-9 has no symlinks, so copy the binary:
+- **RBF image:** `copy` without `-n` duplicates the file descriptor rather than
+  the data, which is OS-9's equivalent of a hard link:
   `copy /dd/CMDS/dir /dd/CMDS/ls`
 
 
