@@ -1483,7 +1483,6 @@ cmdtable_typ commandtable[] =
   { "stop/shutdown", int_stop,       "exit from OS9exec" },
   { "rename",        int_rename,     "renames a file or directory (100% compatible)" },
   { "move/mv",       int_move,       "moves files and directories" },
-  { "ls",            int_dir,        "shows dir in [extended] format" },
 
   #ifdef RBF_SUPPORT
   { "mount",         int_mount,      "mount   (RBF) device" },
