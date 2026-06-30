@@ -85,20 +85,26 @@ jobs:
     - name: Smoke test (Linux/macOS) - verify binary runs
       if: runner.os != 'Windows' && matrix.cc != 'docker'
       run: |
-        ./os9exec -ih 2>&1 | head -5
-        echo "✓ Binary runs without crash"
+        OUTPUT=$(./os9exec -ih 2>&1 || true)
+        echo "$OUTPUT" | head -5
+        echo "$OUTPUT" | grep -q "OS9exec" || { echo "FAIL: expected OS9exec header"; exit 1; }
+        echo "✓ Binary runs and shows internal help"
 
     - name: Smoke test (Docker 32-bit) - verify binary runs
       if: matrix.cc == 'docker'
       run: |
-        docker run --rm os9exec:linux32 -ih 2>&1 | head -5
-        echo "✓ Docker image runs without crash"
+        OUTPUT=$(docker run --rm os9exec:linux32 -ih 2>&1 || true)
+        echo "$OUTPUT" | head -5
+        echo "$OUTPUT" | grep -q "OS9exec" || { echo "FAIL: expected OS9exec header"; exit 1; }
+        echo "✓ 32-bit Docker image runs and shows internal help"
 
     - name: Smoke test (Windows) - verify binary runs
       if: runner.os == 'Windows'
       run: |
-        .\os9exec.exe -ih 2>&1 | head -5
-        echo "Binary runs without crash"
+        $OUTPUT = (.\os9exec.exe -ih 2>&1) -join "`n"
+        Write-Output $OUTPUT
+        if ($OUTPUT -notmatch "OS9exec") { Write-Error "FAIL: expected OS9exec header"; exit 1 }
+        Write-Output "✓ Binary runs and shows internal help"
 
     - name: Rename artifact
       if: matrix.cc == 'docker'
@@ -142,6 +148,22 @@ jobs:
           type=semver,pattern={{major}}.{{minor}}
           type=sha
 
+    - name: Build Docker image (local, for smoke test)
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile
+        push: false
+        load: true
+        tags: os9exec:ci-test
+
+    - name: Smoke test Docker image
+      run: |
+        OUTPUT=$(docker run --rm os9exec:ci-test -ih 2>&1 || true)
+        echo "$OUTPUT"
+        echo "$OUTPUT" | grep -q "OS9exec" || { echo "FAIL: expected OS9exec header in output"; exit 1; }
+        echo "✓ Docker image runs and shows internal help"
+
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
@@ -150,6 +172,8 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
   create-release:
     needs: build
