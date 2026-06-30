@@ -490,8 +490,9 @@ void os9_to_xxx( ushort pid )
                 sj->num   = sj1->num;
       } /* inner for */
         
-      strcpy( s->name,mn );
-              s->intern= !eli && cp->isIntUtil;
+      strncpy( s->name, mn, OS9NAMELEN-1 );  /* bounded: module name may exceed OS9NAMELEN */
+      s->name[OS9NAMELEN-1]= NUL;
+      s->intern= !eli && cp->isIntUtil;
               s->ticks = 0;
               s->num   = 0;
     } // if
@@ -622,11 +623,11 @@ void debug_return( regs_type* crp, ushort pid, Boolean cwti )
         } // if
         
         strcpy( item,"\"" );
-        strcat( item, p  );
-        strcat( item,"\"" );
-        
+        strncat( item, p, OS9NAMELEN-3 );  /* -3 for quotes + null terminator */
+        strncat( item,"\"", OS9NAMELEN-strlen(item)-1 );
+
         if (cp->isIntUtil)
-          strcat( item, " (native)" );
+          strncat( item, " (native)", OS9NAMELEN-strlen(item)-1 );
       } // if
 
       uphe_printf("<<<%cPid=%02d: OS9 %s %s",msk ? '*':' ',
@@ -1193,7 +1194,8 @@ os9err int_systime(ushort pid, int argc, char **argv)
                               upho_printf("Re-enabled timing measurement\n"); break;
                                
                     case 'n': switch (p[ 1 ]) {
-                                  case '=': strcpy( systime_prog,&p[2] );
+                                  case '=': strncpy( systime_prog, &p[2], OS9NAMELEN-1 );  /* bounded: user input */
+                                            systime_prog[OS9NAMELEN-1]= NUL;
                                             p= p+strlen(p)-1; /* skip rest */ break;
                                   default : strcpy( systime_prog,"" );
                               } // switch
