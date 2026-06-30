@@ -745,14 +745,8 @@ void os9_main( int argc, char **argv, char **envp )
     
   // not enough arguments
   if (no_app) {
-    #ifdef KEINEAPP
-      printf("# Not enough arguments. Type \"%s -h\"to get help\n",           argv[ 0 ] );
-      printf("# Usage:    %s [options] <os9program> [<os9parameters>,...]\n", argv[ 0 ] );
-      exit( 1 );
-    #endif
-
-    kX= argc-1;
-    toolname= ""; // will be replaced by "shell" later
+    os9_usage( argv[0] );
+    exit( 1 );
   }
   else {
     toolname= argv[ kX ];
