@@ -1633,13 +1633,13 @@ static os9err etc_path( _pid_, _spP_, _d2_, byte* a0 )
 /* %%% this is a very straight forward implementation for OS9TCP/inetd */
 {
     /* Write 4-byte big-endian fields at byte offsets into opt_buff */
-    *(uint32_t*)(a0+0x00)= 0x0064;
-    *(uint32_t*)(a0+0x04)= 0x0014;
-    *(uint32_t*)(a0+0x08)= 0x03e8;
-    *(uint32_t*)(a0+0x0c)= 0x0001;
-    *(uint32_t*)(a0+0x10)= 0x0001;
+    SET_OS9L(a0, 0x00, 0x0064);
+    SET_OS9L(a0, 0x04, 0x0014);
+    SET_OS9L(a0, 0x08, 0x03e8);
+    SET_OS9L(a0, 0x0c, 0x0001);
+    SET_OS9L(a0, 0x10, 0x0001);
     strcpy( (char*)(a0+0x14), "mac" );
-    *(uint32_t*)(a0+0x34)= 0x14;
+    SET_OS9L(a0, 0x34, 0x14);
     strcpy( (char*)(a0+0x38), "/dd/ETC" );
 
     return 0;

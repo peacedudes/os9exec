@@ -217,7 +217,7 @@ static os9err Alarm_AtDate( ushort pid, uint32_t *aId, ushort aCode, uint32_t aT
 	uint32_t iTime, iDate, aTicks;
 	uint32_t gt_time, gt_date;
 	int      dayOfWk, currentTick;
-	int      mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
+	uint32_t mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
     byte       tc[4];
     uint32_t* tcp= (uint32_t*)&tc[0];
 
@@ -249,7 +249,7 @@ static os9err Alarm_AtJul( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTi
 	uint32_t iTime, iDate, aTicks;
 	uint32_t gt_time, gt_date;
 	int      dayOfWk, currentTick;
-	int      mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
+	uint32_t mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
 
 	Get_Time( &gt_time,&gt_date, &dayOfWk,&currentTick, false,false );
 	iTime= gt_time;  iDate= gt_date;

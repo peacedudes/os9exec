@@ -943,7 +943,8 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
               f, r, fN, rN, totBits, tracks, cluRest;
     uint32_t  iSize;
     byte*     b;
-    int       ii, v, 
+    ulong     ii;
+    int       v,
               clu= mnt_cluSize;
     byte      pt;
     mod_dev*  mod;

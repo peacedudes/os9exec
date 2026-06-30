@@ -779,8 +779,8 @@ ulong Max( ulong a, ulong b )
 } /* Max */
 
 char* StrBlk_Pt( char* s, int n )
-{   
-    if (strlen( s )>n) { s[n-2]= NUL; strcat( s,".." ); }
+{
+    if (strlen( s ) > (size_t)n) { s[n-2]= NUL; strcat( s,".." ); }
     return s;
 } /* StrBlk_Pt */
 
@@ -1425,7 +1425,7 @@ os9err FD_Name( uint32_t fdID, char* *pathnameP )
 //ulong           id= fdID;  /* referenced only in commented-out debug prints */
   
   #ifdef LINKED_HASH
-    int   i;
+    ulong i;
     ulong liCnt= fdID / MAXDIRS;
           fdID = fdID % MAXDIRS;
   #endif

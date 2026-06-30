@@ -687,12 +687,11 @@ static void adapt_le0( mod_exec* mh, uint32_t inetAddr )
 {
     byte*  bp;
 
-    bp= (byte*) mh + 0x7a;        /* broadcast address position */
-    *(uint32_t*)bp= os9_long((uint32_t)inetAddr);
-    bp= (byte*) mh + 0x7d; *bp= 0xff; /* specific for broadcast */
+    bp= (byte*) mh;
+    SET_OS9L(bp, 0x7a, inetAddr);  /* broadcast address position */
+    *(byte*)(bp + 0x7d)= 0xff;     /* specific for broadcast */
 
-    bp= (byte*) mh + 0x8a;      /* my internet address position */
-    *(uint32_t*)bp= os9_long((uint32_t)inetAddr);
+    SET_OS9L(bp, 0x8a, inetAddr);  /* my internet address position */
 
     mod_crc( mh );
 } /* adapt_le0 */
@@ -750,7 +749,7 @@ static void go_thru_list( char* v0, char* b0, uint32_t inetAddr )
         ipa = (uint32_t*)v;   v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
 
         bBlk=         b;       b+= sizeof(short);
-        *(uint32_t*)b= *ipa;   b+= sizeof(uint32_t); /* copy 4-byte inetaddr */
+        memcpy(b, (byte*)ipa, sizeof(uint32_t)); b+= sizeof(uint32_t); /* copy 4-byte inetaddr */
 
     //  printf( "%3d %3d %08X '%s'\n", i, jump, os9_long( *ipa ), v );
 

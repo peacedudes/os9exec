@@ -735,7 +735,7 @@ os9err pHvolnam( _pid_, syspath_typ* spP, char* volname )
       volname[ 1 ]= NUL;     
     
     #elif defined UNIX
-      int  ii; // get the current top path as name
+      size_t ii; // get the current top path as name
       for (ii= 0; ii<strlen( spP->fullName ); ii++) {
         volname[ ii ]= spP->fullName[ ii+1 ];
         if ( ii>0 && volname[ ii ]=='/' ) { volname[ ii ]= NUL; break; }
