@@ -2676,8 +2676,9 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
 
     strncpy ( tmp,name, OS9PATHLEN );
     pathname= tmp;
+    EatBack ( tmp );  /* normalize /dev/. and /dev/./ to /dev before root check */
     debugprintf(dbgFiles,dbgNorm,("# RBF %s: '%s' (%s)\n" , co, pathname, fo ));
-    
+
     rbf->currPos= 0; /* initialize position to 0 */
     rbf->lastPos= 0;
     rbf->flushFDCache= false;

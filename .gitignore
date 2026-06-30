@@ -1,7 +1,7 @@
 # Proprietary OS-9 binaries and disk images (not ours to distribute)
 # Users must provide their own OS-9 software for local testing
 dd
-h0
+h*
 
 # Proprietary OS-9 DEFS headers (Microware copyright)
 # EXCEPT *_from_book.h which are derived from public OS-9 Guru book — those ARE committed

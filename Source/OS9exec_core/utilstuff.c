@@ -2266,6 +2266,7 @@ Boolean RBF_ImgSize( long size )
       strcpy    ( sv, os9path );
       pp= (char*)&sv; CutRaw( &pp );
       if (*pp==NUL || *pp!=PSEP) return E_PNNF; /* converted to an OS-9 path !! */
+      EatBack   ( sv );            /* normalize /dev/. → /dev before host path resolution */
 
       err= parsepath( 0,  &pp,adjust, false ); if (err) return E_PNNF;
       strcpy( sv, adjust );
@@ -2294,7 +2295,7 @@ Boolean RBF_ImgSize( long size )
       
           /* allow to access the image as a normal file, but not for root device paths
              (e.g. /h0, /dd) where the caller wants directory access */
-          if (ustrcmp(adjust,pp)==0 && !IsDir(mode) && !IsRoot(os9path)) { err= E_FNA; break; }
+          if (ustrcmp(adjust,pp)==0 && !IsDir(mode) && !IsRoot(os9path)) { err= E_FNA;  break; }
       
           err= stat_( pp,  &info );           if (err) { err= E_PNNF; break; }
           if (!RBF_ImgSize( info.st_size ))            { err= E_FNA;  break; }
