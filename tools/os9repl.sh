@@ -85,7 +85,7 @@ cmd_start() {
     tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9DISK='$REPO/dd' ./os9exec /dd/CMDS/shell"
     printf '[starting os9exec...]\n'
     if wait_prompt; then
-        tmux send-keys -t "$SESSION" "setenv TERM vt100" Enter
+        tmux send-keys -t "$SESSION" "setenv TERM xterm" Enter
         wait_prompt
         printf '[ready]\n'
         pane | grep -v '^[[:space:]]*$' | tail -5
