@@ -21,7 +21,7 @@ the os9exec arm64 emulator.
 | `dsave` | Generate a shell script to recreate a directory tree | ✓ |
 | `free` | Report free space on a disk device (works on RBF; zero-divide crash on native host directory) | ✓ |
 | `makdir` | Create a directory | ✓ |
-| `mv` | Move a file (requires RBF directory-write; fails E_BMODE on native `/dd`; use built-in `mv` / `move` instead) | — |
+| `mv` | Move a file (os9exec uses its built-in `mv`; the OS-9 binary only works on RBF) | ✓ |
 | `pd` | Print current working directory | ✓ |
 | `rename` | Rename a file within a directory | ✓ |
 | `touch` | Create a file or update its timestamp | ✓ |
@@ -64,7 +64,7 @@ the os9exec arm64 emulator.
 | `mkdatmod` | Package a file into an OS-9 data module | ✓ |
 | `moded` | Module field editor (requires `moded.fields` config file, not included) | — |
 | `padrom` | Pad a file to a target size with `0xFF` | ✓ |
-| `romsplit` | Split a ROM image into interleaved files (hangs when tested; likely expects specific ROM format) | — |
+| `romsplit` | Split a ROM image into interleaved files | |
 | `save` | Save an in-memory module to a file | ✓ |
 | `unlink` | Unlink a module from memory | ✓ |
 
@@ -92,7 +92,7 @@ the os9exec arm64 emulator.
 
 | Command | What it does | Status |
 |---------|-------------|--------|
-| `break` | Halt timesharing and enter debugger (leaves terminal in raw mode; unsuitable for non-interactive testing) | — |
+| `break` | Halt timesharing and enter the OS-9 debugger (same effect as `idbg`) | ✓ |
 | `echo` | Write text to stdout | ✓ |
 | `make` | Build targets from a Makefile; fails gracefully if no `makefile` present | ✓ |
 | `on` | Execute a command on a remote host (requires SPF network stack) | — |
@@ -107,7 +107,7 @@ the os9exec arm64 emulator.
 | `backup` | Back up an RBF disk to tape (requires tape hardware) | — |
 | `diskcache` | Configure disk sector cache (operates silently with no output) | ✓ |
 | `dpsplit` | Split DPIO device descriptors into sub-parts | ✓ |
-| `format` | Low-level format a disk (requires hardware) | — |
+| `format` | Low-level format an RBF disk image | |
 | `frestore` | Restore a filesystem from tape (requires tape hardware) | — |
 | `fsave` | Dump a filesystem to tape (requires tape hardware) | — |
 | `mount` | Mount an RBF disk image as a device | ✓ |
