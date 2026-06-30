@@ -2941,18 +2941,18 @@ os9err pRchd( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
 {
     os9err       err;
     ushort       path;
-    long*        xD;
-    short*       xV;
+    uint32_t*    xD;
+    ushort*      xV;
     Boolean      exedir= IsExec(*modeP);
     process_typ* cp= &procs[pid];
     rbfdev_typ*  dev;
     int          n;
     char*        curpath;
     char         tmp[OS9PATHLEN];
-    
+
       /* get current default path */
-    if (exedir) { xV= (short*)&cp->x.dev; xD= (long*)&cp->x.lsn; curpath= cp->x.path; }
-    else        { xV= (short*)&cp->d.dev; xD= (long*)&cp->d.lsn; curpath= cp->d.path; }
+    if (exedir) { xV= &cp->x.dev; xD= &cp->x.lsn; curpath= cp->x.path; }
+    else        { xV= &cp->d.dev; xD= &cp->d.lsn; curpath= cp->d.path; }
         
     err=     usrpath_open( pid,&path, fRBF, pathname,*modeP); if (err) return err;
         spP= get_syspathd( pid, cp->usrpaths[path] );

@@ -243,7 +243,7 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
     long k,i;
     process_typ* cp= &procs[pid];
    
-    debugprintf(dbgTerminal,dbgDeep,("# stdwrite cnt=%d, from=$%lX\n",cnt,(ulong)p));
+    debugprintf(dbgTerminal,dbgDeep,("# stdwrite cnt=%d, from=%p\n",cnt,p));
     i=lbp-linebuffer; /* number of chars in linebuffer */
     for (k=0; k<cnt; k++) {
         if (i==MAXLINELEN) {

@@ -1698,7 +1698,8 @@ os9err syspath_gs_size ( ushort pid, ushort sp, uint32_t *size )
 } /* syspath_gs_size */
 
 os9err syspath_gs_devnm( ushort pid, ushort sp,  char* name )
-{   return syspath_getstat( pid,sp, SS_DevNm, (ulong*)&name, NULL,NULL,NULL,NULL );
+{   /* AUDIT: (ulong*)&name cast is LP64-aware but confusing; verify against icalls.c usage */
+    return syspath_getstat( pid,sp, SS_DevNm, (ulong*)&name, NULL,NULL,NULL,NULL );
 } /* syspath_gs_devnm */
 
 os9err syspath_gs_ready( ushort pid, ushort sp, uint32_t *cnt )

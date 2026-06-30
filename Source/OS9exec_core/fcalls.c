@@ -353,13 +353,13 @@ os9err OS9_F_UnLink( regs_type *rp, _pid_ )
  */
 {
     ushort mid= get_mid( (void*)FROM68K(rp->a[2]) );
-    debugprintf    (dbgModules,dbgNorm,("# F$Unlink: Module at $%08lX has mid=%d%s\n",
+    debugprintf    (dbgModules,dbgNorm,("# F$Unlink: Module at $%08X has mid=%d%s\n",
                                            rp->a[2],mid,mid<MAXMODULES ? "" : "=MAXMODULES" ));
-                                           
+
     if (mid>=MAXMODULES) return E_MNF;
-    
+
     unlink_module( mid );
-    debugprintf(dbgModules,dbgNorm,("# F$Unlink: module found at mdir entry #%d at $%08lX, newlink=%d\n",
+    debugprintf(dbgModules,dbgNorm,("# F$Unlink: module found at mdir entry #%d at $%08X, newlink=%d\n",
                                        mid, rp->a[2], os9modules[mid].linkcount ));
     return 0; /* returns ok, as long as module found */
 } /* OS9_F_UnLink */
@@ -470,7 +470,7 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
                 cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr=*(itab+1)+TO68K(itab); /* install routine pointer (68k addr) */
                 cp->ErrorTraps[vect-FIRSTEXCEPTION].handlerstack=rp->a[0]; /* stack */
                 debugprintf(dbgTrapHandler,dbgNorm,
-                  ("Installed handler at $%08lX for vector number $%02X\n",
+                  ("Installed handler at $%08X for vector number $%02X\n",
                     cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr,vect));
             }  
         }  
@@ -1079,7 +1079,7 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
       default        : v= 0; if (debug[dbgNorm] & dbgAnomaly) upe_printf( "F$SetSys: unimplemented %04X (size=%X)\n", offs,size );
     } // switch
     
-    debugprintf(dbgPartial,dbgNorm,("# F$SetSys: %04lX %x %d\n", offs, size, v));
+    debugprintf(dbgPartial,dbgNorm,("# F$SetSys: %04X %x %d\n", offs, size, v));
     
     switch (size) {
       case          -1 : rp->d[2]=v<<24; break; /* two different ways to read them */
@@ -1132,7 +1132,7 @@ os9err OS9_F_CpyMem( regs_type *rp, _pid_ )
     ulong cnt= (ulong)rp->d[1];
     
     MoveBlk( dst,src, cnt );
-    debugprintf(dbgMemory,dbgDeep,("# F$CpyMem: copied %ld bytes from $%lX to %$lX\n", cnt,src,dst ));
+    debugprintf(dbgMemory,dbgDeep,("# F$CpyMem: copied %lu bytes from %p to %p\n", cnt,src,dst ));
     return 0;
 } /* OS9_F_CpyMem */
 
@@ -1191,7 +1191,7 @@ os9err OS9_F_TLink( regs_type *rp, ushort cpid )
     else {
       /* remove trap handler */
         err=release_traphandler(cpid,trapidx);
-        debugprintf(dbgTrapHandler,dbgNorm,("# F$TLink: traphandler at $%08lX for pid=%d released\n",
+        debugprintf(dbgTrapHandler,dbgNorm,("# F$TLink: traphandler at $%08X for pid=%d released\n",
                                                rp->a[2],cpid));
     }
     return err;
@@ -1278,7 +1278,7 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
     memset((void*)xpos, 0, usz - xpos);                         /* clear data area */
 
     xpos= (ulong)( (char*)xpos- (char*)theModule );   /* now calculated as offset */
-    npos= (ulong)( (char*)msz - sizeof(ulong) - (char*)namsize );
+    npos= msz - sizeof(uint32_t) - namsize;
     
     theModule->_mexec    = os9_long( xpos );           /* right behind the header */
     theModule->_mh._msize= os9_long( msz  );                    /* data area size */
@@ -1898,8 +1898,8 @@ os9err OS9_F_SetCRC( regs_type *rp, _pid_ )
     modsize= os9_long(m->_mh._msize);
 
     hpar= calc_parity( (ushort*)m, 23 ); /* byte-order insensitive */
-    debugprintf(dbgModules,dbgNorm,("# F$SetCRC: Module @ $%08lX (size=%ld): new parity=$%04X\n",
-                                       (ulong)m, modsize, hpar));
+    debugprintf(dbgModules,dbgNorm,("# F$SetCRC: Module @ %p (size=%lu): new parity=$%04X\n",
+                                       m, modsize, hpar));
     m->_mh._mparity= hpar;                  /* byte-order insensitive */
     mod_crc( m );
 

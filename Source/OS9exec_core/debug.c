@@ -603,7 +603,7 @@ static void regs_in_debugger( regs_type *rp )
     #ifdef MACOS9
       Str255 message;
     
-      sprintf( &message[1], "%s called debugger, OS9 PC=%08lX, OS9 A7=%08lX\n",
+      sprintf( &message[1], "%s called debugger, OS9 PC=%08X, OS9 A7=%08X\n",
                              OS9exec_Name(), rp->pc, rp->a[7]);
       message[0]=strlen(&message[1]);
       llm_os9_debug( rp, message );

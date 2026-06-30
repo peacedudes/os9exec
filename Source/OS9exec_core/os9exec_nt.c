@@ -653,7 +653,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    char *modnam;
    int k;
    
-   debugprintf(dbgStartup,dbgDeep,("# prepParams: argv=$%08lX, argc=%d, envp=$%08lX\n",(ulong) argv, argc, (ulong) envp));
+   debugprintf(dbgStartup,dbgDeep,("# prepParams: argv=%p, argc=%d, envp=%p\n",argv, argc, envp));
    /* -- initial preparations */
    modnam= Mod_Name( theModule );
    /* -- calculate parameter size */
@@ -691,7 +691,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    if (pp==NULL) return os9error(E_NORAM);
    
    /* -- prepare parameters shell-like */
-   debugprintf(dbgStartup,dbgDeep,("# prepParams: Calculated parameter size=$%lX\n",paramsiz));
+   debugprintf(dbgStartup,dbgDeep,("# prepParams: Calculated parameter size=$%X\n",paramsiz));
    p=pp+paramsiz; /* end of param area */
    p-=4; *((uint32_t *)p)=0; /* envp[] terminator */
    p-=os9envc*4; /* reserve room for envp[] pointers */
@@ -713,7 +713,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    p-=1; *p=0; /* environment variables terminator */
    p-=envsiz; /* reserve space for environment strings */
    hp=p;
-   debugprintf(dbgStartup,dbgDeep,("# prepParams: Starting to write envs at $%08lX, memstart=$%08lX\n",(ulong) hp,(ulong) pp));
+   debugprintf(dbgStartup,dbgDeep,("# prepParams: Starting to write envs at %p, memstart=%p\n",hp,pp));
    k=0;
    while (os9envc) {
       if (*envp[k]=='@') {
@@ -738,7 +738,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    if (argsiz & 1) *(--p)=0; /* align needed if odd argsize */
    p-=2; *((ushort *)p)=os9_word(0x000D); /* command line parameter terminator */
    p-=argsiz; /* reserve space for argument strings */
-   debugprintf(dbgStartup,dbgDeep,("# prepParams: Starting to write args at $%08lX, memstart=$%08lX\n",(ulong) p,(ulong) pp));
+   debugprintf(dbgStartup,dbgDeep,("# prepParams: Starting to write args at %p, memstart=%p\n",p,pp));
    k=0;
    while (argc) {
       *(alp++)=os9_long((uint32_t)((ulong)p-(ulong)pp)); /* set offset */
@@ -1600,10 +1600,10 @@ static Boolean TCALL_or_Exception( process_typ* cp, regs_type* crp, ushort cpid 
 				if (cp->ErrorTraps[vect-FIRSTEXCEPTION].handlerstack!=0) {
 					crp->a[7]=cp->ErrorTraps[vect-FIRSTEXCEPTION].handlerstack;
 				}
-				if (debugcheck(dbgTrapHandler,dbgDetail)) { 
-					upe_printf("Calling handler at $%08lX, stack ptr=$%08lX\n",
+				if (debugcheck(dbgTrapHandler,dbgDetail)) {
+					upe_printf("Calling handler at $%08X, stack ptr=$%08X\n",
 								cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr,
-								cp->ErrorTraps[vect-FIRSTEXCEPTION].handlerstack); 
+								cp->ErrorTraps[vect-FIRSTEXCEPTION].handlerstack);
 					debug_halt( dbgTrapHandler );
 				}
 				
@@ -1941,12 +1941,12 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
         // --- safeguarding
         if (debugcheck(dbgWarnings,dbgDeep)) {
           if (cp->memstart+0x8000!=crp->a[6]) {
-            uphe_printf(">>> Warning [pid=%d]: A6 has changed from $%08lX to $%08lX !\n",cpid,cp->memstart+0x8000,crp->a[6]);
+            uphe_printf(">>> Warning [pid=%d]: A6 has changed from $%08X to $%08X !\n",cpid,cp->memstart+0x8000,crp->a[6]);
             debug_halt(dbgWarnings);
           } // if
-        
+
           if ((crp->a[7]>cp->memtop) || (crp->a[7]<cp->memstart)) {
-            uphe_printf(">>> Warning [pid=%d]: A7=$%08lX is out of data area ($%08lX - $%08lX) !\n",cpid,crp->a[7],cp->memstart,cp->memtop);
+            uphe_printf(">>> Warning [pid=%d]: A7=$%08X is out of data area ($%08X - $%08X) !\n",cpid,crp->a[7],cp->memstart,cp->memtop);
             debug_halt(dbgWarnings);
           } // if
         } // if
