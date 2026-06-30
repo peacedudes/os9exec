@@ -247,14 +247,13 @@ RBF-dependent commands will then fail on native paths).
 
 Pass `-i` to disable all of these and use only real OS-9 binaries.
 
-**Tip:** If you find yourself typing `ls` out of Unix habit, create a symlink from
-your host shell before launching os9exec:
+**Tip:** If you find yourself typing `ls` out of Unix habit, add it as an alias for
+`dir` on your OS-9 search path. How depends on your setup:
 
-```sh
-ln -s dir /path/to/your/dd/CMDS/ls
-```
-
-OS-9 will then find `ls` as an alias for `dir` on its normal search path.
+- **Host-native `/dd`:** create a symlink from your Mac/Linux shell:
+  `ln -s dir /path/to/your/dd/CMDS/ls`
+- **RBF image:** OS-9 has no symlinks, so copy the binary:
+  `copy /dd/CMDS/dir /dd/CMDS/ls`
 
 
 ## Emulator debugger (`idbg`)
