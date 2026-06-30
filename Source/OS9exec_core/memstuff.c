@@ -138,8 +138,10 @@ pmem_typ     pmem    [ MAXPROCESSES ];
    never handed out, so 68k address 0 can never alias a real block -- this
    mirrors the 68000 exception-vector region and keeps NULL == 0 valid.
    The reservation is demand-zero (untouched pages cost no real memory). */
-#define EMUL_ARENA_SIZE  (256u*1024u*1024u)  /* generous; bigger than any real OS-9/68k machine */
-#define EMUL_RESERVED    0x1000u             /* low page never allocated */
+#define EMUL_ARENA_DEFAULT (32u*1024u*1024u)  /* 32 MB default; covers real OS-9/68k machines */
+#define EMUL_RESERVED      0x1000u           /* low page never allocated */
+
+ulong emul_arena_size = EMUL_ARENA_DEFAULT;  /* 68k arena size; can be overridden via -M option */
 
 unsigned char* emul_base = NULL;             /* arena base (referenced by memory.h) */
 static unsigned char* emul_next = NULL;      /* bump pointer for fresh allocations */
@@ -168,12 +170,12 @@ void init_all_mem(void)
     totalMem= 0; /* initialize startup memory */
 
     if (emul_base==NULL) { /* allocate the 68k RAM arena once */
-        emul_base= (unsigned char*)calloc( (size_t)EMUL_ARENA_SIZE, 1 );
+        emul_base= (unsigned char*)calloc( (size_t)emul_arena_size, 1 );
         if (emul_base==NULL) {
-            upe_printf( "Cannot allocate 68k memory arena (%u bytes) !!!\n", EMUL_ARENA_SIZE );
+            upe_printf( "Cannot allocate 68k memory arena (%lu bytes) !!!\n", emul_arena_size );
         }
         emul_next= emul_base + EMUL_RESERVED; /* keep the low page out of circulation */
-        emul_end = emul_base + EMUL_ARENA_SIZE;
+        emul_end = emul_base + emul_arena_size;
 
         #ifdef USE_UAEMU
         {   /* reserve supervisor scratch stack for UAE exception frames */

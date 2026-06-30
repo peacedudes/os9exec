@@ -138,7 +138,10 @@
 int   commentoutput;        /* commenting stdout */
 int   disablefilters;       /* filtering stdout */
 ulong memplus;              /* additional memory for first process */
+ulong memplusall;           /* additional memory for all processes */
 ulong iniprior;             /* priority for first process */
+
+extern ulong emul_arena_size; /* 68k arena size (set via -M option) */
 
 #ifdef UNIX
 struct termios savedmodes;  /* saved terminal attributes     */
@@ -425,8 +428,9 @@ static void os9_usage(char *name)
     upho_printf("   -o          disable output filtering (error message conversion)\n");        
     upho_printf("   -oh         show available output filters\n");      
     upho_printf("   -t          enable timing measurements\n");     
-    upho_printf("   -m  n[k|M]  Give 1st OS-9 process extra static storage (kilo/mega)\n");      
-    upho_printf("   -mm n[k|M]  Give all OS-9 process extra static storage (kilo/mega)\n");      
+    upho_printf("   -m  n[k|M]  Give 1st OS-9 process extra static storage (kilo/mega)\n");
+    upho_printf("   -mm n[k|M]  Give all OS-9 process extra static storage (kilo/mega)\n");
+    upho_printf("   -M  n[k|M]  Set 68k arena size (default=32M)\n");
     upho_printf("   -p prio     Run  1st OS-9 process with prio (default=%d, NOIRQ>=%d)\n",MYPRIORITY,IRQBLOCKPRIOR);        
     upho_printf("   -d[n] msk   set  debug info mask [of level n, default=0] (default=1)\n");
     upho_printf("   -s msk      set  debug stop mask (default=0)\n");
@@ -692,7 +696,8 @@ void os9_main( int argc, char **argv, char **envp )
           case 'x' :  ulp=&screenW;      goto getlnum;
           case 'y' :  ulp=&screenH;      goto getlnum;
           case 'w' :  ulp=&spininterval; goto getlnum;
-          case 'p' :  ulp=&iniprior;     goto getlnum;
+          case 'p' :  ulp=&iniprior;       goto getlnum;
+          case 'M' :  ulp=&emul_arena_size; goto getlnum;
           case 'm' :  if (*(p+1)=='m') { ulp=&memplusall; goto getlnum; }
                       ulp=&memplus;      goto getlnum;
                             
