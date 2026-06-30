@@ -1653,10 +1653,10 @@ os9err syspath_getstat( ushort pid, ushort sp, ushort func,
     fmgr_typ*     f;
     gs_typ*       g;
     byte**        a;
-    syspath_typ*  spP= get_syspathd( pid,sp ); 
+    syspath_typ*  spP= get_syspathd( pid,sp );
     if           (spP==NULL) return os9error(E_BPNUM);
 
-    debugprintf(dbgFiles,dbgDetail,("# syspath_getstat %s (%d): sp=%d, type=%s\n", 
+    debugprintf(dbgFiles,dbgDetail,("# syspath_getstat %s (%d): sp=%d, type=%s\n",
                                        get_stat_name(func), func, sp, spP_TypeStr(spP) ));
     f= fmgr_op[spP->type];
     g= &f->gs;

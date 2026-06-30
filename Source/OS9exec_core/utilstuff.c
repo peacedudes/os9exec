@@ -2292,8 +2292,9 @@ Boolean RBF_ImgSize( long size )
           /* the first conditions for RBF image are min size and granularity */
           if (*isFolder)                               { err= E_FNA;  break; }
       
-          /* allow to access the image as a normal file */
-          if (ustrcmp(adjust,pp)==0 && !IsDir(mode))   { err= E_FNA;  break; }
+          /* allow to access the image as a normal file, but not for root device paths
+             (e.g. /h0, /dd) where the caller wants directory access */
+          if (ustrcmp(adjust,pp)==0 && !IsDir(mode) && !IsRoot(os9path)) { err= E_FNA; break; }
       
           err= stat_( pp,  &info );           if (err) { err= E_PNNF; break; }
           if (!RBF_ImgSize( info.st_size ))            { err= E_FNA;  break; }
