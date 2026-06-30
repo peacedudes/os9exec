@@ -392,6 +392,52 @@ check("tar: roundtrip", contains: "tar_test_content",
     "list /dd/t_tar_src",
     "del /dd/t_tar_src", "del /dd/t_tar")
 
+// ── Path normalization ────────────────────────────────────────────────────────
+
+// dot component in host-native path must resolve cleanly
+noError("dir: dot path /dd/.",          "dir /dd/.")
+check("dir: dot path lists CMDS",       contains: "CMDS",     "dir /dd/.")
+
+// parent traversal: /dd/CMDS/.. should resolve back to /dd
+check("dir: parent traversal",          contains: "CMDS",     "dir /dd/CMDS/..")
+
+// relative listing after chd
+check("chd: dir with no args lists dir", contains: "echo",
+    "chd /dd/CMDS", "dir", "chd /dd")
+
+// ── Shell variables and environment ──────────────────────────────────────────
+
+// setenv must persist for subsequent commands in the same shell session
+check("setenv: visible in printenv",    contains: "TESTVAR=hello",
+    "setenv TESTVAR hello", "printenv")
+
+// three-stage pipe: exercises the pipe scheduler end-to-end
+check("pipe: three-stage chain",        contains: "1",
+    "echo hello ! tr a-z A-Z ! count")
+
+// ── Expected error paths ──────────────────────────────────────────────────────
+
+// commands referencing nonexistent paths must produce "Error #"
+check("error: list nonexistent file",   contains: "Error",    "list /dd/no_such_file_99x")
+check("error: del nonexistent file",    contains: "Error",    "del /dd/no_such_file_99x")
+check("error: dir nonexistent path",    contains: "Error",    "dir /dd/no_such_dir_99x")
+
+// ── RBF device regression tests ───────────────────────────────────────────────
+// Require /h0 (an RBF disk image). Skipped when not mounted.
+// These are regression tests for path bugs fixed in arm64-uae-integration.
+
+let h0Available = os9(["devs"]).contains("/h0")
+
+if h0Available {
+    noError("rbf: dir /h0",            "dir /h0")
+    noError("rbf: dir /h0/. normalized", "dir /h0/.")  // was failing without prior dir /h0
+    noError("rbf: chd /h0",            "chd /h0", "chd /dd")
+    noError("rbf: free /h0",           "free /h0")
+    noError("rbf: dcheck /h0",         "dcheck /h0")
+} else {
+    print("SKIP: RBF device tests (/h0 not mounted — run with a disk image to enable)")
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 print("\nResults: \(passed) passed, \(failed) failed")
