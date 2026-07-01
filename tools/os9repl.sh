@@ -85,17 +85,9 @@ cmd_start() {
     tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9DISK='$REPO/dd' ./os9exec /dd/CMDS/shell"
     printf '[starting os9exec...]\n'
     if wait_prompt; then
-        tmux send-keys -t "$SESSION" "setenv TERM ${TERM:-xterm-256color}" Enter
+        tmux send-keys -t "$SESSION" "chx /h1/CMDS" Enter
         wait_prompt
-        tmux send-keys -t "$SESSION" "setenv PATH /dd/CMDS:/dd/CMDS/UNIX:/h0/CMDS:/h1/CMDS" Enter
-        wait_prompt
-        tmux send-keys -t "$SESSION" "chd /h1" Enter  # prime /h1 (Microware SDK disk image)
-        wait_prompt
-        tmux send-keys -t "$SESSION" "chd /h0" Enter  # prime /h0
-        wait_prompt
-        tmux send-keys -t "$SESSION" "chd /dd" Enter
-        wait_prompt
-        tmux send-keys -t "$SESSION" "chx /h1/CMDS" Enter  # exec dir to Microware tools
+        tmux send-keys -t "$SESSION" "shell /dd/startup" Enter
         wait_prompt
         printf '[ready]\n'
         pane | grep -v '^[[:space:]]*$' | tail -5
