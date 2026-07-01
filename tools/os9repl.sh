@@ -87,9 +87,15 @@ cmd_start() {
     if wait_prompt; then
         tmux send-keys -t "$SESSION" "setenv TERM ${TERM:-xterm-256color}" Enter
         wait_prompt
-        tmux send-keys -t "$SESSION" "chd /h0" Enter  # prime /h0 device so chx + PATH work
+        tmux send-keys -t "$SESSION" "setenv PATH /dd/CMDS:/dd/CMDS/UNIX:/h0/CMDS:/h1/CMDS" Enter
+        wait_prompt
+        tmux send-keys -t "$SESSION" "chd /h1" Enter  # prime /h1 (Microware SDK disk image)
+        wait_prompt
+        tmux send-keys -t "$SESSION" "chd /h0" Enter  # prime /h0
         wait_prompt
         tmux send-keys -t "$SESSION" "chd /dd" Enter
+        wait_prompt
+        tmux send-keys -t "$SESSION" "chx /h1/CMDS" Enter  # exec dir to Microware tools
         wait_prompt
         printf '[ready]\n'
         pane | grep -v '^[[:space:]]*$' | tail -5
