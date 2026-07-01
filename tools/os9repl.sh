@@ -26,7 +26,7 @@
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SESSION="os9exec"
-TIMEOUT=20  # seconds per command
+TIMEOUT=${OS9REPL_TIMEOUT:-20}  # seconds per command (override with OS9REPL_TIMEOUT=60)
 
 # ── low-level helpers ─────────────────────────────────────────────────────────
 
@@ -85,7 +85,11 @@ cmd_start() {
     tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9DISK='$REPO/dd' ./os9exec /dd/CMDS/shell"
     printf '[starting os9exec...]\n'
     if wait_prompt; then
-        tmux send-keys -t "$SESSION" "setenv TERM xterm" Enter
+        tmux send-keys -t "$SESSION" "setenv TERM ${TERM:-xterm-256color}" Enter
+        wait_prompt
+        tmux send-keys -t "$SESSION" "chd /h0" Enter  # prime /h0 device so chx + PATH work
+        wait_prompt
+        tmux send-keys -t "$SESSION" "chd /dd" Enter
         wait_prompt
         printf '[ready]\n'
         pane | grep -v '^[[:space:]]*$' | tail -5
