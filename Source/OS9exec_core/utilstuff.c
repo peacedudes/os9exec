@@ -2291,19 +2291,19 @@ Boolean RBF_ImgSize( long size )
 
       do {
           /* the first conditions for RBF image are min size and granularity */
-          if (*isFolder)                               { err= E_FNA;  break; }
-      
-          /* allow to access the image as a normal file, but not for root device paths
-             (e.g. /h0, /dd) where the caller wants directory access */
-          if (ustrcmp(adjust,pp)==0 && !IsDir(mode) && !IsRoot(os9path)) { err= E_FNA;  break; }
-      
+          if (*isFolder) { err= E_FNA; break; }
+
+          /* allow to access the image as a normal file, but not for root/raw device paths
+             (e.g. /h0, /h0@, /dd) where the caller wants directory or raw-device access */
+          if (ustrcmp(adjust,pp)==0 && !IsDir(mode) && !IsRoot(os9path) && !IsRaw(os9path)) { err= E_FNA; break; }
+
           err= stat_( pp,  &info );           if (err) { err= E_PNNF; break; }
           if (!RBF_ImgSize( info.st_size ))            { err= E_FNA;  break; }
 
           stream= fopen( pp,"rb" );  if (stream==NULL) { err= E_PNNF; break; }
           (void)fread( &bb, 1,sizeof(bb), stream );
           fclose( stream ); /* is this really an OS-9 partition ? => Cruzli check */
-          if (strcmp( &bb[CRUZ_POS],Cruz_Str )!=0)     { err= E_FNA;  break; }   
+          if (strcmp( &bb[CRUZ_POS],Cruz_Str )!=0)     { err= E_FNA;  break; }
       } while (false);
 
       qq = pp+strlen(pp);
@@ -2373,7 +2373,7 @@ static Boolean OS9_Device( char* os9path, ushort mode, ptype_typ *typeP )
     #ifdef MACOS9
                         err= GetRBFName(  os9path,   mode, &isFolder, &fs,&afs );
       if  (err==E_UNIT) err= GetRBFName( &os9path[1],mode, &isFolder, &fs,&afs );
-      
+
     #elif defined win_unix
                         err= GetRBFName(  os9path,   mode, &isFolder, (char*)&rbfname );
       if  (err==E_UNIT) err= GetRBFName( &os9path[1],mode, &isFolder, (char*)&rbfname );

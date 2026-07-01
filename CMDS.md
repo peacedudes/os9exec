@@ -19,7 +19,7 @@ the os9exec arm64 emulator.
 | `deldir` | Delete a directory | ✓ |
 | `dir` | List directory contents | ✓ |
 | `dsave` | Generate a shell script to recreate a directory tree | ✓ |
-| `free` | Report free space on a disk device (works on RBF; zero-divide crash on native host directory) | ✓ |
+| `free` | Report free space on a disk device (RBF images only; host-directory paths unsupported) | ✓ |
 | `makdir` | Create a directory | ✓ |
 | `mv` | Move a file (os9exec uses its built-in `mv`; the OS-9 binary only works on RBF) | ✓ |
 | `pd` | Print current working directory | ✓ |
@@ -75,7 +75,7 @@ the os9exec arm64 emulator.
 | `date` | Display the current date and time | ✓ |
 | `debug` | Launch OS-9 symbolic debugger front-end | ✓ |
 | `deiniz` | Detach (de-initialize) a device | ✓ |
-| `devs` | List mounted devices | ✓ |
+| `devs` | List mounted devices (crashes with bus error after printing header; no device table) | — |
 | `events` | List OS-9 system events | ✓ |
 | `help` | Display help text for OS-9 utilities | ✓ |
 | `iniz` | Initialize (attach) a device | ✓ |

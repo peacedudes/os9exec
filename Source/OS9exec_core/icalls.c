@@ -121,8 +121,9 @@ static os9err OS9_I_OpenCreate( regs_type *rp, ushort cpid, Boolean cre )
         } /* switch */
     }
 
-    err= usrpath_open( cpid,&path,type, os9_path,xmode ); if (err) return err;
-    
+    err= usrpath_open( cpid,&path,type, os9_path,xmode );
+    if (err) return err;
+
     retword(rp->d[0])=        path;     /* return path number */
     rp->a[0]         = TO68K(pastpath); /* return updated pathname pointer */
     debugprintf( dbgFiles,dbgNorm,("# %s successful, path number= %d\n", co,path ));

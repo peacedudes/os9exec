@@ -1352,7 +1352,7 @@ os9err syspath_open( ushort pid, ushort *sp, ptype_typ type, const char* pathnam
     spP->mode   = mode;                                         /* store this as well */
     spP->fileAtt= procs[ pid ].fileAtt;
     err= ((pfunc_od_t)fmgr_op[spP->type]->open)( pid, spP, &mode, pathname );  /* specific */
-    
+
     /* successful ? */
     if (err) {                               /* in E_PLINK case, syspath open routine */
       if (err==E_PLINK) { *sp= mode; err= 0; }         /* returns *sp with mode param */
@@ -1381,7 +1381,7 @@ os9err usrpath_open( ushort pid,ushort *up, ptype_typ type, const char* pathname
                 *upN= spnum; /* assign system path number */
                 *up = k; /* return user path number to caller */
                 debugprintf(dbgFiles,dbgNorm,("# usrpath_open: '%s' pid=%d, up=%d, sp=%d, link=%d, err=%d\n",
-                                                 pathname, pid,k,spnum,syspaths[spnum].linkcount,err)); 
+                                                 pathname, pid,k,spnum,syspaths[spnum].linkcount,err));
             }
 
             return err;

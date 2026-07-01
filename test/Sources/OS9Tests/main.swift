@@ -436,8 +436,8 @@ if h0Available {
     noError("rbf: dir /h0",              "dir /h0")
     noError("rbf: dir /h0/. normalized", "dir /h0/.")  // regression: was failing without prior dir /h0
     noError("rbf: chd /h0",             "chd /h0", "chd /dd")
-    // free /h0 zero-divides (reads zero sector count from disk geometry) — known bug, skip for now
-    // dcheck /h0 crashes immediately with the same zero-divide — also skip
+    check  ("rbf: free /h0",            contains: "sectors", "free /h0")
+    noError("rbf: dcheck /h0",          "dcheck /h0")
 } else {
     print("SKIP: RBF device tests (no test/h0 image — symlink test/h0 to an RBF disk image to enable)")
 }

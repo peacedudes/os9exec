@@ -1162,7 +1162,7 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
                 #elif defined win_unix
                   err= GetRBFName( pathname,mode, &isFolder, (char*)&rbfname );
                 #endif
-                
+
                 /* must open it in the right mode */
                 if (err==E_FNA && !IsDir(mode)) return err;
             }
@@ -1205,12 +1205,17 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
                     #elif defined win_unix
                       if (err) return E_UNIT; /* GetRBFName called earlier */
                       strcpy( cmp,rbfname );
-                      /* Expand short OS-9 device path (e.g. /h0) to full host path.
+                      /* Expand short OS-9 device path (e.g. /h0, /h0@) to full host path.
                          Open_Image must receive the host path so IO_Type returns fFile
                          instead of fRBF (via InstalledDev shortcut), allowing pDopen to
                          open the image as a raw byte stream. IsRoot("/h0") && isFile
-                         would otherwise make the nested pRopen return E_FNA. */
-                      { char *ip= pathname;
+                         would otherwise make the nested pRopen return E_FNA.
+                         Strip trailing '@' before parsepath so raw-device paths (e.g. /h0@)
+                         resolve correctly to the base image file on the host. */
+                      { char stripped[OS9PATHLEN], *ip;
+                        strncpy(stripped, pathname, OS9PATHLEN-1); stripped[OS9PATHLEN-1]= NUL;
+                        { char *at= strrchr(stripped,'@'); if (at) *at= NUL; }
+                        ip= stripped;
                         if (parsepath( pid, &ip, imgpath, false )) strcpy( imgpath,pathname ); }
 
                     #else
@@ -2720,16 +2725,16 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
         /* take care of write protection */     
         if (cre && dev->wProtected) { err= E_WP; break; }
 
-                   p= pathname; /* that's it for raw mode */   
+                   p= pathname; /* that's it for raw mode */
         if (IsRaw( p )) {
           if (rbf->wMode) {
               rbf->flushFDCache= true; // flush it in fact when closing the path
           // main_printf( "Flush RBF cache: pathname='%s' id=%d\n", pathname, pid );
           } // if
-          
-        	      spP->rawMode= true;
+
+                spP->rawMode= true;
           strcpy( spP->name,pathname ); if (cre) { err= E_CEF; break; }
-          return 0; 
+          return 0;
         } // if (IsRaw)
 
         isAbs= AbsPath( p ); /* if abs path -> search from the root */
