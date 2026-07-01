@@ -1028,7 +1028,7 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
     pp      = hostpath;
 
     if (spP->rawMode) {        /* rawmode allows only reading of 1st sector */
-        if (PathFound(pp)) return os9error(E_FNA); /* host directories have no disk sectors */
+        if (PathFound(pp)) return os9error(E_UNIT); /* host directories have no disk sectors */
         spP->rw_sct = get_mem( STD_SECTSIZE );       /* for some info procs */
         spP->rawPos = 0;
                      vn= (char*)&spP->rw_sct[31];
