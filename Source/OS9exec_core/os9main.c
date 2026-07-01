@@ -502,6 +502,7 @@ Boolean setup_term()
           modes.c_cc[VTIME] = 1;  /* return after 100 mSec */
           modes.c_lflag &= ~ICANON;
           modes.c_lflag &= ~(ECHO | ECHOE | ECHOK /*| ECHOKE*/);
+          modes.c_lflag &= ~ISIG; /* pass ^C/^Z as raw bytes; OS-9 handles signals */
 
           /*
               set up the terminal for OS-9

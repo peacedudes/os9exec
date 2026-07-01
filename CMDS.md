@@ -19,7 +19,7 @@ the os9exec arm64 emulator.
 | `deldir` | Delete a directory | ✓ |
 | `dir` | List directory contents | ✓ |
 | `dsave` | Generate a shell script to recreate a directory tree | ✓ |
-| `free` | Report free space on a disk device (RBF images only; host-directory paths unsupported) | ✓ |
+| `free` | Report free space on a disk device; works on RBF images (`/h0`, etc.); host-directory paths (`/dd`) return a clean "File Not Accessible" error | ✓ |
 | `makdir` | Create a directory | ✓ |
 | `mv` | Move a file (os9exec uses its built-in `mv`; the OS-9 binary only works on RBF) | ✓ |
 | `pd` | Print current working directory | ✓ |
@@ -54,7 +54,7 @@ the os9exec arm64 emulator.
 |---------|-------------|--------|
 | `binex` | Convert binary module to Motorola S-record (hex) format | ✓ |
 | `cudo` | Convert OS-9/68k module to OS-9000 format (modifies file in place) | ✓ |
-| `dcheck` | Verify RBF disk integrity (works on RBF image; requires `/hX` with a disk image) | ✓ |
+| `dcheck` | Verify RBF disk integrity; works on RBF images (`/h0`, etc.); host-directory paths (`/dd`) return a clean "File Not Accessible" error | ✓ |
 | `editmod` | Show or edit module header fields | ✓ |
 | `exbin` | Convert Motorola S-record back to binary module | ✓ |
 | `fixmod` | Recalculate and fix module header CRC and parity | ✓ |
