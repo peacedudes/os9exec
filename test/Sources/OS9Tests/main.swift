@@ -50,7 +50,8 @@ let containerImage = ProcessInfo.processInfo.environment["CONTAINER_IMAGE"]
 /// Times out after `timeout` seconds to prevent hangs from blocking the suite.
 /// If DOCKER_IMAGE is set, runs via Docker; otherwise runs locally (assumes dd symlink exists).
 func os9(_ commands: [String], timeout: TimeInterval = 15) -> String {
-    let input = commands.joined(separator: "\n") + "\n\u{1B}\n"
+    let setup  = "setenv PATH SHARE:/h1/CMDS\nload math881 cio\n"
+    let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
 
     let process = Process()
 

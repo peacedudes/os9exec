@@ -75,7 +75,7 @@ the os9exec arm64 emulator.
 | `date` | Display the current date and time | ✓ |
 | `debug` | Launch OS-9 symbolic debugger front-end | ✓ |
 | `deiniz` | Detach (de-initialize) a device | ✓ |
-| `devs` | List mounted devices (crashes with bus error after printing header; no device table) | — |
+| `devs` | List mounted devices (device table is empty — OS-9 devices are not populated in the emulator, but the command runs without crashing) | ✓ |
 | `events` | List OS-9 system events | ✓ |
 | `help` | Display help text for OS-9 utilities | ✓ |
 | `iniz` | Initialize (attach) a device | ✓ |
@@ -216,7 +216,7 @@ See `dd/SOURCES.txt` in the disk image for full provenance.
 | `emacs` | MicroEmacs 4.00; requires `TERM` and `emacs.mm1` | ✓ |
 | `beav` | Binary Editor And Viewer; requires `TERM` | ✓ |
 | `cat` | Concatenate and print files | ✓ |
-| `tail` | Print last N lines; works on RBF paths, not on native `/dd` | ! |
+| `tail` | Print last N lines of a file | ✓ |
 | `basename` | Strip directory and suffix from a path | ✓ |
 | `dirname` | Extract directory component of a path | ✓ |
 | `exist` | Test whether a file exists (exits 0/1, no output) | ✓ |
@@ -245,3 +245,52 @@ See `dd/SOURCES.txt` in the disk image for full provenance.
 | `sbreak` | Set or clear SS_Break signal on a path | ✓ |
 | `setime` | Set system time; prompts for YYMMDDHHMMSS interactively | ! |
 | `wysecrack` | Wyse terminal baud-rate detection; interactive | ! |
+| `file` | File type identifier; determines file format from magic bytes | ✓ |
+| `hexedit` | Hex editor for binary files; screen-oriented | ✓ |
+| `screen` | Terminal multiplexer; multiple virtual terminals in one session | ✓ |
+| `todos` | Convert text files from OS-9 to DOS line endings | ✓ |
+| `toos9` | Convert text files from DOS to OS-9 line endings | ✓ |
+| `setimex` | Set time-execute flag on files | ✓ |
+| `upperdir` | Convert directory and filenames to uppercase | — |
+| `autolf` | Auto line-feed utility | ✓ |
+| `kermit` | Kermit variant; file transfer and terminal emulation | ! |
+| `aterm` | Alternative terminal emulator v2.6 | ! |
+| `gs33` | Ghostscript PostScript/PDF interpreter v3.3 | ! |
+| **Mtools utilities** | MS-DOS filesystem utilities (17 commands) | |
+| `msattrib` | Get/set MS-DOS file attributes | ✓ |
+| `msbadblocks` | List bad sectors on MS-DOS disk | ✓ |
+| `mscd` | Change MS-DOS directory | ✓ |
+| `mscheck` | Check MS-DOS filesystem integrity | ✓ |
+| `mscopy` | Copy files on MS-DOS disk | ✓ |
+| `msdel` | Delete files on MS-DOS disk | ✓ |
+| `msdeltree` | Delete directory tree on MS-DOS disk | ✓ |
+| `msdir` | List MS-DOS directory contents | ✓ |
+| `msformat` | Format MS-DOS disk | ✓ |
+| `msinfo` | Show MS-DOS disk information | ✓ |
+| `mslabel` | Get/set MS-DOS disk label | ✓ |
+| `msmd` | Create MS-DOS directory | ✓ |
+| `msmove` | Move/rename files on MS-DOS disk | ✓ |
+| `msrd` | Remove MS-DOS directory | ✓ |
+| `msread` | Read sectors from MS-DOS disk | ✓ |
+| `msren` | Rename files on MS-DOS disk | ✓ |
+| `mstoolstest` | Mtools test utility | ✓ |
+| `mstype` | Display/copy MS-DOS text files | ✓ |
+| `mswrite` | Write sectors to MS-DOS disk | ✓ |
+| `mtools` | Mtools meta-command (displays available commands) | ✓ |
+| **Games and Entertainment** | Interactive games and game engines | |
+| `advent` | Colossal Cave Adventure (classic text game) | ! |
+| `advent0` | Colossal Cave Adventure variant | ! |
+| `advent1.txt` | Game data file (part of advent) | |
+| `advent2.txt` | Game data file (part of advent) | |
+| `advent3.txt` | Game data file (part of advent) | |
+| `advent4.txt` | Game data file (part of advent) | |
+| `gnuchess` | GNU Chess game engine | ✓ |
+| `gnuchessr` | GNU Chess with reduced features | ✓ |
+| `gnuchessn` | GNU Chess variant | ✓ |
+| `infocom` | Infocom Z-machine interpreter for interactive fiction games | ✓ |
+| `infocom.tcap` | Infocom with termcap support | ✓ |
+| `paranoia` | Paranoia role-playing game system | ! |
+| **Additional tools** | Expanded utility set from archives | |
+| `ed` | GNU ed v0.2 — line-oriented text editor | ✓ |
+| `find` | File finder v1.1.5 — search directories by criteria | ✓ |
+| `makeinfo` | GNU Texinfo documentation generator | ✓ |
