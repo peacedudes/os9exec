@@ -1419,9 +1419,18 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
       } /* if isintcommand */
     #endif
 
+    /* mid==0 here means link_load failed and isintcommand didn't catch it either.
+       os9modules[0] is the OS9exec identification module (a built-in C struct outside
+       the arena); using it would produce a garbage PC.  Return E_MNF cleanly. */
+    if (mid==0) return os9error(E_MNF);
+
     /* get pointer to main module — must be valid for real OS-9 binaries */
     theModule= os9mod( mid );
     if (theModule==NULL) return os9error(E_MNF);
+
+    /* Guard: built-in modules live outside the 68k arena; TO68K of their pointer
+       is garbage.  This shouldn't normally be reached, but catch it defensively. */
+    if (os9modules[mid].isBuiltIn) return os9error(E_MNF);
 
     /* -- prepare data area */
     debugprintf(dbgProcess,dbgDetail,("# prepFork: extra memory=%ld (= paramsiz:%ld + memplus:%ld)\n",

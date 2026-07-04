@@ -140,8 +140,8 @@ the os9exec arm64 emulator.
 | `math` | Math library (requires external math module not included) | — |
 | `maui` | Microware MAUI graphics (requires MAUI module not included) | — |
 | `pwrstat` | Power management utility | ✓ |
-| `login` | Login with password authentication (requires `/dd/password` file and csl) | ✓ |
-| `su` | Switch user identity (requires `/dd/password` file and csl) | ✓ |
+| `login` | Login with password authentication; reads `/dd/SYS/password`; launches user's shell from the password entry | ✓ |
+| `su` | Switch user identity (requires `/dd/SYS/password` file) | ✓ |
 
 ### Network tools
 
