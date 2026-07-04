@@ -230,7 +230,11 @@ See `dd/SOURCES.txt` in the disk image for full provenance.
 | `shar` | Create self-extracting shell archives | ✓ |
 | `tar` | Tape archive; requires one of c/r/t/x/d flags | ✓ |
 | `unzip` | Extract ZIP archives | ✓ |
+| `zip` | Create and update ZIP archives (Info-ZIP v1.9) | ✓ |
+| `zipnote` | View and edit ZIP archive comments (Info-ZIP v1.9) | ✓ |
+| `zipsplit` | Split ZIP archives into smaller files (Info-ZIP v1.9) | ✓ |
 | `ctags` | Generate vi tags file from C source | ✓ |
+| `cal` | Display calendars with custom formatting and date ranges | ✓ |
 | `rechne` | RPN calculator (German UI: "rechne" = calculate) | ✓ |
 | `bash` | Bourne-Again Shell (OS-9/68k port); opens interactive session | ! |
 | `sh` | Bourne shell v7.5 (OS-9/68k port); opens interactive session | ! |
