@@ -84,6 +84,10 @@
 #include "serialaccess.h"
 #endif
 
+#if defined(linux) || defined(MACOSX)
+#include <sys/ioctl.h>
+#endif
+
 
 
 void InitTTYs()
@@ -324,12 +328,15 @@ Boolean DevReady( long *count )
 {   
     HandleEvent();
 
-    #ifdef linux
-      *count= 1; return true; /* %%% not yet as it should be */
-    #endif
-
-    #ifdef MACOSX
-      *count= 1; return true; /* %%% not yet as it should be */
+    #if defined(linux) || defined(MACOSX)
+    {
+        int avail = 0;
+        if (ioctl(STDIN_FILENO, FIONREAD, &avail) == 0 && avail > 0) {
+            *count = avail;
+            return true;
+        }
+        return false;
+    }
     #endif
 
     return DevReadyTerminal( count, &main_mco );

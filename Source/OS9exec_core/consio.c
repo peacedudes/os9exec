@@ -827,8 +827,17 @@ os9err pCopt( _pid_, syspath_typ* spP, byte* buffer )
 
 os9err pCsetopt( _pid_, syspath_typ* spP, byte* buffer )
 /* set console options */
+/* On real OS-9, SS_Opt is a device-level operation: options set on any path
+   to a terminal propagate to all open paths on the same device.  Propagate
+   here so that, e.g., vi turning off _sgs_alf on path 0 also affects path 1. */
 {
-  memcpy( &spP->opt,buffer, OPTSECTSIZE );
+  int k;
+  memcpy( &spP->opt, buffer, OPTSECTSIZE );
+  for (k = 0; k < MAXSYSPATHS; k++) {
+      syspath_typ* sp = &syspaths[k];
+      if (sp != spP && sp->type == spP->type && sp->term_id == spP->term_id)
+          memcpy( &sp->opt, buffer, OPTSECTSIZE );
+  }
   return 0;
 } /* pCsetopt */
 
