@@ -85,7 +85,7 @@ cmd_start() {
     tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9DISK='$REPO/dd' ./os9exec /dd/CMDS/shell"
     printf '[starting os9exec...]\n'
     if wait_prompt; then
-        tmux send-keys -t "$SESSION" "chx /h1/CMDS" Enter
+        tmux send-keys -t "$SESSION" "setenv PATH SHARE:/h1/CMDS" Enter
         wait_prompt
         tmux send-keys -t "$SESSION" "shell /dd/startup" Enter
         wait_prompt
