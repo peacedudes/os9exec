@@ -43,6 +43,10 @@ let diskPath = testDir.appendingPathComponent("dd").path
 let dockerImage = ProcessInfo.processInfo.environment["DOCKER_IMAGE"]
 let containerImage = ProcessInfo.processInfo.environment["CONTAINER_IMAGE"]
 
+// Shell binary to launch — override with OS9SHELL env var if shell is not in /dd/CMDS
+// e.g.: OS9SHELL=/h1/CMDS/shell make test
+let shellArg = ProcessInfo.processInfo.environment["OS9SHELL"] ?? "shell"
+
 // ── Shell runner ──────────────────────────────────────────────────────────────
 
 /// Run one or more OS-9 shell commands and return combined stdout.
@@ -82,7 +86,7 @@ func os9(_ commands: [String], timeout: TimeInterval = 15) -> String {
     } else {
         // Run locally: use existing symlink at dd/
         process.executableURL = execURL
-        process.arguments    = ["shell"]
+        process.arguments    = [shellArg]
         process.environment  = ["OS9DISK": diskPath]
     }
 
@@ -191,7 +195,7 @@ check("namedpipe: write+read", contains: "6162 630d",
     "echo abc >/pipe/t1", "dump </pipe/t1")
 
 // directory ops
-check("dir: lists known file",   contains: "shell",    "dir /dd/CMDS")
+check("dir: lists known file",   contains: "SHARE",    "dir /dd/CMDS")
 check("dir: root lists CMDS",    contains: "CMDS",     "dir /dd")
 check("pd: shows current dir",   contains: "/dd",      "pd")
 // dir listing uses fixed-width columns: "testdir " (trailing space) appears only in the listing,
