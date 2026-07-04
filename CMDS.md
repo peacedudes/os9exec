@@ -196,3 +196,48 @@ in this emulated environment.  None will connect to anything.
 | `telnet` / `telnetd` / `telnetdc` | Telnet client / daemon / connector |
 | `tftpd` / `tftpdc` | TFTP daemon / connector |
 | `undpd` / `undpdc` | UDP daemon / connector |
+
+---
+
+## dd/CMDS/SHARE — freeware and public-domain utilities
+
+These are in `dd/CMDS/SHARE/`, on the default PATH (`SHARE:/h1/CMDS`).
+Sources: Microware OS-9 archive, John-Titor/os9-m68k-ports, and the `smallutils` package.
+See `dd/SOURCES.txt` in the disk image for full provenance.
+
+**✓** confirmed working · **!** works with caveats · **—** known broken · blank = not yet tested
+
+| Command | What it does | Status |
+|---------|-------------|--------|
+| `VI` | Full-screen vi editor — the recommended editor for this environment | ✓ |
+| `vi_cio` | PVic v1.0a — vi-compatible editor (cio variant) | ✓ |
+| `vi_nocio` | PVic v1.0a — vi-compatible editor (no-cio variant) | ✓ |
+| `less` | Pager; requires `TERM` | ✓ |
+| `emacs` | MicroEmacs 4.00; requires `TERM` and `emacs.mm1` | ✓ |
+| `beav` | Binary Editor And Viewer; requires `TERM` | ✓ |
+| `cat` | Concatenate and print files | ✓ |
+| `tail` | Print last N lines; works on RBF paths, not on native `/dd` | ! |
+| `basename` | Strip directory and suffix from a path | ✓ |
+| `dirname` | Extract directory component of a path | ✓ |
+| `exist` | Test whether a file exists (exits 0/1, no output) | ✓ |
+| `mexist` | Test whether a module is loaded (exits 0/1, no output) | ✓ |
+| `getenv` | Print value of a named environment variable | ✓ |
+| `date` | Display current date and time (public-domain, edition 29) | ✓ |
+| `ar` | OS-9/68k archive librarian | ✓ |
+| `arc` | ARC archive compression/extraction | ✓ |
+| `gzip` | GNU zip compression | ✓ |
+| `lha` | LZH archiver (OS-9/68k port) | ✓ |
+| `shar` | Create self-extracting shell archives | ✓ |
+| `tar` | Tape archive; requires one of c/r/t/x/d flags | ✓ |
+| `unzip` | Extract ZIP archives | ✓ |
+| `ctags` | Generate vi tags file from C source | ✓ |
+| `rechne` | RPN calculator (German UI: "rechne" = calculate) | ✓ |
+| `bash` | Bourne-Again Shell (OS-9/68k port); opens interactive session | ! |
+| `sh` | Bourne shell v7.5 (OS-9/68k port); opens interactive session | ! |
+| `ckermit` | C-Kermit v5A(190) — terminal emulator and file transfer | ! |
+| `aprocs` | Enhanced process monitor; runs continuously until Ctrl-C | ! |
+| `dpark` | Park a process in the background | ✓ |
+| `fc` | Re-execute or list shell command history | ! |
+| `sbreak` | Set or clear SS_Break signal on a path | ✓ |
+| `setime` | Set system time; prompts for YYMMDDHHMMSS interactively | ! |
+| `wysecrack` | Wyse terminal baud-rate detection; interactive | ! |

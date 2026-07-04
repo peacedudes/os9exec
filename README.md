@@ -190,13 +190,17 @@ Press ESC on a blank line to exit the shell.
 | Device | How to set | What it maps to |
 |--------|------------|-----------------|
 | `/dd`  | `OS9DISK=…` env var, or a `dd` file/dir next to the binary | Default drive — RBF image or host directory |
-| `/h0`–`/h9`, `/ha`–`/hz` | `OS9H0=…` through `OS9HZ=…`, or dirs named `h0`–`hz` next to the binary | Additional host directories |
+| `/h0`–`/h9`, `/ha`–`/hz` | `OS9H0=…` through `OS9HZ=…`, or files/dirs named `h0`–`hz` next to the binary | RBF disk images or host directories |
 
 Files placed in a host directory appear immediately inside the emulator as OS-9
 files, with no conversion needed for binary modules. Text files need OS-9 line
 endings (CR, `0x0D`) rather than Unix LF — the emulator handles this transparently
 for `I$ReadLn`/`I$WritLn`, but raw byte copies preserve whatever endings are in
 the file.
+
+RBF disk images pointed to by `/h0`–`/hz` are auto-mounted on first access —
+`dir /h0/CMDS` works directly without needing to access `/h0` first or run `mount`.
+Use `mount <image> <devname>` to attach an image under a name of your choosing.
 
 
 ## Options
@@ -306,6 +310,11 @@ filesystem avoids confusion with file modification timestamps.
 **Hardware-dependent commands** (`backup`, `format`, `tape`, `kermit`, raw `com`,
 `rdump`, `fsave`/`frestore`) require physical devices that are not emulated and
 will not work.
+
+**Terminal I/O:** Full screen apps (`vi`, `less`, editors) require `TERM` to be set
+and a compatible termcap entry. The included `dd/SYS/termcap` covers `xterm`,
+`xterm-256color`, and `vt100`. `vi` is included in `dd/CMDS/SHARE` and is the
+recommended editor; it works correctly including insert mode and cursor movement.
 
 Everything else in a standard OS-9/68k SDK CMDS directory can be expected to run.
 See [CMDS.md](CMDS.md) for a command-by-command status list.
