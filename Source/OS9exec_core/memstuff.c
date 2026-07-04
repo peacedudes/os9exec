@@ -204,6 +204,10 @@ void init_all_mem(void)
     /* allocate the module directory table in the 68k arena so D_ModDir can return TO68K(mdirField) */
     if (mdirField==NULL)
         mdirField= (mdir_entry*)get_mem( MAXMODULES * sizeof(mdir_entry) );
+
+    /* allocate a zeroed I/O device table in the arena so D_DevTbl returns a valid 68k address */
+    if (devtbl_arena==NULL)
+        devtbl_arena= (byte*)get_mem( 0x0900 );
 } /* init_all_mem */
 
 

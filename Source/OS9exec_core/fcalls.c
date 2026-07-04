@@ -1033,7 +1033,7 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
       case D_FreMem  : v=  (ulong)             NULL; break; /* no list available */
       case D_FreMem_L: v=  (ulong)             NULL; break;  
       case D_BlkSiz  : v=            OS9MINSYSALLOC; break; /* as on real OS-9 systems */
-      case D_DevTbl  : v=  (ulong)            &devs; break; /* I/O device table ptr */
+      case D_DevTbl  : v=  TO68K(devtbl_arena);        break; /* I/O device table ptr */
       
       case D_MPUTyp  : 
         #if defined powerc && !defined MACOSX

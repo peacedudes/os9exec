@@ -463,9 +463,8 @@ int            hittable[MAXDIRHIT];
   callback_typ g_cb;
 #endif
 
-/* I/O device table */
-/* not really used, avoid "devs" from crashing */
-byte		devs[0x0900];		
+/* I/O device table — allocated in the 68k arena so TO68K() works */
+byte*		devtbl_arena = NULL;
 
 /* the OS-9 statistics table */
 st_typ		statistics[MAX_OS9PROGS];

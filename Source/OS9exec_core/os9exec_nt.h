@@ -1311,8 +1311,8 @@ extern int            hittable[MAXDIRHIT];
 /* the OS-9 statistics table */
 extern  st_typ      statistics[MAX_OS9PROGS];
 
-/* I/O device table */
-extern  byte        devs[0x0900];       
+/* I/O device table — allocated in the 68k arena so TO68K() works */
+extern  byte*       devtbl_arena;
 
 
 /* and the file managers routine tables */
