@@ -2272,16 +2272,21 @@ Boolean RBF_ImgSize( long size )
       strcpy( sv, adjust );
       pp =    sv;
 
-      err= AdjustPath    ( pp,adjust, false ); if (err) return E_PNNF;
+      err= AdjustPath    ( pp,adjust, false );
+      /* Don't abort if adjust failed — path may be a subpath inside an RBF image (e.g.
+         /h0/CMDS).  AdjustPath already populated adjust via EatBack; let the stripping
+         loop below find the image by peeling off trailing components. */
+      if (err) err= 0;
       pp =                    adjust;
       
       /* cut the path piece by piece (no sub paths within RBF images) */
       qq = pp+strlen(pp)-1;
       while (true) {
                *isFolder=    PathFound( pp );
-          if (!*isFolder && !FileFound( pp )) err= E_PNNF;
-      
-          debugprintf( dbgFiles,dbgNorm,("# GetRBFName: '%s' mode=%d err=%d (%s)\n", 
+          if  (!*isFolder && !FileFound( pp )) err= E_PNNF;
+          else if (!*isFolder)                 err= 0; /* file found at pp — stop stripping */
+
+          debugprintf( dbgFiles,dbgNorm,("# GetRBFName: '%s' mode=%d err=%d (%s)\n",
                                             pp, mode,err, *isFolder ? "dir":"file" ));
           if (!err || pp==qq) break;
 

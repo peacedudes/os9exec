@@ -1205,17 +1205,18 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
                     #elif defined win_unix
                       if (err) return E_UNIT; /* GetRBFName called earlier */
                       strcpy( cmp,rbfname );
-                      /* Expand short OS-9 device path (e.g. /h0, /h0@) to full host path.
-                         Open_Image must receive the host path so IO_Type returns fFile
-                         instead of fRBF (via InstalledDev shortcut), allowing pDopen to
-                         open the image as a raw byte stream. IsRoot("/h0") && isFile
-                         would otherwise make the nested pRopen return E_FNA.
-                         Strip trailing '@' before parsepath so raw-device paths (e.g. /h0@)
-                         resolve correctly to the base image file on the host. */
-                      { char stripped[OS9PATHLEN], *ip;
-                        strncpy(stripped, pathname, OS9PATHLEN-1); stripped[OS9PATHLEN-1]= NUL;
-                        { char *at= strrchr(stripped,'@'); if (at) *at= NUL; }
-                        ip= stripped;
+                      /* Resolve the device-root OS-9 path (e.g. /h0, /h0@) to the host
+                         image file path.  Use cmp (the short device name from GetRBFName,
+                         which has already stripped any subpath like /CMDS) rather than the
+                         original pathname — otherwise /h0/CMDS would resolve to the
+                         nonexistent host path .../h0/CMDS and Open_Image would fail.
+                         Strip trailing '@' so raw-device paths (e.g. /h0@) resolve to
+                         the base image file. */
+                      { char devroot[OS9PATHLEN], *ip;
+                        devroot[0]= PSEP; devroot[1]= NUL;
+                        strncat( devroot, cmp, OS9PATHLEN-2 );
+                        { char *at= strrchr(devroot,'@'); if (at) *at= NUL; }
+                        ip= devroot;
                         if (parsepath( pid, &ip, imgpath, false )) strcpy( imgpath,pathname ); }
 
                     #else
