@@ -1,6 +1,7 @@
-# Proprietary OS-9 binaries and disk images (not ours to distribute)
-# Users must provide their own OS-9 software for local testing
-dd
+# freeware/ is the public-domain disk image shipped with os9exec.
+# dd is a symlink -> freeware (tracked so cloners get the convention).
+# freeware/ content is gitignored until proprietary items are fully removed.
+freeware
 h*
 
 # Proprietary OS-9 DEFS headers (Microware copyright)
