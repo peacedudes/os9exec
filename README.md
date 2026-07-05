@@ -251,14 +251,11 @@ RBF-dependent commands will then fail on native paths).
 
 Pass `-i` to disable all of these and use only real OS-9 binaries.
 
-**Tip:** If you find yourself typing `ls` out of Unix habit, add it as an alias for
-`dir` on your OS-9 search path. How depends on your setup:
-
-- **Host-native `/dd`:** create a symlink from your Mac/Linux shell:
-  `ln -s dir /path/to/your/dd/CMDS/ls`
-- **RBF image:** `copy` without `-n` duplicates the file descriptor rather than
-  the data, which is OS-9's equivalent of a hard link:
-  `copy /dd/CMDS/dir /dd/CMDS/ls`
+**Tip:** A freeware `ls` (compiled from K&R C source using the Microware cc toolchain)
+is included in `dd/CMDS/SHARE/ls`. It lists files; directory listing via `fopen()` is
+a known limitation (use `dir` for directory contents). The GNU fileutils 3.13 `ls` is
+partially ported (`freeware/SRC/ls/*.r` compiled); linking is blocked pending cio/csl
+trap handler resolution.
 
 
 ## Emulator debugger (`idbg`)
