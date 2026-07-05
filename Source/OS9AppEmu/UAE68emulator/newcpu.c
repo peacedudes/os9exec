@@ -1394,6 +1394,40 @@ unsigned long m68k_os9go(void)
 			upe_printf( "%8x %4x\n", regs.pc_p,opcode );
 		if (m68k_os9singlestep) {
 			m68k_os9singlestep = 0;
+			/*
+			 * MakeSR() belongs here and is the technically correct fix for a
+			 * real bug: condition-code flags live in a fast internal
+			 * representation (regflags/XFLG etc.), separate from regs.sr.
+			 * Exception()/syscall exits call MakeSR() to sync them; this
+			 * plain single-step completion never did, so regs.sr (and thus
+			 * the value saved/restored across repeated F$DExec single-steps)
+			 * goes stale. Confirmed via direct testing: a conditional branch
+			 * a few instructions into a program's C runtime startup (_cstart,
+			 * testing the module's own supervisor-state header bit) always
+			 * evaluated on stale flags and never actually took the branch —
+			 * in ANY debug session, by anyone, ever — until this call was
+			 * added.
+			 *
+			 * DISABLED ON PURPOSE: enabling it lets that branch finally be
+			 * taken for the first time, which immediately exposes a second,
+			 * more serious, unrelated bug — the debugged child crashes
+			 * ("Invalid sync bytes: corrupted module?"), and an UNRELATED
+			 * process (the shell) crashes moments later at the exact same
+			 * PC, an address outside its own memory but inside the debug
+			 * child's. That's cross-process state bleeding in the
+			 * exception/crash-report path (os9exec_nt.c), not a CPU-fetch
+			 * issue — ruled out fill_prefetch_0() as the cause by testing it
+			 * directly; the crash was byte-for-byte identical with or
+			 * without it. Root cause not yet found.
+			 *
+			 * A rare "runaway" single-step loop (today's behavior, without
+			 * this line) is a much smaller blast radius than a crash that
+			 * can take down an unrelated process. Re-enable this once the
+			 * cross-process crash-path bug above is found and fixed — this
+			 * fix will be needed then; leaving it out doesn't avoid that bug,
+			 * it just hides it behind the flags bug instead.
+			 */
+			/* MakeSR(); */
 			m68_os9go_result    = 0xFBFB0000; /* single-step done token */
 			os9_running         = 0;
 		}
