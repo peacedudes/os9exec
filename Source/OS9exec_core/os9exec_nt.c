@@ -437,6 +437,30 @@ uint32_t     prDBT[MAXPROCESSES];              /* big-endian 32-bit process desc
 ushort       dbg_parent_pid[MAXPROCESSES];     /* 0 = normal; else PID of debug parent */
 os9addr_t    dbg_regsave_addr[MAXPROCESSES];   /* 68k arena address of debug register frame */
 byte         dbg_step_pending[MAXPROCESSES];   /* non-zero while parent is waiting for DExec result */
+os9addr_t    dbg_bkpt_list[MAXPROCESSES][16];  /* F$DExec breakpoint addresses (see P$BkPts) */
+ushort       dbg_bkpt_count[MAXPROCESSES];     /* valid entries in dbg_bkpt_list */
+long         dbg_remaining[MAXPROCESSES];      /* instructions left to execute; -1 = continuous */
+uint32_t     dbg_exec_count[MAXPROCESSES];     /* instructions executed so far this F$DExec call */
+
+extern int   m68k_os9singlestep;
+
+/* Returns true if an F$DExec continuation should stop here (breakpoint hit
+ * or requested instruction count exhausted); false if the caller should
+ * re-arm single-step and let the child keep running without waking the
+ * debug parent (F$DExec "continuous", d1.l==0, execution). */
+static Boolean dbg_should_stop(ushort cpid, uint32_t pc)
+{
+    ushort i;
+    dbg_exec_count[cpid]++;
+    for (i = 0; i < dbg_bkpt_count[cpid]; i++) {
+        if (dbg_bkpt_list[cpid][i] == pc) return true;
+    }
+    if (dbg_remaining[cpid] > 0) {
+        dbg_remaining[cpid]--;
+        if (dbg_remaining[cpid] == 0) return true;
+    }
+    return false;
+} /* dbg_should_stop */
 
 /* the signal queue */
 sig_typ     sig_queue;
@@ -1912,9 +1936,17 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
           cp->vector= hiword(resL);
           cp->func  = loword(resL);
 
-          /* Single-step token from F$DExec: snapshot registers, re-sleep child, wake parent. */
+          /* Single-step token from F$DExec: check breakpoint/count first —
+           * either re-arm single-step and keep the child going silently
+           * ("continuous" execution), or snapshot registers and wake parent. */
           if (cp->vector == 0xFBFB) {
               ushort ppid = dbg_parent_pid[cpid];
+              cp->vector = 0;
+              cp->func   = 0;
+              if (!dbg_should_stop(cpid, crp->pc)) {
+                  m68k_os9singlestep = 1; /* re-arm; child keeps running silently */
+                  continue;
+              }
               dbg_step_pending[cpid] = 0;
               save_debug_regs(cpid);
               /* F$DExec returns A0 = child register frame address (OS-9 convention).
@@ -1922,11 +1954,10 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
                * PC/SR/A7 are always the parent's own values. */
               if (ppid != 0 && procs[ppid].state == pSleeping) {
                   procs[ppid].os9regs.sr &= ~CARRY;
+                  procs[ppid].os9regs.d[0] = dbg_exec_count[cpid]; /* F$DExec: instructions executed */
               }
               procs[cpid].wakeUpTick = ULONG_MAX;
               set_os9_state(cpid, pSleeping, "DExec step done");
-              cp->vector = 0;
-              cp->func   = 0;
               if (ppid != 0 && procs[ppid].state == pSleeping) {
                   set_os9_state(ppid, pActive, "DExec wake parent");
                   currentpid = ppid;
@@ -2039,16 +2070,21 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
           } // if
         } // if
 
-        /* If a DExec step is in flight and the child just finished a syscall,
-         * stop the child and return control to the debug parent. */
+        /* If a DExec step is in flight and the child just finished a syscall
+         * (counted as one logical instruction, same as any other), check
+         * breakpoint/count before deciding to stop or keep going silently. */
         if (dbg_step_pending[cpid] &&
             (cp->state == pActive || cp->state == pWaitRead)) {
+            if (!dbg_should_stop(cpid, crp->pc)) {
+                m68k_os9singlestep = 1; /* re-arm; child keeps running silently */
+            }
+            else {
             ushort ppid = dbg_parent_pid[cpid];
             dbg_step_pending[cpid] = 0;
             save_debug_regs(cpid);
             if (ppid != 0 && procs[ppid].state == pSleeping) {
                 regs_type* parent_rp = &procs[ppid].os9regs;
-                parent_rp->d[0] = 0;  /* DExec success */
+                parent_rp->d[0] = dbg_exec_count[cpid];  /* F$DExec: instructions executed */
                 parent_rp->sr &= ~CARRY;
             }
             procs[cpid].wakeUpTick = ULONG_MAX;
@@ -2056,6 +2092,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
             if (ppid != 0 && procs[ppid].state == pSleeping) {
                 set_os9_state(ppid, pActive, "DExec wake parent (syscall)");
                 currentpid = ppid;
+            }
             }
         }
 

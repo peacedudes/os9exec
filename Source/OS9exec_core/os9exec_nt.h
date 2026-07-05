@@ -1263,6 +1263,10 @@ extern  process_typ procs[MAXPROCESSES];
 extern  ushort      dbg_parent_pid[MAXPROCESSES];  /* 0 = normal; else PID of debug parent */
 extern  os9addr_t   dbg_regsave_addr[MAXPROCESSES]; /* 68k arena address of debug reg frame */
 extern  byte        dbg_step_pending[MAXPROCESSES]; /* non-zero while parent awaits DExec result */
+extern  os9addr_t   dbg_bkpt_list[MAXPROCESSES][16]; /* F$DExec breakpoint addresses (see P$BkPts) */
+extern  ushort      dbg_bkpt_count[MAXPROCESSES];   /* valid entries in dbg_bkpt_list */
+extern  long        dbg_remaining[MAXPROCESSES];    /* instructions left to execute; -1 = continuous */
+extern  uint32_t    dbg_exec_count[MAXPROCESSES];   /* instructions executed so far this F$DExec call */
 extern  uint32_t    prDBT[MAXPROCESSES]; /* big-endian 32-bit process descriptor offsets */
 
 /* the signal queue */

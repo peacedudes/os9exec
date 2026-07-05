@@ -1546,22 +1546,39 @@ os9err OS9_F_DFork( regs_type *rp, ushort cpid )
 } /* OS9_F_DFork */
 
 os9err OS9_F_DExec( regs_type *rp, ushort cpid )
-/* F$DExec: Single-step the debug child by one 68k instruction.
+/* F$DExec: Execute the debug child, one instruction (or syscall) at a time
+ * internally, stopping to wake the parent only when a breakpoint is hit or
+ * the requested instruction count is exhausted (see dbg_should_stop).
  * Input:  D0.W = child PID
- * The parent sleeps until the child completes one instruction, calls a
- * syscall, or dies — whichever comes first.
+ *         D1.L = instruction count (0 or -1 = continuous, until breakpoint)
+ *         D2.W = number of breakpoints in list at (A0)
+ *         A0   = breakpoint address list (up to 16 entries)
  */
 {
     ushort       childpid = loword(rp->d[0]);
     process_typ* cp       = &procs[childpid];
+    uint32_t     count    = rp->d[1];
+    ushort       bkptcnt  = loword(rp->d[2]);
+    uint32_t*    bkptlist;
+    ushort       i;
 
     if (cp->state == pUnused) return os9error(E_IPRCID);
     if (cp->state == pDead  ) return os9error(E_IPRCID);
 
-    /* Park the parent until step completes; MAX_SLEEP prevents do_arbitrate false-wakeup */
+    if (bkptcnt > 16) bkptcnt = 16;
+    dbg_bkpt_count[childpid] = bkptcnt;
+    if (bkptcnt > 0) {
+        bkptlist = (uint32_t*)FROM68K(rp->a[0]);
+        for (i = 0; i < bkptcnt; i++) dbg_bkpt_list[childpid][i] = os9_long(bkptlist[i]);
+    }
+    dbg_remaining[childpid]  = (count == 0 || count == 0xFFFFFFFF) ? -1 : (long)count;
+    dbg_exec_count[childpid] = 0;
+
+    /* Park the parent until execution stops; MAX_SLEEP prevents do_arbitrate false-wakeup */
     procs[cpid].wakeUpTick = MAX_SLEEP;
     set_os9_state(cpid, pSleeping, "OS9_F_DExec parent");
-    /* Arm single-step; child gets one instruction (or one syscall) then stops */
+    /* Arm single-step; each instruction is checked in the scheduler against
+     * the breakpoint list / remaining count (see dbg_should_stop) */
     dbg_step_pending[childpid] = 1;
     m68k_os9singlestep         = 1;
     set_os9_state(childpid, pActive, "OS9_F_DExec child");
