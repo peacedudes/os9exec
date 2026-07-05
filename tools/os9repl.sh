@@ -104,12 +104,14 @@ send_one_key() {
 
 cmd_start() {
     tmux kill-session -t "$SESSION" 2>/dev/null || true
-    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9DISK='$REPO/dd' ./os9exec /dd/CMDS/shell"
+    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9DISK='$REPO/dd' ./os9exec $EXTRA_ARGS /dd/CMDS/shell"
     printf '[starting os9exec...]\n'
     if wait_prompt; then
-        tmux send-keys -t "$SESSION" "setenv PATH SHARE:/h1/CMDS" Enter
+        tmux send-keys -t "$SESSION" "setenv PATH /dd/CMDS:SHARE:/h1/CMDS" Enter
         wait_prompt
-        tmux send-keys -t "$SESSION" "shell /dd/startup" Enter
+        tmux send-keys -t "$SESSION" "setenv TERM xterm-256color" Enter
+        wait_prompt
+        tmux send-keys -t "$SESSION" "load math881 cio" Enter
         wait_prompt
         printf '[ready]\n'
         pane | grep -v '^[[:space:]]*$' | tail -5
@@ -216,7 +218,7 @@ cmd_restart() {
 # ── dispatch ──────────────────────────────────────────────────────────────────
 
 case "${1:-help}" in
-    start)   cmd_start ;;
+    start)   shift; EXTRA_ARGS="$*"; cmd_start ;;
     send)    shift; cmd_send "$@" ;;
     key)     shift; cmd_key "$@" ;;
     snap)    shift; cmd_snap "$@" ;;
