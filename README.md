@@ -10,20 +10,34 @@ Run actual OS-9 binaries on your modern computer. OS9exec emulates the 68k proce
 
 ### Choose your path
 
+**Recommended right now: build from source (Option 4).** The
+[GitHub Releases](https://github.com/peacedudes/os9exec/releases) page
+still only has the old `v0.0.0` binaries — this branch is meaningfully
+ahead of that and no new release has been cut yet. Building takes one
+command (`make`) and is the only way to get today's fixes until that
+happens — especially on macOS, where it's one line with no dependencies
+beyond Xcode Command Line Tools.
+
 | Want | Use |
 |------|-----|
-| **Simplest, fastest start** | Option 1: Download binary |
+| **Build from source (recommended for now)** | Option 4: `make` locally |
 | **Have Docker installed** | Option 2: Pull pre-built image |
 | **macOS 26+ with Apple Container** | Option 3: Native container tool |
-| **Want to build from source** | Option 4: `make` locally |
+| **Old tagged release binary** | Option 1: Download binary (stale, see above) |
 
 ### What you need
 
-**OS9exec itself:** Available from [GitHub Releases](https://github.com/peacedudes/os9exec/releases) or build locally (see below).
+**OS9exec itself:** Build locally (see Option 4 below) — recommended
+until a new release is cut. [GitHub Releases](https://github.com/peacedudes/os9exec/releases)
+has older `v0.0.0` binaries if you'd rather not build.
 
 **OS-9 software:** You must provide your own OS-9 binaries (shell, utilities, etc.). These are not included in the repo—they're not ours to distribute. If you have OS-9 software on disk/tape/archive, point os9exec at it. [Legitimate sources exist for hobbyists](https://www.icdia.co.uk/).
 
 ### Option 1: Download binary + bring your own OS-9
+
+**These are the `v0.0.0` release binaries — older than this branch.** Use
+[Option 4](#option-4-build-locally) instead unless you specifically want
+that tagged release.
 
 1. **Get the binary for your platform:**
    - macOS ARM64 (M1/M2/M3): `os9exec-macos-arm64`
