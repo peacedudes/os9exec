@@ -92,7 +92,11 @@ jobs:
       if: matrix.cc == 'docker'
       run: |
         docker build -f docker/${{ matrix.dockerfile }} -t os9exec:linux32 .
-        docker run --rm -v $(pwd):/workspace os9exec:linux32 cp /usr/local/bin/os9exec /workspace/os9exec
+        # --entrypoint override is required: the image's own ENTRYPOINT is
+        # ["os9exec"], so without this, "cp ..." runs as an argument *to*
+        # os9exec (tries to launch "cp" as an OS-9 program) instead of as
+        # the host cp command extracting the binary.
+        docker run --rm --entrypoint cp -v $(pwd):/workspace os9exec:linux32 /usr/local/bin/os9exec /workspace/os9exec
 
     - name: Verify binary exists
       run: |
