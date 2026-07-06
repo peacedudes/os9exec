@@ -1427,7 +1427,7 @@ unsigned long m68k_os9go(void)
 			 * fix will be needed then; leaving it out doesn't avoid that bug,
 			 * it just hides it behind the flags bug instead.
 			 */
-			/* MakeSR(); */
+			MakeSR();
 			m68_os9go_result    = 0xFBFB0000; /* single-step done token */
 			os9_running         = 0;
 		}

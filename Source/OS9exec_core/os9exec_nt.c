@@ -459,6 +459,35 @@ static Boolean dbg_should_stop(ushort cpid, uint32_t pc)
         dbg_remaining[cpid]--;
         if (dbg_remaining[cpid] == 0) return true;
     }
+    /* Continuous execution (dbg_remaining left at -1, no matching
+     * breakpoint) bypasses the scheduler's own arbitration entirely for
+     * speed, so a debug client that lands its breakpoint on the wrong
+     * address (e.g. the real "debug" utility computes a conditional
+     * branch's temporary single-step breakpoint via plain PC+length
+     * arithmetic, without evaluating whether the branch is actually
+     * taken -- confirmed live, see os9exec-makesr-crash-investigation
+     * project memory) runs away forever with no way back in, even via
+     * Ctrl-C -- the async signal still gets queued by the main loop's
+     * periodic CheckInputBuffers() spin-check (KeyToBuffer -> send_signal
+     * -> queued, since async_area is false way out here), but nothing
+     * ever drains that queue while this tight loop never leaves
+     * dbg_should_stop's caller.
+     *
+     * Just stop here and let the normal post-step path below hand control
+     * back to the debug parent, exactly as if a real breakpoint had hit --
+     * do NOT also try to deliver/intercept the queued signal from in here.
+     * An earlier version of this fix called sig_mask() right here, which
+     * raced with the "step completed" handoff a few lines below (both
+     * trying to transition the child's state at once) and traded one
+     * hang for a different one, live-tested and confirmed worse: the
+     * child ended up both pSleeping (handed to the parent) and
+     * way_to_icpt (intercept pending), and the scheduler spun forever
+     * between arbitration and the idle spin-check never settling on a
+     * runnable process. Leaving the queued signal alone and letting it
+     * get delivered later, through the normal channel, once the debug
+     * parent is back in control and something reaches a real syscall
+     * boundary, avoided that entirely. */
+    if ((dbg_exec_count[cpid] & 0x3FF) == 0 && async_pending) return true;
     return false;
 } /* dbg_should_stop */
 
