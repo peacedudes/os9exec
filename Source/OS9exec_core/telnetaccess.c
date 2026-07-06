@@ -293,10 +293,45 @@ void HandleEvent( void )
 #endif
 
 
-#if defined MPW || defined UNIX
+#ifdef MPW
 void HandleEvent( void )
 {
 } /* empty implementation */
+#endif
+
+#ifdef UNIX
+void HandleEvent( void )
+/* Poll stdin for pending keystrokes and feed them through KeyToBuffer(),
+ * the same way the windows32 branch above does via ReadConsoleInput.
+ * This is what lets Ctrl-C/Ctrl-E interrupt a process immediately even
+ * when nothing is currently blocked in a console read: real OS-9
+ * hardware notices the abort character in the SCF driver's ISR, not
+ * gated behind an active I$Read, and this restores that behaviour.
+ */
+{
+    #if defined(linux) || defined(MACOSX)
+      int  avail= 0;
+      int  room;
+      char c;
+
+      if (ioctl(STDIN_FILENO, FIONREAD, &avail)==0) {
+          /* Never read more raw bytes than inBuf has guaranteed space for --
+           * KeyToBuffer() silently drops keys once inBuf is full, and unlike
+           * a tty we can't push a byte back into a pipe once read() has taken
+           * it. Special chars (Ctrl-C etc.) don't consume inBuf space at all,
+           * so this is a conservative floor: worst case we defer a few plain
+           * characters to the next call instead of losing any.
+           */
+          room= INBUFSIZE-1 - main_mco.inBufUsed;
+          if (avail>room) avail= room;
+
+          while (avail-->0) {
+              if (read(STDIN_FILENO, &c,1)!=1) break;
+              KeyToBuffer( &main_mco, c );
+          } // while
+      } // if
+    #endif
+} /* HandleEvent */
 #endif
 
 
@@ -325,20 +360,12 @@ Boolean DevReadyTerminal( long *count, ttydev_typ* mco )
 
 #if defined win_unix
 Boolean DevReady( long *count )
-{   
+{
+    /* HandleEvent() now drains stdin into main_mco.inBuf (see above) —
+     * check that buffer via DevReadyTerminal() rather than re-polling
+     * the raw fd, which would race with HandleEvent()'s own read().
+     */
     HandleEvent();
-
-    #if defined(linux) || defined(MACOSX)
-    {
-        int avail = 0;
-        if (ioctl(STDIN_FILENO, FIONREAD, &avail) == 0 && avail > 0) {
-            *count = avail;
-            return true;
-        }
-        return false;
-    }
-    #endif
-
     return DevReadyTerminal( count, &main_mco );
 }    /* DevReady */
 #endif

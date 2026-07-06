@@ -323,32 +323,30 @@ Boolean ConsGetc( char* c )
       HandleEvent();
       n= ReadCharsFromTerminal( c,1, &main_mco );
       return (n>0) && devIsReady;
-    
+
+    #elif defined UNIX
+      /* Shares windows32's plumbing above (HandleEvent() drains stdin into
+       * main_mco.inBuf, skimming off Ctrl-C/Ctrl-E immediately as it goes —
+       * see telnetaccess.c — and we consume from there instead of reading
+       * stdin directly here, which would race with HandleEvent()'s own
+       * read() of the same fd). Unlike windows32's ReadConsoleInput, raw
+       * Unix input arrives as LF, not CR, so this falls through to the
+       * CR/LF swap below instead of returning early.
+       */
+      HandleEvent();
+      n= ReadCharsFromTerminal( c,1, &main_mco );
+      if (n<=0 || !devIsReady) return false;
+
     #elif defined MACOS9
           n= fread( c,1,1, stdin );
       if (n!=1 || !devIsReady) return false;
-    
-    #elif defined MACOSX
-      n= getchar(); // problems with fread
-           devIsReady= (n!=-1);
-      if (!devIsReady) return false;
-      *c= n;
-      
-    #else
-      #ifdef linux
-        n= read( 0, c, 1 );
 
-        // printf( "nn=%d  c=0x%02X\n", n, (unsigned int)c[0] );
-        // fflush(0);
-      #else
-        n= fread( c,1,1, stdin );
- 
-        //if (n!=1 || !devIsReady) return false;
-      #endif
-             
+    #else
+      n= fread( c,1,1, stdin );
+
            devIsReady= n>0;
       if (!devIsReady) return false;
-    
+
       debugprintf(dbgTerminal,dbgDetail,("# ConsGetc: returns=%X\n",*c));
     #endif
 
