@@ -341,10 +341,15 @@ typedef struct dirent dirent_typ;
   #endif
 #endif
 
-#ifndef UNIX
-  /* C library include files */
+#if !defined(UNIX) && !defined(windows32)
+  /* Classic Mac Toolbox headers (Types.h, StdIO.h, etc.) — genuinely
+   * Mac-only; not available under MPW's "modern" clang/gcc-based Windows
+   * or the *nix targets. This guard used to be just "#ifndef UNIX" from
+   * when Mac and Unix were the only two targets, so windows32 (also not
+   * UNIX) fell into this block and failed with e.g. "Types.h not found".
+   */
   #include <CType.h>
-  
+
   #ifdef USE_CARBON
 	  #include <Carbon.h>
   #else
