@@ -38,13 +38,28 @@ jobs:
             binary: os9exec
             artifact: os9exec-macos-arm64
 
-          # Windows
-          - os: windows-latest
-            platform: windows-x64
-            cc: clang
-            cflags: "-fcommon"
-            binary: os9exec.exe
-            artifact: os9exec-windows-x64.exe
+          # Windows: disabled for now, not a regression -- this leg has never
+          # actually built (every CI run since the workflow was added has
+          # failed here). GNUmakefile hardcodes the Linux platform files for
+          # every OS, and the code's own `windows32` detection is only ever
+          # reachable via __MACH__ or `linux` already being true, so it never
+          # triggers on a real Windows compile -- it falls through to
+          # Mac-Toolbox-only headers (Types.h etc.) instead. There's a
+          # partially-started Source/Platforms/WIN32/ (net_windows.c,
+          # wincmd.c) that was never wired into GNUmakefile's PLAT variable.
+          # Reviving this needs: per-OS PLAT branching in GNUmakefile, a real
+          # _WIN32/_MSC_VER -> windows32 bridge, and either MinGW (for the
+          # POSIX-ish headers the UNIX code path assumes) or finishing out
+          # genuine Win32 API code behind the `windows32` macro. Until then,
+          # Windows users should use Docker (works today, see README) or
+          # WSL2 (a real Linux userspace, so the already-working Linux build
+          # applies as-is).
+          # - os: windows-latest
+          #   platform: windows-x64
+          #   cc: clang
+          #   cflags: "-fcommon"
+          #   binary: os9exec.exe
+          #   artifact: os9exec-windows-x64.exe
 
     steps:
     - uses: actions/checkout@v4
@@ -190,4 +205,3 @@ jobs:
           os9exec-linux-x64/os9exec
           os9exec-linux-i386/os9exec-linux-i386
           os9exec-macos-arm64/os9exec
-          os9exec-windows-x64.exe/os9exec-windows-x64.exe
