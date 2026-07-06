@@ -73,7 +73,7 @@ all: $(OBJDIR) os9exec
 # Production build: optimised, no debug symbols.
 # Usage: make prod   (rebuilds from scratch with -O2)
 prod:
-	$(MAKE) -B CFLAGS="-O2 -Wall \
+	$(MAKE) -B CFLAGS="-O2 -Wall -fcommon \
 	          -DTERMINAL_CONSOLE \
 	          -DINT_CMD \
 	          -I$(CORE) \
