@@ -2280,7 +2280,16 @@ Boolean RBF_ImgSize( long size )
       pp =                    adjust;
       
       /* cut the path piece by piece (no sub paths within RBF images) */
-      qq = pp+strlen(pp)-1;
+      /* If AdjustPath/parsepath already reduced <pp> to an empty string
+       * (e.g. a top-level path like "/test" that matches no known device),
+       * pp+strlen(pp)-1 underflows to pp-1 -- a pointer qq can never equal
+       * again, since the "qq>pp" guard below stops it from ever reaching
+       * pp. That made the loop's "pp==qq" exit condition unreachable: an
+       * infinite loop repeatedly checking the same empty path and writing
+       * one byte before the buffer on every pass. Guard qq at pp itself
+       * when pp is already empty, so the first pass's "pp==qq" check ends
+       * the loop immediately with the correct E_PNNF instead of hanging. */
+      qq = (*pp) ? pp+strlen(pp)-1 : pp;
       while (true) {
                *isFolder=    PathFound( pp );
           if  (!*isFolder && !FileFound( pp )) err= E_PNNF;
