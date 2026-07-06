@@ -86,7 +86,7 @@ jobs:
         CC: ${{ matrix.cc }}
       run: |
         make clean
-        make
+        make prod
 
     - name: Build os9exec (Docker 32-bit)
       if: matrix.cc == 'docker'
