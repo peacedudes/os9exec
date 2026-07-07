@@ -233,6 +233,7 @@
 #include <utime.h>
 #include <ctype.h>
 #include <limits.h>
+#include <stdlib.h>   /* realpath(): declared here on all platforms; target_options.h only pulls it in for __MACH__ */
 
                 
 
