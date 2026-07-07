@@ -232,6 +232,7 @@
 
 #include <utime.h>
 #include <ctype.h>
+#include <limits.h>
 
                 
 
@@ -2252,6 +2253,212 @@ Boolean RBF_ImgSize( long size )
   } /* GetRBFName */
 
 #elif defined win_unix
+
+  /* Returns true if <hostpath> (an absolute host path, which may not yet
+   * exist -- e.g. a file about to be created) falls within one of the
+   * currently configured host-native device roots (/dd, or any /h0-/h9,
+   * /ha-/hz that resolves to a real directory). Without this, any
+   * absolute OS-9 path whose first component isn't a recognized 2-char
+   * device name falls straight through parsepathext/AdjustPath unmodified
+   * and gets treated as a literal host path -- e.g. "chd /usr" or
+   * "chd /etc" lands in the real host /usr or /etc, and ".." above a
+   * device root walks into the real host filesystem, since host-native
+   * directories (unlike RBF images, which clamp at a real root inode)
+   * have no root of their own to stop at. Confirmed live 2026-07-06 (see
+   * os9exec-host-confinement project memory).
+   *
+   * Resolves each candidate device name (dd, h0-h9, ha-hz) via
+   * TwoCharDev() -- the SAME function parsepathext itself uses -- rather
+   * than re-deriving device roots independently (e.g. checking only the
+   * OS9DISK/OS9Hx env vars directly was an earlier, incomplete version of
+   * this fix: it missed the equally-valid "h0"/"h1"/etc. directory or
+   * symlink auto-discovered next to the binary when no env var is set,
+   * which is how this project's own dd/h0/h1 are actually configured --
+   * confirmed live when it broke ordinary command lookup via /h1/CMDS).
+   * realpath() canonicalizes both sides to close off residual ".." or
+   * symlink tricks (important here: this is the check applied to the
+   * FINAL, already-".."-collapsed path, so a symlink planted inside a
+   * device that points back out is still caught); since realpath()
+   * requires its target to exist, walk up to the nearest existing
+   * ancestor first -- a not-yet-created file/dir is fine as long as its
+   * parent chain is real and inside a configured root. */
+  Boolean HostPathWithinConfiguredDevice( const char* hostpath )
+  {
+      char nameOut[3];
+      return HostPathDeviceName( hostpath, nameOut );
+  } /* HostPathWithinConfiguredDevice */
+
+  /* Same resolution as HostPathWithinConfiguredDevice, but also reports
+   * WHICH device (dd, h0-h9, ha-hz) <hostpath> falls within, via
+   * <nameOut> (must be at least 3 bytes). Used by pHvolnam (fileaccess.c,
+   * the SS_DevNm GetStat handler for host-native paths) to report the
+   * real device name instead of its previous, always-wrong behavior of
+   * extracting whatever the first slash-delimited component of the RAW
+   * HOST PATH happened to be (e.g. "Users" from
+   * "/Users/rdoggett/.../dd/CMDS" -- confirmed live 2026-07-06). RBF's
+   * own equivalent (pRnam, file_rbf.c) already reports its clean device
+   * name this way, which is what lets a real OS-9 "pd" skip straight to
+   * printing "/h0" at an RBF root instead of walking "..": it recognizes
+   * "no further path component" from the device-name GetStat result
+   * alone. Host-native "pd" fell back to the ".."-walking algorithm
+   * purely because this GetStat was returning noise -- see the
+   * os9exec-host-confinement project memory for the full chain. */
+  Boolean HostPathDeviceName( const char* hostpath, char* nameOut )
+  {
+      char  real[PATH_MAX];
+      char  rootreal[PATH_MAX];
+      char  probe[PATH_MAX];
+      char  devbuf[3];
+      char  tmp[OS9PATHLEN];
+      char  ch;
+      char* slash;
+      char* root;
+      size_t rl;
+
+      if (hostpath==NULL || *hostpath==NUL) return false;
+
+      strncpy( probe, hostpath, sizeof(probe)-1 );
+      probe[sizeof(probe)-1]= NUL;
+      while (realpath( probe, real )==NULL) {
+          slash= strrchr( probe, PATHDELIM );
+          if (slash==NULL || slash==probe) return false; /* nothing left to try */
+          *slash= NUL;
+      }
+
+      #define DEV_MATCHES( d0,d1 ) \
+          ( devbuf[0]=(d0), devbuf[1]=(d1), devbuf[2]=NUL, \
+            root=NULL, TwoCharDev( devbuf,&root,tmp ), \
+            root!=NULL && *root!=NUL && \
+            realpath( root,rootreal )!=NULL && \
+            ( rl= strlen(rootreal), ustrncmp( real,rootreal,rl )==0 && \
+              (real[rl]==NUL || real[rl]==PATHDELIM) ) )
+
+      if (DEV_MATCHES( 'd','d' )) { strcpy(nameOut,devbuf); return true; }
+      for (ch= '0'; ch<='9'; ch++)
+          if (DEV_MATCHES( 'h',ch )) { strcpy(nameOut,devbuf); return true; }
+      for (ch= 'a'; ch<='z'; ch++)
+          if (DEV_MATCHES( 'h',ch )) { strcpy(nameOut,devbuf); return true; }
+
+      #undef DEV_MATCHES
+      return false;
+  } /* HostPathDeviceName */
+
+  /* True iff <hostpath> resolves to EXACTLY a configured device root
+   * (dd, h0-h9, ha-hz) -- not merely a path within one. Like
+   * HostPathDeviceName but requires the canonicalized paths to be equal,
+   * with nothing left over. Used by the directory reader (pDread,
+   * fileaccess.c) to recognize when it is enumerating a device root's own
+   * entries, so it can make the synthesized ".." entry self-referential
+   * (RBF-root semantics) -- see the comment at that call site. */
+  Boolean IsHostDeviceRoot( const char* hostpath )
+  {
+      char  real[PATH_MAX];
+      char  rootreal[PATH_MAX];
+      char  devbuf[3];
+      char  tmp[OS9PATHLEN];
+      char  ch;
+      char* root;
+
+      if (hostpath==NULL || *hostpath==NUL)   return false;
+      if (realpath( hostpath, real )==NULL)    return false;
+
+      #define ROOT_IS( d0,d1 ) \
+          ( devbuf[0]=(d0), devbuf[1]=(d1), devbuf[2]=NUL, \
+            root=NULL, TwoCharDev( devbuf,&root,tmp ), \
+            root!=NULL && *root!=NUL && \
+            realpath( root,rootreal )!=NULL && \
+            ustrcmp( real,rootreal )==0 )
+
+      if (ROOT_IS( 'd','d' )) return true;
+      for (ch= '0'; ch<='9'; ch++) if (ROOT_IS( 'h',ch )) return true;
+      for (ch= 'a'; ch<='z'; ch++) if (ROOT_IS( 'h',ch )) return true;
+
+      #undef ROOT_IS
+      return false;
+  } /* IsHostDeviceRoot */
+
+  /* Finds which configured device root (dd, h0-h9, ha-hz) <pathname>
+   * *literally starts with*, if any, and copies that root's own
+   * canonical (realpath'd) host path into <rootOut> (must be at least
+   * PATH_MAX bytes). Returns false, leaving <rootOut> untouched, if none
+   * match.
+   *
+   * Deliberately does NOT realpath() <pathname> itself, unlike
+   * HostPathWithinConfiguredDevice above -- this exists specifically for
+   * AdjustPath (linuxfiles.c) to check its input BEFORE CutUp() collapses
+   * any "/../" sequences in it. At that point <pathname> can still
+   * literally be ".../dd/../../..": realpath()-ing it directly would
+   * eagerly resolve straight through the ".." and answer a completely
+   * different question ("where does this end up", which is exactly what
+   * HostPathWithinConfiguredDevice is for) instead of "did this start
+   * inside a device root at all", which is what a literal string-prefix
+   * match answers correctly. AdjustPath uses this to distinguish "'..'
+   * walked above the root it started in" (clamp back to that root) from
+   * "never referenced a configured device to begin with, e.g. a literal
+   * /etc" (reject) -- see the confinement check at the end of
+   * AdjustPath, and the os9exec-host-confinement project memory. */
+  Boolean FindConfiguredDeviceRoot( const char* pathname, char* rootOut )
+  {
+      char  devbuf[3];
+      char  tmp[OS9PATHLEN];
+      char  ch;
+      char* root;
+      size_t rl;
+
+      if (pathname==NULL || *pathname==NUL) return false;
+
+      /* Compare against <root> itself (the literal string TwoCharDev/
+       * parsepathext already substituted into the path, e.g. ".../dd"),
+       * NOT its realpath()'d form -- "dd" is a symlink to "freeware" in
+       * this very repo, so realpath("dd") is ".../freeware", which would
+       * never textually match a pathname that still literally says
+       * ".../dd/../". Confirmed live: this exact mismatch made pd's own
+       * ".." lookup at the /dd root fail to clamp (fell through to
+       * outright rejection instead) until fixed. */
+      #define DEV_MATCHES( d0,d1 ) \
+          ( devbuf[0]=(d0), devbuf[1]=(d1), devbuf[2]=NUL, \
+            root=NULL, TwoCharDev( devbuf,&root,tmp ), \
+            root!=NULL && *root!=NUL && \
+            ( rl= strlen(root), ustrncmp( pathname,root,rl )==0 && \
+              (pathname[rl]==NUL || pathname[rl]==PATHDELIM) ) )
+
+      if (DEV_MATCHES( 'd','d' )) { strcpy(rootOut,root); return true; }
+      for (ch= '0'; ch<='9'; ch++)
+          if (DEV_MATCHES( 'h',ch )) { strcpy(rootOut,root); return true; }
+      for (ch= 'a'; ch<='z'; ch++)
+          if (DEV_MATCHES( 'h',ch )) { strcpy(rootOut,root); return true; }
+
+      #undef DEV_MATCHES
+      return false;
+  } /* FindConfiguredDeviceRoot */
+
+  /* Resolves an OS-9-style path to its would-be host path (same
+   * parsepath+AdjustPath resolution GetRBFName does) and checks it
+   * against HostPathWithinConfiguredDevice. Used by IO_Type's own final
+   * fallback (see below): when nothing else classifies an absolute path
+   * (OS9_Device already said no), IO_Type used to unconditionally trust
+   * the caller's requested mode and default to fDir/fFile anyway -- the
+   * actual last permissive-by-default gap that let "/etc"/"/usr" through
+   * even after GetRBFName correctly rejected them, since OS9_Device
+   * returning false was never enough on its own. */
+  static Boolean OS9PathEscapesDeviceRoot( const char* os9path )
+  {
+      char  sv[OS9PATHLEN];
+      char  adjust[OS9PATHLEN];
+      char* pp;
+
+      strncpy( sv, os9path, sizeof(sv)-1 );
+      sv[sizeof(sv)-1]= NUL;
+      pp= sv;
+      if (parsepath( 0, &pp, adjust, false )) return false; /* not our concern here */
+      strncpy( sv, adjust, sizeof(sv)-1 );
+      sv[sizeof(sv)-1]= NUL;
+      pp= sv;
+      AdjustPath( pp, adjust, false ); /* ignore err -- adjust is populated
+                                          regardless, same as GetRBFName */
+      return !HostPathWithinConfiguredDevice( adjust );
+  } /* OS9PathEscapesDeviceRoot */
+
   os9err GetRBFName( char* os9path, ushort mode,
                      Boolean *isFolder, char* rbfname )
   {
@@ -2291,9 +2498,18 @@ Boolean RBF_ImgSize( long size )
        * the loop immediately with the correct E_PNNF instead of hanging. */
       qq = (*pp) ? pp+strlen(pp)-1 : pp;
       while (true) {
-               *isFolder=    PathFound( pp );
-          if  (!*isFolder && !FileFound( pp )) err= E_PNNF;
-          else if (!*isFolder)                 err= 0; /* file found at pp — stop stripping */
+          if (!HostPathWithinConfiguredDevice( pp )) {
+              /* escaped every configured device root -- treat exactly
+               * like a nonexistent path rather than falling through to
+               * the real host filesystem (see HostPathWithinConfiguredDevice) */
+              *isFolder= false;
+              err= E_PNNF;
+          }
+          else {
+              *isFolder=    PathFound( pp );
+              if  (!*isFolder && !FileFound( pp )) err= E_PNNF;
+              else if (!*isFolder)                 err= 0; /* file found at pp — stop stripping */
+          }
 
           debugprintf( dbgFiles,dbgNorm,("# GetRBFName: '%s' mode=%d err=%d (%s)\n",
                                             pp, mode,err, *isFolder ? "dir":"file" ));
@@ -2432,6 +2648,17 @@ static Boolean OS9_Device( char* os9path, ushort mode, ptype_typ *typeP )
                 else             { *typeP= fNone; return false; }
             }
         }
+        /* Neither the full path nor its 2-char device prefix resolves on
+         * the host — this isn't a host-filesystem-backed path at all (and,
+         * per HostPathWithinConfiguredDevice in GetRBFName, may have been
+         * deliberately kept out of bounds — e.g. "/etc", "/usr"). *typeP
+         * still holds its unconditional fRBF default from the top of this
+         * function; without resetting it here, the final "*typeP!=fNone"
+         * fallback below would trust that leftover default and return
+         * true regardless of what was actually determined above. Only a
+         * real SCSI device descriptor should be considered past this
+         * point. */
+        *typeP= fNone;
     }
 
     /* searching for SCSI after searching file image !! */
@@ -2567,7 +2794,17 @@ ptype_typ IO_Type(ushort pid, char* os9path, ushort mode)
         /* "/vmod" is built-in */ 
         if    (ustrcmp( os9path,"/vmod" )==0) { type= fVMod; break; }
         if (OS9_Device( os9path,mode,          &type ))      break;
-        
+
+        /* OS9_Device said no -- don't unconditionally trust the caller's
+         * requested mode and default to fDir/fFile regardless (the last
+         * permissive-by-default gap: this used to let "/etc"/"/usr"
+         * through even after every earlier classification correctly
+         * rejected them). Only default to file/dir if the path still
+         * resolves within a configured device root -- e.g. a new file
+         * being created inside an existing device, which is legitimate
+         * and already reaches here with a genuine host path underneath. */
+        if (OS9PathEscapesDeviceRoot( os9path )) { type= fNone; break; }
+
         if (IsDir(mode)) type= fDir;
         else             type= fFile;
     } while (false);

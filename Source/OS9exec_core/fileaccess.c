@@ -735,12 +735,18 @@ os9err pHvolnam( _pid_, syspath_typ* spP, char* volname )
       volname[ 1 ]= NUL;     
     
     #elif defined UNIX
-      size_t ii; // get the current top path as name
-      for (ii= 0; ii<strlen( spP->fullName ); ii++) {
-        volname[ ii ]= spP->fullName[ ii+1 ];
-        if ( ii>0 && volname[ ii ]=='/' ) { volname[ ii ]= NUL; break; }
-      } // for
-      
+      /* <spP->fullName> is the real host path (e.g.
+       * "/Users/rdoggett/.../dd/CMDS"), NOT an OS-9 device name -- the
+       * old code here just grabbed the first slash-delimited component
+       * of that host path ("Users"), which was never right for any
+       * device using host-native storage and confirmed live 2026-07-06
+       * as part of why "pd" couldn't recognize a device root the way it
+       * does for RBF (see file_rbf.c's pRnam, and the
+       * os9exec-host-confinement project memory). Resolve which
+       * configured device (dd/h0-h9/ha-hz) this path actually falls
+       * within instead. */
+      if (!HostPathDeviceName( spP->fullName, volname )) volname[0]= NUL;
+
     //strcpy( volname,spP->fullName ); /* none for Linux, top directory structure is different */
       
 //  #elif defined MACOSX
@@ -2451,7 +2457,24 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
             
       if (dEnt!=NULL) {
         GetEntry( dEnt, os9dirent.name, true );
-        FD_ID          ( spP->fullName, dEnt, &fdpos, &mP );                      
+        FD_ID          ( spP->fullName, dEnt, &fdpos, &mP );
+
+        /* At a host-native device root, make the ".." entry point back at
+         * the root itself (fdsect == the "." entry's), exactly as an RBF
+         * root's ".." entry holds the root's own LSN. This self-reference
+         * is the signal directory-walkers (pd, dsave, ...) use to detect
+         * "top of device" and stop -- via SS_DevNm -- instead of walking
+         * ".." on up into the host filesystem. Without it, ".." hashes to
+         * the host parent directory, so the walk escapes the OS-9 universe
+         * into unixland (the original authors' deliberate passthrough --
+         * correct as a convenience, wrong as OS-9 device semantics). A
+         * device root has no parent within the OS-9 world; this makes the
+         * emulator say so. Passing NULL for the entry hashes <fullName>
+         * itself, which is exactly how the "." entry's fdsect is formed. */
+        if (ustrcmp( (char*)dEnt->d_name, ".." )==0 &&
+            IsHostDeviceRoot( spP->fullName ))
+            FD_ID      ( spP->fullName, NULL, &fdpos, &mP );
+
         if (topFlag) { seekD0( spP ); topFlag= false; }
       }
       else err= E_EOF;
@@ -2631,7 +2654,7 @@ os9err pDchd( ushort pid, _spP_, ushort *modeP, char* pathname )
       err= AdjustPath( pathname,adapted, false ); if (err) return err;
       pathname=                 adapted;
             
-      if  (!PathFound( pathname )) return E_FNA;    
+      if  (!PathFound( pathname )) return E_FNA;
       strcpy( defDir_s,pathname );
     #endif
 

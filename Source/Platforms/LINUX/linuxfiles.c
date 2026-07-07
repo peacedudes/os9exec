@@ -61,6 +61,7 @@
 #include <ctype.h>
 #include <utime.h>
 #include <ctype.h>
+#include <limits.h>
 
 void Conv_to_2e( char* pathname, char** qP, char** qsP )
 /* ":2e" must be treated as "." and vice versa */
@@ -141,9 +142,22 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
     int     len;
     Boolean fnd, reduS;
     char    *v, *q, *qs, *qc;
-    
+    char    startRoot[PATH_MAX];
+    Boolean hadRoot;
+
+    /* Check BEFORE CutUp mutates anything below -- <pathname> is still
+     * the pristine input here, so this reflects whether the caller's
+     * path belonged to a configured device root at all (e.g. "/dd" was
+     * already substituted for its real host path upstream in
+     * parsepathext) before any "../" collapsing happens. Used at the
+     * end of this function to decide whether an out-of-bounds result
+     * should be clamped back to that root (".." walked above where it
+     * started) or rejected outright (never referenced a configured
+     * device to begin with -- see the confinement check below). */
+    hadRoot= FindConfiguredDeviceRoot( pathname, startRoot );
+
     /* make an copy which can be adapted */
-    strncpy( adname,pathname, OS9PATHLEN ); 
+    strncpy( adname,pathname, OS9PATHLEN );
     debugprintf( dbgFiles,dbgNorm,("# AdjustPath (in) '%s'\n", adname ));
 
     v= adname;
@@ -204,7 +218,35 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
 
         while (*q!=NUL && *q!=PATHDELIM) q++;
     } /* while */
-    
+
+    /* CutUp() above already collapsed any "/xxx/../" sequences, so a path
+     * like "/dd/../../.." has, by this point, become a plain host
+     * absolute path with no trace of the device it started from -- this
+     * is the ONE function every caller shares for turning an OS-9 path
+     * into a real host path (GetRBFName's own confinement check, added
+     * first in the same session, doesn't cover callers like change_dir
+     * that call AdjustPath directly and never go through GetRBFName at
+     * all). If the result escaped every configured device root:
+     *   - if <pathname> belonged to one before CutUp ran (hadRoot), ".."
+     *     just walked above where it started -- clamp back to that
+     *     root's own path instead of erroring, the same way an RBF
+     *     image's real root inode already clamps (or Unix's own "/../"
+     *     is a no-op at "/"); a device root has no parent to escape to.
+     *     Needed for e.g. pd's own ".." lookup at a device root to keep
+     *     working, not just for defusing a deliberate escape attempt.
+     *   - if it never referenced a configured device at all (e.g. a
+     *     literal "/etc"), reject outright -- there's no root to clamp
+     *     to and nothing legitimate is asking for a parent that never
+     *     existed within any device.
+     * See the os9exec-host-confinement project memory for the full story. */
+    if (!err && !HostPathWithinConfiguredDevice( adname )) {
+        if (hadRoot) {
+            strncpy( adname, startRoot, OS9PATHLEN-1 );
+            adname[OS9PATHLEN-1]= NUL;
+        }
+        else err= E_PNNF;
+    }
+
     debugprintf( dbgFiles,dbgNorm,("# AdjustPath(out) '%s' err=%d\n", adname,err ));
     return err;
 } /* AdjustPath */

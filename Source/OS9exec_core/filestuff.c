@@ -490,7 +490,7 @@ static void CheckH0( char* name, char* p, char** p3 )
     #endif
 } /* CheckH0 */
 
-static void TwoCharDev( char* p, char** p3, char* tmp )
+void TwoCharDev( char* p, char** p3, char* tmp )
 /* --- two-char device name */
 {
     char    envnam[15];
@@ -761,10 +761,10 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
                 p2= defDir_s;
         #ifdef windows32
           if  (*p2==NUL) p2= ".\\"; /* special condition, if undefined */
-        #elif defined linux  
+        #elif defined linux
           if  (*p2==NUL) p2= "./";  /* special condition, if undefined */
         #endif
-          
+
         while (*p2!=NUL) *op++= *p2++; /* do it until end of string (not including NUL) */
 
         op--; 

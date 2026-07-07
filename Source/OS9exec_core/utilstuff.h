@@ -176,6 +176,10 @@ Boolean     OpenTDir ( const char* pathname, DIR** d );
 dirent_typ* ReadTDir                       ( DIR*  d );
 Boolean PathFound    ( const char* pathname );
 Boolean FileFound    ( const char* pathname );
+Boolean HostPathWithinConfiguredDevice( const char* hostpath );
+Boolean HostPathDeviceName( const char* hostpath, char* nameOut );
+Boolean IsHostDeviceRoot( const char* hostpath );
+Boolean FindConfiguredDeviceRoot( const char* hostpath, char* rootOut );
 
 void    CutUp              ( char* pathname, const char* prev );
 void    EatBack            ( char* pathname );

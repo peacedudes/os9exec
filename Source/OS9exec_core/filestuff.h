@@ -81,6 +81,7 @@ void init_fmgrs();
 void   show_files        ( ushort pid );
 os9err parsepathext      ( ushort pid, char** inp, char* out, Boolean exedir, Boolean *ispath );
 os9err parsepath         ( ushort pid, char** inp, char* out, Boolean exedir );
+void   TwoCharDev        ( char* p, char** p3, char* tmp );
 
 /* Generic */
 os9err pUnimp            ( ushort pid, syspath_typ* );
