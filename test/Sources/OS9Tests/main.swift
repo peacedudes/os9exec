@@ -47,6 +47,13 @@ let containerImage = ProcessInfo.processInfo.environment["CONTAINER_IMAGE"]
 // e.g.: OS9SHELL=/h1/CMDS/shell make test
 let shellArg = ProcessInfo.processInfo.environment["OS9SHELL"] ?? "shell"
 
+// Command directory of the SDK disk these tests exercise. The tests chx here
+// so every command — and every command a command forks internally (e.g.
+// deldir → pd) — resolves from the SDK disk, with no freeware SHARE fallbacks
+// shadowing it. The /h1/CMDS bake-in is deliberate and confined to this one
+// line: override with OS9_SDK_CMDS if your command set is mounted elsewhere.
+let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/h1/CMDS"
+
 // ── Shell runner ──────────────────────────────────────────────────────────────
 
 /// Run one or more OS-9 shell commands and return combined stdout.
@@ -54,7 +61,7 @@ let shellArg = ProcessInfo.processInfo.environment["OS9SHELL"] ?? "shell"
 /// Times out after `timeout` seconds to prevent hangs from blocking the suite.
 /// If DOCKER_IMAGE is set, runs via Docker; otherwise runs locally (assumes dd symlink exists).
 func os9(_ commands: [String], timeout: TimeInterval = 15) -> String {
-    let setup  = "setenv PATH SHARE:/h1/CMDS\nload math881 cio\n"
+    let setup  = "chx \(sdkCmds)\nload math cio\n"
     let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
 
     let process = Process()
@@ -207,7 +214,7 @@ check("deldir: removes dir",     absent:   "testdir ",
 
 // file ops
 check("copy: creates file",      contains: "t_echo",
-    "copy /dd/CMDS/echo /dd/t_echo", "dir /dd")
+    "copy \(sdkCmds)/echo /dd/t_echo", "dir /dd")
 check("rename: new name present", contains: "t_echo2",
     "rename /dd/t_echo t_echo2", "dir /dd")
 check("rename: old name gone",   absent:   "t_echo ",  "dir /dd")
@@ -225,7 +232,7 @@ check("grep: no match silent", absent:   "OS-9 test line", "grep ZZZNOTFOUND /dd
 check("merge: combines files", contains: "OS-9 test line", "merge /dd/t_text /dd/t_text")
 
 // dump
-check("dump: shows hex",         contains: "4afc",     "dump /dd/CMDS/echo")
+check("dump: shows hex",         contains: "4afc",     "dump \(sdkCmds)/echo")
 
 // touch
 check("touch: creates file",     contains: "t_touch",
@@ -234,8 +241,8 @@ noError("del: touch cleanup",    "del /dd/t_touch")
 
 // cmp
 noError("cmp: identical files",
-    "copy /dd/CMDS/echo /dd/t_cmp1",
-    "copy /dd/CMDS/echo /dd/t_cmp2",
+    "copy \(sdkCmds)/echo /dd/t_cmp1",
+    "copy \(sdkCmds)/echo /dd/t_cmp2",
     "cmp /dd/t_cmp1 /dd/t_cmp2",
     "del /dd/t_cmp1", "del /dd/t_cmp2")
 
@@ -274,7 +281,7 @@ noError("printenv: runs",        "printenv")
 
 // module ops
 noError("load+unlink: echo",
-    "load /dd/CMDS/echo", "unlink echo")
+    "load \(sdkCmds)/echo", "unlink echo")
 
 // sleep
 noError("sleep: zero seconds",   "sleep 0")
@@ -288,7 +295,7 @@ check("tmode: shows settings",   contains: "baud",    "tmode")
 
 // binary exchange roundtrip
 check("binex+exbin: roundtrip",  contains: "Good CRC",
-    "binex /dd/CMDS/echo /dd/t_echo.x",
+    "binex \(sdkCmds)/echo /dd/t_echo.x",
     "exbin /dd/t_echo.x /dd/t_echo2",
     "ident /dd/t_echo2",
     "del /dd/t_echo.x", "del /dd/t_echo2")
@@ -302,7 +309,7 @@ check("build: creates script file", contains: "t_bscript",
 
 // module save/restore
 check("save: writes module file", contains: "echo",
-    "load /dd/CMDS/echo",
+    "load \(sdkCmds)/echo",
     "save echo",
     "dir /dd/CMDS ! grep echo",
     "del /dd/echo",
@@ -314,12 +321,12 @@ check("os9gen: no device",       contains: "os9gen",      "os9gen")
 noError("cfp: shows help",       "cfp")
 
 // attr: show file attribute string
-check("attr: module attrs",      contains: "--e-r",  "attr -re /dd/CMDS/echo")
+check("attr: module attrs",      contains: "--e-r",  "attr -re \(sdkCmds)/echo")
 noError("attr: data file attrs",                     "attr -re /dd/t_text")
 noError("text fixture: cleanup",                     "del /dd/t_text")
 
-// help: specific command help
-check("help dir: options listed", contains: "recursive",  "help dir")
+// per-command usage: OS-9 has no "help <cmd>"; the convention is "<cmd> -?"
+check("dir -?: options listed",   contains: "recursive",  "dir -?")
 
 // merge: line count confirms newlines preserved
 check("merge: two files two lines", contains: "2 lines",
@@ -331,7 +338,7 @@ check("merge: two files two lines", contains: "2 lines",
 check("dsave: generates script", contains: "copy",        "dsave /dd")
 
 // module integrity checker
-check("fixmod: good CRC",        contains: "CRC matches", "fixmod /dd/CMDS/echo")
+check("fixmod: good CRC",        contains: "CRC matches", "fixmod \(sdkCmds)/echo")
 
 // inline help system
 check("help: shows function",    contains: "Function",    "help")
@@ -357,11 +364,11 @@ check("stderr: redirect to file",     contains: "Error",
 noError("paths: runs",                "paths")
 
 // what: scan module for embedded strings
-noError("what: runs on module",       "what /dd/CMDS/echo")
+noError("what: runs on module",       "what \(sdkCmds)/echo")
 
 // cudo: convert OS-9/68k module to OS-9000 format (test on a copy — cudo modifies in place)
 check("cudo: converts module format", contains: "converting",
-    "copy /dd/CMDS/echo /dd/t_cudo",
+    "copy \(sdkCmds)/echo /dd/t_cudo",
     "cudo /dd/t_cudo",
     "del /dd/t_cudo")
 
@@ -410,7 +417,7 @@ check("dir: parent traversal",          contains: "CMDS",     "dir /dd/CMDS/..")
 
 // relative listing after chd
 check("chd: dir with no args lists dir", contains: "echo",
-    "chd /dd/CMDS", "dir", "chd /dd")
+    "chd \(sdkCmds)", "dir", "chd /dd")
 
 // ── Shell variables and environment ──────────────────────────────────────────
 
