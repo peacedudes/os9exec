@@ -15,6 +15,7 @@ h*
 # Build output
 /Output/
 /build/
+/.build/
 /os9exec
 /test/.build/
 
@@ -23,3 +24,6 @@ h*
 
 # Claude Code per-user local settings (machine-specific allowlist)
 /.claude/settings.local.json
+
+# Internal planning doc — not ready for public visibility yet
+/ROADMAP.md
