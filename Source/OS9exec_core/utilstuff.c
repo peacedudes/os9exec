@@ -224,6 +224,12 @@
  *
  */
 
+/* glibc gates realpath() behind __USE_MISC, which _GNU_SOURCE enables.
+   It must be defined before the first system header -- reached via
+   os9exec_incl.h below -- or the include guard locks realpath() out.
+   Harmless on Darwin, which declares realpath() unconditionally. */
+#define _GNU_SOURCE
+
 #include "os9exec_incl.h"
 #include <ctype.h>
 
@@ -233,7 +239,7 @@
 #include <utime.h>
 #include <ctype.h>
 #include <limits.h>
-#include <stdlib.h>   /* realpath(): declared here on all platforms; target_options.h only pulls it in for __MACH__ */
+#include <stdlib.h>   /* realpath() (see _GNU_SOURCE note above); target_options.h only pulls this in for __MACH__ */
 
                 
 
