@@ -218,6 +218,32 @@ RBF disk images pointed to by `/h0`–`/hz` are auto-mounted on first access —
 `dir /h0/CMDS` works directly without needing to access `/h0` first or run `mount`.
 Use `mount <image> <devname>` to attach an image under a name of your choosing.
 
+### Devices stay inside their root (changed behavior)
+
+Each device is a self-contained OS-9 volume. From inside the emulator you cannot
+climb out of a device into the host filesystem: `..` at a device root resolves to
+the root itself (like `/..` == `/` on Unix), and an absolute path that names no
+configured device — `chd /usr`, `chd /etc` — is rejected rather than dropping you
+into the real host directory. This matches how real OS-9/RBF hardware behaves: a
+device root has no parent.
+
+**This differs from earlier builds**, where a host-directory-backed device let
+OS-9 walk `..` up into the host tree, `chd /usr` landed in the actual host `/usr`,
+and `pd` printed the underlying host path (e.g. `/Users/you/.../dd/CMDS`) instead
+of the OS-9 path (`/dd/CMDS`). That passthrough was convenient but not faithful to
+OS-9 semantics — and a stray `del`/`makdir` on an unrecognized absolute path could
+silently touch real host files. RBF disk images were always properly confined;
+this brings host-directory devices in line with them.
+
+If you *want* OS-9 to reach a specific host location, expose it deliberately as its
+own device — symlink it to a device name next to the binary:
+
+```
+ln -s /any/host/dir h5      # now /h5 inside OS-9 is that directory
+```
+
+That keeps host access explicit and per-device instead of reachable by accident.
+
 
 ## Options
 
