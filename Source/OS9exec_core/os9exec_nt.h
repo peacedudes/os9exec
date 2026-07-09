@@ -1398,6 +1398,7 @@ extern int     justthis_pid;
 extern Boolean quitFlag;
 extern Boolean userOpt;
 extern Boolean catch_ctrlC;
+extern Boolean baud_throttle;
 
 extern Boolean nativeActive;
 extern Boolean pluginActive;

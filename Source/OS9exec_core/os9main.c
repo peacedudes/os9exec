@@ -448,6 +448,7 @@ static void os9_usage(char *name)
     upho_printf("   -g ip_addr  open   MGR screen at IP address\n");
     upho_printf("   -u          user defined option\n" );
     upho_printf("   -v          ctrl-C will stop OS9exec immediately\n" );
+    upho_printf("   -r          run terminal output full speed (no baud-rate pacing)\n" );
     upho_printf("   -h[h]       show this help [and conditions for using the software]\n");
     upho_printf("\n");
 
@@ -679,6 +680,7 @@ void os9_main( int argc, char **argv, char **envp )
 
           case 'u' :  userOpt    =  true; break; // set user option
           case 'v' :  catch_ctrlC= false; break; // don not install a ctrl C handler
+          case 'r' :  baud_throttle= false; break; // run full speed (no baud pacing)
           case 'z' :  fullScreen =  true; break; // full screen mode
  
           case 'g' :  if (g_ipAddr==NULL) {

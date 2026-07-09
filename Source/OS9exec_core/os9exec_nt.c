@@ -599,6 +599,7 @@ int     justthis_pid  =  0;
 Boolean quitFlag	  = false;
 Boolean userOpt		  = false;
 Boolean catch_ctrlC   = true;
+Boolean baud_throttle = true;  /* pace terminal output to the path's baud rate */
 
 Boolean nativeActive  = false;
 Boolean pluginActive  = false;

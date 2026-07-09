@@ -726,6 +726,18 @@ os9err pEOF( _pid_, _spP_, _maxlenP_, _buffer_ )
 {   return E_EOF;
 } /* pEOF */
 
+/* SCF baud rate code (PD_BAU) -> bits per second.  Codes verified against
+   tmode on this build; 0 = unknown/unsupported, meaning "don't throttle". */
+static ulong baud_bps( byte code )
+{
+    static const ulong bps[]= {
+          50,   75,  110,  134,  150,  300,  600, 1200, 1800, 2000, /*  0.. 9 */
+        2400, 3600, 4800, 7200, 9600,19200,                         /* 10..15 */
+       38400,    0,    0,    0,    0,57600,115200                   /* 16..22 */
+    };
+    return code < sizeof(bps)/sizeof(bps[0]) ? bps[code] : 0;
+} /* baud_bps */
+
 static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                           uint32_t *maxlenP, char* buffer, Boolean wrln )
 /* output to console */
@@ -798,6 +810,26 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
 
     rw__idleticks+= GetSystemTick()-outputticks;
     if (cnt<0) return c2os9err(errno,E_WRITE); /* default: general write error */
+
+    /* Pace output to the path's baud rate, the OS-9 way: the bytes are already
+       emitted, so park this process (as F$Sleep does) until they would have
+       finished transmitting.  The scheduler runs other processes meanwhile and
+       ^C stays live -- the host is never blocked.  Sub-tick transmit time is
+       accumulated so char-at-a-time output paces correctly in aggregate. */
+    if (baud_throttle && cnt>0 && cp->state!=pSysTask) {
+        ulong bps= baud_bps( ot->_sgs_bau );
+        if (bps>0) {
+            static ulong owed= 0;      /* accumulated transmit time, milli-ticks */
+            ulong ticks;
+            owed += (ulong)cnt * (10UL*TICKS_PER_SEC*1000UL) / bps; /* 10 bits/char */
+            ticks= owed/1000; owed %= 1000;
+            if (ticks>0) {
+                set_os9_state( pid, pSleeping, "baud throttle" );
+                cp->wakeUpTick= GetSystemTick()+ticks;
+                arbitrate= true;
+            }
+        }
+    }
 
     *maxlenP= cnt;
     return 0;
