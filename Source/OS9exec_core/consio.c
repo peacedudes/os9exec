@@ -816,7 +816,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
        finished transmitting.  The scheduler runs other processes meanwhile and
        ^C stays live -- the host is never blocked.  Sub-tick transmit time is
        accumulated so char-at-a-time output paces correctly in aggregate. */
-    if (baud_throttle && cnt>0 && cp->state!=pSysTask) {
+    if (baud_throttle && cnt>0 && pid!=0 && cp->state!=pSysTask) {
         ulong bps= baud_bps( ot->_sgs_bau );
         if (bps>0) {
             static ulong owed= 0;      /* accumulated transmit time, milli-ticks */
