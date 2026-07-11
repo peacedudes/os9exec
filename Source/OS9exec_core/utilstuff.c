@@ -925,8 +925,8 @@ Boolean KeyToBuffer( ttydev_typ* mco, char key )
     /* these characters will be eaten before they reach the input buffer */
     /* treatment for special chars */
     if     (key!=NUL) {
-        if (key==pd_int)  { if (lwp) send_signal( lwp, S_Intrpt ); return 0; }
-        if (key==pd_qut)  { if (lwp) send_signal( lwp, S_Abort  ); return 0; }
+        if (key==pd_int)  { baud_flush_device( mco->spP->term_id ); mco->inBufUsed= 0; if (lwp) send_signal( lwp, S_Intrpt ); return 0; }
+        if (key==pd_qut)  { baud_flush_device( mco->spP->term_id ); mco->inBufUsed= 0; if (lwp) send_signal( lwp, S_Abort  ); return 0; }
         if (key==pd_xon)  { mco->holdScreen= false;                return 0; }
         if (key==pd_xoff) { mco->holdScreen=  true;                return 0; }
     }
