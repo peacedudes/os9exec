@@ -992,7 +992,8 @@ void DoWait( void )
   #else
     #error architecture not supported
   #endif
-  
+
+  baud_drain_due();
   slp_idleticks+= GetSystemTick()-ticks;
 } // DoWait
 
@@ -1016,6 +1017,8 @@ void do_arbitrate( ushort allowedIntUtil )
   Boolean      atLeast1;                  /* at least one process is sleeping */
   Boolean      pDone;
   Boolean      cOK;
+
+  baud_drain_due();
 
   debugprintf(dbgTaskSwitch,dbgDetail,("# arbitrate: current pid=%d, arbitrate=%d\n",
                                           currentpid, arbitrate));

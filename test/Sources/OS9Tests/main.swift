@@ -60,11 +60,12 @@ let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/h1/CMDS"
 /// ESC on a final line signals EOF to the shell.
 /// Times out after `timeout` seconds to prevent hangs from blocking the suite.
 /// If DOCKER_IMAGE is set, runs via Docker; otherwise runs locally (assumes dd symlink exists).
-func os9(_ commands: [String], timeout: TimeInterval = 15) -> String {
+func os9(_ commands: [String], timeout: TimeInterval = 15, paced: Bool = false) -> String {
     let setup  = "chx \(sdkCmds)\nload math cio\n"
     let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
 
     let process = Process()
+    let speedFlag: [String] = paced ? [] : ["-r"]
 
     if let image = dockerImage {
         // Run via Docker: mount local dd directory and pipe stdin/stdout
@@ -75,10 +76,8 @@ func os9(_ commands: [String], timeout: TimeInterval = 15) -> String {
             "--rm",
             "-i",
             "-v", diskPath + ":/dd",
-            image,
-            "-r",
-            "shell"
-        ]
+            image
+        ] + speedFlag + ["shell"]
     } else if let image = containerImage {
         // Run via Apple Container: mount local dd directory and pipe stdin/stdout
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -88,14 +87,12 @@ func os9(_ commands: [String], timeout: TimeInterval = 15) -> String {
             "--rm",
             "-i",
             "-v", diskPath + ":/dd",
-            image,
-            "-r",
-            "shell"
-        ]
+            image
+        ] + speedFlag + ["shell"]
     } else {
         // Run locally: use existing symlink at dd/
         process.executableURL = execURL
-        process.arguments    = ["-r", shellArg]
+        process.arguments    = speedFlag + [shellArg]
         process.environment  = ["OS9DISK": diskPath]
     }
 
@@ -235,6 +232,24 @@ check("merge: combines files", contains: "OS-9 test line", "merge /dd/t_text /dd
 
 // dump
 check("dump: shows hex",         contains: "4afc",     "dump \(sdkCmds)/echo")
+
+// baud pacing: a >256-byte paced write must produce byte-identical output
+// to the unpaced (-r) version -- proves the FIFO/pWaitWrite block-and-resume
+// path doesn't drop, duplicate, or reorder bytes. 115200 baud keeps this
+// fast enough to finish well inside the timeout even though it's genuinely
+// paced (not bypassing the FIFO like -r does).
+do {
+    let pacedOutput   = os9(["tmode baud=115200", "dump \(sdkCmds)/echo"], paced: true)
+    let unpacedOutput = os9(["tmode baud=115200", "dump \(sdkCmds)/echo"])
+    if pacedOutput == unpacedOutput && !unpacedOutput.isEmpty {
+        print("PASS: baud pacing: paced dump matches unpaced dump byte-for-byte")
+        passed += 1
+    } else {
+        print("FAIL: baud pacing: paced dump differs from unpaced")
+        print("      paced length=\(pacedOutput.count), unpaced length=\(unpacedOutput.count)")
+        failed += 1
+    }
+}
 
 // touch
 check("touch: creates file",     contains: "t_touch",

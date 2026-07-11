@@ -726,6 +726,81 @@ os9err pEOF( _pid_, _spP_, _maxlenP_, _buffer_ )
 {   return E_EOF;
 } /* pEOF */
 
+#define BAUD_FIFO_SIZE   256
+#define MAXBAUDDEV         8
+
+typedef struct {
+    Boolean inUse;
+    short   term_id;
+    byte    buf[BAUD_FIFO_SIZE];
+    ushort  head, tail, count;
+    ulong   us_per_char;   /* 0 = unpaced; Task 3 fills this in for real baud rates */
+    ulong   next_due_us;   /* host time next pop may happen; Task 3 makes this meaningful */
+} baud_device_t;
+
+static baud_device_t baud_devices[MAXBAUDDEV];
+
+/* find (or allocate) the simulated device for a physical console id */
+static baud_device_t* baud_dev_for( short term_id )
+{
+    int i, free_slot= -1;
+    for (i=0; i<MAXBAUDDEV; i++) {
+        if ( baud_devices[i].inUse && baud_devices[i].term_id==term_id) return &baud_devices[i];
+        if (!baud_devices[i].inUse && free_slot<0) free_slot= i;
+    }
+    if (free_slot<0) return NULL; /* out of device slots; caller falls back to unpaced */
+
+    baud_devices[free_slot].inUse=       true;
+    baud_devices[free_slot].term_id=     term_id;
+    baud_devices[free_slot].head=
+    baud_devices[free_slot].tail=
+    baud_devices[free_slot].count=       0;
+    baud_devices[free_slot].us_per_char= 0;
+    baud_devices[free_slot].next_due_us= 0;
+    return &baud_devices[free_slot];
+} /* baud_dev_for */
+
+static Boolean fifo_push( baud_device_t* d, byte c )
+{
+    if (d->count>=BAUD_FIFO_SIZE) return false;
+    d->buf[d->tail]= c;
+    d->tail= (ushort)((d->tail+1) % BAUD_FIFO_SIZE);
+    d->count++;
+    return true;
+} /* fifo_push */
+
+static Boolean fifo_pop( baud_device_t* d, byte* c )
+{
+    if (d->count==0) return false;
+    *c= d->buf[d->head];
+    d->head= (ushort)((d->head+1) % BAUD_FIFO_SIZE);
+    d->count--;
+    return true;
+} /* fifo_pop */
+
+/* pop+display everything currently queued. Task 3 adds real per-char pacing
+   here; for now this drains unconditionally (no visible pacing yet). */
+void baud_drain_due( void )
+{
+    int  i;
+    byte c;
+    for (i=0; i<MAXBAUDDEV; i++) {
+        if (!baud_devices[i].inUse) continue;
+        while (fifo_pop( &baud_devices[i], &c )) ConsPutc( c );
+    }
+} /* baud_drain_due */
+
+void baud_flush_device( short term_id )
+{
+    int i;
+    for (i=0; i<MAXBAUDDEV; i++) {
+        if (baud_devices[i].inUse && baud_devices[i].term_id==term_id) {
+            baud_devices[i].head= baud_devices[i].tail= baud_devices[i].count= 0;
+            return;
+        }
+    }
+} /* baud_flush_device */
+
 /* SCF baud rate code (PD_BAU) -> bits per second.  Codes verified against
    tmode on this build; 0 = unknown/unsupported, meaning "don't throttle". */
 static ulong baud_bps( byte code )
@@ -749,6 +824,8 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
     struct _sgs* ot = (struct _sgs*)&spC->opt; /* path opt table */
     Boolean      do_lf= false;
     process_typ* cp= &procs[pid];
+    Boolean      paced= false;
+    baud_device_t* dev= NULL;
 
     gConsoleID=  spP->term_id;
     g_spP     =  spP;
@@ -773,16 +850,44 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
     else {
         /* interactive output to console */
         #ifdef TERMINAL_CONSOLE
-                 cnt=0;
+          /* decide once whether this write is paced or goes straight to the
+             screen; guards pid==0 (system process) and the pid>=MAXPROCESSES
+             sentinel (banner/system output) used elsewhere in this file */
+          if (baud_throttle && pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask) {
+              ulong bps= baud_bps( ot->_sgs_bau );
+              if (bps>0) {
+                  dev= baud_dev_for( gConsoleID );
+                  if (dev!=NULL) paced= true;
+              }
+          }
+
+          cnt= 0;
+          if (cp->state==pWaitWrite) {
+              set_os9_state( pid, cp->saved_state, "ConsoleOut" );
+              cnt=                cp->saved_cnt;
+          }
+
           while (cnt<*maxlenP) {
-              c= buffer[cnt++];
+              c= buffer[cnt];
               if (ot->_sgs_case && islower(c)) {
                   /* lower case -> upper case
                      NOTE: this may wreck alpha escape codes */
                   c = toupper(c);
               }
-            
-              ConsPutc( c );
+
+              if (paced) {
+                  if (!fifo_push( dev, c )) {
+                      cp->saved_cnt  = cnt;
+                      cp->saved_state= cp->state;
+                      set_os9_state( pid, pWaitWrite, "ConsoleOut" );
+                      arbitrate= true;
+                      break;
+                  }
+              }
+              else {
+                  ConsPutc( c );
+              }
+              cnt++;
 
               if (cp->state==pSysTask) { /* should never go to here */
                   cp->systask_offs= cnt-1; /* store it here !! */
@@ -796,40 +901,26 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                       break;
                   }
               }
-              
+
               if (wrln && c!=NUL && c==ot->_sgs_eorch) {
-                  if (ot->_sgs_alf) ConsPutc( LF );
+                  if (ot->_sgs_alf) {
+                      /* trailing auto-linefeed: best-effort. In the extremely
+                         narrow case where the FIFO is exactly full right when
+                         this would be queued, it's dropped rather than adding
+                         a second blocking path just for one cosmetic byte. */
+                      if (paced) fifo_push( dev, LF ); else ConsPutc( LF );
+                  }
                   break;
               }
           } /* while */
 
-        #else   
+        #else
           cnt= stdwrite(pid,buffer,*maxlenP,spP->stream,false);
         #endif
     }
 
     rw__idleticks+= GetSystemTick()-outputticks;
     if (cnt<0) return c2os9err(errno,E_WRITE); /* default: general write error */
-
-    /* Pace output to the path's baud rate, the OS-9 way: the bytes are already
-       emitted, so park this process (as F$Sleep does) until they would have
-       finished transmitting.  The scheduler runs other processes meanwhile and
-       ^C stays live -- the host is never blocked.  Sub-tick transmit time is
-       accumulated so char-at-a-time output paces correctly in aggregate. */
-    if (baud_throttle && cnt>0 && pid!=0 && cp->state!=pSysTask) {
-        ulong bps= baud_bps( ot->_sgs_bau );
-        if (bps>0) {
-            static ulong owed= 0;      /* accumulated transmit time, milli-ticks */
-            ulong ticks;
-            owed += (ulong)cnt * (10UL*TICKS_PER_SEC*1000UL) / bps; /* 10 bits/char */
-            ticks= owed/1000; owed %= 1000;
-            if (ticks>0) {
-                set_os9_state( pid, pSleeping, "baud throttle" );
-                cp->wakeUpTick= GetSystemTick()+ticks;
-                arbitrate= true;
-            }
-        }
-    }
 
     *maxlenP= cnt;
     return 0;
