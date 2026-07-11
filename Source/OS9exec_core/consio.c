@@ -862,7 +862,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
           }
 
           cnt= 0;
-          if (cp->state==pWaitWrite) {
+          if (pid>0 && pid<MAXPROCESSES && cp->state==pWaitWrite) {
               set_os9_state( pid, cp->saved_state, "ConsoleOut" );
               cnt=                cp->saved_cnt;
           }
