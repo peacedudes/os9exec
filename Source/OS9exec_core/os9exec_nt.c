@@ -2255,6 +2255,8 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
       } // if
     } // if
   } while( currentpid<MAXPROCESSES ); /* while active processes */
+
+  baud_drain_all_pending(); /* flush any still-queued console output before shutdown */
 } // os9exec_loop
 
 

@@ -162,6 +162,7 @@ void    ConsPutcEdit    ( char  c, Boolean alf, char eorch );
 void  baud_drain_due   ( void );          /* pop+display whatever is ready right now, cheap no-op if nothing queued */
 void  baud_flush_device( short term_id ); /* discard queued output for one device (Ctrl-C/E, kill) */
 ulong baud_next_wake_delay_us( void );    /* microseconds until baud_drain_due() has work, or ULONG_MAX if none */
+void  baud_drain_all_pending( void );     /* block until every device's backlog is fully drained -- call once, at shutdown only */
 
 /* external RBF    support routines */
 os9err  MountDev        ( ushort pid, char* name, char* mnt_dev, char* devCopy,

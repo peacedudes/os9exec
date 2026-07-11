@@ -859,6 +859,36 @@ void baud_flush_device( short term_id )
     }
 } /* baud_flush_device */
 
+/* Called once, when the emulator is about to shut down (no more runnable
+   OS-9 processes). Any console's baud ring buffer may still have queued
+   output that real-time pacing hasn't caught up to yet -- block here until
+   it's all drained, since there's no more cooperative scheduling to wait
+   for and nothing else left running to stay responsive to. */
+void baud_drain_all_pending( void )
+{
+    int     i;
+    Boolean anyPending;
+    ulong   delay;
+
+    do {
+        baud_drain_due();
+        anyPending= false;
+        for (i=0; i<MAXBAUDDEV; i++) {
+            if (baud_devices[i].inUse && baud_devices[i].count>0) { anyPending= true; break; }
+        }
+        if (anyPending) {
+            delay= baud_next_wake_delay_us();
+            if (delay>0 && delay!=ULONG_MAX) {
+                struct timespec ts;
+                ulong capped= (delay>10000UL) ? 10000UL : delay; /* cap each nap at 10ms */
+                ts.tv_sec = 0;
+                ts.tv_nsec= (long)capped*1000L;
+                nanosleep( &ts, NULL );
+            }
+        }
+    } while (anyPending);
+} /* baud_drain_all_pending */
+
 /* SCF baud rate code (PD_BAU) -> bits per second.  Codes verified against
    tmode on this build; 0 = unknown/unsupported, meaning "don't throttle". */
 static ulong baud_bps( byte code )
