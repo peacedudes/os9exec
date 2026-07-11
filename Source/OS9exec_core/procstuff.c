@@ -634,7 +634,6 @@ os9err kill_process( ushort pid )
 
     /* now dispose all the process' resources */
     if (cp->last_mco!=NULL) {
-        baud_flush_device( cp->last_mco->spP->term_id );
         cp->last_mco->spP->lastwritten_pid= 0; /* disconnect CtrlC/E signal */
         cp->last_mco= NULL;
     }
