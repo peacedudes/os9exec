@@ -857,6 +857,7 @@ void baud_flush_device( short term_id )
     for (i=0; i<MAXBAUDDEV; i++) {
         if (baud_devices[i].inUse && baud_devices[i].term_id==term_id) {
             baud_devices[i].head= baud_devices[i].tail= baud_devices[i].count= 0;
+            recompute_next_wake(); /* this device may have been g_next_wake_us's source */
             return;
         }
     }

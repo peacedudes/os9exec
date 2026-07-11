@@ -229,6 +229,24 @@ doesn't apply to a blocked writer.
 State-name/display tables (`procstuff.c`'s `PStateStr`, `utilstuff.c`'s
 DExec status mapping) get a `pWaitWrite` case added, cosmetic only.
 
+**Known, accepted limitation from this boundary:** the signal-intercept
+`rtestate` save/restore (`os9exec_nt.c` ~line 2138) is one of the
+read-specific mechanisms deliberately left untouched above. A process
+blocked in `pWaitWrite` (mid-write, FIFO full) that has installed a signal
+intercept handler and receives a signal will have that signal's `rtestate`
+saved as `pActive` rather than `pWaitWrite`, since the save only recognizes
+`pWaitRead`. If the handler then returns via `F$RTE`, the write's trap frame
+re-executes from the top rather than resuming via the `cp->saved_cnt` offset,
+re-queuing up to one FIFO's worth (256 bytes) of already-emitted output —
+duplicated screen output, not data loss or state corruption. This requires
+an installed intercept handler *and* a write larger than 256 bytes *and* a
+signal arriving mid-write *and* an `F$RTE` resume (as opposed to the
+handler-less-process-aborts path, which is what Ctrl-C/Ctrl-E hit in
+practice via Task 4's flush). Accepted as a narrow, cosmetic-only edge at
+the exact boundary this design deliberately chose not to extend, rather than
+widening that boundary (and reopening the read/write collision risk) to
+close it.
+
 ## Testing
 
 - Existing integration suite (`make test`, 88/0) must stay green — in
