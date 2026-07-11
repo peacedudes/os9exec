@@ -740,7 +740,10 @@ typedef struct {
 
 static baud_device_t baud_devices[MAXBAUDDEV];
 
-static ulong g_next_wake_us= 0; /* earliest next_due_us across all paced non-empty devices, 0=none pending */
+static ulong g_next_wake_us= 0; /* earliest next_due_us across all paced non-empty devices;
+                                    0 is the sentinel for "nothing pending" -- relies on
+                                    gettimeofday() never legitimately returning exactly
+                                    epoch microsecond 0, which is true on any real system */
 
 static ulong host_micros( void )
 {

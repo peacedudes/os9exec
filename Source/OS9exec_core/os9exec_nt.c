@@ -2256,7 +2256,11 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
     } // if
   } while( currentpid<MAXPROCESSES ); /* while active processes */
 
-  baud_drain_all_pending(); /* flush any still-queued console output before shutdown */
+  /* Only the true top-level call (fromIntUtil==false, via setup_exception)
+     represents genuine emulator shutdown -- the two nested/re-entrant call
+     sites (funcdispatch.c's withinIntUtil handling, fcalls.c's F$Wait for
+     an intUtil child) pass fromIntUtil==true and must NOT block here. */
+  if (!fromIntUtil) baud_drain_all_pending();
 } // os9exec_loop
 
 
