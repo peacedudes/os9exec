@@ -217,7 +217,7 @@ git commit -m "Core: add pWaitWrite process state, mirroring pWaitRead's dispatc
 
 **Interfaces:**
 - Consumes: `pWaitWrite` (Task 1), `cp->saved_cnt`/`cp->saved_state` (existing per-process fields, already used by `pConsRead`).
-- Produces: `void baud_drain_due(void)` and `void baud_flush_device(short term_id)` — Task 3 changes `baud_drain_due`'s *internals* (adds real timing) but not its signature or call sites; Task 4/5 call `baud_flush_device`.
+- Produces: `void baud_drain_due(void)` and `void baud_flush_device(short term_id)` — Task 3 changes `baud_drain_due`'s *internals* (adds real timing) but not its signature or call sites; Task 4 calls `baud_flush_device`.
 
 This task deliberately does **not** add real timing yet — `baud_drain_due()` empties every queued device unconditionally, every time it's called. The point of this task is proving the FIFO/block/resume mechanism moves bytes correctly under real scheduling (a >256-byte write must still block and resume without dropping/duplicating/reordering bytes) before Task 3 adds the visual pacing on top of an already-correct mechanism.
 
@@ -433,7 +433,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
 } /* ConsoleOut */
 ```
 
-Note on `gLastwritten_pid`: `syspath_write` (`filestuff.c:1423`) already sets it to the writing pid before calling into `ConsoleOut`, so push-time attribution is correct as-is. The one known gap: when the *consumer* later calls `ConsPutc` for a queued byte, `ConsPutc` itself unconditionally resets `gLastwritten_pid= currentpid` (whichever process happens to be scheduled at pop time), which can point Ctrl-C/Ctrl-E at the wrong process for a byte that's mid-trickle from an earlier write. This is accepted as-is: Task 4's flush-on-interrupt already stops the trickle regardless of exactly which process the signal targets, so the practical impact is limited to signal-target precision during a narrow window, not to whether the interrupt works.
+Note on `gLastwritten_pid`: `syspath_write` (`filestuff.c:1423`) already sets it to the writing pid before calling into `ConsoleOut`, so push-time attribution is correct as-is. The one known gap: when the *consumer* later calls `ConsPutc` for a queued byte, `ConsPutc` itself unconditionally resets `gLastwritten_pid= currentpid` (whichever process happens to be scheduled at pop time), which can point Ctrl-C/Ctrl-E's `send_signal` at the wrong process for a byte that's mid-trickle from an earlier write. This is accepted as-is: Task 4's flush (triggered when the signaled process actually terminates via `kill_process`) still stops that process's trickle regardless of this narrow attribution gap, so the practical impact is limited, not a correctness failure.
 
 - [ ] **Step 4: Hook the drain into the scheduler's cooperative-yield points**
 
@@ -796,81 +796,15 @@ git commit -m "Core: real host-microsecond baud pacing via one-shot deadline, no
 
 ---
 
-### Task 4: Flush a device's queued output on Ctrl-C/Ctrl-E
-
-**Files:**
-- Modify: `Source/OS9exec_core/utilstuff.c` (`KeyToBuffer`)
-
-**Interfaces:**
-- Consumes: `baud_flush_device(short term_id)` (Task 2).
-
-- [ ] **Step 1: Extend `KeyToBuffer`'s interrupt/abort handling**
-
-`Source/OS9exec_core/utilstuff.c`, around line 926-931 — `mco->spP` already identifies the device (it's how the existing code resolves `lastwritten_pid`), so this just needs the flush call added to the two branches that already exist:
-
-```c
-    /* these characters will be eaten before they reach the input buffer */
-    /* treatment for special chars */
-    if     (key!=NUL) {
-        if (key==pd_int)  { baud_flush_device( mco->spP->term_id ); if (lwp) send_signal( lwp, S_Intrpt ); return 0; }
-        if (key==pd_qut)  { baud_flush_device( mco->spP->term_id ); if (lwp) send_signal( lwp, S_Abort  ); return 0; }
-        if (key==pd_xon)  { mco->holdScreen= false;                return 0; }
-        if (key==pd_xoff) { mco->holdScreen=  true;                return 0; }
-    }
-```
-
-- [ ] **Step 2: Build**
-
-```bash
-make -f GNUmakefile os9exec
-```
-Expected: builds clean, no new warnings.
-
-- [ ] **Step 3: Run the full suite (regression check)**
-
-```bash
-swift run --package-path test
-```
-Expected: `Results: 89 passed, 0 failed`.
-
-- [ ] **Step 4: Manual verification via the REPL**
-
-```bash
-./tools/os9repl.sh start
-./tools/os9repl.sh send "chx /h1/CMDS"
-./tools/os9repl.sh send "tmode baud=300"
-./tools/os9repl.sh send "dump /h1/CMDS/echo &"
-```
-
-Wait roughly half a second (enough for a couple of lines to be queued/trickling), then send a Ctrl-C through the REPL's raw key mode (see `references/common/using-os9exec-repl.md` for gated-vs-raw mode — background job output still goes through the gated shell's console, so this should work via `send`, but confirm against actual REPL behavior rather than assuming):
-
-```bash
-./tools/os9repl.sh send $'\x03'
-./tools/os9repl.sh peek
-```
-
-Expected: the trickle stops immediately at Ctrl-C — no further lines appear even after waiting a couple more seconds (`./tools/os9repl.sh peek` again to confirm). Stop the session afterward:
-
-```bash
-./tools/os9repl.sh stop
-```
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add Source/OS9exec_core/utilstuff.c
-git commit -m "Core: flush a console's queued baud output on Ctrl-C/Ctrl-E"
-```
-
----
-
-### Task 5: Flush a killed process's device (best-effort)
+### Task 4: Flush a killed process's device (covers Ctrl-C/Ctrl-E too)
 
 **Files:**
 - Modify: `Source/OS9exec_core/procstuff.c` (`kill_process`)
 
 **Interfaces:**
 - Consumes: `baud_flush_device(short term_id)` (Task 2).
+
+**Revised scope** (originally planned as two separate tasks — a `KeyToBuffer` hook for Ctrl-C/Ctrl-E and a separate `kill_process` hook — collapsed into one after review): Ctrl-C/Ctrl-E don't need their own flush hook. `KeyToBuffer` (`utilstuff.c`) already does nothing but call `send_signal(lwp, S_Intrpt)`/`send_signal(lwp, S_Abort)` when those keys are pressed (and does nothing at all if they're remapped/disabled via `tmode`) — the actual process termination, when the signal isn't caught by the target program, happens through the ordinary signal-delivery path into `kill_process()`. Hooking the flush there covers Ctrl-C/Ctrl-E (for the common case of an uncaught signal), explicit `kill <pid>`, and any other path that ends in `kill_process()`, with one hook instead of two.
 
 Normal process exit needs no code at all — its queued output simply finishes draining on its own, same as real serial hardware completing a transmission after its source disappears.
 
@@ -902,7 +836,9 @@ swift run --package-path test
 ```
 Expected: `Results: 89 passed, 0 failed`.
 
-- [ ] **Step 4: Manual verification via the REPL**
+- [ ] **Step 4: Manual verification via the REPL — both paths**
+
+Explicit kill:
 
 ```bash
 ./tools/os9repl.sh start
@@ -919,7 +855,22 @@ Note the pid of the backgrounded `dump`, then kill it and confirm the trickle st
 ./tools/os9repl.sh peek
 ```
 
-Expected: no further output appears after the kill. Stop the session afterward:
+Expected: no further output appears after the kill.
+
+Ctrl-C (covers the common case — `dump` doesn't catch S_Intrpt, so the signal terminates it via `kill_process`, exercising the same flush):
+
+```bash
+./tools/os9repl.sh send "dump /h1/CMDS/echo &"
+```
+
+Wait roughly half a second (enough for a couple of lines to be queued/trickling), then send a Ctrl-C through the REPL's raw key mode (see `references/common/using-os9exec-repl.md` for gated-vs-raw mode):
+
+```bash
+./tools/os9repl.sh send $'\x03'
+./tools/os9repl.sh peek
+```
+
+Expected: the trickle stops immediately — no further lines appear even after waiting a couple more seconds (`./tools/os9repl.sh peek` again to confirm). Stop the session afterward:
 
 ```bash
 ./tools/os9repl.sh stop
@@ -929,7 +880,7 @@ Expected: no further output appears after the kill. Stop the session afterward:
 
 ```bash
 git add Source/OS9exec_core/procstuff.c
-git commit -m "Core: flush a killed process's queued baud output"
+git commit -m "Core: flush a killed process's queued baud output (covers Ctrl-C/Ctrl-E)"
 ```
 
 ---
@@ -942,8 +893,7 @@ git commit -m "Core: flush a killed process's queued baud output"
 - Consumer via cooperative scheduler hooks, no thread/signal — Task 2 Step 4, Task 3 Steps 5-6. ✓
 - `-r`/unknown-baud stays synchronous, zero added latency — Task 2 Step 3 (bypasses FIFO entirely, from Task 2 onward — a deliberate, disclosed deviation from the spec's literal "same push path" wording, chosen because it resolved a real sequencing conflict between Task 2's correctness-first milestone and Task 3's timing-only scope; the *behavioral* guarantee the spec cares about is preserved exactly). ✓
 - One-shot deadline, not fixed-cadence polling — Task 3 Steps 3-6. ✓
-- Ctrl-C/Ctrl-E flush — Task 4. ✓
-- Normal exit / best-effort kill flush — Task 5 (kill) + explicit no-op note (exit). ✓
+- Ctrl-C/Ctrl-E flush, normal exit, best-effort kill flush — merged into Task 4 after review (Ctrl-C/Ctrl-E flush via the `kill_process` they trigger when uncaught, rather than a separate `KeyToBuffer` hook) + explicit no-op note for normal exit. ✓
 - `pid==129` OOB safety — Task 2 Step 3 (`pid>0 && pid<MAXPROCESSES` guard). ✓
 - Read-specific dispatcher logic excluded — Task 1 explicitly does not touch `pwr_brk`/`wRead`/the signal-intercept `rtestate` restore. ✓
 
