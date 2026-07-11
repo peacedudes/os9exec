@@ -740,6 +740,28 @@ typedef struct {
 
 static baud_device_t baud_devices[MAXBAUDDEV];
 
+static ulong g_next_wake_us= 0; /* earliest next_due_us across all paced non-empty devices, 0=none pending */
+
+static ulong host_micros( void )
+{
+    struct timeval tv;
+    gettimeofday( &tv, NULL );
+    return (ulong)tv.tv_sec*1000000UL + (ulong)tv.tv_usec;
+} /* host_micros */
+
+static void recompute_next_wake( void )
+{
+    int   i;
+    ulong earliest= 0;
+    for (i=0; i<MAXBAUDDEV; i++) {
+        baud_device_t* d= &baud_devices[i];
+        if (d->inUse && d->count>0 && d->us_per_char>0) {
+            if (earliest==0 || d->next_due_us<earliest) earliest= d->next_due_us;
+        }
+    }
+    g_next_wake_us= earliest;
+} /* recompute_next_wake */
+
 /* find (or allocate) the simulated device for a physical console id */
 static baud_device_t* baud_dev_for( short term_id )
 {
@@ -763,9 +785,13 @@ static baud_device_t* baud_dev_for( short term_id )
 static Boolean fifo_push( baud_device_t* d, byte c )
 {
     if (d->count>=BAUD_FIFO_SIZE) return false;
+    if (d->count==0 && d->us_per_char>0) {
+        d->next_due_us= host_micros(); /* first queued char of a burst is due immediately */
+    }
     d->buf[d->tail]= c;
     d->tail= (ushort)((d->tail+1) % BAUD_FIFO_SIZE);
     d->count++;
+    if (d->us_per_char>0) recompute_next_wake();
     return true;
 } /* fifo_push */
 
@@ -778,17 +804,49 @@ static Boolean fifo_pop( baud_device_t* d, byte* c )
     return true;
 } /* fifo_pop */
 
-/* pop+display everything currently queued. Task 3 adds real per-char pacing
-   here; for now this drains unconditionally (no visible pacing yet). */
+/* pop+display everything currently due, across all devices. Unpaced
+   devices (us_per_char==0) always drain in full immediately -- they
+   shouldn't normally accumulate a backlog, but drain fully if they ever do. */
 void baud_drain_due( void )
 {
-    int  i;
-    byte c;
+    int   i;
+    byte  c;
+    ulong now;
+
     for (i=0; i<MAXBAUDDEV; i++) {
-        if (!baud_devices[i].inUse) continue;
-        while (fifo_pop( &baud_devices[i], &c )) ConsPutc( c );
+        baud_device_t* d= &baud_devices[i];
+        if (!d->inUse || d->count==0) continue;
+
+        if (d->us_per_char==0) {
+            while (fifo_pop(d,&c)) ConsPutc(c);
+        }
     }
+
+    if (g_next_wake_us==0) return;           /* nothing paced is queued anywhere */
+    now= host_micros();
+    if (now<g_next_wake_us) return;          /* not due yet */
+
+    for (i=0; i<MAXBAUDDEV; i++) {
+        baud_device_t* d= &baud_devices[i];
+        if (!d->inUse || d->count==0 || d->us_per_char==0) continue;
+
+        while (d->count>0 && d->next_due_us<=now) {
+            fifo_pop( d,&c );
+            ConsPutc( c );
+            d->next_due_us += d->us_per_char;
+        }
+    }
+    recompute_next_wake();
 } /* baud_drain_due */
+
+ulong baud_next_wake_delay_us( void )
+{
+    ulong now;
+    if (g_next_wake_us==0) return ULONG_MAX; /* nothing pending: no deadline */
+    now= host_micros();
+    if (now>=g_next_wake_us) return 0;       /* already due */
+    return g_next_wake_us-now;
+} /* baud_next_wake_delay_us */
 
 void baud_flush_device( short term_id )
 {
@@ -857,7 +915,10 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
               ulong bps= baud_bps( ot->_sgs_bau );
               if (bps>0) {
                   dev= baud_dev_for( gConsoleID );
-                  if (dev!=NULL) paced= true;
+                  if (dev!=NULL) {
+                      paced= true;
+                      dev->us_per_char= (10UL*1000000UL)/bps; /* microseconds/char, 10 bits/char */
+                  }
               }
           }
 

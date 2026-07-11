@@ -959,12 +959,14 @@ static void wait_for_signal( ushort pid )
 void DoWait( void )
 {
   ulong ticks= GetSystemTick();
-  
+
   #ifdef UNIX
     struct timespec wait_time;
-    
+    ulong           delay_us= baud_next_wake_delay_us();
+    long            delay_ns= (delay_us<1000000UL) ? (long)delay_us*1000L : 1000000L; /* cap idle nap at 1ms */
+
     wait_time.tv_sec =       0;
-    wait_time.tv_nsec= 1000000; // = 1 millisecond 
+    wait_time.tv_nsec= delay_ns;
     nanosleep( &wait_time, NULL );
   //slp_idleticks++;
                 
