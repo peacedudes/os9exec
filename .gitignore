@@ -27,3 +27,6 @@ h*
 
 # Internal planning doc — not ready for public visibility yet
 /ROADMAP.md
+
+# Subagent-driven-development scratch state (progress ledger, review packages)
+/.superpowers/
