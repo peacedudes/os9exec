@@ -76,6 +76,7 @@ func os9(_ commands: [String], timeout: TimeInterval = 15) -> String {
             "-i",
             "-v", diskPath + ":/dd",
             image,
+            "-r",
             "shell"
         ]
     } else if let image = containerImage {
@@ -88,12 +89,13 @@ func os9(_ commands: [String], timeout: TimeInterval = 15) -> String {
             "-i",
             "-v", diskPath + ":/dd",
             image,
+            "-r",
             "shell"
         ]
     } else {
         // Run locally: use existing symlink at dd/
         process.executableURL = execURL
-        process.arguments    = [shellArg]
+        process.arguments    = ["-r", shellArg]
         process.environment  = ["OS9DISK": diskPath]
     }
 
