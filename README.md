@@ -259,7 +259,13 @@ That keeps host access explicit and per-device instead of reachable by accident.
 | `-mm n[k\|M]` | Give all processes extra static storage |
 | `-p prio` | Run first process at priority `prio` (default 128) |
 | `-d[n] msk` | Set diagnostic trace mask (see `idbg` → `dh` for bit values) |
+| `-r` | Run terminal output at full speed (disable baud-rate pacing) |
 | `-h` | Full option list |
+
+Console output is paced to the path's configured baud rate by default (see
+`tmode`) — a 300-baud session visibly trickles rather than dumping
+everything instantly, the way it would on real serial hardware. `-r`
+disables this for scripted/automated use where realism doesn't matter.
 
 
 ## Built-in commands
