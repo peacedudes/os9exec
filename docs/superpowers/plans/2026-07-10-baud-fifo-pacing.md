@@ -433,7 +433,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
 } /* ConsoleOut */
 ```
 
-Note on `gLastwritten_pid`: `syspath_write` (`filestuff.c:1423`) already sets it to the writing pid before calling into `ConsoleOut`, so push-time attribution is correct as-is. The one known gap: when the *consumer* later calls `ConsPutc` for a queued byte, `ConsPutc` itself unconditionally resets `gLastwritten_pid= currentpid` (whichever process happens to be scheduled at pop time), which can point Ctrl-C/Ctrl-E's `send_signal` at the wrong process for a byte that's mid-trickle from an earlier write. This is accepted as-is: Task 4's flush (triggered when the signaled process actually terminates via `kill_process`) still stops that process's trickle regardless of this narrow attribution gap, so the practical impact is limited, not a correctness failure.
+Note on `gLastwritten_pid`: `syspath_write` (`filestuff.c:1423`) already sets it to the writing pid before calling into `ConsoleOut`, so push-time attribution is correct as-is. The one known gap: when the *consumer* later calls `ConsPutc` for a queued byte, `ConsPutc` itself unconditionally resets `gLastwritten_pid= currentpid` (whichever process happens to be scheduled at pop time), which can point Ctrl-C/Ctrl-E's `send_signal` at the wrong process for a byte that's mid-trickle from an earlier write. This is accepted as-is: Task 4's flush is keyed directly off the keypress via `mco->spP->term_id`, not off `gLastwritten_pid`, so it always flushes the *right* device (the one the key arrived on) regardless of this narrow signal-target attribution gap elsewhere.
 
 - [ ] **Step 4: Hook the drain into the scheduler's cooperative-yield points**
 
@@ -796,30 +796,31 @@ git commit -m "Core: real host-microsecond baud pacing via one-shot deadline, no
 
 ---
 
-### Task 4: Flush a killed process's device (covers Ctrl-C/Ctrl-E too)
+### Task 4: Flush a console's input and output buffers on Ctrl-C/Ctrl-E
 
 **Files:**
-- Modify: `Source/OS9exec_core/procstuff.c` (`kill_process`)
+- Modify: `Source/OS9exec_core/utilstuff.c` (`KeyToBuffer`)
 
 **Interfaces:**
 - Consumes: `baud_flush_device(short term_id)` (Task 2).
 
-**Revised scope** (originally planned as two separate tasks — a `KeyToBuffer` hook for Ctrl-C/Ctrl-E and a separate `kill_process` hook — collapsed into one after review): Ctrl-C/Ctrl-E don't need their own flush hook. `KeyToBuffer` (`utilstuff.c`) already does nothing but call `send_signal(lwp, S_Intrpt)`/`send_signal(lwp, S_Abort)` when those keys are pressed (and does nothing at all if they're remapped/disabled via `tmode`) — the actual process termination, when the signal isn't caught by the target program, happens through the ordinary signal-delivery path into `kill_process()`. Hooking the flush there covers Ctrl-C/Ctrl-E (for the common case of an uncaught signal), explicit `kill <pid>`, and any other path that ends in `kill_process()`, with one hook instead of two.
+**History:** this was briefly merged with the now-abandoned Task 5 (see below) on the theory that Ctrl-C/Ctrl-E only need to flush *because* they kill the process, so hooking `kill_process()` once would cover both. That theory turned out to be wrong: `kill_process()` is the shared teardown path for *all* process termination, including ordinary `F$Exit` (`Source/OS9exec_core/fcalls.c:236` calls it directly for a process's own normal, voluntary exit) — so a flush hooked there fired on every process exit, not just abnormal ones, and broke the "normal exit lets its backlog finish draining" behavior (confirmed via a real, reproducible test failure: paced `dump` output was truncated by ~3 lines every run once that hook existed). Reverted (commit `b6a877e`). Back to a dedicated hook keyed directly off the Ctrl-C/Ctrl-E keypress instead — `KeyToBuffer` only runs when one of those keys is actually received, which is completely disjoint from any process-exit code path, so it has none of `kill_process()`'s entanglement.
 
-Normal process exit needs no code at all — its queued output simply finishes draining on its own, same as real serial hardware completing a transmission after its source disappears.
+`KeyToBuffer` (`utilstuff.c`) already special-cases the interrupt (`pd_int`) and abort (`pd_qut`) characters to call `send_signal()`; it does nothing at all if those keys are remapped/disabled via `tmode` (the `if (key==pd_int)`/`if (key==pd_qut)` comparisons simply won't match). `mco->spP` already identifies the device (it's how the existing code resolves `lastwritten_pid`). Both the console's queued *output* (the baud FIFO) and its queued *input* (`mco->inBuf`/`inBufUsed` — whatever's been typed but not yet read) get discarded together, matching real terminal-break semantics: hitting Ctrl-C/Ctrl-E cancels both what you were about to receive and what's still queued to be shown to you.
 
-- [ ] **Step 1: Extend `kill_process`'s existing Ctrl-C/E-disconnect step**
+- [ ] **Step 1: Extend `KeyToBuffer`'s interrupt/abort handling**
 
-`Source/OS9exec_core/procstuff.c`, around line 635-639 — `kill_process` already resolves the killed process's console via `cp->last_mco->spP` at exactly this point, to disconnect it from future Ctrl-C/E signals. Flushing that same device's queued output is a one-line addition right alongside it:
+`Source/OS9exec_core/utilstuff.c`, around line 926-931:
 
 ```c
-    /* now dispose all the process' resources */
-    if (cp->last_mco!=NULL) {
-        baud_flush_device( cp->last_mco->spP->term_id );
-        cp->last_mco->spP->lastwritten_pid= 0; /* disconnect CtrlC/E signal */
-        cp->last_mco= NULL;
+    /* these characters will be eaten before they reach the input buffer */
+    /* treatment for special chars */
+    if     (key!=NUL) {
+        if (key==pd_int)  { baud_flush_device( mco->spP->term_id ); mco->inBufUsed= 0; if (lwp) send_signal( lwp, S_Intrpt ); return 0; }
+        if (key==pd_qut)  { baud_flush_device( mco->spP->term_id ); mco->inBufUsed= 0; if (lwp) send_signal( lwp, S_Abort  ); return 0; }
+        if (key==pd_xon)  { mco->holdScreen= false;                return 0; }
+        if (key==pd_xoff) { mco->holdScreen=  true;                return 0; }
     }
-    debugprintf(dbgProcess,dbgNorm,("# kill_process: CtrlC/E signal disconnected\n" ));
 ```
 
 - [ ] **Step 2: Build**
@@ -836,30 +837,12 @@ swift run --package-path test
 ```
 Expected: `Results: 89 passed, 0 failed`.
 
-- [ ] **Step 4: Manual verification via the REPL — both paths**
-
-Explicit kill:
+- [ ] **Step 4: Manual verification via the REPL**
 
 ```bash
 ./tools/os9repl.sh start
 ./tools/os9repl.sh send "chx /h1/CMDS"
 ./tools/os9repl.sh send "tmode baud=300"
-./tools/os9repl.sh send "dump /h1/CMDS/echo &"
-./tools/os9repl.sh send "procs"
-```
-
-Note the pid of the backgrounded `dump`, then kill it and confirm the trickle stops:
-
-```bash
-./tools/os9repl.sh send "kill <pid>"
-./tools/os9repl.sh peek
-```
-
-Expected: no further output appears after the kill.
-
-Ctrl-C (covers the common case — `dump` doesn't catch S_Intrpt, so the signal terminates it via `kill_process`, exercising the same flush):
-
-```bash
 ./tools/os9repl.sh send "dump /h1/CMDS/echo &"
 ```
 
@@ -879,9 +862,15 @@ Expected: the trickle stops immediately — no further lines appear even after w
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Source/OS9exec_core/procstuff.c
-git commit -m "Core: flush a killed process's queued baud output (covers Ctrl-C/Ctrl-E)"
+git add Source/OS9exec_core/utilstuff.c
+git commit -m "Core: flush a console's input and output buffers on Ctrl-C/Ctrl-E"
 ```
+
+---
+
+### Task 5: Flush a killed process's device — DESCOPED, not attempted
+
+Originally: flush a device on explicit `kill <pid>`. While implementing the merged Task 4/5, this turned out to require distinguishing "genuine abnormal kill" from several other reasons `kill_process()` gets called (`OS9_F_Exit` for normal exit, error-triggered exits from `OS9_F_RTE`/`OS9_F_Chain`/`OS9_F_DExit`, and whatever `intcommand.c:1802`'s call site represents) — real investigative work with no unambiguous single hook point found so far. The original spec explicitly authorized skipping this if it proved difficult ("if you find this difficult to achieve it is not worth the effort") — invoking that now. Task 4's Ctrl-C/Ctrl-E flush (a keypress-triggered hook, not a `kill_process()` hook) already covers the common interactive case without any of this entanglement. No code changes for this task.
 
 ---
 
@@ -893,7 +882,8 @@ git commit -m "Core: flush a killed process's queued baud output (covers Ctrl-C/
 - Consumer via cooperative scheduler hooks, no thread/signal — Task 2 Step 4, Task 3 Steps 5-6. ✓
 - `-r`/unknown-baud stays synchronous, zero added latency — Task 2 Step 3 (bypasses FIFO entirely, from Task 2 onward — a deliberate, disclosed deviation from the spec's literal "same push path" wording, chosen because it resolved a real sequencing conflict between Task 2's correctness-first milestone and Task 3's timing-only scope; the *behavioral* guarantee the spec cares about is preserved exactly). ✓
 - One-shot deadline, not fixed-cadence polling — Task 3 Steps 3-6. ✓
-- Ctrl-C/Ctrl-E flush, normal exit, best-effort kill flush — merged into Task 4 after review (Ctrl-C/Ctrl-E flush via the `kill_process` they trigger when uncaught, rather than a separate `KeyToBuffer` hook) + explicit no-op note for normal exit. ✓
+- Ctrl-C/Ctrl-E flush (input + output) — Task 4, via `KeyToBuffer`. ✓
+- Normal exit / best-effort kill flush — normal exit needs no code (Task 4's note); kill-flush explicitly descoped as Task 5, per the spec's own authorization to skip it if difficult. ✓
 - `pid==129` OOB safety — Task 2 Step 3 (`pid>0 && pid<MAXPROCESSES` guard). ✓
 - Read-specific dispatcher logic excluded — Task 1 explicitly does not touch `pwr_brk`/`wRead`/the signal-intercept `rtestate` restore. ✓
 
