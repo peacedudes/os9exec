@@ -233,20 +233,41 @@ check("merge: combines files", contains: "OS-9 test line", "merge /dd/t_text /dd
 // dump
 check("dump: shows hex",         contains: "4afc",     "dump \(sdkCmds)/echo")
 
-// baud pacing: a >256-byte paced write must produce byte-identical output
-// to the unpaced (-r) version -- proves the FIFO/pWaitWrite block-and-resume
-// path doesn't drop, duplicate, or reorder bytes. 115200 baud keeps this
-// fast enough to finish well inside the timeout even though it's genuinely
-// paced (not bypassing the FIFO like -r does).
+// baud pacing: a >256-byte paced write must produce byte-identical dump
+// content to the unpaced (-r) version -- proves the FIFO/pWaitWrite
+// block-and-resume path doesn't drop, duplicate, or reorder bytes. 115200
+// baud keeps this fast enough to finish well inside the timeout even though
+// it's genuinely paced (not bypassing the FIFO like -r does).
+//
+// Only the dump's own hex-dump lines are compared, not the full session
+// transcript: the shell's "$ " prompt now goes through the paced
+// ConsoleOut path while the shell's own input-character echo (ConsRead,
+// unrelated to this feature) still displays instantly, so the byte-level
+// interleaving of prompts/echoes vs. paced output can legitimately differ
+// between paced and unpaced runs without either one losing or corrupting
+// data. That's not what this test exists to catch.
 do {
     let pacedOutput   = os9(["tmode baud=115200", "dump \(sdkCmds)/echo"], paced: true)
     let unpacedOutput = os9(["tmode baud=115200", "dump \(sdkCmds)/echo"])
-    if pacedOutput == unpacedOutput && !unpacedOutput.isEmpty {
+
+    func hexDumpLines(_ s: String) -> [Substring] {
+        // Line endings here are "\r\n"; Swift treats that pair as a single
+        // Character (extended grapheme cluster), so split(separator: "\n")
+        // never fires. Split on any newline Character instead.
+        s.split(whereSeparator: \.isNewline).filter {
+            $0.range(of: "^[0-9a-f]{8}  ", options: .regularExpression) != nil
+        }
+    }
+
+    let pacedLines   = hexDumpLines(pacedOutput)
+    let unpacedLines = hexDumpLines(unpacedOutput)
+
+    if pacedLines == unpacedLines && !unpacedLines.isEmpty {
         print("PASS: baud pacing: paced dump matches unpaced dump byte-for-byte")
         passed += 1
     } else {
         print("FAIL: baud pacing: paced dump differs from unpaced")
-        print("      paced length=\(pacedOutput.count), unpaced length=\(unpacedOutput.count)")
+        print("      paced lines=\(pacedLines.count), unpaced lines=\(unpacedLines.count)")
         failed += 1
     }
 }
