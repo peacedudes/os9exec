@@ -111,7 +111,7 @@ cmd_start() {
         wait_prompt
         tmux send-keys -t "$SESSION" "setenv TERM xterm-256color" Enter
         wait_prompt
-        tmux send-keys -t "$SESSION" "load math881 cio" Enter
+        tmux send-keys -t "$SESSION" "load math cio" Enter
         wait_prompt
         printf '[ready]\n'
         pane | grep -v '^[[:space:]]*$' | tail -5
