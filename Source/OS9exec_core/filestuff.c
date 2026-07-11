@@ -1115,8 +1115,8 @@ syspath_typ* get_syspathd( ushort pid, ushort sp )
     
     notW= true;
     if (pid<MAXPROCESSES) {
-    	       cp= &procs[pid];   
-		notW= (cp->state!=pWaitRead);   
+    	       cp= &procs[pid];
+		notW= (cp->state!=pWaitRead && cp->state!=pWaitWrite);
 	}
     
     if (!in_recursion && notW && debugcheck(dbgFMgrType,dbgDetail)) {

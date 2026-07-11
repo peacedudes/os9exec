@@ -426,8 +426,8 @@ static void PipePutc( pipechan_typ* p, char c )
 static void Reactivate( ushort pid, process_typ* cp, const char* callingProc )
 {
   if (cp->state!=pWaitRead &&       /* this statement costed me 2 days debugging !! */
-      cp->state!=pWaiting)          /* and this one another 1.5 days !!! */
-   // cp->state!=pIntUtil)          /* ... don't ask me about this ... */
+      cp->state!=pWaiting  &&       /* and this one another 1.5 days !!! */
+      cp->state!=pWaitWrite)        /* new: don't repeat those mistakes for blocked writes either */
     set_os9_state( pid, pActive, callingProc );  /* re-activate */
 } /* Reactvate */
 

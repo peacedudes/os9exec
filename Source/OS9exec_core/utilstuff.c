@@ -353,6 +353,7 @@ void set_os9_state( ushort cpid, pstate_typ state, const char* callingProc )
         case pWaiting  : pd->_state= os9_word(0x8000); pd->_queueid= 'w'; break;
         case pSysTask  : pd->_state= 0;                pd->_queueid= 't'; break;
         case pWaitRead : pd->_state= os9_word(0xA000); pd->_queueid= 'r'; break;
+        case pWaitWrite: pd->_state= os9_word(0xA000); pd->_queueid= 'W'; break;
         default        : pd->_state= 0;                pd->_queueid= '?';
     } // switch
     

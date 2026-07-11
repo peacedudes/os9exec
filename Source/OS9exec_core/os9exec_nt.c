@@ -1903,7 +1903,8 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
       if (cp->isIntUtil &&
          (cp->state==pActive  ||
           cp->state==pWaiting ||
-          cp->state==pWaitRead)) break;
+          cp->state==pWaitRead ||
+          cp->state==pWaitWrite)) break;
 
     //if (cp->state==pActive && 
     //    cp->isIntUtil) break; // for an int utility everything is done already
@@ -1936,7 +1937,8 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
     } // system task
     
     else if (cp->state==pActive   ||
- 		     cp->state==pWaitRead) {
+ 		     cp->state==pWaitRead ||
+ 		     cp->state==pWaitWrite) {
       if   ((cp->state==pActive ||
              cp->way_to_icpt)) {
       // --- go execute OS9 code until next trap or exception
@@ -2019,7 +2021,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
 				
       // in case of a unsuccessful read just repeat the call with saved registers
       // correct exception handling
-      if (cp->state==pWaitRead && !cp->isIntUtil) {
+      if ((cp->state==pWaitRead || cp->state==pWaitWrite) && !cp->isIntUtil) {
         // registers of the last command will be restored
         cp->os9regs= svd->r;
         cp->vector = svd->vector;
@@ -2089,8 +2091,9 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
           } // if
         } // if cwti
 
-        if (cp->state==pActive   || 
-            cp->state==pWaitRead || cp->oerr) {
+        if (cp->state==pActive    ||
+            cp->state==pWaitRead  ||
+            cp->state==pWaitWrite || cp->oerr) {
           // report errors to OS9 programm
           if (!cp->oerr) crp->sr &= ~CARRY;
           else {
@@ -2104,7 +2107,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
          * (counted as one logical instruction, same as any other), check
          * breakpoint/count before deciding to stop or keep going silently. */
         if (dbg_step_pending[cpid] &&
-            (cp->state == pActive || cp->state == pWaitRead)) {
+            (cp->state == pActive || cp->state == pWaitRead || cp->state == pWaitWrite)) {
             if (!dbg_should_stop(cpid, crp->pc)) {
                 m68k_os9singlestep = 1; /* re-arm; child keeps running silently */
             }
@@ -2198,7 +2201,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
   //if (!arb_cnt--) arb_cnt= ARB_RATE-1; // arbitrate= true;
     last_arbitrate= arbitrate;	
 
-    if (cp->state==pWaitRead)
+    if (cp->state==pWaitRead || cp->state==pWaitWrite)
       memcpy( (void*)&cp->os9regs, (void*)&svd->r, sizeof(regs_type) ); // save all regs
 
   //if (currentpid==justthis_pid) {

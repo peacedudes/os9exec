@@ -252,6 +252,7 @@ void show_processes(void)
                 case pWaiting  : sta='W'; break;
                 case pSysTask  : sta='T'; break;
                 case pWaitRead : sta='S'; break;
+                case pWaitWrite: sta='S'; break;
                 default        : sta='?'; break;
             } // switch
             if (cp->isIntUtil)   sta='I';
@@ -1029,9 +1030,10 @@ void do_arbitrate( ushort allowedIntUtil )
   cp= &procs[cpid];
 
   if (!arbitrate) {
-    if (cp->state==pSysTask ||                 /* we need aritration or we'll get stuck in systasks */
-        cp->state==pUnused  ||                 /* unused, arbitrating needed */
-        cp->state==pWaitRead) arbitrate= true; /* give a chance to other processes */
+    if (cp->state==pSysTask   ||                 /* we need aritration or we'll get stuck in systasks */
+        cp->state==pUnused    ||                 /* unused, arbitrating needed */
+        cp->state==pWaitRead  ||
+        cp->state==pWaitWrite) arbitrate= true; /* give a chance to other processes */
   } // if
     
   /* now arbitrate if needed */
@@ -1195,8 +1197,9 @@ void do_arbitrate( ushort allowedIntUtil )
       done= false;
     } // if
 
-    if    (sprocess->state==pWaitRead) {           /* only every nth time for this mode */
-      if  (sprocess->pW_age--<=0) { 
+    if    (sprocess->state==pWaitRead ||
+           sprocess->state==pWaitWrite) {        /* only every nth time for this mode */
+      if  (sprocess->pW_age--<=0) {
            sprocess->pW_age= NewAge;  break;
       } // if
       done= false;

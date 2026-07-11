@@ -1026,15 +1026,16 @@ typedef struct {
         } event_typ;            
 
 /* a "process" */
-typedef enum { 
+typedef enum {
             pUnused,
             pStart,
-            pActive, 
-            pDead, 
-            pSleeping, 
-            pWaiting, 
-            pSysTask, 
-            pWaitRead 
+            pActive,
+            pDead,
+            pSleeping,
+            pWaiting,
+            pSysTask,
+            pWaitRead,
+            pWaitWrite
         } pstate_typ;
 
 
