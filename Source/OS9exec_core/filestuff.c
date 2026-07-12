@@ -468,19 +468,35 @@ void show_files( ushort pid )
 static void CheckH0( char* name, char* p, char** p3 )
 {
     #ifdef RBF_SUPPORT
+      /* Re-entrancy guard: MountDev() below calls IO_Type(), which walks
+       * OS9_Device -> GetRBFName -> AdjustPath -> FindConfiguredDeviceRoot
+       * to classify the "dd" path it was just handed -- and that walk
+       * itself checks every configured device including h0, which (when
+       * h0 isn't otherwise resolvable) calls back into this exact
+       * function. Confirmed live via a file-ops debug trace (both on
+       * macOS and Linux, unrelated to either platform): unguarded, this
+       * recurses until the stack overflows. Only breaking the *second*
+       * (nested) entry, not suppressing normal h0 resolution generally,
+       * so an ordinary top-level CheckH0("h0",...) call is unaffected. */
+      static Boolean inProgress= false;
       os9err  err;
       Boolean ish0= ustrncmp( p,"h0",2 )==0;
       char*   q;
-    
+
       if (FileFound( name ) ||
           PathFound( name )) { *p3= name; return; }
-      if (!ish0) return; /* do it for "h0" only */
-   
+      if (!ish0)      return; /* do it for "h0" only */
+      if (inProgress) return; /* break the MountDev -> IO_Type -> ... -> CheckH0 cycle above */
+
       q= name + strlen( name )-2; *q= NUL; /* cut "h0" again */
       strcat          ( name,"dd" );
       MakeOS9Path     ( name ); /* it might come as Mac or DOS path name ... --> OS-9 notation */
-      err= MountDev( 0, name, p, "", 0,0,NO_SCSI,0, 0,0,1, false,Img_Unchanged ); if (err) return;
-    
+
+      inProgress= true;
+      err= MountDev( 0, name, p, "", 0,0,NO_SCSI,0, 0,0,1, false,Img_Unchanged );
+      inProgress= false;
+      if (err) return;
+
       strcpy( name,"/h0" ); *p3= name;
 
     #else
@@ -520,10 +536,19 @@ void TwoCharDev( char* p, char** p3, char* tmp )
 
         if (*p3==NULL) {
             strcpy( tmp,startPath );
-        
+
+            /* Walk back to the previous PATHDELIM ("dirname"-style cut).
+             * Guard q>tmp on both steps: startPath is normally an absolute
+             * path (has a leading PATHDELIM to stop at), but a value with
+             * no delimiter at all -- or exactly "/" after the pre-decrement
+             * below -- would otherwise walk q below the start of tmp[],
+             * reading (and eventually faulting on) unmapped memory while
+             * hunting for a PATHDELIM that isn't there. Confirmed live via
+             * lldb: EXC_BAD_ACCESS inside this walk when startPath's
+             * device-root chain runs through an extra symlink hop. */
                     q= tmp+strlen(tmp)-1;
-            if    (*q==PATHDELIM) q--;
-            while (*q!=PATHDELIM) q--;
+            if    (*q==PATHDELIM && q>tmp) q--;
+            while (*q!=PATHDELIM && q>tmp) q--;
             *(++q)= NUL; /* cut the string after delimiter */
             strncat      ( tmp,p, 2 );
             if (FileFound( tmp ) ||
