@@ -201,7 +201,7 @@ in this emulated environment.  None will connect to anything.
 
 ## dd/CMDS/SHARE — freeware and public-domain utilities
 
-These are in `dd/CMDS/SHARE/`, on the default PATH (`SHARE:/h1/CMDS`).
+These are in `dd/CMDS/SHARE/`, on the default PATH (`SHARE:/h0/CMDS`).
 Sources: Microware OS-9 archive, John-Titor/os9-m68k-ports, and the `smallutils` package.
 See `dd/SOURCES.txt` in the disk image for full provenance.
 

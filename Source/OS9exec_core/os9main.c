@@ -301,10 +301,23 @@ char* egetenv( const char* name )
                 }
             }
             sv= rslt;
-            
+
             isRBF= isWin && cm && IO_Type( 1, startPath, 0 )==fRBF;
           //if (!F_Avail(rslt) || isWin) some problems, mix is best of both worlds ??
-            if (!F_Avail(rslt) || isRBF || ( isWin && !cm )) {
+            /* Even when a relative value happens to also resolve against
+             * this process' own (often coincidental) working directory --
+             * e.g. "h0" when os9exec was launched from the repo root --
+             * still resolve it against startPath and save the real
+             * absolute path, rather than leaving the shortcut the user
+             * typed in place. Downstream code (GetCurPaths' non-RBF
+             * fallback, MakeOS9Path) treats an already-"/"-prefixed
+             * result as final and uses it directly; a bare relative
+             * string surviving to there produces an OS-9-notation value
+             * ("/h0") that still needs re-substituting every time it's
+             * used as a directory prefix, rather than the resolved host
+             * path -- confirmed live to cause a runaway repeated
+             * re-resolution on a bare `dir` right after boot. */
+            if (!F_Avail(rslt) || isRBF || ( isWin && !cm ) || *rslt!=PATHDELIM) {
               //upe_printf( "ty=%d fRBf=%d\n", IO_Type( 1, startPath, 0 ), fRBF ); // get device type: Mac/PC or RBF
 
                 if (cm) rslt= "/dd/CMDS"; /* make it suitable for RBF devices */

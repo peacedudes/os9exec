@@ -44,15 +44,15 @@ let dockerImage = ProcessInfo.processInfo.environment["DOCKER_IMAGE"]
 let containerImage = ProcessInfo.processInfo.environment["CONTAINER_IMAGE"]
 
 // Shell binary to launch — override with OS9SHELL env var if shell is not in /dd/CMDS
-// e.g.: OS9SHELL=/h1/CMDS/shell make test
+// e.g.: OS9SHELL=/h0/CMDS/shell make test
 let shellArg = ProcessInfo.processInfo.environment["OS9SHELL"] ?? "shell"
 
 // Command directory of the SDK disk these tests exercise. The tests chx here
 // so every command — and every command a command forks internally (e.g.
 // deldir → pd) — resolves from the SDK disk, with no freeware SHARE fallbacks
-// shadowing it. The /h1/CMDS bake-in is deliberate and confined to this one
+// shadowing it. The /h0/CMDS bake-in is deliberate and confined to this one
 // line: override with OS9_SDK_CMDS if your command set is mounted elsewhere.
-let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/h1/CMDS"
+let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/h0/CMDS"
 
 // ── Shell runner ──────────────────────────────────────────────────────────────
 
@@ -486,8 +486,12 @@ if h0Available {
     noError("rbf: dir /h0",              "dir /h0")
     noError("rbf: dir /h0/. normalized", "dir /h0/.")  // regression: was failing without prior dir /h0
     noError("rbf: chd /h0",             "chd /h0", "chd /dd")
-    check  ("rbf: free /h0",            contains: "sectors", "free /h0")
-    noError("rbf: dcheck /h0",          "dcheck /h0")
+    // free/dcheck need a genuine RBF image, not the host-native /h0 directory --
+    // that's /h1 in this repo's current h0<->h1 layout (h0 is the SDK toolchain
+    // directory; the RBF image swapped to h1). See project memory/ROADMAP for
+    // the h0/h1 reorg.
+    check  ("rbf: free /h1",            contains: "sectors", "free /h1")
+    noError("rbf: dcheck /h1",          "dcheck /h1")
 } else {
     print("SKIP: RBF device tests (no test/h0 image — symlink test/h0 to an RBF disk image to enable)")
 }
