@@ -319,7 +319,17 @@ Boolean ConsGetc( char* c )
       return (n>0) && devIsReady;
     } // if
 
-    #if defined windows32
+    #if defined windows32 || defined MINGW
+      /* MINGW's HandleEvent() reads via ReadConsoleInput (telnetaccess.c),
+       * same as native windows32 -- Enter arrives as a raw CR (0x0D)
+       * already, with no tty-driver translation involved. Must return
+       * early like windows32 does, skipping the CR/LF swap below: that
+       * swap exists for genuine Unix terminals, where ICRNL turns Enter's
+       * CR into LF before read() ever sees it. Falling through here would
+       * flip the already-correct CR into LF, so ConsRead's endchar==CR
+       * check (consio.c) never matches and the shell never sees a
+       * completed line.
+       */
       HandleEvent();
       n= ReadCharsFromTerminal( c,1, &main_mco );
       return (n>0) && devIsReady;
@@ -329,8 +339,8 @@ Boolean ConsGetc( char* c )
        * main_mco.inBuf, skimming off Ctrl-C/Ctrl-E immediately as it goes —
        * see telnetaccess.c — and we consume from there instead of reading
        * stdin directly here, which would race with HandleEvent()'s own
-       * read() of the same fd). Unlike windows32's ReadConsoleInput, raw
-       * Unix input arrives as LF, not CR, so this falls through to the
+       * read() of the same fd). Unlike windows32/MINGW's ReadConsoleInput,
+       * raw Unix input arrives as LF, not CR, so this falls through to the
        * CR/LF swap below instead of returning early.
        */
       HandleEvent();

@@ -88,6 +88,10 @@
 #include <sys/ioctl.h>
 #endif
 
+#ifdef MINGW
+#include <windows.h>  /* INPUT_RECORD, ReadConsoleInput, GetNumberOfConsoleInputEvents */
+#endif
+
 
 
 void InitTTYs()
@@ -259,7 +263,7 @@ void WindowTitle( char* title, Boolean vmod )
 
 
 
-#if defined windows32
+#if defined windows32 || defined MINGW
 void HandleEvent( void )
 {
   #define STARTVAL -200
@@ -269,13 +273,13 @@ void HandleEvent( void )
   Boolean      ok;
   INPUT_RECORD ir;
   DWORD        n;
-    
+
   if (hvv<0) hvv++;
-  else { 
-    hvv= STARTVAL; 
+  else {
+    hvv= STARTVAL;
     Sleep( 1 ); /* sleep in milliseconds */
   } // if
-    
+
   /* is there any event ? */
        ok= GetNumberOfConsoleInputEvents( hStdin, &n );
   if (!ok || n==0) return;
@@ -283,8 +287,8 @@ void HandleEvent( void )
   /* if yes, get it. If it keydown, put char into input buffer */
        ok= ReadConsoleInput( hStdin, &ir, 1, &n );
   if (!ok || n==0) return;
-    
-  if      (ir.EventType==KEY_EVENT && 
+
+  if      (ir.EventType==KEY_EVENT &&
            ir.Event.KeyEvent.bKeyDown) {
         c= ir.Event.KeyEvent.uChar.AsciiChar;
     if (c!=NUL) KeyToBuffer( &main_mco, c );
@@ -299,7 +303,7 @@ void HandleEvent( void )
 } /* empty implementation */
 #endif
 
-#ifdef UNIX
+#if defined UNIX && !defined MINGW
 void HandleEvent( void )
 /* Poll stdin for pending keystrokes and feed them through KeyToBuffer(),
  * the same way the windows32 branch above does via ReadConsoleInput.
@@ -374,9 +378,9 @@ Boolean DevReady( long *count )
 
 #ifdef TERMINAL_CONSOLE
 long ReadCharsFromTerminal(char *buffer, long n, ttydev_typ* mco)
-{    
+{
     long cnt; /* this is the data base */
-    
+
     if (mco->holdScreen) {
         devIsReady= false;
         *buffer= NUL;
