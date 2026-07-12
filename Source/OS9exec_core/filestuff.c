@@ -775,6 +775,18 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
 //  firstElem= true;  /* used only in MACOS9 path */
     *ispath  = false;
 
+    /* pathbuf is a fixed OS9PATHLEN-byte static buffer, but a caller-supplied
+     * path has no length limit of its own (e.g. a deep chain of "/xxx"
+     * components, or a directory-symlink cycle that resolves to an
+     * effectively unbounded path). Every copy loop below advances <op> one
+     * or more bytes at a time with no bound of its own; pathbufEnd leaves
+     * enough headroom (the largest single write below is 3 bytes, for a
+     * ".." expansion) that a single bounds check per write/iteration can't
+     * be skipped past. Confirmed live: an unguarded write here corrupted
+     * adjacent memory and crashed the emulator on a ~200+ char resolved
+     * path. */
+    { char* const pathbufEnd= pathbuf + OS9PATHLEN - 8;
+
     absolute= (*p=='/');
     #ifdef windows32
       if (!absolute)
@@ -790,7 +802,10 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
           if  (*p2==NUL) p2= "./";  /* special condition, if undefined */
         #endif
 
-        while (*p2!=NUL) *op++= *p2++; /* do it until end of string (not including NUL) */
+        while (*p2!=NUL) {
+            if (op>=pathbufEnd) return os9error(E_BPNAM);
+            *op++= *p2++; /* do it until end of string (not including NUL) */
+        }
 
         op--; 
         if (*op!=PATHDELIM && *p!=NUL && ustrcmp(p,".")!=0) *++op= PATHDELIM; /* add a slash at the end */
@@ -835,8 +850,11 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
 
             if (p3!=NULL) {
                 /* --- replace /dd or /hx by OS9DISK/OS9Gx environment variable if it is defined */
-                while (*p3!=NUL) *op++= *p3++;
-                
+                while (*p3!=NUL) {
+                    if (op>=pathbufEnd) return os9error(E_BPNAM);
+                    *op++= *p3++;
+                }
+
                 if (addIt) {
                     *op++= PATHDELIM;
                     *op++= *p++;
@@ -855,6 +873,7 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
           /* no subsititution for first element of absolute path occurred */
           if (p3==NULL) {
               if ((*(p+1)=='/') || (*(p+1)<=' ')) {
+                  if (op>=pathbufEnd) return os9error(E_BPNAM);
                   /* single char name: use as drive letter like "C:\" */
                   *op++= *p++;
                   if (*p=='/') p++; /* skip slash, too, if pathlist continues */
@@ -876,6 +895,8 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
     debugprintf(dbgFiles,dbgNorm,("# pathbuf '%s' '%s'\n", pathbuf, p ));
    
     while (*p>' ') {
+        if (op>=pathbufEnd) return os9error(E_BPNAM);
+
         /* check for current and parent directories */
         if (firstElemChar) {
             trigcheck("parsepathext (path element)",p);
@@ -893,10 +914,11 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
 
                     while (k-- >1) {
                         /* for each period more than 1 append one '..\' or '../' sequence */
-                        *op++= '.'; 
-                        *op++= '.'; 
-                        *op++= PATHDELIM; 
-                    }   
+                        if (op>=pathbufEnd) return os9error(E_BPNAM);
+                        *op++= '.';
+                        *op++= '.';
+                        *op++= PATHDELIM;
+                    }
                     continue; /* check next char */
                 }
                 else {
@@ -904,21 +926,22 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
                     p= p3;
                     while (k-- >1) {
                         /* for each period more than 1 append one '..\' or '../' sequence */
-                        *op++= '.'; 
-                        *op++= '.'; 
-                        *op++= PATHDELIM; 
+                        if (op>=pathbufEnd) return os9error(E_BPNAM);
+                        *op++= '.';
+                        *op++= '.';
+                        *op++= PATHDELIM;
                     }
                     continue; /* check next char */
                 }
             }
-        }  
+        }
 
         /* normal copy */
         if (*p== '/') {
             *op= PATHDELIM;
 //          firstElem    = false; /* used only in MACOS9 path */
             firstElemChar= true;  /* next character is first of an element */
-        } 
+        }
         else {
             *op= *p;
         }
@@ -953,11 +976,12 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
     #ifdef windows32
       EatBack( out );
     #endif
+    } /* pathbufEnd scope */
     #endif /* Windows/Unix */
 
     /* show result */
     debugprintf( dbgFiles,dbgNorm,("# parsepathext Output: '%s'\n",out) );
-    return 0; /* no error (no bad pathlists possible) */
+    return 0; /* no bad pathlist -- see E_BPNAM returns above for oversized ones */
 } /* parsepathext */
 
 /* same as parsepathext, but uses default settings for file-only paths */
