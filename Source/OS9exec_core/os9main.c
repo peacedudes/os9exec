@@ -267,7 +267,7 @@ char* egetenv( const char* name )
     #else
       /* getenv for use under MPW and for PC/Linux version */
       rslt= getenv( name );
-      
+
       #ifdef MACOS9
         strcpy( tmp,rslt ); /* make a local copy !! */
         rslt=   tmp;
@@ -526,6 +526,10 @@ Boolean setup_term()
           modes.c_lflag &= ~ICANON;
           modes.c_lflag &= ~(ECHO | ECHOE | ECHOK /*| ECHOKE*/);
           modes.c_lflag &= ~ISIG; /* pass ^C/^Z as raw bytes; OS-9 handles signals */
+          modes.c_oflag &= ~OPOST; /* SCF (consio.c) decides CR/LF on its own -- a host
+                                       tty rewriting our LF bytes to CRLF (ONLCR, part of
+                                       OPOST) silently breaks any termcap-driven program
+                                       using a bare LF for pure cursor-down motion */
 
           /*
               set up the terminal for OS-9
