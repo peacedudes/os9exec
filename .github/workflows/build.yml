@@ -119,7 +119,13 @@ jobs:
     - name: Smoke test (Windows, via Wine) - verify binary runs
       if: matrix.cc == 'mingw-cross'
       run: |
-        OUTPUT=$(wine64 os9exec.exe -ih 2>&1 || true)
+        # Package is "wine64", but that package only provides the binary at
+        # /usr/lib/wine/wine64 -- the wine64 apt install pulls in the "wine"
+        # metapackage too, which is what actually creates /usr/bin/wine via
+        # update-alternatives (resolving to wine64 since wine32 isn't
+        # installed). Confirmed via a real CI run: "wine64: command not
+        # found" even right after "Setting up wine64 (...)" in apt's log.
+        OUTPUT=$(wine os9exec.exe -ih 2>&1 || true)
         echo "$OUTPUT" | head -5
         echo "$OUTPUT" | grep -q "OS9exec" || { echo "FAIL: expected OS9exec header"; exit 1; }
         echo "✓ Windows binary runs under Wine and shows internal help"
