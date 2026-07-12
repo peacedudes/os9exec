@@ -2,7 +2,7 @@
 
 Run actual OS-9 binaries on your modern computer. OS9exec emulates the 68k processor and OS-9 kernel, giving you a real OS-9 shell with pipes, redirection, job control, and the complete filesystem. If you have OS-9 software sitting around, this is the fastest way back in.
 
-**Platform support:** macOS (arm64/Intel), Linux (64-bit/32-bit), Docker (including on Windows, via Docker Desktop). A native Windows build isn't working yet — see the Windows note under [Option 4](#option-4-build-locally).
+**Platform support:** macOS (arm64/Intel), Linux (64-bit/32-bit), Windows (native, via mingw-w64), Docker (including on Windows, via Docker Desktop).
 
 ---
 
@@ -44,7 +44,7 @@ that tagged release.
    - macOS Intel: (available in releases)
    - Linux 64-bit: `os9exec-linux-x64`
    - Linux 32-bit: `os9exec-linux-i386`
-   - Windows: no native binary yet — use Option 2 (Docker), which runs as-is on Windows via Docker Desktop
+   - Windows: no tagged release binary yet — use [Option 4](#option-4-build-locally) (`make OS=Windows_NT CC=x86_64-w64-mingw32-gcc`) or Option 2 (Docker), which runs as-is on Windows via Docker Desktop
 
 2. **Set up your OS-9 files:**
    ```sh
@@ -99,9 +99,11 @@ OS9DISK=/path/to/your/os9 ./os9exec /path/to/your/os9/CMDS/shell
 **Platform-specific:**
 - **macOS:** `make` (requires Xcode Command Line Tools)
 - **Linux:** `make` (requires build-essential, clang/gcc)
-- **Windows:** not currently working as a native build (tracked in ROADMAP) — use
-  [Docker](#option-2-docker-pre-built-image) (works as-is via Docker Desktop), or
-  run under WSL2, which gives you a real Linux userspace where the Linux build above applies directly
+- **Windows:** native build via [mingw-w64](https://www.mingw-w64.org/) —
+  `make OS=Windows_NT CC=x86_64-w64-mingw32-gcc` (cross-compile from macOS/Linux)
+  or run the same command natively in a Windows shell with mingw-w64 installed.
+  Produces `os9exec.exe`. [Docker](#option-2-docker-pre-built-image) and WSL2
+  remain available too.
 - **Linux 32-bit:** `docker build -f Dockerfile.linux32 -t os9exec:linux32 .`
 
 ---
