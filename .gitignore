@@ -1,8 +1,9 @@
 # freeware/ is the public-domain disk image shipped with os9exec.
-# dd is a symlink -> freeware (tracked so cloners get the convention).
+# h5 is a symlink -> freeware (repo-root convention post h0/h1 reorg).
 # freeware/ content is gitignored until proprietary items are fully removed.
 freeware
 h*
+dd
 
 # Proprietary OS-9 DEFS headers (Microware copyright)
 # EXCEPT *_from_book.h which are derived from public OS-9 Guru book — those ARE committed
