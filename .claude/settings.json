@@ -1,1 +1,12 @@
-{}
+{
+  "permissions": {
+    "allow": [
+      "Bash(./tools/os9repl.sh peek*)",
+      "Bash(tools/os9repl.sh peek*)",
+      "Bash(tmux capture-pane *)",
+      "Bash(x86_64-w64-mingw32-objdump *)",
+      "Bash(x86_64-w64-mingw32-nm *)",
+      "Bash(docker info*)"
+    ]
+  }
+}
