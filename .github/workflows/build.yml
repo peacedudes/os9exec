@@ -38,28 +38,19 @@ jobs:
             binary: os9exec
             artifact: os9exec-macos-arm64
 
-          # Windows: disabled for now, not a regression -- this leg has never
-          # actually built (every CI run since the workflow was added has
-          # failed here). GNUmakefile hardcodes the Linux platform files for
-          # every OS, and the code's own `windows32` detection is only ever
-          # reachable via __MACH__ or `linux` already being true, so it never
-          # triggers on a real Windows compile -- it falls through to
-          # Mac-Toolbox-only headers (Types.h etc.) instead. There's a
-          # partially-started Source/Platforms/WIN32/ (net_windows.c,
-          # wincmd.c) that was never wired into GNUmakefile's PLAT variable.
-          # Reviving this needs: per-OS PLAT branching in GNUmakefile, a real
-          # _WIN32/_MSC_VER -> windows32 bridge, and either MinGW (for the
-          # POSIX-ish headers the UNIX code path assumes) or finishing out
-          # genuine Win32 API code behind the `windows32` macro. Until then,
-          # Windows users should use Docker (works today, see README) or
-          # WSL2 (a real Linux userspace, so the already-working Linux build
-          # applies as-is).
-          # - os: windows-latest
-          #   platform: windows-x64
-          #   cc: clang
-          #   cflags: "-fcommon"
-          #   binary: os9exec.exe
-          #   artifact: os9exec-windows-x64.exe
+          # Windows (cross-compiled via mingw-w64 on an Ubuntu runner).
+          # GNUmakefile now has real per-OS PLAT branching and the code has
+          # a working windows32/MINGW macro bridge -- see ROADMAP.md. This
+          # cross-compile + Wine-smoke-test approach mirrors
+          # docker/Dockerfile.windows and local dev testing, both of which
+          # are actually verified working; a native windows-latest runner
+          # was deliberately not used since mingw-w64 availability/setup
+          # there is unverified.
+          - os: ubuntu-latest
+            platform: windows-x64
+            cc: mingw-cross
+            binary: os9exec.exe
+            artifact: os9exec-windows-x64.exe
 
     steps:
     - uses: actions/checkout@v4
@@ -75,18 +66,25 @@ jobs:
       run: |
         brew install llvm
 
-    - name: Install dependencies (Windows)
-      if: runner.os == 'Windows'
+    - name: Install dependencies (Windows cross-compile)
+      if: matrix.cc == 'mingw-cross'
       run: |
-        choco install llvm -y
+        sudo apt-get update
+        sudo apt-get install -y mingw-w64 wine64 file
 
     - name: Build os9exec (native)
-      if: matrix.cc != 'docker'
+      if: matrix.cc != 'docker' && matrix.cc != 'mingw-cross'
       env:
         CC: ${{ matrix.cc }}
       run: |
         make clean
         make prod
+
+    - name: Build os9exec (Windows cross-compile)
+      if: matrix.cc == 'mingw-cross'
+      run: |
+        make clean
+        make OS=Windows_NT CC=x86_64-w64-mingw32-gcc prod
 
     - name: Build os9exec (Docker 32-bit)
       if: matrix.cc == 'docker'
@@ -103,7 +101,7 @@ jobs:
         ls -lh os9exec* 2>/dev/null && file os9exec* || echo "Binary verification skipped (Docker build)"
 
     - name: Smoke test (Linux/macOS) - verify binary runs
-      if: runner.os != 'Windows' && matrix.cc != 'docker'
+      if: runner.os != 'Windows' && matrix.cc != 'docker' && matrix.cc != 'mingw-cross'
       run: |
         OUTPUT=$(./os9exec -ih 2>&1 || true)
         echo "$OUTPUT" | head -5
@@ -118,13 +116,13 @@ jobs:
         echo "$OUTPUT" | grep -q "OS9exec" || { echo "FAIL: expected OS9exec header"; exit 1; }
         echo "✓ 32-bit Docker image runs and shows internal help"
 
-    - name: Smoke test (Windows) - verify binary runs
-      if: runner.os == 'Windows'
+    - name: Smoke test (Windows, via Wine) - verify binary runs
+      if: matrix.cc == 'mingw-cross'
       run: |
-        $OUTPUT = (.\os9exec.exe -ih 2>&1) -join "`n"
-        Write-Output $OUTPUT
-        if ($OUTPUT -notmatch "OS9exec") { Write-Error "FAIL: expected OS9exec header"; exit 1 }
-        Write-Output "✓ Binary runs and shows internal help"
+        OUTPUT=$(wine64 os9exec.exe -ih 2>&1 || true)
+        echo "$OUTPUT" | head -5
+        echo "$OUTPUT" | grep -q "OS9exec" || { echo "FAIL: expected OS9exec header"; exit 1; }
+        echo "✓ Windows binary runs under Wine and shows internal help"
 
     - name: Rename artifact
       if: matrix.cc == 'docker'
@@ -209,3 +207,4 @@ jobs:
           os9exec-linux-x64/os9exec
           os9exec-linux-i386/os9exec-linux-i386
           os9exec-macos-arm64/os9exec
+          os9exec-windows-x64.exe/os9exec.exe
