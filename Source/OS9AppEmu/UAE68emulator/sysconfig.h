@@ -375,7 +375,7 @@
 /* #undef HAVE_UTIME_H */
 
 /* Define if you have the <values.h> header file.  */
-#if defined __GNUC__ && !defined __MACH__
+#if defined __GNUC__ && !defined __MACH__ && !defined __MINGW32__ && !defined __MINGW64__
 #define HAVE_VALUES_H 1
 #endif
 

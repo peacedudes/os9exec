@@ -243,6 +243,9 @@
 
 #elif defined linux || defined MACOSX
   #include "linuxfiles.h"
+
+#elif defined MINGW
+  #include "winfiles.h"
 #endif
 
 #include "filestuff.h"

@@ -29,6 +29,28 @@
 #include "readcpu.h"
 #include "newcpu.h"
 #include "compiler.h"
+
+#if defined __MINGW32__ || defined __MINGW64__
+/* sysdeps.h's `_WIN32` block (always true under mingw-w64) redefines
+ * abort() to call write_log() -- a symbol the CodeWarrior-era Windows port
+ * expected some GUI/console shell file to supply. cpuemu.c and readcpu.c
+ * hit this abort() but don't include luzstuff.h, so the write_log ->
+ * upe_printf substitution below never reaches them; give MINGW a real,
+ * literal write_log() here (before that substitution takes effect for
+ * this file too). This file is part of the standalone UAE tree (doesn't
+ * include os9exec_incl.h), so this checks the compiler's own __MINGW32__/
+ * __MINGW64__ predefine rather than our project's MINGW macro, which is
+ * only visible to files that route through os9main_incl_precomp.h. */
+#include <stdarg.h>
+void write_log( const char* format, ... )
+{
+    va_list args;
+    va_start( args, format );
+    vfprintf( stderr, format, args );
+    va_end( args );
+} /* write_log */
+#endif
+
 #define extern
 #include "luzstuff.h"
 #undef extern

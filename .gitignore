@@ -17,6 +17,8 @@ h*
 /build/
 /.build/
 /os9exec
+/os9exec.exe
+/dist/
 /test/.build/
 
 # Reference PDFs and research material (large, not redistributable)

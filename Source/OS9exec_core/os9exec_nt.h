@@ -1373,7 +1373,7 @@ extern dir_type mdir;                  /* current module dir */
 
 
 /* stdin and out for console */
-#ifdef windows32
+#if defined windows32 || defined MINGW
   extern  HANDLE  hStdin; /* the windows console definition */
 #endif
 

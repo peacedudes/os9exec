@@ -1,10 +1,29 @@
-CC      = clang
+CC      ?= clang
 CORE    = Source/OS9exec_core
-PLAT    = Source/Platforms/LINUX
 NATIVE  = Source/NATIVE
 UAE     = Source/OS9AppEmu/UAE68emulator
 APPEMU  = Source/OS9AppEmu
 OBJDIR  = build
+
+# Per-OS platform file: $(OS) is set to "Windows_NT" by cmd.exe/PowerShell
+# on a native Windows build (e.g. mingw-w64 installed on a windows-latest
+# CI runner); everything else (macOS, Linux) uses the POSIX/dirent-based
+# LINUX platform file, which macOS also happens to work with unmodified.
+ifeq ($(OS),Windows_NT)
+  PLAT    = Source/Platforms/WIN32
+  PLATSRC = winfiles.c
+  EXE     = os9exec.exe
+  # -pthread: nanosleep() (consio.c, procstuff.c) lives in mingw-w64's
+  # winpthreads, not linked by default on every mingw-w64 distribution --
+  # confirmed missing on Ubuntu's apt mingw-w64 package even though
+  # Homebrew's on macOS pulls it in implicitly. Explicit for portability.
+  LDFLAGS = -static -pthread
+else
+  PLAT    = Source/Platforms/LINUX
+  PLATSRC = linuxfiles.c
+  EXE     = os9exec
+  LDFLAGS =
+endif
 
 CFLAGS  = -g -Wall -fcommon \
           -DTERMINAL_CONSOLE \
@@ -44,7 +63,7 @@ SRCS = \
     $(CORE)/telnetaccess.c \
     $(CORE)/utilstuff.c \
     $(CORE)/vmod.c \
-    $(PLAT)/linuxfiles.c \
+    $(PLAT)/$(PLATSRC) \
     $(APPEMU)/os9_uae.c \
     $(APPEMU)/luzstuff.c \
     $(UAE)/newcpu.c \
@@ -68,7 +87,7 @@ VPATH = $(CORE):$(PLAT):Source/OS9execMPW:$(APPEMU):$(UAE)
 
 .PHONY: all prod clean test
 
-all: $(OBJDIR) os9exec
+all: $(OBJDIR) $(EXE)
 
 # Production build: optimised, no debug symbols.
 # Usage: make prod   (rebuilds from scratch with -O2)
@@ -84,8 +103,8 @@ prod:
 	          -I$(APPEMU)"
 
 
-os9exec: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ -lm
+$(EXE): $(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lm
 
 $(OBJDIR)/cpuemu.o: $(UAE)/cpuemu.c
 	$(CC) $(CFLAGS) $(UAE_SUPPRESS) -c $< -o $@
@@ -100,7 +119,7 @@ $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
 clean:
-	rm -rf $(OBJDIR) os9exec
+	rm -rf $(OBJDIR) os9exec os9exec.exe
 
-test: os9exec
+test: $(EXE)
 	swift run --package-path test

@@ -5,26 +5,19 @@ FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y \
     build-essential \
     mingw-w64 \
+    file \
     git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 COPY . .
 
-# Build for Windows (x86-64)
-# Using i686-w64-mingw32 for 32-bit or x86_64-w64-mingw32 for 64-bit
+# Build for Windows (x86-64). OS=Windows_NT drives GNUmakefile's own
+# per-OS branching (PLAT/EXE/LDFLAGS) -- the same invocation used to
+# build+verify this locally, not a separate hand-rolled CFLAGS override,
+# so this Dockerfile can't drift from what's actually been tested.
 RUN make clean && \
-    CC=x86_64-w64-mingw32-gcc \
-    make \
-    CFLAGS="-g -Wall -fcommon \
-             -DTERMINAL_CONSOLE \
-             -DINT_CMD \
-             -ISource/OS9exec_core \
-             -ISource/OS9exec_core/os9defs \
-             -ISource/Platforms/WIN32 \
-             -ISource/Platforms \
-             -ISource/OS9AppEmu/UAE68emulator \
-             -ISource/OS9AppEmu"
+    make OS=Windows_NT CC=x86_64-w64-mingw32-gcc prod
 
 # Verify the output is a Windows binary
-RUN file os9exec.exe || file os9exec || echo "Build artifact check:"  && ls -lh os9exec*
+RUN file os9exec.exe && ls -lh os9exec.exe

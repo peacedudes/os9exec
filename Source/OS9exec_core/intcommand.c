@@ -197,8 +197,12 @@
 #include "os9exec_incl.h"
 #include <ctype.h>
 
-#ifdef UNIX
+#if defined UNIX && !defined MINGW
   #include <dlfcn.h> // MacOSX and Linux DLL functionality
+#endif
+
+#ifdef MINGW
+  #include <windows.h> // LoadLibrary/GetProcAddress/FreeLibrary
 #endif
 
 #ifdef THREAD_SUPPORT
@@ -681,7 +685,7 @@ static os9err int_devs( _pid_, int argc, char** argv )
   {
     const char* suff;
     
-    #ifdef windows32
+    #if defined windows32 || defined MINGW
       suff= ".dll";
     #elif defined MACOSX
       suff= ".dylib";
@@ -699,7 +703,7 @@ static os9err int_devs( _pid_, int argc, char** argv )
   // Get <aFunc> of <aFuncName>
   static os9err DLL_Func( void* aDLL, const char* aFuncName, void** aFunc )
   {
-    #if   defined windows32
+    #if   defined windows32 || defined MINGW
       *aFunc= (void*)GetProcAddress( (HINSTANCE)aDLL, aFuncName );
     #elif defined UNIX
       *aFunc= dlsym( aDLL, aFuncName );
@@ -730,11 +734,11 @@ static os9err int_devs( _pid_, int argc, char** argv )
   {
     if (!p || !p->fDLL ) return E_PNNF;
     
-    #ifdef windows32
+    #if defined windows32 || defined MINGW
       FreeLibrary( p->fDLL );
     #endif
-      
-    #ifdef UNIX
+
+    #if defined UNIX && !defined MINGW
       dlclose( p->fDLL );
     #endif
     
@@ -770,9 +774,9 @@ static os9err int_devs( _pid_, int argc, char** argv )
     //upe_printf( "connectDLL='%s'\n", fullName );
       // now we have the complete path name
     
-      #ifdef windows32
+      #if defined windows32 || defined MINGW
         p->fDLL= LoadLibrary( fullName );
-      
+
       #elif defined UNIX
         #if   defined MACOSX
           #define mode RTLD_NOW + RTLD_GLOBAL

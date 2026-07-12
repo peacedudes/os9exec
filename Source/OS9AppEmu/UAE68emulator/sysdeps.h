@@ -22,6 +22,15 @@
   #define __INTEL__
 #endif
 
+/* This UAE-derived corner of the tree is standalone -- it doesn't include
+ * os9exec_incl.h, so os9main_incl_precomp.h's own __INTEL__ detection
+ * (which covers mingw-w64) never reaches it. Without this, maccess.h's
+ * `#ifdef __INTEL__` block -- where do_get_mem_long() et al. actually
+ * live -- is skipped entirely on Windows. */
+#if defined __MINGW32__ || defined __MINGW64__
+  #define __INTEL__
+#endif
+
 #ifndef _WIN32
 #ifndef __STDC__
 #error "Your compiler is not ANSI. Get a real one."
@@ -268,6 +277,10 @@ extern void gui_message( const char *, ...);
 #elif defined __GNUC__
 #define abort() do { write_log( "Internal error in module %s at line %d\n", __FILE__, __LINE__ );exit(1); } while (0)
 
+/* mingw-w64 (unlike the ancient MinGW this block was written for) ships a
+ * real dirent.h and a standards-conformant S_ISDIR, both already pulled in
+ * via os9main_incl_precomp.h -- declaring our own conflicts with those. */
+#if !defined __MINGW32__ && !defined __MINGW64__
 #define DIR struct DIR
 extern DIR* opendir(char *);
 struct direct
@@ -278,6 +291,7 @@ struct dirent *readdir (DIR * dir);
 extern void closedir(DIR *);
 #undef S_ISDIR
 #define S_ISDIR(a) (a&0x100)
+#endif
 
 #define __int64 long long
 

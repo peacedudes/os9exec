@@ -241,7 +241,42 @@
 #include <limits.h>
 #include <stdlib.h>   /* realpath() (see _GNU_SOURCE note above); target_options.h only pulls this in for __MACH__ */
 
-                
+#ifdef MINGW
+#include <io.h>       /* _access */
+
+/* mingw-w64 has no realpath() (POSIX-only). _fullpath() canonicalizes a
+ * path but, unlike realpath(), doesn't require it to exist -- callers here
+ * (HostPathDeviceName et al.) rely on realpath() failing so they can walk
+ * up to the nearest existing ancestor, so the existence check below is
+ * load-bearing, not decorative. */
+static char* realpath( const char* path, char* resolved )
+{
+    char* p;
+
+    if (_access(path,0)!=0) return NULL;
+    if (_fullpath(resolved,path,PATH_MAX)==NULL) return NULL;
+
+    /* _fullpath() returns Windows-native form ("Z:\Users\...\dd") --
+     * this codebase represents every host path in Unix style (PATHDELIM
+     * is '/' throughout, even under MINGW; see winfiles.c). Left as-is,
+     * HostPathDeviceName's `real[rl]==PATHDELIM` check after a matched
+     * prefix always fails against a literal '\\', silently rejecting
+     * every subpath of a configured device root and falling back to the
+     * root itself -- confirmed live: `dir /dd/CMDS/shell` resolved to
+     * bare "/dd" instead of the file, tripping pFopen's is-a-directory
+     * check (E_FNA) on an ordinary file open. Drop the "X:" drive
+     * prefix (Wine always maps the host root to Z:) and flip \ to /
+     * so the result matches every other path in this codebase. */
+    p= resolved;
+    if (p[0] && p[1]==':') p+= 2;
+    if (p!=resolved) memmove(resolved,p,strlen(p)+1);
+    for (p= resolved; *p; p++) if (*p=='\\') *p= '/';
+
+    return resolved;
+} /* realpath */
+#endif
+
+
 
 char* nullterm( char* s1, const char* s2, ushort max )
 /* create null terminated version of s2. All chars<=SPACE will terminate s2

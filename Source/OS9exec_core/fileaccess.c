@@ -186,7 +186,11 @@
 
 #ifdef win_unix
   #include <utime.h>
-  #include <sys/statvfs.h>
+  #ifdef MINGW
+    #include <windows.h>  /* GetDiskFreeSpaceExA -- mingw-w64 has no statvfs */
+  #else
+    #include <sys/statvfs.h>
+  #endif
 #endif
 
 /* Macintosh, PC and Linux File System access */
@@ -796,13 +800,18 @@ os9err pHdsize( ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
 /* Return host-filesystem total capacity as a 256-byte-sector count.
  * Prevents free(1) from dividing by zero when /dd is a native directory. */
 {
-    struct statvfs st;
-    const char*    path = *spP->fullName ? spP->fullName : ".";
-
-    if (statvfs(path, &st) != 0) return os9error(E_UNIT);
+    const char* path = *spP->fullName ? spP->fullName : ".";
 
     /* Express in 256-byte sectors (the RBF default sector size). */
-    *size  = (uint32_t)((unsigned long long)st.f_blocks * st.f_frsize / 256);
+    #ifdef MINGW
+      ULARGE_INTEGER totalBytes;
+      if (!GetDiskFreeSpaceExA(path, NULL, &totalBytes, NULL)) return os9error(E_UNIT);
+      *size = (uint32_t)(totalBytes.QuadPart / 256);
+    #else
+      struct statvfs st;
+      if (statvfs(path, &st) != 0) return os9error(E_UNIT);
+      *size = (uint32_t)((unsigned long long)st.f_blocks * st.f_frsize / 256);
+    #endif
     *dtype = 0;
     return 0;
 } /* pHdsize */
@@ -1672,7 +1681,7 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
         Boolean uDir= false;
               
           mode_t v;
-      #elif defined MACOSX
+      #elif defined MACOSX || defined MINGW
           mode_t v;
       #else
         __mode_t v;
@@ -2716,7 +2725,11 @@ os9err pDmakdir( ushort pid, _spP_, ushort *modeP, char* pathname )
     if (PathFound( adapted ) || 
         FileFound( adapted )) return E_CEF;
           
-    if (mkdir( adapted,0x01c0 )==0) return 0; /* rwx------ */
+    #ifdef MINGW
+      if (mkdir( adapted )==0) return 0; /* no POSIX mode bits on Windows */
+    #else
+      if (mkdir( adapted,0x01c0 )==0) return 0; /* rwx------ */
+    #endif
     return E_BPNAM;
 
   #else

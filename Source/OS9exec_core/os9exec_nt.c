@@ -407,6 +407,10 @@
 #include <signal.h>
 #include "os9exec_incl.h"
 
+#ifdef MINGW
+  #include <windows.h>  /* SetConsoleCtrlHandler, CTRL_C_EVENT, BOOL/DWORD */
+#endif
+
 #ifdef PTOC_SUPPORT
   #include "native_interface.h"
 #endif
@@ -564,7 +568,7 @@ dir_type mdir;	                  /* current module dir */
 
 
 /* the windows console definitions */
-#if defined windows32
+#if defined windows32 || defined MINGW
   HANDLE hStdin;
 #endif
 
@@ -1544,7 +1548,7 @@ static void CheckStartup( int cpid, char* toolname, int *argc, char **argv )
 
 
 
-#ifdef windows32
+#if defined windows32 || defined MINGW
   /* catch the Ctrl C */
   static BOOL CtrlC_Handler( DWORD ctrlType )
   {
@@ -1560,7 +1564,7 @@ static void CheckStartup( int cpid, char* toolname, int *argc, char **argv )
   } // CtrlC_Handler
 #endif
 
-#ifdef UNIX
+#if defined UNIX && !defined MINGW
   static void CtrlC_Handler( int sig )
   {
 //  Boolean fnd= false;
@@ -2274,15 +2278,15 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
   //int          sv= sig;
     process_typ* cp = &procs[currentpid]; // pointer to procs   descriptor
     regs_type*   crp= &cp->os9regs;       // pointer to process' registers
-  
+
     cp->exiterr= E_BUSERR;
-    
-    #ifdef UNIX
+
+    #if defined UNIX || defined MINGW
       switch (sig) {
         case SIGFPE : cp->exiterr= E_ZERDIV; break;
       } // switch
     #endif
-  
+
   //printf("*** Bus Error *** %d\n", sig );
   //fflush(0);
 
@@ -2290,9 +2294,16 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
     in_m68k_go= 0;                        // remove the blocker in UAE
     #endif
     llm_os9_copyback( crp );              // copy registers back for BusError reporting
-    
+
     #ifdef windows32
       return EXCEPTION_EXECUTE_HANDLER;
+    #elif defined MINGW
+      /* mingw-w64 has neither sigaction/sigsetjmp (POSIX-only) nor SEH
+       * __try/__except (this GCC build lacks Microsoft's SEH extension) --
+       * fall back to plain ISO C signal()/longjmp(), which mingw-w64 does
+       * support. No SIGBUS equivalent exists on Windows, so only SIGSEGV
+       * and SIGFPE are caught (see setup_exception below). */
+      longjmp( main_env, cp->exiterr );      // go back with bus error
     #else
       siglongjmp( main_env, cp->exiterr );   // go back with bus error
     #endif
@@ -2311,20 +2322,29 @@ static void setup_exception( loop_proc lo )
   #endif
   
   // The UNIX exception handler, using sigsetjmp/siglongjmp
-  #ifdef UNIX
+  #if defined UNIX && !defined MINGW
     struct sigaction sa;
 
     err= sigsetjmp( main_env, 1 );
-    
+
     sa.sa_handler= &segv_handler;
     sigemptyset  ( &sa.sa_mask );
     sa.sa_flags  = 0;
-    
+
     sigaction( SIGSEGV, &sa, NULL ); // catch SEG faults
     sigaction( SIGBUS,  &sa, NULL ); // ... and others as well
     sigaction( SIGFPE,  &sa, NULL );
   #endif
-  
+
+  // mingw-w64: no sigaction/SIGBUS -- plain signal() for the two signals
+  // Windows does raise, see segv_handler's comment above.
+  #ifdef MINGW
+    err= setjmp( main_env );
+
+    signal( SIGSEGV, &segv_handler );
+    signal( SIGFPE,  &segv_handler );
+  #endif
+
   do {
     if (err && debugcheck(dbgTrapHandler,dbgNorm)) { 
       uphe_printf("Exception occurred [pid=%d] err=%d\n", currentpid, err ); 
@@ -2350,7 +2370,7 @@ static void setup_exception( loop_proc lo )
 /* Entry into OS9 emulation
  * If toolname==NULL, the os9 program is loaded from 'OS9C' Id=0
  */
-ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp, 
+ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
                    ulong memplus, ushort prior )
 {
   ushort       cpid;
@@ -2374,7 +2394,7 @@ ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
     #endif
   #endif
 
-  #ifdef UNIX
+  #if defined UNIX && !defined MINGW
     struct sigaction ia;
   #endif
   	
@@ -2416,22 +2436,24 @@ ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
     Install_AppleEvents(); /* do this as early as possible */
   #endif
 
+  #if defined windows32 || defined MINGW
+    hStdin= GetStdHandle( STD_INPUT_HANDLE ); /* needed by HandleEvent() -- see telnetaccess.c */
+  #endif
   #ifdef windows32
-    hStdin= GetStdHandle( STD_INPUT_HANDLE );
     WindowTitle    ( &title,false ); /* adapt title line of DOS window */
-    SetConsoleTitle( &title );     	  
+    SetConsoleTitle( &title );
   #endif
 
   if (catch_ctrlC) {
-    #ifdef windows32
+    #if defined windows32 || defined MINGW
       SetConsoleCtrlHandler( CtrlC_Handler, true );
     #endif
 
-    #ifdef UNIX
+    #if defined UNIX && !defined MINGW
       ia.sa_handler= &CtrlC_Handler;
       sigemptyset( &ia.sa_mask );
       ia.sa_flags  = 0;
-        
+
       sigaction( SIGINT, &ia, NULL );
     #endif
   } // if
@@ -2630,7 +2652,7 @@ ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
   // NOTE: An internal command can crash here, because segv_handler is not yet up
 	  cp->oerr= prepLaunch( my_toolname, argv,argc,envp, memplus,prior );
   if (cp->oerr) goto mainabort; /* prepare for execution */
-		
+
   debugprintf(dbgStartup,dbgNorm,("# main startup: Main module loaded & prepared for launch\n"));
 
   setup_exception( os9exec_loop );

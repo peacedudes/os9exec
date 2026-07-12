@@ -415,7 +415,7 @@ os9err pPrReady( _pid_, syspath_typ*, uint32_t *n )
 {   return 0;
 } /* pPrReady */
 
-#elif defined(windows32) || defined macintosh || defined linux
+#elif defined(windows32) || defined macintosh || defined linux || defined MINGW
   void init_Printer( _fmgr_ ) { } /* do nothing */
 #else
   #error "not yet implemented for other platforms than win32"

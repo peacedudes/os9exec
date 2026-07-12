@@ -127,9 +127,14 @@
 #include "os9exec_incl.h"
 #include <ctype.h>
 
-#ifdef UNIX
+#if defined UNIX && !defined MINGW
 #include <termios.h>
 #include <ctype.h>
+#endif
+
+#ifdef MINGW
+#include <windows.h>  /* GetConsoleMode/SetConsoleMode -- mingw-w64 has no termios.h */
+#include <io.h>       /* isatty */
 #endif
 
 /* statics */
@@ -143,8 +148,12 @@ ulong iniprior;             /* priority for first process */
 
 extern ulong emul_arena_size; /* 68k arena size (set via -M option) */
 
-#ifdef UNIX
+#if defined UNIX && !defined MINGW
 struct termios savedmodes;  /* saved terminal attributes     */
+#endif
+
+#ifdef MINGW
+static DWORD savedConsoleMode;  /* saved console input mode */
 #endif
 
 /* locally defined procedures */
@@ -373,9 +382,9 @@ void eSpinCursor (short incr)
         #pragma unused(incr)
         // sleep(1);
         
-      #elif defined linux
+      #elif defined linux || defined MINGW
         // sleep(1);
-        
+
       #else
         #error not implemented
       #endif
@@ -480,8 +489,8 @@ static void GetStartTick()
 Boolean setup_term()
 {
     int reply = 0;
-    
-    #ifdef UNIX
+
+    #if defined UNIX && !defined MINGW
       struct termios modes;
 
       if (!isatty(0)) return true; /* stdin is a pipe — skip terminal setup silently */
@@ -520,6 +529,28 @@ Boolean setup_term()
                      strerror(errno));
       }
 
+    #elif defined MINGW
+      /* mingw-w64 has no termios.h -- Windows Console API equivalent.
+       * Clearing ENABLE_PROCESSED_INPUT (mirroring UNIX's ISIG-off above)
+       * lets ^C arrive as a raw 0x03 byte through the normal read path
+       * instead of firing the console control handler, matching how
+       * consio.c already expects to see it on UNIX. */
+      HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+
+      if (!isatty(0)) return true; /* stdin is a pipe — skip terminal setup silently */
+
+      if (!GetConsoleMode(hIn, &savedConsoleMode)) {
+          reply = 1;
+          upo_printf("Error reading initial terminal settings\n");
+      }
+      else {
+          DWORD modes= savedConsoleMode
+                       & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
+          if (!SetConsoleMode(hIn, modes)) {
+              reply = 1;
+              upo_printf("Error setting up os9exec's terminal attributes\n");
+          }
+      }
     #endif
 
     return (reply == 0);
@@ -530,7 +561,7 @@ Boolean setup_term()
    thje error report isn't followed by an exit() */
 void restore_term()
 {
-    #ifdef UNIX
+    #if defined UNIX && !defined MINGW
       int reply;
       struct termios modes;
 
@@ -541,6 +572,13 @@ void restore_term()
       if (reply)
          upo_printf("Error restoring normal terminal operation: %s\n",
                     strerror(errno));
+    #elif defined MINGW
+      HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+
+      if (!isatty(0)) return; /* stdin is a pipe — nothing to restore */
+
+      if (!SetConsoleMode(hIn, savedConsoleMode))
+         upo_printf("Error restoring normal terminal operation\n");
     #endif
 } // restore_term
 

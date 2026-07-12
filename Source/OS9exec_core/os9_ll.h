@@ -79,6 +79,15 @@
   #endif
 #endif
 
+/* mingw-w64 also runs the UAE 68k core -- and, like the linux/macOS
+ * branches above, must NOT fall into the "#if !defined(USE_UAEMU)"
+ * pragma pack(push, 2) below, which is a fallback for a hypothetical
+ * non-UAEMU host and would silently repack every struct this codebase
+ * relies on having natural alignment. */
+#ifdef MINGW
+  #define USE_UAEMU
+#endif
+
 #ifdef USE_UAEMU
   /* include file os9_uae.h */
   #include "sysconfig.h"

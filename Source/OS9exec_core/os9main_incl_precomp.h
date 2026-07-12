@@ -142,10 +142,21 @@
   #endif
 #endif
 
+/* MinGW-w64: real Windows compile, detected from the compiler's own
+ * predefines (before anything below runs). Treated as a UNIX-like peer
+ * (POSIX headers: dirent.h, sys/stat.h, unistd.h all present under
+ * mingw-w64) rather than routed through the old CodeWarrior-era
+ * `windows32`/WINFILES/MACMEM path below, which assumes Win32 API
+ * headers (windows.h, msdir.h) this build doesn't use. */
+#if defined __MINGW32__ || defined __MINGW64__
+  #define MINGW
+  #define __INTEL__
+#endif
+
 /* WINTEL can't be separated :-) */
 #ifdef __INTEL__
   // except for the "bright future"
-  #ifndef macintosh
+  #if !defined macintosh && !defined MINGW
     #define windows32
   #endif
 #endif
@@ -154,15 +165,15 @@
 /* makes life easier for them moment ... */
 #ifdef linux
   #define __INTEL__
-#endif 
+#endif
 
 /* the UNIX systems */
-#if defined linux || defined MACOSX
+#if defined linux || defined MACOSX || defined MINGW
   #define UNIX
 #endif
 
 /* either windows or linux (or macOS as a unix-like peer) */
-#if defined windows32 || defined linux || defined MACOSX
+#if defined windows32 || defined linux || defined MACOSX || defined MINGW
   #define win_linux
 #endif
 
@@ -434,6 +445,23 @@ typedef struct dirent dirent_typ;
   #ifndef UNIX
     typedef unsigned     int uint;
     typedef unsigned long int ulong;
+  #endif
+
+  /* mingw-w64 provides the BSD-style u_short/u_long/u_int (with the
+   * underscore) via sys/types.h, but not the bare ushort/uint/ulong
+   * spellings used throughout this codebase -- Linux/macOS pick those up
+   * transitively from glibc/Darwin's own headers, mingw-w64 doesn't. */
+  #ifdef MINGW
+    typedef unsigned short ushort;
+    typedef unsigned int   uint;
+    /* NOT `unsigned long` -- Windows is LLP64, where `long` stays 32-bit
+     * even in a 64-bit build (unlike Unix's LP64, where it's 64-bit).
+     * `ulong` is documented/used throughout this codebase as a pointer-
+     * width "native word" for stashing host pointers (see os9_ll.h's
+     * TO68K/FROM68K neighbourhood and the `(ulong)&procs[k]` casts in
+     * fcalls.c/icalls.c/filestuff.c) -- `unsigned long` here would
+     * silently truncate every 64-bit pointer stored in one. */
+    typedef unsigned long long ulong;
   #endif
 
   #if defined __INTEL__ || defined __MACH__
