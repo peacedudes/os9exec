@@ -50,7 +50,7 @@ at_prompt() {
     local last
     last=$(printf '%s\n' "$content" | tail -1 | sed 's/[[:space:]]*$//')
     [ "$last" = '$' ] && return 0
-    printf '%s' "$last" | grep -qE 'for hlp\)|^dbg:|^dis:|^tra:' && return 0
+    printf '%s' "$last" | grep -qE 'for hlp\)|^dbg:|^dis:|^tra:|^(su|tester|dog):$' && return 0
     # Also check last 5 lines (trace output may follow the prompt on same/next line)
     printf '%s\n' "$content" | tail -5 | grep -qE '(^|\s)dbg:\s*$|(^|\s)dis:\s*$|(^|\s)tra:\s*$' && return 0
     return 1
@@ -104,10 +104,10 @@ send_one_key() {
 
 cmd_start() {
     tmux kill-session -t "$SESSION" 2>/dev/null || true
-    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9DISK='$REPO/dd' ./os9exec $EXTRA_ARGS /dd/CMDS/shell"
+    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9DISK='$REPO/h0' ./os9exec $EXTRA_ARGS /h0/CMDS/shell"
     printf '[starting os9exec...]\n'
     if wait_prompt; then
-        tmux send-keys -t "$SESSION" "setenv PATH /dd/CMDS:SHARE:/h0/CMDS" Enter
+        tmux send-keys -t "$SESSION" "setenv PATH /h0/CMDS:/h0/CMDS/SHARE" Enter
         wait_prompt
         tmux send-keys -t "$SESSION" "setenv TERM xterm-256color" Enter
         wait_prompt
