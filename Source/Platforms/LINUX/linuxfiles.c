@@ -168,7 +168,36 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
 
     /* cut out /xxxx/../ sequences */
     CutUp( adname, Prev );
-    
+
+    /* CutUp() above is a purely textual "/xxx/../" collapse -- it has no
+     * idea a component might be a configured device root's own name
+     * (often itself a host symlink, e.g. "dd" -> "freeware", or an
+     * operator-mapped "h9" -> some other host directory), so ".." can
+     * textually cancel the device-root component itself, landing on ITS
+     * OWN PARENT in the real filesystem instead of staying self-
+     * referential at the root. That escaped location can then slip past
+     * the confinement check further down if it happens to sit inside (or
+     * be a real ancestor of) some device's actual target -- confirmed
+     * live: an operator-mapped device whose target was a real ancestor of
+     * this project's own directory let repeated ".." walk arbitrarily far
+     * up the real host filesystem with no confinement at all, from any
+     * device root, since that check tests "within ANY configured device",
+     * not specifically the one this operation started in. Catch it here,
+     * immediately after the collapse that causes it, using the same
+     * literal (non-realpath'd) prefix comparison FindConfiguredDeviceRoot
+     * itself already uses: if this operation started inside a configured
+     * device root (hadRoot) but the collapsed string no longer literally
+     * has that root as a prefix, the ".." ate into the root's own name --
+     * clamp straight back to it now, before any further processing. */
+    if (hadRoot) {
+        size_t rl= strlen( startRoot );
+        if (ustrncmp( adname,startRoot,rl )!=0 ||
+            (adname[rl]!=NUL && adname[rl]!=PATHDELIM)) {
+            strncpy( adname, startRoot, OS9PATHLEN-1 );
+            adname[OS9PATHLEN-1]= NUL;
+        }
+    }
+
     /* make some preparations first */
     len= strlen( adname );
     q  =        &adname[len-1]; /* last position of the string */
