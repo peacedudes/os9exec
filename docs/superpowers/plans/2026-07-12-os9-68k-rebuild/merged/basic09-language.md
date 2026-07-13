@@ -547,8 +547,8 @@ type:      FACT
 target:    all
 verify:    from-manual
 topic:     basic09-debugging
-claim:     The PAUSE statement suspends program execution and enters Debug Mode, prompting `D:` — used to halt at a specific point in the code for inspection and single-stepping. (Compare: Edit Mode uses the `E:` prompt.)
-context:   Unlike errors or CONTROL-C, PAUSE is intentional and can be embedded directly in program logic — functionally similar to a breakpoint in a modern debugger.
+claim:     The PAUSE statement suspends program execution and enters Debug Mode, prompting `D:` — used to halt at a specific point in the code for inspection and single-stepping. (Compare: Edit Mode uses the `E:` prompt, and interactive System Mode itself uses the `B:` prompt.)
+context:   Unlike errors or CONTROL-C, PAUSE is intentional and can be embedded directly in program logic — functionally similar to a breakpoint in a modern debugger. The three prompts (`B:`/`E:`/`D:`) are a reliable way to tell which BASIC09 mode a session is currently in.
 source:    BASIC09 Reference Manual (Rev H), Debug Mode overview, p. 6-1; "OS-9 BASIC User Manual (Revision G, 1991)" Chapter 1, p. 13, Chapter 5, p. 5-23
 --- END ---
 
