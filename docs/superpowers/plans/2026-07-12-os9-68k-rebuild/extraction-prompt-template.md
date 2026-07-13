@@ -101,3 +101,13 @@ Rules:
 **Output:** write the full card list to {{OUTPUT_PATH}}. Do not summarize or
 truncate. Report back only a one-paragraph summary of what you found and any
 architecture-scope surprises.
+
+**Before reporting done, self-check the file you just wrote** (re-read it,
+don't just trust your own memory of writing it): every `--- CARD ---` line
+has a matching `--- END ---` line before the next `--- CARD ---` or the end
+of the file — a card with no closing marker is a broken file, not a minor
+omission. Every `type:` line contains exactly one of the five values (never
+a combination like `FACT | GOTCHA` — pick the single best-fitting type).
+Report the actual count of `--- CARD ---` markers you can verify by
+counting them in the file, not a number you recall from writing — self-
+reported counts have been wrong before.
