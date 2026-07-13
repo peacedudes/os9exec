@@ -113,8 +113,8 @@ This is a pure refactor — RAM-disk behavior must not change at all. Two helper
 - Modify: `Source/OS9exec_core/file_rbf.c:934-1077` (`PrepareRAM`, replace the body of the non-`devCopy` branch)
 
 **Interfaces:**
-- Produces: `static void RoundSectorCount( uint32_t ramSizeKB, uint32_t sctSize, int clu, uint32_t* totSctsOut, uint32_t* totBitsOut )`
-- Produces: `static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sctSize, int clu, byte** bufOut )` — consumed by Task 3.
+- Produces: `static Boolean RoundSectorCount( uint32_t ramSizeKB, uint32_t sctSize, int clu, uint32_t* totSctsOut, uint32_t* totBitsOut )` — returns false (after printing the reason) if `clu` isn't a power of 2; callers must check the return value before using the output. **Signature note:** an earlier draft of this task had this function return `void` and validate `clu` only inside `BuildBlankImage`, called afterward — that ordering divides by `clu` (`totBits = (totScts-1) / clu + 1`) before the power-of-2 check ever runs, which is a real, live-confirmed bug (wrong error code for an invalid cluster size, and undefined-behavior divide-by-zero for `clu==0` — didn't crash on the arm64 host used for testing, since AArch64 `UDIV` returns 0 rather than trapping, but this project ships x86/Windows builds where integer division by zero does trap). The code below has already been corrected; validate `clu` inside `RoundSectorCount`, at the very top, before any division.
+- Produces: `static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sctSize, int clu, byte** bufOut )` — consumed by Task 3. No longer re-validates `clu`'s power-of-2-ness (that moved to `RoundSectorCount`, its caller); still validates the allocation-bitmap-fits-in-`mapSize` condition, which has no divide-before-check hazard.
 - Consumes: `RAM_zero[]` (file_rbf.c:208), `get_mem`/`release_mem`, `SET_OS9L`/`SET_OS9W`, `TOT_POS`/`TRK_POS`/`MAP_POS`/`BIT_POS`/`DIR_POS`/`SECT_POS`, `BpB` (already defined at `os9exec_nt.h:346`).
 
 - [ ] **Step 1: Add the two helpers, just above `PrepareRAM`** (i.e. right after `ParseDiskSize` from Task 1)
@@ -124,14 +124,26 @@ This is a pure refactor — RAM-disk behavior must not change at all. Two helper
 #define DefaultScts   8192
 #define MaxKB         0x001ffffe // 2097151 kB = 2047.999 MB -- shared cap for -r=<size> and -k=<size>
 
-static void RoundSectorCount( uint32_t ramSizeKB, uint32_t sctSize, int clu,
-                               uint32_t* totSctsOut, uint32_t* totBitsOut )
+static Boolean RoundSectorCount( uint32_t ramSizeKB, uint32_t sctSize, int clu,
+                                  uint32_t* totSctsOut, uint32_t* totBitsOut )
 /* Converts a kBytes request into a valid sector count: rounds up to a whole
  * track, then to a whole allocation cluster. Falls back to DefaultScts if
  * the request rounds down to zero (e.g. ramSizeKB==0). Identical math to
- * PrepareRAM's original inline computation -- moved, not changed. */
+ * PrepareRAM's original inline computation -- moved, not changed. Returns
+ * false (after printing the reason) if clu isn't a power of 2 -- checked
+ * HERE, before the division below that uses clu as a divisor, not in
+ * BuildBlankImage (which runs after this and would divide by an invalid
+ * or zero clu first if the check lived there instead). */
 {
     uint32_t totScts, tracks, totBits;
+    Boolean  ok= false;
+    int      ii;
+
+    for (ii=0; ii<31; ii++) { if (1<<ii==clu) { ok= true; break; } }
+    if (!ok) {
+      upe_printf( "mount: cluster size must be a power of 2\n" );
+      return false;
+    } // if
 
               totScts= ramSizeKB*KByte/sctSize; /* adapt to KBytes */
     tracks  = (totScts-1) / SectsPerTrack + 1;
@@ -142,6 +154,7 @@ static void RoundSectorCount( uint32_t ramSizeKB, uint32_t sctSize, int clu,
 
     *totSctsOut= totScts;
     *totBitsOut= totBits;
+    return true;
 } /* RoundSectorCount */
 
 static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sctSize, int clu,
@@ -149,22 +162,16 @@ static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sct
 /* Builds a complete, ready-to-use RBF filesystem image in a freshly
  * allocated buffer: identification sector (Cruz-stamped, via RAM_zero),
  * allocation bitmap, root directory FD sector, root directory entry.
- * Returns false (after printing the reason) if clu isn't a power of 2, or
- * if the allocation bitmap doesn't fit in the available map size -- the
- * caller owns *bufOut only on true. */
+ * Returns false (after printing the reason) if the allocation bitmap
+ * doesn't fit in the available map size -- the caller owns *bufOut only on
+ * true. Caller must already have validated clu (via RoundSectorCount) --
+ * this function trusts it's a valid power of 2. */
 {
     ulong   allocSize, allocN, mapSize, f, r, fN, rN, cluRest, ii;
     byte*   b;
     int     v;
     byte    pt;
-    Boolean ok= false;
     byte*   base;
-
-    for (ii=0; ii<31; ii++) { if (1<<ii==clu) { ok= true; break; } }
-    if (!ok) {
-      upe_printf( "mount: cluster size must be a power of 2\n" );
-      return false;
-    } // if
 
              mapSize= (totBits-1)/BpB + 1; // rounding up
     if      (mapSize>0xffff) {
@@ -270,7 +277,8 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
                          dev->clusterSize= clu;
                          dev->sas        = DD__MINALLOC;
 
-    RoundSectorCount( mnt_ramSize, dev->sctSize, clu, &dev->totScts, &totBits );
+    if (!RoundSectorCount( mnt_ramSize, dev->sctSize, clu, &dev->totScts, &totBits ))
+      return E_NORAM; /* RoundSectorCount already printed the specific reason */
 
     if ( mnt_ramSize==0
       && IsDesc( cmp, &mod, &p )
@@ -291,7 +299,7 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
 } /* PrepareRAM */
 ```
 
-Compared to the original: `#define DefaultScts`/`#define SectsPerTrack`/`#define MaxKB` are all gone from inside this function — they now live at file scope above `RoundSectorCount` (added in Step 1), and `CreateBlankDevice` (Task 3) reuses the same `MaxKB`. Leaving a second copy of any of these here would be a duplicate-macro warning. Declarations drop everything that moved into the two new helpers (`allocSize, allocN, mapSize, f, r, fN, rN, tracks, cluRest, ii, b, v, pt, ok` are gone), and gain `uint32_t totBits;` for the new `RoundSectorCount` call. Everything else — the `devCopy` branch, the descriptor-module override, the field-assignment order — is character-for-character the same as before.
+Compared to the original: `#define DefaultScts`/`#define SectsPerTrack`/`#define MaxKB` are all gone from inside this function — they now live at file scope above `RoundSectorCount` (added in Step 1), and `CreateBlankDevice` (Task 3) reuses the same `MaxKB`. Leaving a second copy of any of these here would be a duplicate-macro warning. Declarations drop everything that moved into the two new helpers (`allocSize, allocN, mapSize, f, r, fN, rN, tracks, cluRest, ii, b, v, pt, ok` are gone), and gain `uint32_t totBits;` for the new `RoundSectorCount` call. The `RoundSectorCount` call site now checks its (`Boolean`) return value and returns `E_NORAM` on failure — see the note on `RoundSectorCount`'s signature above; this replaces the standalone power-of-2 check the original inline code ran before any division, now folded into `RoundSectorCount` itself instead of duplicated here. Everything else — the `devCopy` branch, the descriptor-module override, the field-assignment order — is character-for-character the same as before.
 
 - [ ] **Step 3: Build**
 
@@ -403,7 +411,8 @@ static os9err CreateBlankDevice( ushort pid, const char* name, uint32_t sizeKB,
     if (sizeKB>MaxKB)
       return _errmsg( E_BPNAM, "mount -k: size is too large for this device.\n" );
 
-    RoundSectorCount( sizeKB, sctSize, clu, &totScts, &totBits );
+    if (!RoundSectorCount( sizeKB, sctSize, clu, &totScts, &totBits ))
+      return E_NORAM; /* RoundSectorCount already printed the specific reason */
     if (!BuildBlankImage( totScts, totBits, sctSize, clu, &buf ))
       return E_NORAM; /* BuildBlankImage already printed the specific reason */
 
@@ -738,3 +747,4 @@ git commit -m "Tests: self-contained RBF scratch image via mount -k; add RAM dis
 - **Spec coverage:** K/M/G size parsing (reusing the existing `os9main.c` idiom, not a new one) + rounding → Task 1 + `RoundSectorCount` in Task 2. `mount -k` creating a ready-to-use image in one step → Task 2 (buffer builder) + Task 3 (wiring + host directory variant). No `-b` reuse/overload → Task 3 uses `-k` throughout, no platform `#ifdef` needed. Required-`hX`-naming constraint, no `dd` → Task 3 Step 1 validation. `dsave -ive` used for real populate+verify, not just `touch` → Task 2 Step 5, Task 3 Step 7, Task 5. README section for both blank images and RAM disks, plus the precedence/conflict notes and the `dsave -ive` technique → Task 4. Self-contained RBF tests + RAM disk test → Task 5.
 - **Not in scope, deliberately:** fixing `mount`'s existing arbitrary-file/arbitrary-path attachment classification bug (`E_FNA`/`E_MNF` found during design exploration) — out of domain per explicit direction; `crefile` reconstruction — dropped in favor of `mount -k` per explicit direction.
 - **In scope, discovered mid-execution:** `GNUmakefile` never defining `RAM_SUPPORT` (so `mount -r=<size>` never worked on any real build) and `mount -r=<size> <name>` requiring an absolute `<name>` — both found while implementing Task 2, both fixed as part of Task 2 (the Makefile fix) or documented throughout the plan (the absolute-path requirement), by explicit direction rather than deferred as out-of-scope like the `mount`-classification bug above. The distinction: that bug is genuinely unrelated machinery this feature doesn't need working; `RAM_SUPPORT` gates code this same plan explicitly relies on and reuses (`PrepareRAM`'s helpers), so leaving it broken would leave Task 2's own verification, and Task 5's RAM disk test, unable to pass.
+- **Bug caught by Task 2's own task review, fixed in the plan text before re-dispatch:** the first draft of `RoundSectorCount`/`BuildBlankImage` (this plan's own Task 2 Step 1, as originally written) put the `clu`-is-a-power-of-2 validation inside `BuildBlankImage`, called *after* `RoundSectorCount` already divides by `clu`. Live-tested by the reviewer: this changed the error code returned for an invalid cluster size, and caused undefined-behavior integer division by zero for `-c=0` (silently returned 0 on the arm64 test host rather than crashing, but this project ships x86/Windows builds where that traps). Fixed by moving the validation into `RoundSectorCount` itself (now returns `Boolean`) — see the signature note under Task 2's Interfaces section. Left here as a record of a real defect in this plan's own authored code, not just the implementers' — the plan's authorship doesn't exempt it from the same review rigor as any implementation.
