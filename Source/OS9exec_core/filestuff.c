@@ -568,6 +568,35 @@ void TwoCharDev( char* p, char** p3, char* tmp )
     }
     
     if (*p3!=NULL && **p3==NUL) *p3= NULL; /* invalidate again */
+
+    /* Collapse any "/./" or "/xxx/../" in the device root, here at the single
+     * point where every root is produced (OS9DISK's /dd, OS9Hx's /hx, and the
+     * startPath-discovered ones alike). Every host path built on a root gets
+     * exactly this collapse later, in AdjustPath's CutUp() -- and AdjustPath's
+     * confinement clamp then compares that collapsed path against the root as a
+     * LITERAL string prefix. An uncollapsed root therefore matched nothing, and
+     * the clamp silently rewrote EVERY path to the device root itself: with
+     * OS9DISK=./freeware (egetenv resolves it to "<startPath>/./freeware"),
+     * `dir /dd/SYS` listed the root's own entries and every ordinary file open
+     * failed -- while module loading, which never goes through AdjustPath, kept
+     * working, so the emulator still booted and the cause stayed hidden.
+     * Confirmed live 2026-07-13; also reproduced with a fully absolute
+     * OS9DISK=$PWD/./freeware, which is what ruled out "relative path" as the
+     * cause. Collapse lexically rather than with realpath(): roots are compared
+     * unexpanded on purpose, so one that is itself a host symlink (this repo's
+     * "dd" -> freeware) keeps its own name -- see FindConfiguredDeviceRoot.
+     * Copy into the caller's <tmp> first -- *p3 may point straight into the
+     * environment (egetenv hands back getenv()'s own string for an already-
+     * absolute OS9Hx), which must not be mutated in place. */
+    if (*p3!=NULL) {
+        if (*p3!=tmp) {
+            strncpy( tmp,*p3, OS9PATHLEN-1 );
+                     tmp[     OS9PATHLEN-1 ]= NUL;
+        }
+        CutUp( tmp,"/." );
+        *p3= tmp;
+    }
+
     debugprintf(dbgFiles,dbgNorm,( "# TwoCharDev: path='%s'\n", *p3 ));
 } /* TwoCharDev */
 

@@ -65,7 +65,8 @@ let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/dd/CMDS"
 /// ESC on a final line signals EOF to the shell.
 /// Times out after `timeout` seconds to prevent hangs from blocking the suite.
 /// If DOCKER_IMAGE is set, runs via Docker; otherwise runs locally (assumes dd symlink exists).
-func os9(_ commands: [String], timeout: TimeInterval = 15, paced: Bool = false) -> String {
+func os9(_ commands: [String], timeout: TimeInterval = 15, paced: Bool = false,
+         disk: String = diskPath) -> String {
     let setup  = "chx \(sdkCmds)\nload math cio\n"
     let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
 
@@ -98,7 +99,7 @@ func os9(_ commands: [String], timeout: TimeInterval = 15, paced: Bool = false) 
         // Run locally: OS9DISK points straight at the repo-root h0 dir.
         process.executableURL = execURL
         process.arguments    = speedFlag + [shellArg]
-        process.environment  = ["OS9DISK": diskPath]
+        process.environment  = ["OS9DISK": disk]
     }
 
     let stdinPipe  = Pipe()
@@ -154,9 +155,10 @@ var passed = 0
 var failed = 0
 let filter = CommandLine.arguments.dropFirst().first ?? ""
 
-func run(_ name: String, expectation: String, commands: [String], check: (String) -> Bool) {
+func run(_ name: String, expectation: String, commands: [String], disk: String = diskPath,
+         check: (String) -> Bool) {
     guard filter.isEmpty || name.localizedCaseInsensitiveContains(filter) else { return }
-    let output = os9(commands)
+    let output = os9(commands, disk: disk)
     if check(output) {
         print("PASS: \(name)")
         passed += 1
@@ -175,6 +177,12 @@ func run(_ name: String, expectation: String, commands: [String], check: (String
 
 func check(_ name: String, contains pattern: String, _ commands: String...) {
     run(name, expectation: "contains: \(pattern)", commands: commands) { $0.contains(pattern) }
+}
+
+func check(_ name: String, contains pattern: String, disk: String, _ commands: String...) {
+    run(name, expectation: "contains: \(pattern)", commands: commands, disk: disk) {
+        $0.contains(pattern)
+    }
 }
 
 func check(_ name: String, absent pattern: String, _ commands: String...) {
@@ -461,6 +469,29 @@ check("dir: parent traversal",          contains: "CMDS",     "dir /dd/CMDS/..")
 // relative listing after chd
 check("chd: dir with no args lists dir", contains: "echo",
     "chd \(sdkCmds)", "dir", "chd /dd")
+
+// A device root that itself contains a "/./" (or "/../") component must behave
+// exactly like the plain one. The emulator collapses every path lexically
+// (CutUp, in AdjustPath) but compares the result against the *configured* device
+// root as a literal string prefix; when the root still carried an uncollapsed
+// "/./", nothing matched, and the confinement clamp silently rewrote EVERY path
+// to the device root itself -- `dir /dd/SYS` listed the root, and every ordinary
+// file open failed, while module loading (which never takes that path) kept
+// working, so the emulator still booted. Only meaningful for a local run: a
+// container mounts its disk at /dd directly, with no OS9DISK path to dot.
+if dockerImage == nil, containerImage == nil {
+    let dottedDisk = repoRoot.path + "/./h0"
+
+    check("dotted OS9DISK: subdir is not clamped to root", contains: "errmsg",
+          disk: dottedDisk, "dir /dd/SYS")
+
+    // Asserted on dump's hex, not the text: the shell echoes every command line
+    // back to stdout, so a plaintext needle would match its own `echo` and pass
+    // even while the file open was failing.
+    check("dotted OS9DISK: ordinary file open works", contains: "6162 630d",
+          disk: dottedDisk,
+          "echo abc >/dd/t_dotdisk", "dump /dd/t_dotdisk", "del /dd/t_dotdisk")
+}
 
 // ── Shell variables and environment ──────────────────────────────────────────
 
