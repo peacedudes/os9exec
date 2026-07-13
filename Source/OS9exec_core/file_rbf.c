@@ -958,14 +958,26 @@ static Boolean ParseDiskSize( const char* s, uint32_t* sizeKBOut )
 #define DefaultScts   8192
 #define MaxKB         0x001ffffe // 2097151 kB = 2047.999 MB -- shared cap for -r=<size> and -k=<size>
 
-static void RoundSectorCount( uint32_t ramSizeKB, uint32_t sctSize, int clu,
-                               uint32_t* totSctsOut, uint32_t* totBitsOut )
+static Boolean RoundSectorCount( uint32_t ramSizeKB, uint32_t sctSize, int clu,
+                                  uint32_t* totSctsOut, uint32_t* totBitsOut )
 /* Converts a kBytes request into a valid sector count: rounds up to a whole
  * track, then to a whole allocation cluster. Falls back to DefaultScts if
  * the request rounds down to zero (e.g. ramSizeKB==0). Identical math to
- * PrepareRAM's original inline computation -- moved, not changed. */
+ * PrepareRAM's original inline computation -- moved, not changed. Returns
+ * false (after printing the reason) if clu isn't a power of 2 -- checked
+ * HERE, before the division below that uses clu as a divisor, not in
+ * BuildBlankImage (which runs after this and would divide by an invalid
+ * or zero clu first if the check lived there instead). */
 {
     uint32_t totScts, tracks, totBits;
+    Boolean  ok= false;
+    int      ii;
+
+    for (ii=0; ii<31; ii++) { if (1<<ii==clu) { ok= true; break; } }
+    if (!ok) {
+      upe_printf( "mount: cluster size must be a power of 2\n" );
+      return false;
+    } // if
 
               totScts= ramSizeKB*KByte/sctSize; /* adapt to KBytes */
     tracks  = (totScts-1) / SectsPerTrack + 1;
@@ -976,6 +988,7 @@ static void RoundSectorCount( uint32_t ramSizeKB, uint32_t sctSize, int clu,
 
     *totSctsOut= totScts;
     *totBitsOut= totBits;
+    return true;
 } /* RoundSectorCount */
 
 static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sctSize, int clu,
@@ -983,22 +996,16 @@ static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sct
 /* Builds a complete, ready-to-use RBF filesystem image in a freshly
  * allocated buffer: identification sector (Cruz-stamped, via RAM_zero),
  * allocation bitmap, root directory FD sector, root directory entry.
- * Returns false (after printing the reason) if clu isn't a power of 2, or
- * if the allocation bitmap doesn't fit in the available map size -- the
- * caller owns *bufOut only on true. */
+ * Returns false (after printing the reason) if the allocation bitmap
+ * doesn't fit in the available map size -- the caller owns *bufOut only on
+ * true. Caller must already have validated clu (via RoundSectorCount) --
+ * this function trusts it's a valid power of 2. */
 {
     ulong   allocSize, allocN, mapSize, f, r, fN, rN, cluRest, ii;
     byte*   b;
     int     v;
     byte    pt;
-    Boolean ok= false;
     byte*   base;
-
-    for (ii=0; ii<31; ii++) { if (1<<ii==clu) { ok= true; break; } }
-    if (!ok) {
-      upe_printf( "mount: cluster size must be a power of 2\n" );
-      return false;
-    } // if
 
              mapSize= (totBits-1)/BpB + 1; // rounding up
     if      (mapSize>0xffff) {
@@ -1099,7 +1106,8 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
                          dev->clusterSize= clu;
                          dev->sas        = DD__MINALLOC;
 
-    RoundSectorCount( mnt_ramSize, dev->sctSize, clu, &dev->totScts, &totBits );
+    if (!RoundSectorCount( mnt_ramSize, dev->sctSize, clu, &dev->totScts, &totBits ))
+      return E_NORAM; /* RoundSectorCount already printed the specific reason */
 
     if ( mnt_ramSize==0
       && IsDesc( cmp, &mod, &p )
@@ -1717,9 +1725,10 @@ os9err int_mount( ushort pid, int argc, char** argv )
     /* nargv[0] is the name of the image to be mounted */
     /* nargv[1] is the name of the mounted device */
            err= MountDev( pid, nargv[ 0 ], nargc<2 ? "":nargv[ 1 ], devCopy,
-                          adapt, scsibus, scsiID, scsiLUN, 
+                          adapt, scsibus, scsiID, scsiLUN,
                           ramSize, sctSize, cluSize, wProtect, imgMode );
-    if    (err) return _errmsg( err, "can't mount device \"%s\".\n", nargv[0] );
+    if (err && err!=E_NORAM) return _errmsg( err, "can't mount device \"%s\".\n", nargv[0] );
+    if (err==E_NORAM) return 0; /* validation error already printed by RoundSectorCount */
     return err;
 } /* int_mount */
 
