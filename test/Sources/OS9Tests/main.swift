@@ -8,8 +8,8 @@
 //  Setup: none needed beyond the repo-root h0 (SDK toolchain) dir/symlink
 //  that os9exec itself already uses. OS9DISK is pointed straight at
 //  <repo root>/h0 -- no symlinks inside test/ required. RBF-specific tests
-//  additionally use <repo root>/h1 (a real RBF disk image) via OS9H1, and
-//  skip cleanly, without error, if it isn't present.
+//  provision their own scratch RBF image at runtime via `mount -k=<size>`
+//  and delete it afterward -- no pre-existing disk image needed.
 //
 //  Run (local):
 //    swift run --package-path test
