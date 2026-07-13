@@ -1546,6 +1546,9 @@ static os9err CreateBlankDevice( ushort pid, const char* name, uint32_t sizeKB,
       #ifdef windows32
         if (!CreateDirectory( hostpath,NULL ))
           return _errmsg( E_BPNAM, "mount -k: can't create directory '%s'.\n", hostpath );
+      #elif defined MINGW
+        if (mkdir( hostpath )!=0) /* no POSIX mode bits on Windows */
+          return _errmsg( E_BPNAM, "mount -k: can't create directory '%s'.\n", hostpath );
       #else
         if (mkdir( hostpath,0x01c0 )!=0)
           return _errmsg( E_BPNAM, "mount -k: can't create directory '%s'.\n", hostpath );
@@ -1564,7 +1567,10 @@ static os9err CreateBlankDevice( ushort pid, const char* name, uint32_t sizeKB,
 
     fp= fopen( hostpath,"wb" );
     if (fp==NULL) { release_mem( buf ); return _errmsg( E_BPNAM, "mount -k: can't create '%s'.\n", hostpath ); }
-    fwrite( buf, sctSize, totScts, fp );
+    if (fwrite( buf, sctSize, totScts, fp )!=totScts) {
+      fclose( fp ); remove( hostpath ); release_mem( buf );
+      return _errmsg( E_BPNAM, "mount -k: write failed for '%s' (disk full?).\n", hostpath );
+    } // if
     fclose( fp );
     release_mem( buf );
 
