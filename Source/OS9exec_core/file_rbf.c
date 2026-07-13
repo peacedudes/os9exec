@@ -930,6 +930,30 @@ static Boolean MWrong( int cdv )
   return false;
 } /* MWrong */
 
+static Boolean ParseDiskSize( const char* s, uint32_t* sizeKBOut )
+/* Parses a size string the same way os9main.c's -m/-mm option does
+ * (os9main.c:754-791): a bare number is bytes; a trailing g/M/k
+ * (case-insensitive) scales it up by 1024^3/1024^2/1024 first. Returns
+ * the result in kBytes -- the same unit -r=<size> already uses. False on
+ * malformed input (nothing parsed, or an unrecognized modifier letter). */
+{
+    unsigned long val;
+    char          modifier= 0;
+
+    if (sscanf( s,"%lu%c", &val,&modifier )<1) return false;
+
+    switch (tolower(modifier)) {
+        case 'g' : val*= 1024; /* fall into M */
+        case 'm' : val*= 1024; /* fall into k */
+        case 'k' : val*= 1024;
+        case  0  : break;
+        default  : return false;
+    } // switch
+
+    *sizeKBOut= (uint32_t)(val / KByte);
+    return true;
+} /* ParseDiskSize */
+
 // #ifdef RAM_SUPPORT
 static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
 {
