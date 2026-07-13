@@ -100,6 +100,7 @@ topic:     basic09-syntax
 claim:     |
   type-def    ::= "TYPE" type-name
                   field-decl+
+                  "ENDTYPE"
   field-decl  ::= field-name ":" type
 
   Example:
