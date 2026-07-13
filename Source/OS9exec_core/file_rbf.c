@@ -157,6 +157,7 @@
 /* This file contains the RBF Emulator */
 #include "os9exec_incl.h"
 #include <ctype.h>
+#include <sys/stat.h>
 #include "filescsi.h"
 #include <ctype.h>
 
@@ -1510,7 +1511,66 @@ static void mount_usage( char* name, _pid_ )
     upe_printf( "    -n=<bytes>   sector  size in bytes     for RAM disk\n" );
     upe_printf( "    -c=<num>     cluster size (default: 1) for RAM disk\n" );
     upe_printf( "    -d=<device>  create RAM disk as a copy of <device>\n" );
+    upe_printf( "    -k=<size>    create blank hX device (K/M/G suffix; 0 = host dir)\n" );
 } /* mount_usage */
+
+static os9err CreateBlankDevice( ushort pid, const char* name, uint32_t sizeKB,
+                                             int sctSizeArg, int cluSizeArg )
+/* Creates a new hX device at <startPath>/hX -- either a fully-formatted
+ * blank RBF image (sizeKB>0) or a plain host directory (sizeKB==0).
+ * Refuses if a file/dir already exists at that path. <name> may be given
+ * with or without a leading '/' ("h7" or "/h7"), and only h0..hz is valid
+ * -- /dd is fixed at boot via OS9DISK and is never a valid target.
+ * Reuses the file-scope MaxKB defined above RoundSectorCount (Task 2, Step 1). */
+{
+    char      hostpath[OS9PATHLEN];
+    const char* p= name;
+    byte*     buf;
+    uint32_t  totScts, totBits;
+    uint32_t  sctSize= (sctSizeArg>0) ? (uint32_t)sctSizeArg : STD_SECTSIZE;
+    int       clu    = (cluSizeArg>0) ? cluSizeArg           : 1;
+    FILE*     fp;
+
+    if (*p==PSEP) p++; /* allow a leading '/' */
+    if (tolower(p[0])!='h' || p[1]==NUL || p[2]!=NUL || !isalnum((unsigned char)p[1]))
+      return _errmsg( E_BPNAM, "mount -k: device must be h0..hz, got \"%s\".\n", name );
+
+    strcpy( hostpath,startPath );
+    if (hostpath[strlen(hostpath)-1]!=PATHDELIM) strcat( hostpath,PATHDELIM_STR );
+    strncat( hostpath,p,2 );
+
+    if (FileFound( hostpath ) || PathFound( hostpath ))
+      return _errmsg( E_CEF, "mount -k: '%s' already exists -- remove it first.\n", hostpath );
+
+    if (sizeKB==0) { /* -k=0 : plain host directory */
+      #ifdef windows32
+        if (!CreateDirectory( hostpath,NULL ))
+          return _errmsg( E_BPNAM, "mount -k: can't create directory '%s'.\n", hostpath );
+      #else
+        if (mkdir( hostpath,0x01c0 )!=0)
+          return _errmsg( E_BPNAM, "mount -k: can't create directory '%s'.\n", hostpath );
+      #endif
+      upo_printf( "mount: created host directory '%s'\n", hostpath );
+      return 0;
+    } // if
+
+    if (sizeKB>MaxKB)
+      return _errmsg( E_BPNAM, "mount -k: size is too large for this device.\n" );
+
+    if (!RoundSectorCount( sizeKB, sctSize, clu, &totScts, &totBits ))
+      return E_NORAM; /* RoundSectorCount already printed the specific reason */
+    if (!BuildBlankImage( totScts, totBits, sctSize, clu, &buf ))
+      return E_NORAM; /* BuildBlankImage already printed the specific reason */
+
+    fp= fopen( hostpath,"wb" );
+    if (fp==NULL) { release_mem( buf ); return _errmsg( E_BPNAM, "mount -k: can't create '%s'.\n", hostpath ); }
+    fwrite( buf, sctSize, totScts, fp );
+    fclose( fp );
+    release_mem( buf );
+
+    upo_printf( "mount: created '%s' (%u sectors, %u bytes/sector)\n", hostpath, totScts, sctSize );
+    return 0;
+} /* CreateBlankDevice */
 
 os9err MountDev( ushort pid, char* name, char* mnt_dev, char* devCopy, short adapt,
                              ushort scsibus, short scsiID, ushort scsiLUN, 
@@ -1605,6 +1665,8 @@ os9err int_mount( ushort pid, int argc, char** argv )
     char      devCopy[OS9PATHLEN];
     Boolean   wProtect= false;
     int       imgMode = Img_Unchanged;
+    Boolean   blankImage = false;
+    uint32_t  blankSizeKB= 0;
     char      *p;
     int       k;
     
@@ -1622,6 +1684,19 @@ os9err int_mount( ushort pid, int argc, char** argv )
                 case 'w' : wProtect= true;         break;
                 case 'i' : imgMode = Img_Reduced;  break;
                 case 'f' : imgMode = Img_FullSize; break;
+
+                case 'k' : if (*(p+1)=='=') p+=2;
+                           else { k++; /* next arg */
+                             if  (k>=argc) break;
+                             p= argv[k];
+                           } // if
+
+                           if (!ParseDiskSize( p,&blankSizeKB )) {
+                             upe_printf( "mount: error - invalid size '%s'\n",p );
+                             return 1;
+                           } // if
+                           blankImage= true;
+                           break;
 
 				#ifdef windows32
                 case 'a' : if (*(p+1)=='h') {
@@ -1715,6 +1790,14 @@ os9err int_mount( ushort pid, int argc, char** argv )
             nargv[nargc++]= argv[k];
         }
     } /* for */
+
+    if (blankImage) {
+      if (nargc!=1)
+        return _errmsg( E_BPNAM, "usage: mount -k=<size> <h0..hz>\n" );
+      err= CreateBlankDevice( pid, nargv[0], blankSizeKB, sctSize, cluSize );
+      if (err) return err; /* CreateBlankDevice already printed the reason */
+      return 0;
+    } // if
 
     if (nargc==0) {      /* no param is not really allowed: exception is ramDisk with */
       if (ramSize>0 || /* size>0 or <devCopy> defined */
