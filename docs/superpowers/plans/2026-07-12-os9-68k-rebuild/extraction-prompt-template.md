@@ -20,8 +20,21 @@ of each to confirm which one is "{{DOC_NAME}}" before proceeding.
 (6809 vs 68000) by reading enough of it to check for register names,
 addressing modes, or explicit statements — filenames and even manual titles
 have been wrong before (a "68k" folder RMA assembler manual turned out to be
-pure 6809). If this document turns out to be 6809-only or otherwise out of
-scope for a 68k skill, STOP and report that finding instead of extracting.
+pure 6809). Two possible outcomes:
+
+- **Wholly out of scope** (the entire document is 6809-only, nothing 68k):
+  STOP and report that finding instead of extracting.
+- **Mixed content** (the document is genuinely about the 68k tool/system,
+  but a specific section bleeds in 6809-only hardware detail — this has
+  happened before with this project's C compiler manual, where a
+  6809-only "direct page" addressing feature and a 16-bit `int` size were
+  described inside a document nominally about the 68k compiler): do NOT
+  stop. Extract the genuinely OS-9/68k-relevant facts as normal, but check
+  architecture scope **per-fact** in any section describing hardware-level
+  behavior (data type sizes, addressing modes, register usage) rather than
+  trusting the document's own framing — tag anything you confirm is
+  actually 6809-specific as `target: 6809` explicitly rather than silently
+  treating it as 68k, and say so in your one-paragraph report.
 
 **What to produce:** read the entire document and emit a flat, unordered
 list of cards, one per atomic fact. Do NOT organize your output by the
