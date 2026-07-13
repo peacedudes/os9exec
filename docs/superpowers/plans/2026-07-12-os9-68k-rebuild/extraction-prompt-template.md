@@ -46,6 +46,23 @@ source:    {{DOC_NAME}} §<page/section locator if the text has one, else a
 --- END ---
 ```
 
+**`id` must describe the fact, never a counter.** Good: `module-directory-lookup`,
+`fork-child-data-area-sizing`, `chd-vs-chx-resolution`. Bad, and never
+acceptable: `card-001`, `card-002`, `fact-1`. A future merge pass groups
+cards by reading their `id`s at a glance — a numbered sequence carries no
+information and makes that pass slower for every document after this one.
+
+**`source` must include a real locator, not just the document name repeated.**
+Every primary-source manual extracted from this project's `pdftotext -layout`
+text carries visible page numbers, section headers, or numbered
+subsections in the plain text — find and cite the nearest one. Good:
+`OS-9 v2.4 Technical Reference Manual, "Module Header Format", p. 4-12`.
+Bad: `OS-9 v2.4 Technical Reference Manual` alone with nothing after it —
+that tells a future reader nothing about where in a 200+ page document to
+verify the claim. If a document genuinely has no page numbers or headings
+anywhere near a fact (rare), use a short quoted anchor phrase from the
+surrounding text instead of leaving the locator off entirely.
+
 Rules:
 - `type: FACT` may quote an official data table (syscall codes, error
   numbers, byte offsets, register layouts) verbatim inside `claim:` — cite
