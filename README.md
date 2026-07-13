@@ -256,7 +256,7 @@ already exist — `mount -k` refuses to overwrite an existing file or
 directory.
 
 ```
-mount -k=20M h7
+mount -k=64M h7
 dir /h7
 ```
 
