@@ -1,6 +1,10 @@
 # Error codes and error handling
 
-118 cards in, 109 cards out. The error-code-table portion (103 cards) carries
+126 cards in (118 original + 8 from a low-range addendum pass covering
+codes 000:001-000:067, a gap discovered during the Task 7 repack — the
+original pilot's v2.4 TRM extraction started at 000:102 and never covered
+the low "miscellaneous errors" range that a pre-rebuild version of this
+table had covered), 111 cards out. The error-code-table portion (103 cards) carries
 forward already-cross-checked work from the `error-codes-pilot.md` pass — those
 cards were previously cross-checked between the OS-9 v2.4 Technical Reference
 Manual and an independent 1985-era OS-9/68000 technical manual, with genuine
@@ -13,6 +17,17 @@ survived as general error-handling concepts/gotchas placed after the table, 9
 were pruned as duplicates or as mis-bucketed non-error-handling facts.
 
 ## Error code table (68k), in code-number order
+
+--- CARD ---
+id:        process-aborted-error
+type:      FACT
+target:    68k
+verify:    from-manual
+topic:     process-mgmt
+claim:     Error code 000:001 indicates the process has aborted.
+context:   -
+source:    OS-9 v2.4 Technical Reference Manual, Error Codes section, page B-28
+--- END ---
 
 --- CARD ---
 id:        keyboard-quit-error
@@ -37,14 +52,25 @@ source:    OS-9/68000 Operating System Technical Manual (July 1985, Revision S),
 --- END ---
 
 --- CARD ---
+id:        modem-hangup-error
+type:      FACT
+target:    68k
+verify:    from-manual
+topic:     terminal-io
+claim:     Error code 000:004 indicates modem hangup — returned when the device driver detects loss of data carrier.
+context:   -
+source:    OS-9 v2.4 Technical Reference Manual, Error Codes section, page B-28
+--- END ---
+
+--- CARD ---
 id:        illegal-function-code-math
 type:      FACT
 target:    68k
 verify:    from-manual
 topic:     exceptions-cpu
 claim:     Error code 000:064 (E$IllFno) indicates illegal function code in a math trap handler error.
-context:   -
-source:    OS-9/68000 Operating System Technical Manual (July 1985, Revision S), Appendix C, Error Codes, "OTHER ERRORS"
+context:   DISCREPANCY: the OS-9 v2.4 Technical Reference Manual spells this symbol E$IllFnc (not E$IllFno) for the same code and meaning — a cross-manual symbol-spelling conflict, not resolved in favor of either source.
+source:    OS-9/68000 Operating System Technical Manual (July 1985, Revision S), Appendix C, Error Codes, "OTHER ERRORS"; cf. OS-9 v2.4 Technical Reference Manual, Error Codes section, page B-28 (E$IllFnc)
 --- END ---
 
 --- CARD ---
