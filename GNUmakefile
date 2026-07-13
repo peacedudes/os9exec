@@ -28,6 +28,7 @@ endif
 CFLAGS  = -g -Wall -fcommon \
           -DTERMINAL_CONSOLE \
           -DINT_CMD \
+          -DRAM_SUPPORT \
           -I$(CORE) \
           -I$(CORE)/os9defs \
           -I$(PLAT) \
@@ -95,6 +96,7 @@ prod:
 	$(MAKE) -B CFLAGS="-O2 -Wall -fcommon \
 	          -DTERMINAL_CONSOLE \
 	          -DINT_CMD \
+	          -DRAM_SUPPORT \
 	          -I$(CORE) \
 	          -I$(CORE)/os9defs \
 	          -I$(PLAT) \
