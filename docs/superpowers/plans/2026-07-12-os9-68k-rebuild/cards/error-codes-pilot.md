@@ -1144,14 +1144,16 @@ source:    OS-9/68000 Operating System Technical Manual (July 1985, Revision S),
 
 **Comparison:** OS-9 v2.4 Technical Reference Manual (pilot, 95 cards) vs. OS-9/68000 Operating System Technical Manual, July 1985, Revision S (cross-check source)
 
-**Coverage:** 91 error codes cross-checked in the 000:102–000:255 range, plus 8 additional codes (000:002, 000:003, 000:064–000:067) found in 1985 manual.
+**Coverage:** 91 error codes cross-checked in the 000:102–000:255 range, plus 6 additional codes (000:002, 000:003, 000:064–000:067) found in the 1985 manual outside that range.
 
-**Matches:** 88 error codes had identical code assignments and matching descriptions.
+**Matches:** 88 of the 91 cross-checked codes had identical code assignments and matching descriptions.
 
-**Discrepancies found:** 2
+**Discrepancies found:** 2 of the 91 cross-checked codes
 1. **Uninitialized TRAP range:** Pilot lists 000:133–000:147 (TRAP 1–15); 1985 manual shows 000:124–000:138 (TRAP 0–14). Different range and trap numbering scheme between editions.
 2. **Error 000:225 specificity:** Pilot describes as generic "bad parameter"; 1985 manual specifies "bad polling parameter" (IRQ vector validation context).
 
-**New codes (outside pilot range):** 4 additional error codes documented in 1985 manual outside the 000:102–000:255 range (000:002, 000:003, 000:064–000:067).
+**New codes (outside pilot range):** 6 additional error codes documented in the 1985 manual outside the 000:102–000:255 range (000:002, 000:003, 000:064–000:067) — 6 new codes + 2 discrepancy notes = 8 items added beyond the original 95-card pilot extraction.
+
+**Note on the count (91 = 88 + 2 + 1):** 88 matched cleanly and 2 produced discrepancy notes; the remaining 1 of the 91 cross-checked codes was present in the pilot's original 95 cards but not independently re-confirmed by name in the 1985 manual's error-code section during this cross-check pass (i.e. neither a match nor a discrepancy — simply not re-verified). Left as `verify: from-manual` rather than upgraded, consistent with the honesty-ledger convention.
 
 **Architecture scope:** ✅ Cross-check source confirmed 68k-scoped (OS-9/68000 explicitly in title; references 68000 family processors; consistent with 68k registers and exception handling).
