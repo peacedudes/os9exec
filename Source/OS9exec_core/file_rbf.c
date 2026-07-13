@@ -830,7 +830,13 @@ static os9err Open_Image( ushort pid, rbfdev_typ* dev, ptype_typ type, char* pat
       //upo_printf( "name1='%s' size=%d %d\n", pathname, imgScts, totScts );
 
              tSize= totScts*sctSize;
-        if ((tSize %    2048)!=0 ||
+        /* 512, not 2048: the RBF/Cruz-magic check above already confirms this
+         * is genuinely an RBF image, and iSize % sctSize below already
+         * enforces whole-sector alignment -- 2048 additionally assumed every
+         * real image lands on a CD/hard-disk block boundary, which rejects
+         * legitimate smaller-format media (e.g. real CD-i-era 5.25" floppies,
+         * 653824 bytes = 2554 x 256-byte sectors, not a multiple of 2048). */
+        if ((tSize %     512)!=0 ||
              tSize <    8192     ||
             (iSize % sctSize)!=0) { err= E_FNA; break; }
       
