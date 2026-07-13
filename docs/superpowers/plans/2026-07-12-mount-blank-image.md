@@ -21,6 +21,8 @@
 - Preserve `PrepareRAM`'s existing behavior byte-for-byte during the refactor (Task 2) — including its one non-obvious quirk: after the RBF-descriptor-module override branch fires, `totBits` is deliberately *not* recomputed against the overridden `totScts`. Don't "fix" this while refactoring; just preserve the existing order of operations.
 - Valid `mount -k` targets are `h0`–`hz` only (never `dd`/`xx`) — `/dd` is fixed at process boot via `OS9DISK` before any OS-9 code runs, so there is no meaningful "create it while running" case for it.
 - **Verifying a freshly created device:** don't stop at `touch`+`dir`. `dsave -ive <target>` (from a small source directory) generates *and runs* a restore script with `cmp`-based verification — confirmed live during this plan's design: it genuinely populates and verifies a target device, not just prints a script. Prefer it over a bare `touch` wherever this plan asks you to confirm a new device is really usable.
+- **`RAM_SUPPORT` must be defined for `mount -r=<size>` to work at all.** Discovered during Task 2's execution: `GNUmakefile` never defines this macro anywhere (checked the old Xcode project too — also nowhere), so `OS9_Device()`'s only check for a RAM-disk path (`RAM_Device()`, gated behind a real, uncommented `#ifdef RAM_SUPPORT`) is compiled out of every binary this project's actual build produces. `PrepareRAM`/`RoundSectorCount`/`BuildBlankImage` are NOT gated by this — they're already fully compiled and correct — only the path-classification step that recognizes a not-yet-installed absolute path as RAM-disk-eligible is missing. Confirmed live: rebuilding with `-DRAM_SUPPORT` added to `CFLAGS` makes `mount -r=<size> /name` work cleanly (`dir`/`free` both succeed on the result) on an otherwise-unmodified checkout. **Task 2 must add `-DRAM_SUPPORT` to `GNUmakefile`'s `CFLAGS`** (both the default target's flags and the `prod` target's override — they're currently two separate lists, keep them in sync) before its RAM-disk verification step can pass.
+- **`mount -r=<size> <name>` requires `<name>` to be an absolute path** (`/ram1`, not `ram1`) — also discovered during Task 2's execution, unrelated to the `RAM_SUPPORT` gap above. A bare relative name never reaches device classification at all: `IO_Type()` short-circuits on any non-absolute path straight to "type of the current directory," before the RBF/RAM classification chain ever runs. This is a real, pre-existing usage requirement of `mount -r=`, not a bug — every `mount -r=<size> <name>` example anywhere in this plan uses a leading `/` on `<name>` accordingly. (`unmount <name>` is unaffected either way — it matches by bare name against the already-installed device table, not by path classification, so `unmount ram1` and `unmount /ram1` both work.)
 
 ---
 
@@ -296,18 +298,24 @@ Compared to the original: `#define DefaultScts`/`#define SectsPerTrack`/`#define
 Run: `make`
 Expected: clean build, zero warnings (in particular, no "unused variable" warnings — this is the signal that Step 2's variable cleanup was done correctly).
 
-- [ ] **Step 4: Verify RAM-disk behavior is unchanged, thoroughly — this is the "test RAM disk works as expected" the user asked for**
+- [ ] **Step 4: Enable `RAM_SUPPORT` in the build**
+
+`mount -r=<size>` (RAM disks) cannot work at all on a standard build of this project today — `GNUmakefile` never defines `RAM_SUPPORT`, which is required for `OS9_Device()` to recognize a not-yet-installed absolute path as RAM-disk-eligible (see the Global Constraints note above; this is pre-existing and unrelated to this task's refactor, but it must be fixed here since the next step needs a working `mount -r=` to verify against). In `GNUmakefile`, add `-DRAM_SUPPORT` to both CFLAGS lists — the default target's `CFLAGS` (near the top of the file, alongside `-DTERMINAL_CONSOLE -DINT_CMD`) and the `prod` target's separate override (which repeats the same flag list with `-O2` instead of `-g`). Keep both lists in sync — search for `-DINT_CMD` to find both occurrences.
+
+Run `make clean && make` (a plain `make` won't detect the CFLAGS change since `make` doesn't track compiler flags, only file mtimes — `make clean` first is required to force a full rebuild here). Expected: clean build, zero warnings.
+
+- [ ] **Step 5: Verify RAM-disk behavior is unchanged, thoroughly — this is the "test RAM disk works as expected" the user asked for**
 
 Read the `os9-dev` skill's `using-os9exec-repl.md` first if you haven't already this session (see the note at the top of this plan). Then:
 
 ```bash
 tools/os9repl.sh start
-tools/os9repl.sh send "mount -r=200 ram1"
+tools/os9repl.sh send "mount -r=200 /ram1"
 tools/os9repl.sh send "dir /ram1"
 tools/os9repl.sh send "free /ram1"
 ```
 
-Expected so far: `dir /ram1` on the fresh disk shows an empty listing (no error); `free /ram1` reports a sector count and byte total containing "sectors". If either fails, stop — the refactor broke something; don't proceed to the steps below until this is clean.
+Expected so far: `dir /ram1` on the fresh disk shows an empty listing (no error); `free /ram1` reports a sector count and byte total containing "sectors". If either fails, stop — either the `RAM_SUPPORT` build fix from Step 4 didn't take (confirm with `make clean && make` again) or the refactor broke something; don't proceed to the steps below until this is clean. Note the leading `/` on `/ram1` — `mount -r=<size> <name>` requires an absolute device name (see the Global Constraints note); a bare `ram1` fails with a different, unrelated error regardless of this task's changes.
 
 Now populate and verify it for real, using `dsave -ive` (confirmed during this plan's design to genuinely copy-and-`cmp`-verify, not just print a script) rather than a bare `touch`:
 
@@ -324,13 +332,17 @@ tools/os9repl.sh send "unmount ram1"
 tools/os9repl.sh stop
 ```
 
-Expected: `dsave -ive /ram1` prints the generated script as it runs it (`chd`, `tmode`, `load copy`, `copy`, `cmp`, `unlink`) with no error from the `cmp` step; the following `dir /ram1` shows `f1`. `unmount ram1` succeeds with no error. This whole sequence must look identical to RAM-disk behavior before this refactor — if anything errors, the refactor broke something.
+Expected: `dsave -ive /ram1` prints the generated script as it runs it (`chd`, `tmode`, `load copy`, `copy`, `cmp`, `unlink`) with no error from the `cmp` step; the following `dir /ram1` shows `f1`. `unmount ram1` succeeds with no error (bare name is fine here — `unmount` isn't affected by the absolute-path requirement, see the Global Constraints note). This whole sequence proves the refactor preserved real RAM-disk behavior.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add Source/OS9exec_core/file_rbf.c
-git commit -m "Core: extract PrepareRAM's filesystem builder into reusable helpers"
+git add Source/OS9exec_core/file_rbf.c GNUmakefile
+git commit -m "Core: extract PrepareRAM's filesystem builder into reusable helpers
+
+Also enables RAM_SUPPORT in the build -- mount -r=<size> (RAM disks)
+never worked on a standard build before this; the feature code itself
+was already complete and correct, just never compiled in."
 ```
 
 ---
@@ -561,13 +573,14 @@ the same convention `os9exec`'s own `-m`/`-mm` command-line options use.
 
 **RAM disk** (`-r=<size>`): fully formatted and usable immediately — no
 `format` needed. Lives only in memory; gone on `unmount` or emulator exit.
-`<name>` can be anything (defaults to `/r0`); it isn't tied to the `h0`–`hz`
-convention since there's no host file involved.
+`<name>` must be an absolute path (defaults to `/r0` if omitted) — it isn't
+tied to the `h0`–`hz` convention since there's no host file involved, but it
+does need the leading `/`.
 
 ```
-mount -r=2000 scratch     # 2000 kB RAM disk named /scratch
+mount -r=2000 /scratch    # 2000 kB RAM disk named /scratch
 dir /scratch
-unmount scratch           # releases the memory
+unmount scratch           # releases the memory (bare name is fine here)
 ```
 
 **Blank disk image** (`-k=<size>`): writes a fully formatted, ready-to-use
@@ -608,7 +621,7 @@ restarts.
 
 - [ ] **Step 2: Proofread against the actual build**
 
-Read the `os9-dev` skill's `using-os9exec-repl.md` first if you haven't already this session. Then re-run Task 3's Step 7 REPL session once more, this time copying the exact commands shown in the new README text (`mount -r=2000 scratch`, `mount -k=20M h7`, `dsave -ive /h7`) rather than the plan's own test values, to confirm the documented examples work verbatim. Clean up any files/directories created (`h7`, `rm -f h7`).
+Read the `os9-dev` skill's `using-os9exec-repl.md` first if you haven't already this session. Then re-run Task 3's Step 7 REPL session once more, this time copying the exact commands shown in the new README text (`mount -r=2000 /scratch`, `mount -k=20M h7`, `dsave -ive /h7`) rather than the plan's own test values, to confirm the documented examples work verbatim. Clean up any files/directories created (`h7`, `rm -f h7`).
 
 - [ ] **Step 3: Commit**
 
@@ -685,12 +698,15 @@ try? FileManager.default.removeItem(atPath: scratchHostPath)
 // ── RAM disk regression test ──────────────────────────────────────────────────
 // mount -r=<size> builds a complete filesystem in memory -- no host file,
 // released again via unmount. Also verified with dsave -ive, not just touch.
-noError("ramdisk: mount -r creates disk", "mount -r=200 ram9", "dir /ram9", "unmount ram9")
+// Note the leading '/' on /ram9: mount -r=<size> <name> requires an
+// absolute device name -- a bare "ram9" fails classification entirely
+// (unrelated to this feature; see the plan's Global Constraints note).
+noError("ramdisk: mount -r creates disk", "mount -r=200 /ram9", "dir /ram9", "unmount ram9")
 check  ("ramdisk: dsave -ive populates+verifies", contains: "f1",
     "echo ramdisk test content >/dd/t_ramsrc",
     "makdir /dd/t_ramdir",
     "copy /dd/t_ramsrc /dd/t_ramdir/f1",
-    "chd /dd/t_ramdir", "mount -r=200 ram9", "dsave -ive /ram9", "dir /ram9", "unmount ram9",
+    "chd /dd/t_ramdir", "mount -r=200 /ram9", "dsave -ive /ram9", "dir /ram9", "unmount ram9",
     "chd /dd", "del /dd/t_ramsrc", "del /dd/t_ramdir/f1", "deldir -q /dd/t_ramdir")
 ```
 
@@ -719,5 +735,6 @@ git commit -m "Tests: self-contained RBF scratch image via mount -k; add RAM dis
 
 ## Self-review notes (for whoever executes this plan)
 
-- **Spec coverage:** K/M/G size parsing (reusing the existing `os9main.c` idiom, not a new one) + rounding → Task 1 + `RoundSectorCount` in Task 2. `mount -k` creating a ready-to-use image in one step → Task 2 (buffer builder) + Task 3 (wiring + host directory variant). No `-b` reuse/overload → Task 3 uses `-k` throughout, no platform `#ifdef` needed. Required-`hX`-naming constraint, no `dd` → Task 3 Step 1 validation. `dsave -ive` used for real populate+verify, not just `touch` → Task 2 Step 4, Task 3 Step 7, Task 5. README section for both blank images and RAM disks, plus the precedence/conflict notes and the `dsave -ive` technique → Task 4. Self-contained RBF tests + RAM disk test → Task 5.
+- **Spec coverage:** K/M/G size parsing (reusing the existing `os9main.c` idiom, not a new one) + rounding → Task 1 + `RoundSectorCount` in Task 2. `mount -k` creating a ready-to-use image in one step → Task 2 (buffer builder) + Task 3 (wiring + host directory variant). No `-b` reuse/overload → Task 3 uses `-k` throughout, no platform `#ifdef` needed. Required-`hX`-naming constraint, no `dd` → Task 3 Step 1 validation. `dsave -ive` used for real populate+verify, not just `touch` → Task 2 Step 5, Task 3 Step 7, Task 5. README section for both blank images and RAM disks, plus the precedence/conflict notes and the `dsave -ive` technique → Task 4. Self-contained RBF tests + RAM disk test → Task 5.
 - **Not in scope, deliberately:** fixing `mount`'s existing arbitrary-file/arbitrary-path attachment classification bug (`E_FNA`/`E_MNF` found during design exploration) — out of domain per explicit direction; `crefile` reconstruction — dropped in favor of `mount -k` per explicit direction.
+- **In scope, discovered mid-execution:** `GNUmakefile` never defining `RAM_SUPPORT` (so `mount -r=<size>` never worked on any real build) and `mount -r=<size> <name>` requiring an absolute `<name>` — both found while implementing Task 2, both fixed as part of Task 2 (the Makefile fix) or documented throughout the plan (the absolute-path requirement), by explicit direction rather than deferred as out-of-scope like the `mount`-classification bug above. The distinction: that bug is genuinely unrelated machinery this feature doesn't need working; `RAM_SUPPORT` gates code this same plan explicitly relies on and reuses (`PrepareRAM`'s helpers), so leaving it broken would leave Task 2's own verification, and Task 5's RAM disk test, unable to pass.
