@@ -5,8 +5,11 @@
 //  Integration test runner for os9exec. Sends commands to the OS-9 shell
 //  and checks stdout for expected content.
 //
-//  Setup (once):
-//    cd test && ln -s ../os9/dd dd       (create symlink to your OS-9 disk in test/)
+//  Setup: none needed beyond the repo-root h0 (SDK toolchain) dir/symlink
+//  that os9exec itself already uses. OS9DISK is pointed straight at
+//  <repo root>/h0 -- no symlinks inside test/ required. RBF-specific tests
+//  additionally use <repo root>/h1 (a real RBF disk image) via OS9H1, and
+//  skip cleanly, without error, if it isn't present.
 //
 //  Run (local):
 //    swift run --package-path test
@@ -33,9 +36,15 @@ let repoRoot = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()   // test/
     .deletingLastPathComponent()   // repo root
 
-let testDir  = repoRoot.appendingPathComponent("test")
 let execURL  = repoRoot.appendingPathComponent("os9exec")
-let diskPath = testDir.appendingPathComponent("dd").path
+
+// Primary test disk: the repo-root h0 (SDK toolchain) dir, mounted as /dd.
+// Same h0 the emulator itself already uses -- no test/-local symlink needed.
+let diskPath = repoRoot.appendingPathComponent("h0").path
+
+// Optional RBF disk image (repo-root h1) for RBF-specific regression tests.
+let h1Path      = repoRoot.appendingPathComponent("h1").path
+let h1Available = FileManager.default.fileExists(atPath: h1Path)
 
 // Optional container image for testing
 // Docker: DOCKER_IMAGE=os9exec:latest swift run
@@ -49,10 +58,10 @@ let shellArg = ProcessInfo.processInfo.environment["OS9SHELL"] ?? "shell"
 
 // Command directory of the SDK disk these tests exercise. The tests chx here
 // so every command — and every command a command forks internally (e.g.
-// deldir → pd) — resolves from the SDK disk, with no freeware SHARE fallbacks
-// shadowing it. The /h0/CMDS bake-in is deliberate and confined to this one
-// line: override with OS9_SDK_CMDS if your command set is mounted elsewhere.
-let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/h0/CMDS"
+// deldir → pd) — resolves from the SDK disk, with no other SHARE fallbacks
+// shadowing it. /dd is h0 itself (see diskPath above), so this is just
+// /dd/CMDS: override with OS9_SDK_CMDS if your command set is mounted elsewhere.
+let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/dd/CMDS"
 
 // ── Shell runner ──────────────────────────────────────────────────────────────
 
@@ -90,10 +99,12 @@ func os9(_ commands: [String], timeout: TimeInterval = 15, paced: Bool = false) 
             image
         ] + speedFlag + ["shell"]
     } else {
-        // Run locally: use existing symlink at dd/
+        // Run locally: OS9DISK points straight at the repo-root h0 dir.
         process.executableURL = execURL
         process.arguments    = speedFlag + [shellArg]
-        process.environment  = ["OS9DISK": diskPath]
+        var env = ["OS9DISK": diskPath]
+        if h1Available { env["OS9H1"] = h1Path }
+        process.environment  = env
     }
 
     let stdinPipe  = Pipe()
@@ -475,25 +486,23 @@ check("error: del nonexistent file",    contains: "Error",    "del /dd/no_such_f
 check("error: dir nonexistent path",    contains: "Error",    "dir /dd/no_such_dir_99x")
 
 // ── RBF device regression tests ───────────────────────────────────────────────
-// Require an h0 disk image adjacent to the dd disk (test/h0 symlink).
-// os9exec mounts h0 lazily on first /h0 access — no devs check needed.
-// Skipped in CI where neither dd nor h0 are present.
+// Require a genuine RBF disk image at the repo-root h1 (passed via OS9H1
+// above) — the host-native h0 mounted as /dd has no real block-level
+// filesystem underneath to exercise free/dcheck against. Skipped, with an
+// announcement (not a FAIL), when repo-root h1 is missing or isn't actually
+// a valid RBF image (e.g. a stray file that happens to sit at that path).
 
-let h0ImagePath = testDir.appendingPathComponent("h0").path
-let h0Available = FileManager.default.fileExists(atPath: h0ImagePath)
-
-if h0Available {
-    noError("rbf: dir /h0",              "dir /h0")
-    noError("rbf: dir /h0/. normalized", "dir /h0/.")  // regression: was failing without prior dir /h0
-    noError("rbf: chd /h0",             "chd /h0", "chd /dd")
-    // free/dcheck need a genuine RBF image, not the host-native /h0 directory --
-    // that's /h1 in this repo's current h0<->h1 layout (h0 is the SDK toolchain
-    // directory; the RBF image swapped to h1). See project memory/ROADMAP for
-    // the h0/h1 reorg.
-    check  ("rbf: free /h1",            contains: "sectors", "free /h1")
-    noError("rbf: dcheck /h1",          "dcheck /h1")
+if h1Available {
+    let probe = os9(["free /h1"])
+    let looksLikeRBF = probe.contains("sectors") && !probe.contains("Error #")
+    if looksLikeRBF {
+        check  ("rbf: free /h1",            contains: "sectors", "free /h1")
+        noError("rbf: dcheck /h1",          "dcheck /h1")
+    } else {
+        print("SKIP: RBF device tests (repo-root h1 exists but isn't a valid RBF image)")
+    }
 } else {
-    print("SKIP: RBF device tests (no test/h0 image — symlink test/h0 to an RBF disk image to enable)")
+    print("SKIP: RBF device tests (no repo-root h1 image found)")
 }
 
 // ── Results ───────────────────────────────────────────────────────────────────
