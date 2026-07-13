@@ -42,10 +42,6 @@ let execURL  = repoRoot.appendingPathComponent("os9exec")
 // Same h0 the emulator itself already uses -- no test/-local symlink needed.
 let diskPath = repoRoot.appendingPathComponent("h0").path
 
-// Optional RBF disk image (repo-root h1) for RBF-specific regression tests.
-let h1Path      = repoRoot.appendingPathComponent("h1").path
-let h1Available = FileManager.default.fileExists(atPath: h1Path)
-
 // Optional container image for testing
 // Docker: DOCKER_IMAGE=os9exec:latest swift run
 // Apple Container: CONTAINER_IMAGE=os9exec:apple swift run
@@ -102,9 +98,7 @@ func os9(_ commands: [String], timeout: TimeInterval = 15, paced: Bool = false) 
         // Run locally: OS9DISK points straight at the repo-root h0 dir.
         process.executableURL = execURL
         process.arguments    = speedFlag + [shellArg]
-        var env = ["OS9DISK": diskPath]
-        if h1Available { env["OS9H1"] = h1Path }
-        process.environment  = env
+        process.environment  = ["OS9DISK": diskPath]
     }
 
     let stdinPipe  = Pipe()
@@ -486,24 +480,39 @@ check("error: del nonexistent file",    contains: "Error",    "del /dd/no_such_f
 check("error: dir nonexistent path",    contains: "Error",    "dir /dd/no_such_dir_99x")
 
 // ── RBF device regression tests ───────────────────────────────────────────────
-// Require a genuine RBF disk image at the repo-root h1 (passed via OS9H1
-// above) — the host-native h0 mounted as /dd has no real block-level
-// filesystem underneath to exercise free/dcheck against. Skipped, with an
-// announcement (not a FAIL), when repo-root h1 is missing or isn't actually
-// a valid RBF image (e.g. a stray file that happens to sit at that path).
+// Self-contained: create our own scratch RBF image via mount -k, populate
+// and verify it with dsave -ive (not just touch), then delete the host
+// file -- no pre-existing disk image required.
+let scratchDevice   = "h9"
+let scratchHostPath = repoRoot.appendingPathComponent(scratchDevice).path
+try? FileManager.default.removeItem(atPath: scratchHostPath) // in case a previous run left it behind
 
-if h1Available {
-    let probe = os9(["free /h1"])
-    let looksLikeRBF = probe.contains("sectors") && !probe.contains("Error #")
-    if looksLikeRBF {
-        check  ("rbf: free /h1",            contains: "sectors", "free /h1")
-        noError("rbf: dcheck /h1",          "dcheck /h1")
-    } else {
-        print("SKIP: RBF device tests (repo-root h1 exists but isn't a valid RBF image)")
-    }
-} else {
-    print("SKIP: RBF device tests (no repo-root h1 image found)")
-}
+noError("mount -k: creates blank RBF image", "mount -k=500K \(scratchDevice)")
+noError("rbf: dir /h9 on fresh image",       "dir /h9")
+check  ("rbf: free /h9 reports sectors",     contains: "sectors", "free /h9")
+noError("rbf: dcheck /h9 structure intact",  "dcheck /h9")
+check  ("rbf: dsave -ive populates+verifies", contains: "f1",
+    "echo dsave test content >/dd/t_dsavesrc",
+    "makdir /dd/t_dsavedir",
+    "copy /dd/t_dsavesrc /dd/t_dsavedir/f1",
+    "chd /dd/t_dsavedir", "dsave -ive /h9", "dir /h9",
+    "chd /dd", "del /dd/t_dsavesrc", "del /dd/t_dsavedir/f1", "deldir -q /dd/t_dsavedir")
+
+try? FileManager.default.removeItem(atPath: scratchHostPath)
+
+// ── RAM disk regression test ──────────────────────────────────────────────────
+// mount -r=<size> builds a complete filesystem in memory -- no host file,
+// released again via unmount. Also verified with dsave -ive, not just touch.
+// Note the leading '/' on /ram9: mount -r=<size> <name> requires an
+// absolute device name -- a bare "ram9" fails classification entirely
+// (unrelated to this feature; see the plan's Global Constraints note).
+noError("ramdisk: mount -r creates disk", "mount -r=200 /ram9", "dir /ram9", "unmount ram9")
+check  ("ramdisk: dsave -ive populates+verifies", contains: "f1",
+    "echo ramdisk test content >/dd/t_ramsrc",
+    "makdir /dd/t_ramdir",
+    "copy /dd/t_ramsrc /dd/t_ramdir/f1",
+    "chd /dd/t_ramdir", "mount -r=200 /ram9", "dsave -ive /ram9", "dir /ram9", "unmount ram9",
+    "chd /dd", "del /dd/t_ramsrc", "del /dd/t_ramdir/f1", "deldir -q /dd/t_ramdir")
 
 // ── Results ───────────────────────────────────────────────────────────────────
 
