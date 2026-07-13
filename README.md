@@ -220,6 +220,67 @@ RBF disk images pointed to by `/h0`–`/hz` are auto-mounted on first access —
 `dir /h0/CMDS` works directly without needing to access `/h0` first or run `mount`.
 Use `mount <image> <devname>` to attach an image under a name of your choosing.
 
+### Creating new disk images
+
+`mount` can also create a brand-new device, instead of attaching an existing
+one:
+
+```
+mount -r=<size> [<name>]      create an in-memory RAM disk, <size> in kBytes
+mount -k=<size> h0..hz        create a ready-to-use blank RBF image on disk
+mount -k=0      h0..hz        create a plain host directory instead
+```
+
+`<size>` accepts a bare number (bytes) or a `k`/`M`/`G` suffix (×1024/×1024²/×1024³) —
+the same convention `os9exec`'s own `-m`/`-mm` command-line options use.
+
+**RAM disk** (`-r=<size>`): fully formatted and usable immediately — no
+`format` needed. Lives only in memory; gone on `unmount` or emulator exit.
+`<name>` must be an absolute path (defaults to `/r0` if omitted) — it isn't
+tied to the `h0`–`hz` convention since there's no host file involved, but it
+does need the leading `/`.
+
+```
+mount -r=2000 /scratch    # 2000 kB RAM disk named /scratch
+dir /scratch
+unmount scratch           # releases the memory (bare name is fine here)
+```
+
+**Blank disk image** (`-k=<size>`): writes a fully formatted, ready-to-use
+RBF image straight to `<dir-holding-the-binary>/hX` — the same place the
+`/h0`–`/hz` auto-mount convention already looks (see the table above), so
+the new device works immediately in the same session with no extra step.
+`<size>` is rounded up to a valid sector/track/cluster boundary
+automatically. The target must be `h0`–`hz` (never `dd`) and must not
+already exist — `mount -k` refuses to overwrite an existing file or
+directory.
+
+```
+mount -k=20M h7
+dir /h7
+```
+
+To populate a freshly created image with real content (and verify the
+copy), `dsave` from an existing directory works against it like any other
+device — `-i` indents, `-v` verifies each file with `cmp`, `-e` executes
+the generated script immediately instead of just printing it:
+
+```
+chd /dd/CMDS
+dsave -ive /h7
+```
+
+**Device-resolution order, if you're layering these:** for any `/hX` path,
+`os9exec` checks, in this order: (1) the `OS9Hx` environment variable, if
+set; (2) a file/dir named `hX` next to the binary — what `mount -k` writes;
+(3) one directory level up from the binary (a legacy fallback). Separately,
+and taking priority over all three of those for as long as the current
+process keeps running, an explicit `mount <file> <name>` (or `mount -r=`)
+call registers a device directly in memory — if you've already mounted
+something under a given name this session, a same-named `mount -k` file
+created afterward is shadowed by that registration until the process
+restarts.
+
 ### Devices stay inside their root (changed behavior)
 
 Each device is a self-contained OS-9 volume. From inside the emulator you cannot
