@@ -25,7 +25,10 @@ not the 16-bit `int` the 6809 manual describes. Cards below are tagged
 convention (calling philosophy, library gotchas, linker tricks, register
 ABI) confirmed to apply regardless of, or specifically to, the 68k.
 
-Target distribution in the final 17: 4 `all`, 7 `68k`, 6 `6809`.
+Target distribution in the original 17: 4 `all`, 7 `68k`, 6 `6809`. Three
+more `target: 6809` cards were folded in afterward from `assembly-RAW.md`
+(register-allocation and optimizer facts mis-bucketed there by keyword
+match on "register") — final total 20 cards: 4 `all`, 7 `68k`, 9 `6809`.
 
 ## Calling conventions and register usage (68k)
 
@@ -130,6 +133,45 @@ topic:     c-compiler
 claim:     This compiler does not support direct structure assignment (`struct1 = struct2;`). The library provides a strass() function (byte-by-byte block copy) as the documented workaround for copying one structure's contents to another.
 context:   A language-completeness gap specific to this early (1983) compiler; not confirmed present in a later or 68k-targeted Microware C compiler, which may support struct assignment natively.
 source:    OS-9 C Compiler manual, "Strass", p. 3-41
+--- END ---
+
+## Register allocation and optimization (6809 compiler)
+
+(3 cards folded in from `assembly-RAW.md`, mis-bucketed there by keyword
+match on "register" — these are C-compiler behaviors, not raw assembly
+language facts.)
+
+--- CARD ---
+id:        register-variable-single-per-function
+type:      FACT
+target:    6809
+verify:    from-manual
+topic:     c-compiler
+claim:     This compiler permits only one `register`-class variable per function, and only for types int, unsigned, or pointer. A register declaration outside these constraints (a second register variable, or an unsupported type) is not an error — it is silently downgraded to `auto` storage.
+context:   The single-register-variable limit reflects the 6809's very small general-purpose register set; an architecture with more registers (like the 68000, with 8 data + 7 address registers) would not need this restriction. Do not assume this constraint for a 68k compiler.
+source:    OS-9 C Compiler manual, "Register Variables", p. 1-5
+--- END ---
+
+--- CARD ---
+id:        register-variable-performance-gotcha
+type:      GOTCHA
+target:    6809
+verify:    from-manual
+topic:     c-compiler
+claim:     A register variable gives its biggest code-size/speed win when used as a pointer or a loop counter; when used inside a complex arithmetic expression instead, the manual states there is no saving at all from declaring it `register`.
+context:   This is presented in the manual specifically in terms of the 6809's limited register file and instruction costs; the tradeoff calculus could differ substantially on a register-rich architecture like the 68000.
+source:    OS-9 C Compiler manual, "Register Variables", p. 1-5
+--- END ---
+
+--- CARD ---
+id:        optimizer-pass-11-percent
+type:      FACT
+target:    6809
+verify:    from-manual
+topic:     c-compiler
+claim:     An optional post-compilation optimizer pass rewrites the generated 6809 assembly source to remove redundant code and substitute shorter/faster instruction sequences, typically shrinking object code by about 11% with a further speed increase; it can be disabled with the -O flag to speed up error-checking-only compiles.
+context:   The specific 11% figure and the pass's mechanics are stated for this 6809 code generator; not necessarily representative of a 68k compiler's optimizer.
+source:    OS-9 C Compiler manual, "The Optimizer Pass", p. 1-9
 --- END ---
 
 ## Embedded assembly
