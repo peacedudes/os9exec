@@ -446,11 +446,14 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
             term_line = 0;
         }
         else {
-            if (dupMode) { 
-                c=  *(buffer+cnt); 
+            if (dupMode) {
+                c=  *(buffer+cnt);
                 if (*(buffer+cnt+1)==NUL) dupMode= false;
             }
-            else {
+            else if (!(edit && c!=NUL && c==ot->_sgs_bspch)) {
+                /* backspace is handled below by shortening the line in
+                   place; storing its raw byte here first would leave it
+                   as stray data one slot past the new, shorter length */
                 *(buffer+cnt)= c;
             }
         
@@ -467,6 +470,7 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
                     /* backspace */
                     if (cnt>0) {
                         cnt--;
+                        *(buffer+cnt)= NUL; /* re-terminate at the shorter length */
                         if (ot->_sgs_echo) {
                             /* backspace echo */
                             ConsPutc(ot->_sgs_bsech);
