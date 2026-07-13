@@ -954,114 +954,70 @@ static Boolean ParseDiskSize( const char* s, uint32_t* sizeKBOut )
     return true;
 } /* ParseDiskSize */
 
-// #ifdef RAM_SUPPORT
-static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
+#define SectsPerTrack 0x20
+#define DefaultScts   8192
+#define MaxKB         0x001ffffe // 2097151 kB = 2047.999 MB -- shared cap for -r=<size> and -k=<size>
+
+static void RoundSectorCount( uint32_t ramSizeKB, uint32_t sctSize, int clu,
+                               uint32_t* totSctsOut, uint32_t* totBitsOut )
+/* Converts a kBytes request into a valid sector count: rounds up to a whole
+ * track, then to a whole allocation cluster. Falls back to DefaultScts if
+ * the request rounds down to zero (e.g. ramSizeKB==0). Identical math to
+ * PrepareRAM's original inline computation -- moved, not changed. */
 {
-    #define DefaultScts   8192
-    #define MaxKB         0x001ffffe // 2097151 kB = 2047.999 MB
-    #define SectsPerTrack 0x20
-    
-    os9err    err, cErr;
-    ulong     allocSize, allocN, mapSize,
-//            allocClu,  /* only used in commented-out code */
-              f, r, fN, rN, totBits, tracks, cluRest;
-    uint32_t  iSize;
-    byte*     b;
-    ulong     ii;
-    int       v,
-              clu= mnt_cluSize;
-    byte      pt;
-    mod_dev*  mod;
-    char*     p;
-    Boolean   ok= false;
-    ptype_typ type;
-    ushort    sp;
-    
-    if (strcmp( mnt_devCopy,""  )!=0) {
-      strcat  ( mnt_devCopy,"@" );
-    //upe_printf( "devCopy='%s'\n", mnt_devCopy );
-      type= IO_Type        ( pid,            mnt_devCopy, poDir );   
-      err = syspath_open   ( pid, &sp, type, mnt_devCopy, poDir ); if (err) return err;
-      err = syspath_gs_size( pid,  sp, &iSize );
-      
-      if (!err && iSize>0) {
-      //upe_printf( "size=%d\n", iSize );
-             dev->ramBase= get_mem( iSize );
-        if ( dev->ramBase==NULL ) return E_NORAM;
-        err= syspath_read( pid, sp, &iSize, dev->ramBase, false );
-      } // if
-      
-      cErr= syspath_close( pid, sp ); if (!err) err= cErr;
-      if (err) return err;
-      
-      dev->totScts    = GET_OS9L(dev->ramBase, TOT_POS) >> BpB;
-                        dev->imgScts    = dev->totScts;
-      dev->clusterSize= GET_OS9W(dev->ramBase, BIT_POS);
-      dev->sctSize    = GET_OS9W(dev->ramBase, SECT_POS);
-                                            dev->sas        = DD__MINALLOC;
-      return 0;
-    } // if
-    
-    for (ii=0; ii<31; ii++) {
-      if (1<<ii==clu) { ok= true; break; }
-    } // for
+    uint32_t totScts, tracks, totBits;
+
+              totScts= ramSizeKB*KByte/sctSize; /* adapt to KBytes */
+    tracks  = (totScts-1) / SectsPerTrack + 1;
+              totScts=      SectsPerTrack * tracks;  /* granulate to tracks */
+    totBits = (totScts-1) / clu + 1;
+              totScts=      clu * totBits;           /* granulate to clusters */
+    if        (totScts==0)  totScts= DefaultScts;
+
+    *totSctsOut= totScts;
+    *totBitsOut= totBits;
+} /* RoundSectorCount */
+
+static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sctSize, int clu,
+                                 byte** bufOut )
+/* Builds a complete, ready-to-use RBF filesystem image in a freshly
+ * allocated buffer: identification sector (Cruz-stamped, via RAM_zero),
+ * allocation bitmap, root directory FD sector, root directory entry.
+ * Returns false (after printing the reason) if clu isn't a power of 2, or
+ * if the allocation bitmap doesn't fit in the available map size -- the
+ * caller owns *bufOut only on true. */
+{
+    ulong   allocSize, allocN, mapSize, f, r, fN, rN, cluRest, ii;
+    byte*   b;
+    int     v;
+    byte    pt;
+    Boolean ok= false;
+    byte*   base;
+
+    for (ii=0; ii<31; ii++) { if (1<<ii==clu) { ok= true; break; } }
     if (!ok) {
       upe_printf( "mount: cluster size must be a power of 2\n" );
-      return 1;
+      return false;
     } // if
-    
-    if (mnt_ramSize>MaxKB) {
-      upe_printf( "mount: error - size is too large for this device.\n" );
-      return 1;
-    } // if
-    
-    if (mnt_sctSize>0) { dev->sctSize    = mnt_sctSize; }
-                         dev->clusterSize= clu;
-                         dev->sas        = DD__MINALLOC;
-    
-              dev->totScts= mnt_ramSize*KByte/dev->sctSize; /* adapt to KBytes */
-    tracks = (dev->totScts-1) / SectsPerTrack + 1;
-              dev->totScts=     SectsPerTrack * tracks;     /* granulate to tracks */
-    totBits= (dev->totScts-1) / clu + 1;
-              dev->totScts=     clu * totBits;              /* granulate to clusters */
-    if       (dev->totScts==0)  dev->totScts= DefaultScts;
-    
-    if ( mnt_ramSize==0 
-      && IsDesc( cmp, &mod, &p )  
-      && ustrcmp( p,"RBF" )==0 ) {
-        p= (char*)mod + os9_word(mod->_mpdev);
-        if (ustrcmp( p,"ram" )==0) {
-                dev->totScts= GET_OS9W((byte*)(&mod->_mdtype + PD_SCT), 0);
-        } // if
-    } // if
-
-    dev->imgScts= dev->totScts;
 
              mapSize= (totBits-1)/BpB + 1; // rounding up
     if      (mapSize>0xffff) {
       while (mapSize>0xffff) { mapSize= mapSize/2; clu= clu*2; }
       upe_printf( "mount: error - cluster size is too small for this device.\n" );
       upe_printf( "cluster size must be at least %d.\n", clu );
-      return 1;
+      return false;
     } // if
-  
-    allocSize= (totBits-1)/(dev->sctSize*BpB) + 1; // nr of allocation sectors, rounded up
-    allocN   =  allocSize * dev->sctSize*BpB;      // nr of allocation bits
-//  allocClu =  allocSize/clu + 1;  /* only used in commented-out code below */
-    
-            dev->ramBase= get_mem( dev->sctSize*dev->totScts );
-    if    ( dev->ramBase==NULL ) return E_NORAM;
-    memset( dev->ramBase,          dev->sctSize*dev->totScts, 0 ); // clear all
-    memcpy( dev->ramBase,RAM_zero, dev->sctSize );
-    
-  //f= allocClu*clu;
-    
-  //f= allocSize + 2; // strategy is a little bit strange
-  //f= f / 2;
-  //f= f * 2; // odd( f ) => + 1
-  
-    f= allocSize + 1; fN= f*dev->sctSize; // root dir fd sector position
-    r=         f + 1; rN= r*dev->sctSize;
+
+    allocSize= (totBits-1)/(sctSize*BpB) + 1; // nr of allocation sectors, rounded up
+    allocN   =  allocSize * sctSize*BpB;      // nr of allocation bits
+
+            base= get_mem( sctSize*totScts );
+    if    ( base==NULL ) return false;
+    memset( base,          sctSize*totScts, 0 ); // clear all
+    memcpy( base,RAM_zero, sctSize );
+
+    f= allocSize + 1; fN= f*sctSize; // root dir fd sector position
+    r=         f + 1; rN= r*sctSize;
 
     cluRest=       r/clu + 1;
     cluRest= cluRest*clu - r;
@@ -1071,31 +1027,94 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
     for (ii=0; ii<allocN; ii++) {
       if  (ii<=r/clu || ii>=totBits) { // including fd + dir
         v= ii/BpB;
-        b= &dev->ramBase[ dev->sctSize + v ]; *b |= pt;
+        b= &base[ sctSize + v ]; *b |= pt;
       } // if
-        
       pt= pt/2; if (pt==0) pt= 0x80; /* prepare the next pattern */
     } // for
-    
-    SET_OS9L(dev->ramBase, TOT_POS,  dev->totScts << BpB); /* 0x03 overwritten, is 0 anyway */
-             dev->ramBase[ TRK_POS ]= SectsPerTrack;        /* number of sectors per track */
-    SET_OS9W(dev->ramBase, MAP_POS,  mapSize);
-    SET_OS9W(dev->ramBase, BIT_POS,  clu);
-    SET_OS9L(dev->ramBase, DIR_POS,  f << BpB);            /* 0x0b overwritten, is 0 anyway */
-    SET_OS9W(dev->ramBase, SECT_POS, dev->sctSize);
 
-                 dev->ramBase[ fN      ]= 0xbf; /* prepare the fd sector */
-                 dev->ramBase[ fN+0x08 ]= 0x01;
-                 dev->ramBase[ fN+0x0C ]= 0x40;
-    SET_OS9L(dev->ramBase, fN+0x10,  r << BpB);            /* fN+0x14 overwritten, is 0 anyway */
-                 dev->ramBase[ fN+0x14 ]= cluRest;
+    SET_OS9L(base, TOT_POS,  totScts << BpB); /* 0x03 overwritten, is 0 anyway */
+             base[ TRK_POS ]= SectsPerTrack;   /* number of sectors per track */
+    SET_OS9W(base, MAP_POS,  mapSize);
+    SET_OS9W(base, BIT_POS,  clu);
+    SET_OS9L(base, DIR_POS,  f << BpB);       /* 0x0b overwritten, is 0 anyway */
+    SET_OS9W(base, SECT_POS, sctSize);
 
-                 dev->ramBase[ rN      ]= 0x2e; /* prepare the directory entry */
-                 dev->ramBase[ rN+0x01 ]= 0xae;
-    SET_OS9W(dev->ramBase, rN+0x1e,  f);
-                 dev->ramBase[ rN+0x20 ]= 0xae;
-    SET_OS9W(dev->ramBase, rN+0x3e,  f);
-    
+                 base[ fN      ]= 0xbf; /* prepare the fd sector */
+                 base[ fN+0x08 ]= 0x01;
+                 base[ fN+0x0C ]= 0x40;
+    SET_OS9L(base, fN+0x10,  r << BpB);       /* fN+0x14 overwritten, is 0 anyway */
+                 base[ fN+0x14 ]= cluRest;
+
+                 base[ rN      ]= 0x2e; /* prepare the directory entry */
+                 base[ rN+0x01 ]= 0xae;
+    SET_OS9W(base, rN+0x1e,  f);
+                 base[ rN+0x20 ]= 0xae;
+    SET_OS9W(base, rN+0x3e,  f);
+
+    *bufOut= base;
+    return true;
+} /* BuildBlankImage */
+
+// #ifdef RAM_SUPPORT
+static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
+{
+    os9err    err, cErr;
+    uint32_t  iSize;
+    uint32_t  totBits;
+    int       clu= mnt_cluSize;
+    mod_dev*  mod;
+    char*     p;
+    ptype_typ type;
+    ushort    sp;
+
+    if (strcmp( mnt_devCopy,""  )!=0) {
+      strcat  ( mnt_devCopy,"@" );
+      type= IO_Type        ( pid,            mnt_devCopy, poDir );
+      err = syspath_open   ( pid, &sp, type, mnt_devCopy, poDir ); if (err) return err;
+      err = syspath_gs_size( pid,  sp, &iSize );
+
+      if (!err && iSize>0) {
+             dev->ramBase= get_mem( iSize );
+        if ( dev->ramBase==NULL ) return E_NORAM;
+        err= syspath_read( pid, sp, &iSize, dev->ramBase, false );
+      } // if
+
+      cErr= syspath_close( pid, sp ); if (!err) err= cErr;
+      if (err) return err;
+
+      dev->totScts    = GET_OS9L(dev->ramBase, TOT_POS) >> BpB;
+                        dev->imgScts    = dev->totScts;
+      dev->clusterSize= GET_OS9W(dev->ramBase, BIT_POS);
+      dev->sctSize    = GET_OS9W(dev->ramBase, SECT_POS);
+                                            dev->sas        = DD__MINALLOC;
+      return 0;
+    } // if
+
+    if (mnt_ramSize>MaxKB) {
+      upe_printf( "mount: error - size is too large for this device.\n" );
+      return 1;
+    } // if
+
+    if (mnt_sctSize>0) { dev->sctSize    = mnt_sctSize; }
+                         dev->clusterSize= clu;
+                         dev->sas        = DD__MINALLOC;
+
+    RoundSectorCount( mnt_ramSize, dev->sctSize, clu, &dev->totScts, &totBits );
+
+    if ( mnt_ramSize==0
+      && IsDesc( cmp, &mod, &p )
+      && ustrcmp( p,"RBF" )==0 ) {
+        p= (char*)mod + os9_word(mod->_mpdev);
+        if (ustrcmp( p,"ram" )==0) {
+                dev->totScts= GET_OS9W((byte*)(&mod->_mdtype + PD_SCT), 0);
+        } // if
+    } // if
+
+    dev->imgScts= dev->totScts;
+
+    if (!BuildBlankImage( dev->totScts, totBits, dev->sctSize, clu, &dev->ramBase ))
+      return E_NORAM;
+
     strcpy( dev->img_name,cmp );
     return 0;
 } /* PrepareRAM */
