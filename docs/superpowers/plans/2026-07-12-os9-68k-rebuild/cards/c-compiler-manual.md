@@ -1,693 +1,637 @@
 --- CARD ---
-id:        module-header-type-language-byte
-type:      FACT
-target:    68k
+id:        os9-cr-not-lf-newline
+type:      GOTCHA
+target:    all
 verify:    from-manual
-topic:     module-format
-claim:     The type/language byte of a compiled C program's module header is set to $4, indicating "C Program — 6809 Object Code" (per K&R implementation constraints).
-context:   This byte value is specific to the OS-9 module directory entry system; different architectures will use different type codes.
-source:    OS-9 C Compiler manual, §"Module Header", p. 2-1
-
+topic:     io
+claim:     On OS-9, the C escape sequence `\n` produces the carriage-return character (hex 0D), not linefeed (hex 0A), because OS-9 uses CR as its end-of-line convention. Programs written the K&R way (using `\n` for newline) still work correctly since OS-9's own convention is CR.
+context:   A separate escape, `\e`, is defined in this compiler specifically to produce true linefeed (0A) when it's needed. This CR-vs-LF convention is OS-9-wide, not tied to CPU architecture.
+source:    OS-9 C Compiler manual, "Differences From The K & R Specification" / "Control Character Escape Sequences", p. 1-2, p. 1-4
 --- END ---
+
 --- CARD ---
-id:        module-header-reentrant-attribute
-type:      FACT
-target:    68k
+id:        embedded-asm-pragma-convention
+type:      CONCEPT
+target:    all
 verify:    from-manual
-topic:     module-format
-claim:     The attribute/revision byte of compiled C programs is set to $81, encoding Reentrant (bit set) + revision level 1.
-context:   The reentrant attribute allows the module to be shared across multiple concurrent processes; revision level is separately overridable via compiler -E= flag.
-source:    OS-9 C Compiler manual, §"Module Header", p. 2-1
-
+topic:     c-compiler
+claim:     Microware's OS-9 C compiler lets a program embed raw assembly directly in C source: a line beginning "#asm" switches the compiler into pass-through mode, copying subsequent lines verbatim to the assembly output until a line beginning "#endasm" is seen.
+context:   Normal compiler-generated code lives in the PSECT (code) section; if embedded assembly switches to the VSECT (variable/data) section, the programmer must emit an ENDSECT directive before "#endasm" to leave the section state correct for compiler-generated code that follows. The exact section-directive names are this compiler's assembler convention (RMA) and should be checked against the 68k toolchain, but the #asm/#endasm C-source mechanism itself is a Microware-C-family feature.
+source:    OS-9 C Compiler manual, "Imbedded Assembly Language", p. 1-4
 --- END ---
+
 --- CARD ---
-id:        module-components-order
-type:      FACT
-target:    68k
+id:        cmdline-argc-argv-quoting
+type:      BEHAVIOR
+target:    all
 verify:    from-manual
-topic:     module-format
-claim:     A compiled C program module contains (in order): header (8 bytes), execution offset (2), storage size (2), module name, information section, executable code, string literals, initializing data, uninitialized data size (2), uninitialized data, data-text reference count (2), data-text offsets, data-data reference count (2), data-data offsets, CRC check value (3 bytes).
-context:   Position-independent code relies on reference tables to resolve pointer initialization at load time.
-source:    OS-9 C Compiler manual, §"The Object Code Module", p. 2-1 to 2-2
-
+topic:     c-compiler
+claim:     The C startup routine converts the OS-9 parent process's parameter string into a conventional null-terminated argv array for main(argc, argv). Additionally, it runs together as a single argument any text enclosed in matching single or double quotes; if one quote character is needed literally inside the string, the other quote type should be used as the delimiter.
+context:   This quote-joining behavior is a convenience added by the C runtime on top of OS-9's raw parameter string, not part of the OS-9 kernel itself.
+source:    OS-9 C Compiler manual, "Access to Command Line Parameters", p. 1-6
 --- END ---
+
 --- CARD ---
-id:        storage-size-definition
+id:        errno-system-call-convention
 type:      FACT
-target:    68k
+target:    all
 verify:    from-manual
-topic:     module-format
-claim:     Storage Size in the module header is the initial default allocation of memory for data, stack, and parameter area; can be overridden at runtime via the OS-9 Shell "#" command.
-context:   The linker automatically allocates 4k bytes more than total size of variables and strings unless specified otherwise via -m= compiler option.
-source:    OS-9 C Compiler manual, §"Storage Size", p. 2-2
-
+topic:     error-handling
+claim:     OS-9 C system calls signal failure by returning -1; the specific error code is left in the predefined variable `errno`, with definitions supplied by `<errno.h>`. `errno` retains the value from the most recently *failed* call — it is not reset on success.
+context:   Because errno isn't cleared on success, code must check the call's own return value first, then consult errno only when an error was indicated.
+source:    OS-9 C Compiler manual, "Introduction to C System Calls", p. 3-1
 --- END ---
+
 --- CARD ---
-id:        module-name-edition-byte-linkage
+id:        path-number-vs-file-pointer-crash
+type:      GOTCHA
+target:    all
+verify:    from-manual
+topic:     io
+claim:     OS-9 C distinguishes low-level "path numbers" (returned by system calls like open()/creat()) from high-level "file pointers" (returned by fopen(), of type FILE *). Passing a file pointer where a system call expects a path number, or vice versa, is called out in the manual as a common beginner mistake that reliably crashes the program.
+context:   The two are not interchangeable even though both eventually refer to the same open file; a FILE * wraps a path number plus a buffer/status structure maintained by the standard library.
+source:    OS-9 C Compiler manual, "Introduction to the C Standard Library", p. 4-1
+--- END ---
+
+--- CARD ---
+id:        three-standard-file-descriptors
 type:      FACT
-target:    68k
+target:    all
 verify:    from-manual
-topic:     module-format
-claim:     The module name is followed by the edition byte in the module directory; the edition byte is encoded in the startup code (estart) and can be overridden via compiler -E=<number> option.
-context:   Edition tracking is an OS-9 convention for version management of modules in the module directory.
-source:    OS-9 C Compiler manual, §"Module Name", p. 2-2
-
+topic:     io
+claim:     Three file pointers are open automatically the moment a C program starts running: stdin (equivalent to path number 0), stdout (path number 1), and stderr (path number 2). All files are buffered by default except stderr, which is always unbuffered.
+context:   This mirrors the Unix stdio convention but the underlying path numbers 0/1/2 are OS-9's own standard path numbering, established by the parent process (typically the Shell) before the program starts.
+source:    OS-9 C Compiler manual, "Fopen", p. 4-7 to 4-8
 --- END ---
+
 --- CARD ---
-id:        string-literals-text-section-immutable
+id:        defs-directory-include-convention
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     c-compiler
+claim:     When a C source file names an #include file with angle brackets (`<stdio.h>`) rather than double quotes, the compiler resolves it relative to the "DEFS" directory on the default system drive — e.g. `#include <stdio.h>` becomes equivalent to `#include /d0/defs/stdio.h` if /d0 is the default drive.
+context:   Most standard header files are required to reside in this DEFS directory; double-quoted includes do not get this path prepended.
+source:    OS-9 C Compiler manual, "Introduction to the C Standard Library", p. 4-1 to 4-2
+--- END ---
+
+--- CARD ---
+id:        module-directory-link-count-model
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     modules
+claim:     modlink() searches the OS-9 module directory for a module matching a given name and, if found, increments its link count rather than reloading it. modload() instead opens a file, loads whatever modules it contains, and adds them to the module directory. munlink() decrements a module's link count and, once that count reaches zero, removes the module from the directory (freeing its memory).
+context:   This link-count-based lifetime model is core to how OS-9 shares a single in-memory copy of a module (e.g. a reentrant program or a library) across multiple processes.
+source:    OS-9 C Compiler manual, "Modload, Modlink" / "Munlink", p. 3-24 to 3-25
+--- END ---
+
+--- CARD ---
+id:        signal-numbers-table
 type:      FACT
-target:    68k
+target:    all
 verify:    from-manual
-topic:     string-handling
-claim:     Quoted strings in C source code are placed in the TEXT (executable) section of the module, not the DATA section, making them read-only by default.
-context:   This violates the strict K&R assumption that strings are mutable in the data area, but avoids memory duplication cost across reentrant instances. String initializers for char arrays are an exception — they go in the data area and can be modified.
-source:    OS-9 C Compiler manual, §"String Literals", p. 2-2 to 2-3
-
+topic:     signals
+claim:     OS-9's standard signal numbers, as defined in the C library's <signal.h>, are: `#define SIGKILL 0` (system abort, cannot be caught or ignored), `#define SIGWAKE 1` (wake up), `#define SIGQUIT 2` (keyboard abort), `#define SIGINT 3` (keyboard interrupt). Special addresses for signal() are `#define SIG_DFL 0` (reset to default) and `#define SIG_IGN 1` (ignore).
+context:   These are OS-9 kernel-level signal numbers delivered via the kill() system call, not a C-runtime invention layered on top of a different underlying mechanism.
+source:    OS-9 C Compiler manual, "Kill" / "Signal", p. 3-23 to 3-24, p. 3-38 to 3-39
 --- END ---
+
 --- CARD ---
-id:        string-array-initializer-exception
+id:        signal-intercept-mutual-exclusion
+type:      GOTCHA
+target:    all
+verify:    from-manual
+topic:     signals
+claim:     signal() and intercept() are two independent mechanisms for handling OS-9 signals/interrupts in a C program, and they are mutually incompatible: calls to both must not appear in the same program. The linker detects this and aborts the link with an "entry name clash _sigint" error if both are used.
+context:   Pick one mechanism per program; the linker enforces the exclusivity at link time rather than at compile time or runtime.
+source:    OS-9 C Compiler manual, "Intercept" / "Signal", p. 3-19, p. 3-38 to 3-39
+--- END ---
+
+--- CARD ---
+id:        mknod-creates-directory-not-device
+type:      ROSETTA
+target:    all
+verify:    from-manual
+topic:     io
+claim:     Unlike Unix's mknod() (which creates a general-purpose special/device file), OS-9's C library mknod() call only creates a new directory. Ordinary files are created with creat(), not mknod().
+context:   A programmer coming from Unix should not expect mknod() to create device nodes on OS-9 — the name is shared but the semantics are OS-9's own (directory creation).
+source:    OS-9 C Compiler manual, "Mknod", p. 3-22 to 3-23
+--- END ---
+
+--- CARD ---
+id:        l3tol-ltoi3s-3byte-lsn-conversion
 type:      FACT
-target:    68k
+target:    all
 verify:    from-manual
-topic:     string-handling
-claim:     When a string literal is used to initialize a char array (e.g., `char message[] = "Hello world";`), the string is placed in the data area and can be modified after initialization.
-context:   This is the exception that proves the immutability rule for string literals — array initialization creates a writable copy in data memory.
-source:    OS-9 C Compiler manual, §"String Literals", p. 2-3
-
+topic:     io
+claim:     "Certain system values, such as disc addresses, are maintained in three-byte form rather than four-byte" on OS-9. The standard library provides l3tol() (3-byte integers to long) and ltoi3s() (long to 3-byte integers) specifically so C arithmetic can be performed on these values.
+context:   This documents that OS-9 RBF-style disk block addresses (LSNs) are natively 3 bytes wide, a fact independent of CPU word size, requiring explicit conversion when treated as C longs.
+source:    OS-9 C Compiler manual, "L3tol,Ltoi3s", p. 4-15
 --- END ---
+
 --- CARD ---
-id:        initialization-data-pointer-resolution
+id:        read-readln-raw-vs-line-edited
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     io
+claim:     OS-9 offers two read strategies for character-oriented files/devices: read() transfers up to a requested byte count in raw ("raw mode") form with no editing of the input stream, while readln() honors device character mappings (line editing/echoing) and returns as soon as a carriage return is seen on the input. readln() is preferred for interactive terminal input; read() for other file input.
+context:   The stdio getc() function auto-selects between these two underlying strategies based on a flag bit (_SCF or _RBF) set in the file structure the first time getc() is called on that stream — reflecting whether the file's device is a Sequential Character File device or a Random Block File device. The programmer can force the choice by setting the flag bits directly before first use.
+source:    OS-9 C Compiler manual, "Getc,Getchar", p. 4-11 to 4-12
+--- END ---
+
+--- CARD ---
+id:        write-writeln-distinction
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     io
+claim:     Mirroring read()/readln(), OS-9 provides both write() (a raw byte transfer with no line-editing) and writeln() (which applies line-editing and stops writing after the first embedded `\n` in the buffer, even if the requested count hasn't been exhausted).
+context:   Same SCF-vs-RBF device-class distinction as read()/readln() applies on the output side.
+source:    OS-9 C Compiler manual, "Write,Writeln", p. 3-45
+--- END ---
+
+--- CARD ---
+id:        wait-exit-implicit-status
+type:      BEHAVIOR
+target:    all
+verify:    from-manual
+topic:     process-mgmt
+claim:     wait() blocks the calling task until a child task terminates, then returns the terminated task's id and places its exit status into the caller-supplied status pointer. That status is either the argument passed to the child's exit()/_exit() call, or the signal number if the child was terminated by a signal. A C program that returns normally from main() without an explicit exit() call is treated as an implicit call to exit(0).
+context:   A wait() must be executed for each child task spawned, or the parent will not reap that child's status.
+source:    OS-9 C Compiler manual, "Wait", p. 3-44; "Exit,_Exit", p. 3-14
+--- END ---
+
+--- CARD ---
+id:        os9fork-chain-module-type-lang-check
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     process-mgmt
+claim:     Both os9fork() and chain() take explicit "type" and "lang" arguments that must match the type and language nibble recorded in the target module's own header (normally "program" type). The OS-9 kernel uses this match as part of validating that the module being forked/executed is appropriate.
+context:   This is a general OS-9 module-typing safeguard at the process-creation calls; the specific *value* used for the language nibble is architecture-dependent (see module-lang-nibble-6809-value for the 6809 C compiler's value).
+source:    OS-9 C Compiler manual, "Chain", p. 3-4 to 3-5; "Os9fork", p. 3-29
+--- END ---
+
+--- CARD ---
+id:        getstat-setstat-status-model
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     io
+claim:     getstat()/setstat() take a numeric "code" plus the path number of an already-open file and operate on a path descriptor's status/option area. Code 0 reads/writes a 32-byte status-packet buffer (device- and file-manager-specific structures); code 2 gets/sets the current file size as a long integer; other codes are defined per device/file-manager class.
+context:   Full semantics for each code are deferred to the OS-9 System Programmer's Manual — this compiler's manual only summarizes enough to call the C wrappers correctly.
+source:    OS-9 C Compiler manual, "Getstat", p. 3-16 to 3-17; "Setstat", p. 3-37
+--- END ---
+
+--- CARD ---
+id:        os9-macro-direct-syscall-access
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     c-compiler
+claim:     The library function os9() lets a C program invoke essentially any OS-9 system call directly, given a numeric call code (from <os9.h>, covering both F$ and I$ service requests plus getstt/setstt/error codes) and a `struct registers` holding the values that would otherwise be loaded into CPU registers for the call (accumulator/data-page/index-register style fields).
+context:   This is an escape hatch for calling OS-9 service requests that don't have a dedicated C wrapper function; the struct-registers layout itself mirrors the 6809's register set in this manual, but the concept of a generic direct-syscall-by-code-and-register-block C entry point is architecture-general.
+source:    OS-9 C Compiler manual, "Os9", p. 3-25 to 3-26
+--- END ---
+
+--- CARD ---
+id:        module-string-literal-text-section-reentrancy
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     modules
+claim:     C string literals are placed in the module's TEXT (executable) section rather than its DATA section. Because a reentrant module's TEXT is shared read-only across all concurrent invocations, this avoids duplicating string-literal storage per invocation — at the cost that programmers should not alter a string literal in place (they should copy it out first).
+context:   The one documented exception is a char array explicitly initialized from a string literal (`char msg[] = "hi";`), whose backing storage lands in DATA (one copy per invocation) and is safely mutable.
+source:    OS-9 C Compiler manual, "String Literals", p. 2-2 to 2-3
+--- END ---
+
+--- CARD ---
+id:        edata-end-symbols
 type:      FACT
-target:    68k
+target:    all
 verify:    from-manual
-topic:     module-loading
-claim:     Pointer values in initialized data cannot be known at compile time under OS-9 (no absolute addresses), so the startup routine uses data-text and data-data reference offset tables to adjust pointer initializers to absolute values at runtime.
-context:   Example: a pointer initialized to `&string_literal` or `&global_var` is stored as an offset; the startup routine resolves it to an absolute address at load time using reference tables.
-source:    OS-9 C Compiler manual, §"Data References", p. 2-3
-
+topic:     memory-mgmt
+claim:     Two linker-defined symbols, `edata` and `end`, mark addresses one byte past the end of a program's initialized data and one byte past the end of its uninitialized data, respectively. They are not variables — a C program must take their address with `&edata` / `&end` to get the values (in assembler, they're accessed as plain labels, e.g. `leax end,y`).
+context:   Useful for a program that wants to know where its own static data region ends, e.g. before calling sbrk()/malloc()-style allocation.
+source:    OS-9 C Compiler manual, "Memory Management", p. 2-5
 --- END ---
+
 --- CARD ---
-id:        data-area-layout-direct-page
+id:        sbrk-ibrk-memory-request
 type:      FACT
-target:    68k
+target:    all
 verify:    from-manual
-topic:     memory-layout
-claim:     The C program data area layout (low to high memory) is: direct page variables area, initialized data, uninitialized data, free memory (expandable via brk/sbrk), stack area (descending), standard I/O buffers, parameters area.
-context:   Direct page variables are a 6809-only architectural feature; 68k code needs careful review of whether this applies.
-source:    OS-9 C Compiler manual, §"Typical C Program Memory Map", p. 2-4
-
+topic:     memory-mgmt
+claim:     sbrk() requests new memory for a running program from *outside* its initial memory allocation, going back to the OS for more; ibrk() instead requests memory that still fits *inside* the process's already-granted initial allocation. Both return -1 if the requested amount of contiguous memory cannot be granted.
+context:   sbrk() failing does not necessarily mean total system memory is exhausted — it can fail if OS-9 declines to grant more for any reason.
+source:    OS-9 C Compiler manual, "Sbrk,Ibrk", p. 3-33; "Memory Management", p. 2-5
 --- END ---
+
 --- CARD ---
-id:        direct-page-variables-size-limit
+id:        memory-map-parameter-stack-data-order
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     memory-mgmt
+claim:     A running C program's memory, from high addresses to low, is laid out as: the parameter string passed by the parent process, the (downward-growing) stack, free/heap memory available for sbrk()/malloc(), uninitialized data, then initialized data. The overall size of this region comes from the "storage size" field recorded in the program's own module header, and can be overridden at invocation time via the OS-9 Shell's memory-size ("#") option.
+context:   Exact low-address layout below initialized data (e.g. any CPU-specific fast-access area) is architecture-dependent; see the 6809-specific direct-page cards for that detail on this compiler.
+source:    OS-9 C Compiler manual, "Typical C Program Memory Map", p. 2-4
+--- END ---
+
+--- CARD ---
+id:        module-header-fields-general
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     modules
+claim:     Every module produced by the compiler carries the standard OS-9 module header: a type/language byte, an attribute/revision byte, an execution offset (where to start running), a storage size (initial memory allocation for data/stack/parameters), and a module name. The module name is what OS-9 uses to register/find the module in the module directory.
+context:   The specific byte *values* used for "C program, this architecture's object code" are architecture-dependent (see the 6809-specific card for this compiler's $4/$81 values).
+source:    OS-9 C Compiler manual, "Module Header" / "Module Name", p. 2-1 to 2-2
+--- END ---
+
+--- CARD ---
+id:        compiler-produces-pic-reentrant-modules
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     c-compiler
+claim:     Microware's OS-9 C compiler generates position-independent, reentrant code packaged in the standard OS-9 memory-module format — meaning a single loaded copy of a compiled program can be shared and run concurrently by multiple processes without relocation-on-load or per-process code copies.
+context:   This PIC/reentrant characteristic is a foundational property of the OS-9 module system generally, not something specific to the 6809 code generator (though how position-independence is achieved — via reference tables here — is compiler/architecture-specific; see data-text-data-data-reference-tables).
+source:    OS-9 C Compiler manual, "The Object Code Module", p. 2-1
+--- END ---
+
+--- CARD ---
+id:        info-directive-module-strings
+type:      FACT
+target:    all
+verify:    from-manual
+topic:     modules
+claim:     Strings preceded by the assembly-source directive "info" are placed into the module's information/description area of the header. A common use is embedding a version number and/or copyright notice into the compiled module. The `#asm` pre-compiler directive can be used from C source to emit this directive into the compiler-generated assembly.
+context:   -
+source:    OS-9 C Compiler manual, "Information", p. 2-2
+--- END ---
+
+--- CARD ---
+id:        system-call-name-portability-intent
+type:      CONCEPT
+target:    all
+verify:    from-manual
+topic:     c-compiler
+claim:     The C library's system-call wrapper names are deliberately chosen for portability with UNIX-style code rather than to match OS-9's own assembly-language service-request names; where no UNIX call maps directly, the library simulates the behavior, and where OS-9 has no UNIX equivalent, OS-9's own naming is used. A cross-reference between C wrapper names and OS-9 assembler call names (F$xxx/I$xxx) is provided for programmers already familiar with OS-9 assembly.
+context:   Programmers already fluent in OS-9 assembly should take particular care, since parameters/return values of a "familiar-looking" call may not be identical between the C wrapper and the raw OS-9 service request.
+source:    OS-9 C Compiler manual, "Operating System Calls", p. 1-7
+--- END ---
+
+--- CARD ---
+id:        abort-core-dump
+type:      FACT
+target:    all
+verify:    from-manual
+topic:     process-mgmt
+claim:     Calling abort() writes a memory image of the current process out to a file named "core" in the current data directory, then exits the program with status 1.
+context:   This is OS-9's analogue to the Unix core-dump convention.
+source:    OS-9 C Compiler manual, "Abort", p. 3-2
+--- END ---
+
+--- CARD ---
+id:        system-call-max-string-length
+type:      FACT
+target:    all
+verify:    from-manual
+topic:     process-mgmt
+claim:     system() hands its string argument to the OS-9 Shell for execution as a command line, blocking until the shell command completes and returning the shell's exit status. The maximum command-string length accepted by system() is 80 characters; longer command lines require os9fork() instead.
+context:   -
+source:    OS-9 C Compiler manual, "System", p. 4-31
+--- END ---
+
+--- CARD ---
+id:        crc-accumulation-helper
+type:      FACT
+target:    all
+verify:    from-manual
+topic:     modules
+claim:     The crc() library call accumulates a running CRC into a caller-supplied 3-byte array, over "count" bytes starting at a given address; the 3-byte accumulator must be initialized to 0xFFFFFF before the first call, but repeated calls can extend the same running CRC across an entire module. If the result is to be used as an OS-9 module's own CRC check field, its bytes must be complemented before insertion.
+context:   This documents the general OS-9 module-CRC algorithm's calling convention (init to all-ones, complement before storing), independent of CPU architecture.
+source:    OS-9 C Compiler manual, "Crc", p. 3-10
+--- END ---
+
+--- CARD ---
+id:        module-header-6809-object-code-byte
+type:      FACT
+target:    6809
+verify:    from-manual
+topic:     modules
+claim:     For this compiler, the module header's type/language byte is set to the value $4, documented as "C Program — 6809 Object Code," and the attribute/revision byte is set to $81 (Reentrant + revision level 1).
+context:   These specific byte values are this 6809 compiler's encoding; a 68k C compiler's module header would use a different type/language byte value for its object-code type. Do not treat $4 as a general OS-9 constant.
+source:    OS-9 C Compiler manual, "Module Header", p. 2-1
+--- END ---
+
+--- CARD ---
+id:        module-lang-nibble-6809-value
+type:      FACT
+target:    6809
+verify:    from-manual
+topic:     modules
+claim:     When calling os9fork() or chain(), the "lang" argument for a C program module must equal 1, documented as meaning "6809 machine code," matching the language nibble recorded in that compiler's module header.
+context:   This specific nibble value (1) is this compiler/architecture's encoding, not a universal OS-9 constant; a 68k module would carry a different language-nibble value.
+source:    OS-9 C Compiler manual, "Chain", p. 3-5; "Os9fork", p. 3-29
+--- END ---
+
+--- CARD ---
+id:        direct-storage-class
+type:      FACT
+target:    6809
+verify:    from-manual
+topic:     c-compiler
+claim:     This compiler extends K&R's storage-class specifiers with three 6809-only additions: `direct`, `extern direct`, and `static direct`, which place a variable in the 6809's "direct page" — a 256-byte memory page addressable with fast 2-byte instructions via the CPU's direct-page register. Direct-class variables cannot be used to declare function arguments, and (like other uninitialized globals/statics) default to zero if not explicitly initialized.
+context:   This entire storage class exists to exploit a 6809 hardware addressing mode; the manual itself warns "direct" is unique to this compiler and programs using it may not be portable to other environments even within the 6809 world, let alone to 68k.
+source:    OS-9 C Compiler manual, "The 'Direct' Storage Class", p. 1-3
+--- END ---
+
+--- CARD ---
+id:        direct-page-256-byte-limit
 type:      GOTCHA
 target:    6809
 verify:    from-manual
-topic:     direct-storage-class
-claim:     Direct page storage in 6809 is limited to 255 bytes total (the direct page register addresses one 256-byte page); the linker requires 1 byte, leaving 255 available for programmer-declared direct variables. If exceeded, the linker reports an error.
-context:   The 6809's direct-page addressing mode is a hardware feature providing fast 2-byte instructions for direct-page memory; this is 6809-specific and does not exist on 68000.
-source:    OS-9 C Compiler manual, §"The 'Direct' Storage Class", p. 1-3 to 1-4
-
+topic:     c-compiler
+claim:     Total 6809 direct-page storage is capped at 255 usable bytes (the linker itself consumes 1 of the page's 256 bytes). If a program's declared `direct`-class variables would exceed this, the linkage editor reports an error and the programmer must move some variables out of direct storage to fit.
+context:   Not applicable off the 6809 — a page-relative fast-addressing hardware feature of this specific CPU.
+source:    OS-9 C Compiler manual, "The 'Direct' Storage Class", p. 1-3 to 1-4
 --- END ---
+
 --- CARD ---
-id:        direct-storage-class-declaration
+id:        direct-page-min-one-byte
+type:      GOTCHA
+target:    6809
+verify:    from-manual
+topic:     memory-mgmt
+claim:     Even when a program declares no `direct`-class variables at all, the compiler/linker still reserves at least 1 byte for the direct-page variable area. This is deliberate: it guarantees no pointer to a direct-page variable can ever have the value 0 (NULL).
+context:   6809-direct-page-specific; not meaningful on architectures without a direct-page addressing mode.
+source:    OS-9 C Compiler manual, "Memory Management", p. 2-5
+--- END ---
+
+--- CARD ---
+id:        register-variable-single-per-function
 type:      FACT
 target:    6809
 verify:    from-manual
-topic:     direct-storage-class
-claim:     The OS-9 C compiler extends the storage class specifier list with `direct`, `extern direct`, and `static direct` keywords to place variables in the 6809 direct page for faster access.
-context:   These are compiler extensions not in K&R; direct variables are initialized to zero at startup like other globals/statics, and cannot be used as function parameters.
-source:    OS-9 C Compiler manual, §"The 'Direct' Storage Class", p. 1-3
-
+topic:     c-compiler
+claim:     This compiler permits only one `register`-class variable per function, and only for types int, unsigned, or pointer. A register declaration outside these constraints (a second register variable, or an unsupported type) is not an error — it is silently downgraded to `auto` storage.
+context:   The single-register-variable limit reflects the 6809's very small general-purpose register set; an architecture with more registers (like the 68000, with 8 data + 7 address registers) would not need this restriction. Do not assume this constraint for a 68k compiler.
+source:    OS-9 C Compiler manual, "Register Variables", p. 1-5
 --- END ---
---- CARD ---
-id:        embedded-assembly-asm-endasms-directives
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     assembly-embedding
-claim:     A line beginning with "#asm" switches the compiler into assembly-pass-through mode; all subsequent lines are passed directly to assembler output until a line beginning with "#endasm" is encountered.
-context:   Care must be exercised to ensure the correct PSECT (code) or VSECT (variable) section context is maintained; if using VSECT, a #ENDSECT directive must be placed at the end to restore state for following compiler-generated code.
-source:    OS-9 C Compiler manual, §"Imbedded Assembly Language", p. 1-4
 
---- END ---
---- CARD ---
-id:        linefeed-escape-sequence-extension
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     escape-sequences
-claim:     The escape sequence `\e` (lowercase 'e' with backslash) represents the linefeed character (hex 0A) to distinguish LF from `\n`, which on OS-9 is the carriage return (hex 0D).
-context:   This extension is necessary because OS-9 uses CR for end-of-line, not LF like UNIX; K&R programs using `\n` for newline still work correctly due to runtime handling.
-source:    OS-9 C Compiler manual, §"Control Character Escape Sequences", p. 1-4
-
---- END ---
---- CARD ---
-id:        octal-decimal-hex-escape-sequences
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     escape-sequences
-claim:     Escape sequences for bit patterns are supported: `\NNN` (3 octal digits), `\dNNN` (decimal with 'd' prefix), `\xNNN` (hexadecimal).
-context:   Example: `\377`, `\d255`, and `\xff` all represent the byte value 255.
-source:    OS-9 C Compiler manual, §"Control Character Escape Sequences", p. 1-4
-
---- END ---
---- CARD ---
-id:        data-type-sizes-6809
-type:      FACT
-target:    6809
-verify:    from-manual
-topic:     data-types
-claim:     Data type sizes in the 6809 implementation: CHAR=1 byte, INT=2 bytes, UNSIGNED=2 bytes, LONG=4 bytes, FLOAT=4 bytes, DOUBLE=8 bytes, all using two's complement for signed types and unsigned binary for unsigned types.
-context:   The INT/LONG sizes documented here are 6809-specific; 68k implementations have 32-bit int/long/pointer types independently confirmed in this project. Do not assume these sizes apply to 68k.
-source:    OS-9 C Compiler manual, §"Data Representation and Storage Requirements", p. 1-5
-
---- END ---
---- CARD ---
-id:        short-int-typedef-equivalence
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     data-types
-claim:     Following PDP-11 implementation conventions, "SHORT" and "SHORT INT" are equivalent to INT, and "LONG INT" is equivalent to LONG.
-context:   This means the `short` keyword is a no-op in this compiler; use `int` directly for portable code.
-source:    OS-9 C Compiler manual, §"Data Representation and Storage Requirements", p. 1-5
-
---- END ---
---- CARD ---
-id:        double-floating-point-format
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     data-types
-claim:     DOUBLE (8 bytes) uses sign-magnitude format for the mantissa (with implied MSB at sign bit position) and bias-128 exponent; 7 bytes for mantissa, 1 byte for exponent. FLOAT is identical except mantissa is 3 bytes; conversion truncates/pads least significant bytes.
-context:   This binary floating-point representation is not IEEE 754; programs relying on IEEE semantics may have precision/rounding differences.
-source:    OS-9 C Compiler manual, §"Data Representation and Storage Requirements", p. 1-5
-
---- END ---
---- CARD ---
-id:        register-variable-restrictions
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     register-variables
-claim:     Only one register variable per function is allowed; only int, unsigned, and pointer types are valid for register declarations. Invalid declarations are silently ignored (storage class becomes auto).
-context:   The U1 register is assigned to register variables; declaring more than one or invalid types does not error, it just falls back to auto storage.
-source:    OS-9 C Compiler manual, §"Register Variables", p. 1-5
-
---- END ---
 --- CARD ---
 id:        register-variable-performance-gotcha
 type:      GOTCHA
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     register-variables
-claim:     Register variables provide significant code-size and speed savings for pointer or loop-counter use, but provide no savings (and can worsen performance) when used in complex arithmetic expressions.
-context:   Misuse of register variables for complex expressions can increase register pressure and register-memory moves, negating any benefit.
-source:    OS-9 C Compiler manual, §"Register Variables", p. 1-5
-
+topic:     c-compiler
+claim:     A register variable gives its biggest code-size/speed win when used as a pointer or a loop counter; when used inside a complex arithmetic expression instead, the manual states there is no saving at all from declaring it `register`.
+context:   This is presented in the manual specifically in terms of the 6809's limited register file and instruction costs; the tradeoff calculus could differ substantially on a register-rich architecture like the 68000.
+source:    OS-9 C Compiler manual, "Register Variables", p. 1-5
 --- END ---
+
 --- CARD ---
-id:        case-sensitivity-mandatory
+id:        data-type-sizes-6809-table
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     source-code
-claim:     Upper and lower case letters cannot be mixed in identifiers; `Proglc` and `prog.c` are distinct names. On systems using only uppercase by default (e.g., Color Computer), use TMODE -UPC and CLEAR<0> to enable mixed-case input.
-context:   This is a source-code portability note for systems with case-sensitive filesystems; the compiler itself respects case.
-source:    OS-9 C Compiler manual, §"Implementation Dependent Characteristics", p. 1-5
-
+topic:     data-types
+claim:     Data type sizes in this compiler: "CHAR 1 / INT 2 / UNSIGNED 2 / LONG 4 / FLOAT 4 / DOUBLE 8" bytes, with CHAR/INT/LONG stored two's-complement and UNSIGNED stored plain unsigned binary.
+context:   These sizes are explicitly 6809-only. This project has independently confirmed int/long/pointer are all 32-bit on OS-9/68k — do not carry the INT=2-byte or LONG=4-byte figures from this table over to 68k targets.
+source:    OS-9 C Compiler manual, "Data Representation and Storage Requirements", p. 1-5
 --- END ---
+
 --- CARD ---
-id:        main-argc-argv-command-line-parsing
+id:        short-long-int-aliasing-6809
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     startup
-claim:     Standard C arguments `argc` and `argv` are available to main() as documented in K&R. The OS-9 startup routine converts the parent process's parameter string into null-terminated strings; quoted strings (single or double quotes) are treated as single arguments.
-context:   If a quote character is part of the actual string, use the other type of quote as the delimiter.
-source:    OS-9 C Compiler manual, §"Access to Command Line Parameters", p. 1-6
-
+topic:     data-types
+claim:     Following PDP-11 convention, this compiler treats "SHORT" and "SHORT INT" as synonyms for plain INT, and "LONG INT" as a synonym for LONG; "LONG FLOAT" means DOUBLE.
+context:   Tied to this compiler's 2-byte INT/4-byte LONG sizing; the naming convention itself may or may not be retained by a 68k Microware C compiler, so don't assume it without separate confirmation.
+source:    OS-9 C Compiler manual, "Data Representation and Storage Requirements", p. 1-5
 --- END ---
---- CARD ---
-id:        system-call-names-unix-compatibility
-type:      CONCEPT
-target:    68k
-verify:    from-manual
-topic:     system-interface
-claim:     System call names in the C library are chosen for compatibility with UNIX/portability rather than direct OS-9 names, though OS-9-specific calls are also available when UNIX equivalents don't exist.
-context:   Programmers familiar with OS-9 assembler names should note that C system call names may differ; a cross-reference list is provided in the manual.
-source:    OS-9 C Compiler manual, §"Operating System Calls", p. 1-7
 
---- END ---
 --- CARD ---
-id:        system-call-error-return-errno
+id:        float-double-binary-format-6809
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     error-handling
-claim:     System calls return -1 on error; the specific error code is stored in the predefined `errno` variable and can be read by the program. Definitions are in "<errno.h>".
-context:   `errno` always contains the error from the most recent erroneous system call; it is not cleared on success, so check the return value first.
-source:    OS-9 C Compiler manual, §"Introduction to C System Calls", p. 3-1
-
+topic:     data-types
+claim:     This compiler's FLOAT and DOUBLE are a proprietary sign-magnitude binary floating-point format (not IEEE 754), with an exponent biased by 128. DOUBLE (8 bytes) uses a 7-byte mantissa (with an implied leading one bit) plus a 1-byte exponent; FLOAT (4 bytes) is identical but with a 3-byte mantissa, produced from a DOUBLE by truncating (FLOAT<-DOUBLE) or zero-padding (DOUBLE<-FLOAT) the least-significant mantissa bytes.
+context:   A 6809-C-compiler-specific floating point representation from 1983; do not assume it matches a 68k Microware C compiler's float format (which may use the 68000/68881's IEEE-754-oriented conventions instead).
+source:    OS-9 C Compiler manual, "Data Representation and Storage Requirements", p. 1-5
 --- END ---
---- CARD ---
-id:        printf-pformat-long-support-requirement
-type:      GOTCHA
-target:    68k
-verify:    from-manual
-topic:     standard-library
-claim:     If output via printf(), fprintf(), or sprintf() of long integers is required, the program MUST call `pfmitd()` at some point; this informs the linker to include long-output support code.
-context:   Programs not using LONG output don't need the overhead; calling `pfmitd()` is a no-op but signals the linker to include the module. Likewise, `pfrintf()` must be called for FLOAT/DOUBLE output support.
-source:    OS-9 C Compiler manual, §"The Standard Library", p. 1-7
 
---- END ---
 --- CARD ---
-id:        floating-point-output-pfrintf-requirement
-type:      GOTCHA
-target:    68k
-verify:    from-manual
-topic:     standard-library
-claim:     If output via printf(), fprintf(), or sprintf() of FLOAT or DOUBLE values is required, the program MUST call `pfrintf()` at some point; this informs the linker to include floating-point output support code.
-context:   Like long-integer support, this is a linker-signaling mechanism to pull in optional library modules.
-source:    OS-9 C Compiler manual, §"The Standard Library", p. 1-7
-
---- END ---
---- CARD ---
-id:        arithmetic-error-signals-efdovr-ediverr-einterr
+id:        k-and-r-deviations-1983-compiler
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     error-handling
-claim:     Three arithmetic error codes are defined in <errno.h>: E_FDOVR (40) for floating-point overflow/underflow, E_DIVERR (41) for division by zero, E_INTERR (42) for overflow on conversion of floating-point to long integer.
-context:   When these conditions occur, the program receives a signal with the error number as the argument; the signal can be caught via signal() or intercept(), or the program terminates with an error return to the parent.
-source:    OS-9 C Compiler manual, §"Run-Time Arithmetic Error Handling", p. 1-8
-
+topic:     c-compiler
+claim:     This 1983 6809 C compiler deviates from the K&R specification in several ways: bit fields are not supported at all; old-style assignment operators (e.g. `=+`) are not recognized, only the modern form (`+=`); macro definitions and string literals cannot span more than one source line; and `#if <constant expression>` is not supported (only `#ifdef`/`#ifndef` ... `#else` ... `#endif`).
+context:   These are this specific compiler/vintage's limitations, not general OS-9 facts; a later or 68k-targeted Microware C compiler may or may not share any of them.
+source:    OS-9 C Compiler manual, "Differences From The K & R Specification", p. 1-2
 --- END ---
+
 --- CARD ---
-id:        constant-expression-evaluation-limits
+id:        constant-expr-evaluation-limited-to-int-char
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     compiler-behavior
-claim:     The compiler evaluates constant expressions at compile-time only when all operands are type CHAR, INT, or UNSIGNED; expressions involving LONG, FLOAT, or DOUBLE are evaluated at runtime by the compiled program.
-context:   For performance-critical code involving floating-point or long constants, manually compute the value offline rather than relying on runtime evaluation.
-source:    OS-9 C Compiler manual, §"Programming Considerations", p. 1-9
-
+topic:     c-compiler
+claim:     This compiler only performs compile-time constant folding of expressions when all operands are of type CHAR, INT, or UNSIGNED. Constant expressions involving LONG, FLOAT, or DOUBLE (beyond single constants/casts of them) are instead evaluated at runtime by the compiled program, so speed-critical code should have such values pre-computed by the programmer.
+context:   A code-generation limitation of this specific compiler; not confirmed for the 68k compiler.
+source:    OS-9 C Compiler manual, "Programming Considerations", p. 1-9
 --- END ---
+
 --- CARD ---
-id:        optimizer-pass-automatic-11-percent-reduction
+id:        optimizer-pass-11-percent
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     compiler-optimization
-claim:     The optimizer pass automatically occurs after compilation, reads the assembler source code, removes redundant code, and replaces code sequences with shorter/faster equivalents, achieving ~11% object-code reduction and significant execution speed increase.
-context:   The optimizer is recommended for production builds but adds compilation time; can be inhibited with -O flag for debug compilations.
-source:    OS-9 C Compiler manual, §"The Optimizer Pass", p. 1-9
-
+topic:     c-compiler
+claim:     An optional post-compilation optimizer pass rewrites the generated 6809 assembly source to remove redundant code and substitute shorter/faster instruction sequences, typically shrinking object code by about 11% with a further speed increase; it can be disabled with the -O flag to speed up error-checking-only compiles.
+context:   The specific 11% figure and the pass's mechanics are stated for this 6809 code generator; not necessarily representative of a 68k compiler's optimizer.
+source:    OS-9 C Compiler manual, "The Optimizer Pass", p. 1-9
 --- END ---
+
 --- CARD ---
-id:        profiler-function-invocation-statistics
+id:        compiler-cli-flags-6809-toolchain
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     profiling
-claim:     The profiler (-P compiler option) generates code at function entry to call the "uprormm" profiler module, which counts function invocations during execution and prints statistics after program termination.
-context:   Profiling slightly reduces execution speed; useful for identifying hot spots where algorithmic or source-code improvements yield greatest gains.
-source:    OS-9 C Compiler manual, §"The Profiler", p. 1-9
-
+topic:     c-compiler
+claim:     This compiler's command-line flags: -A (suppress assembly, leave .a output), -E=<n> (set module edition byte), -O (inhibit optimizer pass), -P (invoke function-call profiler), -R (suppress linking, leave .r output), -M=<size>[k] (linker's extra data/stack/parameter memory allocation, in pages or Kbytes), -L=<path> (extra library searched before the standard library), -F=<path> (override output file/module name), -C (emit source as comments alongside generated assembly), -S (suppress stack-checking code generation), -D<name>[=<string>] (equivalent to `#define`).
+context:   These flags belong to the `cc`/`cc2` front ends for the 6809 compiler as documented in this 1983 manual; a 68k-targeted compiler's flag set is not confirmed to match this.
+source:    OS-9 C Compiler manual, "Compiler Option Flags", p. 1-12 to 1-13
 --- END ---
+
 --- CARD ---
-id:        compiler-phases-multiple-file-linking
+id:        compiler-component-files-cc-cc2
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     compilation-model
-claim:     The compiler manages compilation through four stages: pre-processor, compilation to assembler code, assembly to relocatable module, and linking to binary executable code (OS-9 memory module format).
-context:   Multiple source files can be compiled together or via #include facility in single-source mode; multiple-source mode outputs a single "output" file unless -f= option is used.
-source:    OS-9 C Compiler manual, §"Running the Compiler", p. 1-10 to 1-11
-
+topic:     c-compiler
+claim:     Compiling a C program requires these component files present in the current execution directory (CMDS): on OS-9 Level I, `ccc` (executive), `c.prep` (macro preprocessor), `c.pass1`/`c.pass2` (two-pass compiler), `c.opt` (assembly optimizer), `c.asm` (relocating assembler), `c.link` (linkage editor); on Level II, `cc2` (executive), `c.prep`, `c.comp` (single-pass compiler proper), `c.opt`, `c.asm`, `c.link`.
+context:   This is this specific 1983 6809 toolchain's set of component program names; a 68k toolchain's component names are not confirmed to match.
+source:    OS-9 C Compiler manual, "C Compiler Component Files and File Usage", p. 1-10
 --- END ---
+
 --- CARD ---
-id:        source-file-suffix-conventions
+id:        clib-cstart-must-be-in-lib-dir
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     file-handling
-claim:     Compiler recognizes three file suffix types: .c (C source), .a (assembler source), .r (relocatable module); no suffix indicates executable binary (OS-9 memory module); output filename is derived by removing the suffix from the input.
-context:   Example: `cc prog.c` produces executable `prog`; multiple-file mode outputs `output` unless overridden.
-source:    OS-9 C Compiler manual, §"File Name Suffix Conventions", p. 1-11
-
+topic:     c-compiler
+claim:     This compiler requires two additional files at link time — `clib.r` (the standard library archive: math functions and the system library) and `cstart.r` (the startup code for compiled programs) — both of which must reside in a directory literally named "LIB" on drive /d1, alongside the DEFS directory also required on /d1.
+context:   A specific toolchain/filesystem-layout convention of this 1983 6809 SDK; naming and drive letter are not guaranteed to carry over to a 68k SDK layout.
+source:    OS-9 C Compiler manual, "C Compiler Component Files and File Usage", p. 1-10
 --- END ---
+
 --- CARD ---
-id:        compiler-single-vs-multiple-file-modes
+id:        stack-reservation-64-byte-overhead-6809
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     compilation-model
-claim:     Single-source mode (one .c/.a/.r file on command line) outputs an executable with the source filename (minus suffix); multiple-source mode (multiple files) outputs "output" in the current directory unless -f= flag overrides, and leaves relocatable .r files in their source directories.
-context:   In multiple-source mode, intermediate .r files have postfixes changed from .c/.a to .r and reside with their source; e.g., `cc pre1.c fred/pre2.c` creates pre1.r, fred/pre2.r, and output executable.
-source:    OS-9 C Compiler manual, §"Running the Compiler", p. 1-11
-
+topic:     memory-mgmt
+claim:     On each C function entry, a system-interface routine reserves stack space for that function's use plus a fixed additional 64 bytes, reserved for user-written assembly routines, the system interface, and arithmetic-support routines.
+context:   The 64-byte figure is this 6809 runtime's specific constant; not confirmed for a 68k runtime, which would likely need a different (probably larger, given wider registers) reserve.
+source:    OS-9 C Compiler manual, "Memory Management", p. 2-5
 --- END ---
---- CARD ---
-id:        compiler-option-flag-a-suppress-assembly
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     compiler-options
-claim:     The -A flag suppresses assembly, leaving the output as assembler code in a file postfixed ".a" (e.g., prog.a).
-context:   Useful for inspecting generated assembly or for manual optimization before assembly.
-source:    OS-9 C Compiler manual, §"Compiler Option Flags", p. 1-12
 
---- END ---
---- CARD ---
-id:        compiler-option-flag-e-edition-number
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     compiler-options
-claim:     The -E=<number> flag sets the edition number constant byte in the module header to the given number, an OS-9 convention for version tracking of memory modules.
-context:   Edition number is encoded in the startup code (estart) and appears in the module directory.
-source:    OS-9 C Compiler manual, §"Compiler Option Flags", p. 1-12
-
---- END ---
---- CARD ---
-id:        compiler-option-flag-o-inhibit-optimizer
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     compiler-options
-claim:     The -O flag inhibits the optimizer pass, which normally shortens object code by ~11% and increases execution speed; useful for debug compilations where optimizer adds time.
-context:   Production builds should omit -O to benefit from optimization.
-source:    OS-9 C Compiler manual, §"Compiler Option Flags", p. 1-12
-
---- END ---
---- CARD ---
-id:        compiler-option-flag-p-profiler
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     compiler-options
-claim:     The -P flag invokes the profiler, generating code to produce function invocation frequency statistics after program execution.
-context:   Profiling has a slight performance cost.
-source:    OS-9 C Compiler manual, §"Compiler Option Flags", p. 1-12
-
---- END ---
---- CARD ---
-id:        compiler-option-flag-r-suppress-linking
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     compiler-options
-claim:     The -R flag suppresses linking library modules into an executable program, leaving outputs as relocatable .r files.
-context:   Useful for building libraries or partial compilation in a large project.
-source:    OS-9 C Compiler manual, §"Compiler Option Flags", p. 1-12
-
---- END ---
---- CARD ---
-id:        compiler-option-flag-m-memory-allocation
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     compiler-options
-claim:     The -M=<memory size> flag instructs the linker to allocate <memory size> for data, stack, and parameter area; size may be expressed as pages (integer) or kilobytes (append 'k'). Minimum is 256 bytes; default is total variable/string size + 4k.
-context:   Helps tune memory requirements for specific applications; see "Memory Management" section for detailed guidelines.
-source:    OS-9 C Compiler manual, §"Compiler Option Flags", p. 1-12 to 1-13
-
---- END ---
---- CARD ---
-id:        compiler-option-flag-l-library-search
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     compiler-options
-claim:     The -L=<filename> flag specifies a library to be searched by the linker before the standard library and system interface.
-context:   Allows custom libraries to override standard functions.
-source:    OS-9 C Compiler manual, §"Compiler Option Flags", p. 1-13
-
---- END ---
---- CARD ---
-id:        compiler-option-flag-f-output-filename
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     compiler-options
-claim:     The -F=<path> flag overrides default output file naming; the output file will be left with <filename> as its name, and the module will be named the last component in <path>. Does not make sense in multiple-source mode or with -a or -r flags.
-context:   Single-source mode only; useful for directing output to a specific location or name.
-source:    OS-9 C Compiler manual, §"Compiler Option Flags", p. 1-13
-
---- END ---
---- CARD ---
-id:        compiler-option-flag-c-source-as-comments
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     compiler-options
-claim:     The -C flag outputs the source code as comments interleaved with the generated assembler code.
-context:   Useful for debugging or understanding compiler code generation.
-source:    OS-9 C Compiler manual, §"Compiler Option Flags", p. 1-13
-
---- END ---
---- CARD ---
-id:        compiler-option-flag-s-disable-stack-checking
-type:      GOTCHA
-target:    68k
-verify:    from-manual
-topic:     compiler-options
-claim:     The -S flag stops generation of stack-checking code; should only be used with great care when the application is extremely time-critical and the stack usage by compiler-generated code is fully understood.
-context:   Without stack checking, stack overflow will cause silent memory corruption rather than a caught error.
-source:    OS-9 C Compiler manual, §"Compiler Option Flags", p. 1-13
-
---- END ---
---- CARD ---
-id:        compiler-option-flag-d-define-preprocessor-identifier
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     compiler-options
-claim:     The -D=<identifier> flag is equivalent to "#define <identifier>" in the source file; useful for conditionally compiling different versions of a program via #ifdef/#ifndef preprocessor directives. Form -D=<identifier>=<string> sets the expansion value to <string>.
-context:   Allows compile-time configuration without editing source code.
-source:    OS-9 C Compiler manual, §"Compiler Option Flags", p. 1-13
-
---- END ---
---- CARD ---
-id:        startup-routine-initialization-flow
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     startup
-claim:     The startup routine (estart) for C programs: (1) copies initialized data from module to data memory, (2) clears uninitialized global/static variables to zero, (3) processes data-text and data-data reference tables to resolve pointer initializers to absolute addresses, (4) converts parameter string to argc/argv, (5) calls main().
-context:   This initialization model ensures all variables are zero-initialized unless explicitly initialized, and pointers are correctly relocated for position-independent code.
-source:    OS-9 C Compiler manual, §"Data References" and "Characteristics of Compiled Programs", p. 2-3 to 2-4
-
---- END ---
---- CARD ---
-id:        stack-space-reservation-64-byte-overhead
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     memory-management
-claim:     When each C function is entered, a system interface routine reserves stack space for function use plus an additional 64 bytes; the 64 bytes are for user-written assembly functions, system interface, and arithmetic routines.
-context:   Function arguments and local variables occupy stack space; each function entry adds 4 bytes overhead for return address and register variable storage.
-source:    OS-9 C Compiler manual, §"Memory Management", p. 2-5
-
---- END ---
 --- CARD ---
 id:        stack-overflow-detection-error-message
-type:      FACT
-target:    68k
+type:      BEHAVIOR
+target:    6809
 verify:    from-manual
-topic:     memory-management
-claim:     If a function's stack-space request would overlap the data area, the program stops with the message "HEAP STACK OVERFLOW #3" written to standard error output.
-context:   The system tracks the lowest address so far granted for the stack; if a new allocation would go lower than current data top, stack overflow is detected and program terminates.
-source:    OS-9 C Compiler manual, §"Memory Management", p. 2-5
-
+topic:     memory-mgmt
+claim:     The runtime tracks the lowest stack address granted so far. If a function's stack request would push that watermark down far enough to overlap the data area, the program halts and prints "**** STACK OVERFLOW ****" to standard error rather than proceeding; otherwise the new (lower) limit is accepted and execution continues.
+context:   Overflow detection can be disabled entirely with the -S compiler flag (see compiler-cli-flags-6809-toolchain) for time-critical code once the programmer is confident of correct stack usage.
+source:    OS-9 C Compiler manual, "Memory Management", p. 2-5
 --- END ---
+
 --- CARD ---
-id:        brk-sbrk-memory-allocation-functions
+id:        compile-time-memory-default-4k
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     memory-management
-claim:     brk() requests additional initialized memory from the free memory area; sbrk() requests additional memory from the operating system and returns its lower bound. If OS-9 refuses to grant memory, sbrk() returns -1.
-context:   brk() allocates from pre-allocated free space (set at link time); sbrk() dynamically grows the process memory allocation from the OS.
-source:    OS-9 C Compiler manual, §"Memory Management", p. 2-6
-
+topic:     memory-mgmt
+claim:     Unless told otherwise (via -M=), this compiler's linker automatically allocates 4K bytes more than the total size of a program's variables and strings as its default runtime memory pool — intended to cover the parameter area, stack, and standard-library file buffers. Requests for less than 256 bytes via -M= are ignored by the linker.
+context:   This specific 4K default and 256-byte floor are this compiler/linker's own defaults, not confirmed for a 68k linker.
+source:    OS-9 C Compiler manual, "Compile Time Memory Allocation", p. 2-6
 --- END ---
+
 --- CARD ---
-id:        linker-default-memory-4k-overhead
+id:        arithmetic-error-signal-codes-6809
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     memory-management
-claim:     By default, the linker automatically allocates 4k bytes more than the total size of the program's variables and strings; this overhead covers parameter area, stack requirements, and standard library file buffers (256 bytes per opened file).
-context:   The default is usually adequate for typical programs; can be overridden with -M= compiler option.
-source:    OS-9 C Compiler manual, §"Compile Time Memory Allocation", p. 2-6
-
+topic:     error-handling
+claim:     This compiler's runtime adds three arithmetic error codes to <errno.h>: `#define EFPOVR 40` (floating point overflow or underflow), `#define EDIVERR 41` (division by zero), `#define EINTERR 42` (overflow converting a floating point value to a long integer). When one of these conditions occurs, the running program sends *itself* a signal carrying that error number as its value; if uncaught, the program terminates with an error return to its parent.
+context:   These are runtime-generated conditions caught via signal()/intercept(), distinct from the OS-9 kernel's own error-number space; specific numeric values (40/41/42) and the self-signal mechanism are this compiler's own design and not confirmed identical on a 68k compiler.
+source:    OS-9 C Compiler manual, "Run-Time Arithmetic Error Handling", p. 1-8
 --- END ---
+
 --- CARD ---
-id:        memory-estimation-guidelines-parameters-stack-locals
-type:      FACT
-target:    68k
+id:        long-float-linker-inclusion-trick
+type:      GOTCHA
+target:    6809
 verify:    from-manual
-topic:     memory-management
-claim:     Memory estimation rules: (1) parameter area must fit any anticipated command-line string, (2) stack should be ≥128 bytes and account for function-call depth and recursion, (3) function arguments and local variables occupy stack space (each function entry adds 4 bytes overhead).
-context:   These are rough guidelines; actual requirements depend on the specific program.
-source:    OS-9 C Compiler manual, §"Compile Time Memory Allocation", p. 2-6
-
+topic:     c-compiler
+claim:     If a program uses printf()/fprintf()/sprintf() to output LONG integers, the source MUST also contain a call to a specific do-nothing marker function ("pflmit()" per this manual) somewhere in the program; the mere presence of that call reference tells the linker to pull in the long-output support code, which is otherwise omitted to save space. A separate marker call is likewise required to pull in FLOAT/DOUBLE printing support.
+context:   This "reference a do-nothing function to make the linker include optional runtime support" trick is common across Microware C compilers in spirit, but the exact marker-function name(s) are this compiler's own and should be independently checked against whatever 68k C compiler/runtime is in use rather than assumed identical.
+source:    OS-9 C Compiler manual, "The Standard Library", p. 1-7
 --- END ---
---- CARD ---
-id:        standard-library-file-buffers-256-bytes-per-file
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     memory-management
-claim:     The standard library requests 256 bytes per opened file for buffering (via stdio functions like fopen/fread/fwrite); does not apply to lower-level I/O (open/read/write) or unbuffered stderr.
-context:   Total memory estimate should account for expected number of concurrently open files.
-source:    OS-9 C Compiler manual, §"Compile Time Memory Allocation", p. 2-6
 
---- END ---
 --- CARD ---
-id:        position-independent-reentrant-code-generation
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     code-generation
-claim:     The compiler generates position-independent, reentrant code; the module format and reference tables ensure that compiled programs can be loaded at any address and shared across multiple concurrent processes.
-context:   Reentrancy assumes no self-modifying code and proper use of dynamic allocation; C programmers don't need to worry about relocation details (handled by linker/startup).
-source:    OS-9 C Compiler manual, §"The Object Code Module", p. 2-1
-
---- END ---
---- CARD ---
-id:        uninitialized-global-static-zero-initialization
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     initialization
-claim:     Uninitialized global and static variables are guaranteed to have the value zero at program startup (the startup routine clears the uninitialized data area).
-context:   This follows the C language spec and PDP-11 implementation conventions.
-source:    OS-9 C Compiler manual, §"Characteristics of Compiled Programs", p. 2-4
-
---- END ---
---- CARD ---
-id:        direct-page-variables-not-portable
+id:        data-text-data-data-reference-tables
 type:      CONCEPT
 target:    6809
 verify:    from-manual
-topic:     direct-storage-class
-claim:     The `direct` storage class is unique to this OS-9/6809 C compiler and may not be portable to other environments without modification; programs using direct should be rewritten to use standard storage classes for portability.
-context:   Direct variables offer 6809-specific performance gains (fast addressing) but lock programs to that architecture.
-source:    OS-9 C Compiler manual, §"The 'Direct' Storage Class", p. 1-4
-
+topic:     modules
+claim:     Because no absolute addresses are known at compile time under OS-9, this compiler's runtime resolves pointer-valued initializers (e.g. `char *p = "string";`) at load time using two tables recorded in the module: a "data-text reference" table (offsets needing the base address of the TEXT/code section added) and a "data-data reference" table (offsets needing the base address of the DATA section added). The startup routine walks both tables once, after first copying all initializer data into the DATA section, to patch these pointer values into absolute addresses.
+context:   This is this specific compiler's implementation strategy for achieving position-independence; a 68k compiler could plausibly use a different runtime-relocation mechanism (e.g. base-register-relative addressing) to achieve the same PIC goal, so the *mechanism* (not just field values) should not be assumed to carry over.
+source:    OS-9 C Compiler manual, "Data References", p. 2-3
 --- END ---
+
 --- CARD ---
-id:        system-interface-names-vs-os9-names
-type:      ROSETTA
-target:    68k
+id:        rma-psect-vsect-csect-6809-mnemonics
+type:      CONCEPT
+target:    6809
 verify:    from-manual
-topic:     system-calls
-claim:     Some C system call names follow UNIX convention rather than OS-9 assembler names (e.g., C `open()` vs OS-9 assembler `I$OPEN`); a cross-reference list is provided in the manual for programmers familiar with OS-9 names.
-context:   This naming choice aids portability from UNIX systems; OS-9-specific calls without UNIX equivalents use OS-9 names in C as well.
-source:    OS-9 C Compiler manual, §"Operating System Calls", p. 1-7
-
+topic:     assembler
+claim:     The bundled Relocating Macro Assembler (RMA, invoked as c.asm) organizes a source file into sections: PSECT (code, and where any actual 6809 instruction mnemonic is legal, plus a handful of directives), VSECT (initialized/uninitialized data, optionally the direct page), and CSECT (an offset-only counter for assigning label offsets without EQUs). This replaces the older Microware Interactive Assembler's single MOD/EMOD directive pair; PSECT records the module type/lang/attr/edition/stack-size/entry-point info that used to live in MOD, but for the *linker* (c.link) rather than for OS-9 directly.
+context:   PSECT/VSECT/CSECT could be a Microware-linker-family convention worth checking against the 68k assembler, but this manual explicitly restricts PSECT's body to real 6809 opcodes, so the exact directive set and legal-mnemonic list is 6809-specific until independently confirmed for 68k.
+source:    OS-9 C Compiler manual, "Relocating Macro Assembler Reference" / "Differences between RMA and MIA", p. D-1 to D-4
 --- END ---
+
 --- CARD ---
-id:        char-to-int-sign-extension-conversion
+id:        rma-library-merge-forward-reference-order
+type:      GOTCHA
+target:    6809
+verify:    from-manual
+topic:     assembler
+claim:     When several separately-compiled modules (ROFs) are merged into one library file for c.link to search, the linker resolves each unresolved external reference on a first-found basis, using whichever ROF's matching symbol it encounters first in search order. Consequently, if procedure A in a library calls procedure B also in that library, B's ROF must be merged into the library *after* A's — i.e. all intra-library references should be forward references only.
+context:   This ordering requirement is a consequence of this specific linker's single-pass, first-found symbol resolution; not necessarily true of a different (e.g. two-pass) 68k linker.
+source:    OS-9 C Compiler manual, "Using and Linking to User Defined Libraries", p. B-5
+--- END ---
+
+--- CARD ---
+id:        basic09-interop-register-y-offset
 type:      FACT
-target:    68k
+target:    6809
+verify:    from-manual
+topic:     c-compiler
+claim:     A C function meant to be called from BASIC09's RUN statement cannot rely on the normal cstart-provided setup of the Y register (which points at the C data area), because cstart itself is not linked into BASIC09-callable modules. Instead, the function's very first embedded-assembly statement (via #asm) must manually load Y with the address of BASIC09's first stack parameter, using the fixed offset `ldy 6,s`.
+context:   Deeply 6809-register-specific interop mechanism between two 6809-era Microware products (the C compiler and BASIC09); has no direct 68k analogue documented here.
+source:    OS-9 C Compiler manual, "Example 2 — More Complex Integer Arithmetic Case", p. C-4 to C-5
+--- END ---
+
+--- CARD ---
+id:        basic09-integer-c-int-both-2-byte
+type:      FACT
+target:    6809
 verify:    from-manual
 topic:     data-types
-claim:     CHAR values are converted to INT by sign extension (the sign bit of the CHAR is extended into the upper bits of the INT).
-context:   This affects how character values are treated in integer contexts; a CHAR with value 255 becomes -1 when promoted to INT (two's complement).
-source:    OS-9 C Compiler manual, §"Data Representation and Storage Requirements", p. 1-5
-
+claim:     BASIC09's INTEGER type and this C compiler's `int` type are documented as identical: both are 2-byte two's-complement integers. BASIC09's BYTE and BOOLEAN types are likewise identical to C `char` (which this compiler sign-extends for comparisons, giving char the range -128 to 127).
+context:   This equivalence is explicitly a 6809-only fact — since C `int` is 4 bytes on 68k (independently confirmed for this project), this BASIC09<->C type equivalence cannot hold as stated on a 68k C compiler.
+source:    OS-9 C Compiler manual, "Interfacing to BASIC09", p. C-1
 --- END ---
+
 --- CARD ---
-id:        long-float-type-aliases
+id:        basic09-string-terminator-0xff
 type:      FACT
-target:    68k
+target:    6809
 verify:    from-manual
 topic:     data-types
-claim:     Following PDP-11 convention, "LONG FLOAT" is an alias for DOUBLE; no "LONG INT" exists as a distinct type (it is equivalent to LONG).
-context:   Use DOUBLE or LONG directly; LONG FLOAT is recognized but redundant.
-source:    OS-9 C Compiler manual, §"Data Representation and Storage Requirements", p. 1-5
-
+claim:     BASIC09 strings are terminated by the byte value 0xFF (255), unlike C strings which are terminated by 0x00. If a BASIC09 string happens to be at its declared maximum length, the terminator byte is not present at all. C code that processes a BASIC09 string must therefore check both the string's declared length and for the 0xFF terminator explicitly, rather than relying on either alone.
+context:   Specific to BASIC09/C interop on the 6809 toolchain documented here.
+source:    OS-9 C Compiler manual, "Interfacing to BASIC09", p. C-1
 --- END ---
---- CARD ---
-id:        pdp11-implementation-conventions-charset-format
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     implementation-notes
-claim:     The OS-9 C compiler follows PDP-11 implementation conventions for character set, data format, and floating-point representation, ensuring compatibility with programs ported from PDP-11/UNIX systems.
-context:   This historical decision aids portability but may diverge from modern systems.
-source:    OS-9 C Compiler manual, §"Data Representation and Storage Requirements", p. 1-5
 
---- END ---
 --- CARD ---
-id:        preprocessor-directive-limitations-multiline
+id:        basic09-array-storage-order-transpose
 type:      GOTCHA
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     preprocessor
-claim:     Preprocessor directives cannot be extended over multiple lines via backslash continuation; macro definitions and strings must fit on a single source line.
-context:   This limits complexity of compile-time constructs; workaround is to break long strings into multiple initialized char arrays or use external build tools.
-source:    OS-9 C Compiler manual, §"Differences From K&R", p. 1-2
-
+topic:     data-types
+claim:     BASIC09 stores multi-dimensional arrays in column-major order, while this C compiler stores them row-major. Consequently, accessing a BASIC09 array element such as `array(4,2)` from C requires transposing the subscripts, e.g. as `array[2][4]`, to reach the same memory location.
+context:   A data-layout mismatch inherent to interoperating between the two languages/runtimes on this platform, independent of which CPU it runs on architecturally, but only documented here in a 6809-era BASIC09 interop context.
+source:    OS-9 C Compiler manual, "Interfacing to BASIC09", p. C-1 to C-2
 --- END ---
+
 --- CARD ---
-id:        preprocessor-conditional-ifdef-not-constant-expression
+id:        struct-assignment-unsupported-strass-workaround
 type:      GOTCHA
-target:    68k
+target:    6809
 verify:    from-manual
-topic:     preprocessor
-claim:     The preprocessor supports `#ifdef`, `#ifndef`, `#else`, and `#endif` directives, but does NOT support `#if <constant expression>` form.
-context:   Use #ifdef/#ifndef with -D= compiler flags for conditional compilation rather than #if expressions.
-source:    OS-9 C Compiler manual, §"Differences From K&R", p. 1-2
-
---- END ---
---- CARD ---
-id:        bit-fields-not-supported
-type:      GOTCHA
-target:    68k
-verify:    from-manual
-topic:     language-limitations
-claim:     Bit field declarations in structures are not supported; attempting to use bit fields will result in compilation error.
-context:   Use manual bit manipulation or byte fields as workaround.
-source:    OS-9 C Compiler manual, §"Differences From K&R", p. 1-2
-
---- END ---
---- CARD ---
-id:        constant-expression-initializers-operand-restrictions
-type:      GOTCHA
-target:    68k
-verify:    from-manual
-topic:     initialization
-claim:     Constant expressions used in initializers may only include arithmetic operators if all operands are of type INT or CHAR; mixed-type or LONG/FLOAT/DOUBLE expressions in initializers are not supported.
-context:   Workaround: compute constant values offline and hard-code them as literals, or move initialization to program startup code.
-source:    OS-9 C Compiler manual, §"Differences From K&R", p. 1-2
-
---- END ---
---- CARD ---
-id:        older-assignment-operators-not-supported
-type:      GOTCHA
-target:    68k
-verify:    from-manual
-topic:     language-limitations
-claim:     Older forms of assignment operators (e.g., `=+`, `=-`) recognized by some C compilers are not supported; use modern forms (`+=`, `-=`).
-context:   This affects only archaic code; modern C style uses the new forms.
-source:    OS-9 C Compiler manual, §"Differences From K&R", p. 1-2
-
---- END ---
---- CARD ---
-id:        include-file-angle-brackets-perps-directory
-type:      FACT
-target:    68k
-verify:    from-manual
-topic:     preprocessor
-claim:     When using angle brackets in #include directives (e.g., `#include <stdio.h>`), the preprocessor searches for files starting at the "perps" (presumably PERPS system directory) rather than the current directory.
-context:   Use double quotes for current-directory includes; use angle brackets for system includes.
-source:    OS-9 C Compiler manual, §"C Compiler Component Files and File Usage", p. 1-10
-
+topic:     c-compiler
+claim:     This compiler does not support direct structure assignment (`struct1 = struct2;`). The library provides a strass() function (byte-by-byte block copy) as the documented workaround for copying one structure's contents to another.
+context:   A language-completeness gap specific to this early (1983) compiler; not confirmed present in a later or 68k-targeted Microware C compiler, which may support struct assignment natively.
+source:    OS-9 C Compiler manual, "Strass", p. 3-41
 --- END ---
