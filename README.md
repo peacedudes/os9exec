@@ -109,9 +109,9 @@ dir /h7
 To populate a fresh image with real content (and verify the copy), `dsave` works against it like any other device:
 
 ```
-makdir /dd/USR/TESTER/doctest
-echo hello from the mount -k example >/dd/USR/TESTER/doctest/hello.txt
-chd /dd/USR/TESTER/doctest
+makdir /dd/USR/CLAUDE/doctest
+echo hello from the mount -k example >/dd/USR/CLAUDE/doctest/hello.txt
+chd /dd/USR/CLAUDE/doctest
 dsave -ive /h7
 ```
 

@@ -50,7 +50,7 @@ at_prompt() {
     local last
     last=$(printf '%s\n' "$content" | tail -1 | sed 's/[[:space:]]*$//')
     [ "$last" = '$' ] && return 0
-    printf '%s' "$last" | grep -qE 'for hlp\)|^dbg:|^dis:|^tra:|^(su|tester|dog):$' && return 0
+    printf '%s' "$last" | grep -qE 'for hlp\)|^dbg:|^dis:|^tra:|^(su|claude|dog):$' && return 0
     # Also check last 5 lines (trace output may follow the prompt on same/next line)
     printf '%s\n' "$content" | tail -5 | grep -qE '(^|\s)dbg:\s*$|(^|\s)dis:\s*$|(^|\s)tra:\s*$' && return 0
     return 1
