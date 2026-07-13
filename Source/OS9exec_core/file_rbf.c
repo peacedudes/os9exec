@@ -1727,8 +1727,7 @@ os9err int_mount( ushort pid, int argc, char** argv )
            err= MountDev( pid, nargv[ 0 ], nargc<2 ? "":nargv[ 1 ], devCopy,
                           adapt, scsibus, scsiID, scsiLUN,
                           ramSize, sctSize, cluSize, wProtect, imgMode );
-    if (err && err!=E_NORAM) return _errmsg( err, "can't mount device \"%s\".\n", nargv[0] );
-    if (err==E_NORAM) return 0; /* validation error already printed by RoundSectorCount */
+    if    (err) return _errmsg( err, "can't mount device \"%s\".\n", nargv[0] );
     return err;
 } /* int_mount */
 
