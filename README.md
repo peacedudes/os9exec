@@ -256,7 +256,7 @@ already exist — `mount -k` refuses to overwrite an existing file or
 directory.
 
 ```
-mount -k=64M h7
+mount -k=1M h7
 dir /h7
 ```
 
@@ -266,7 +266,9 @@ device — `-i` indents, `-v` verifies each file with `cmp`, `-e` executes
 the generated script immediately instead of just printing it:
 
 ```
-chd /dd/CMDS
+makdir /dd/USR/TESTER/doctest
+echo hello from the mount -k example >/dd/USR/TESTER/doctest/hello.txt
+chd /dd/USR/TESTER/doctest
 dsave -ive /h7
 ```
 
