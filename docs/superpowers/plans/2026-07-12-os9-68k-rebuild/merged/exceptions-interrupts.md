@@ -50,7 +50,7 @@ source:    the independent 1985-era OS-9/68000 technical manual, §4-7 "Error Ex
 --- END ---
 
 --- CARD ---
-id:        privilege-violation-exception
+id:        privilege-violation-cpu-exception
 type:      FACT
 target:    68k
 verify:    from-manual
