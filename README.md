@@ -12,10 +12,10 @@ Run actual OS-9 binaries on your modern computer. OS9exec emulates the 68k proce
 git clone https://github.com/peacedudes/os9exec.git
 cd os9exec-git_code
 make
-OS9DISK=/path/to/your/os9 ./os9exec /path/to/your/os9/CMDS/shell
+OS9DISK=/path/to/your/os9disk ./os9exec shell
 ```
 
-That's it: **1)** build it, **2)** point `OS9DISK` at a directory (or disk image) with a `CMDS` folder full of OS-9 binaries, **3)** run.
+That's it: **1)** build it, **2)** point `OS9DISK` at a directory (or disk image) with a `CMDS` folder full of OS-9 binaries, **3)** run. From within OS-9 the disk is known as /dd.
 
 ```
 $ dir /dd/CMDS
@@ -24,7 +24,7 @@ $ procs
 $ exit
 ```
 
-Don't have OS-9 software yet? [Legitimate sources exist for hobbyists](https://www.icdia.co.uk/) — OS9exec doesn't include any (not ours to distribute).
+Don't have OS-9 software yet? Bring your own — a disk image, tape backup, or SDK archive. OS9exec doesn't include any (not ours to distribute).
 
 Prefer a prebuilt binary, Docker, or Apple Container instead of building? See [Other ways to run it](#other-ways-to-run-it) below.
 
