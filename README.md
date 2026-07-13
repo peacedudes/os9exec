@@ -198,7 +198,16 @@ pc: 000055D2  cc: 00 (-----)
 dbg:
 ```
 
-Single-step with `gs`, trace with `t <n>`, set breakpoints with `b`, display memory with `d`. Registers update live. Type `?` for the full command list.
+Step with `gs`, trace with `t <n>`, set breakpoints with `b`, display memory with `d`. Registers update live. Type `?` for the full command list.
+
+### Two quirks of the shipped `debug` binary
+
+These are bugs in Microware's own 1980s `debug`, not in os9exec — there is nothing to fix on our side, but they will waste your afternoon if you don't know them.
+
+- **Set breakpoints by name (`b main`) — that works.** Do **not** take an address out of the `sc` symbol listing: `sc` double-counts the module's relocation, printing `real address + symbol offset`. Its addresses are wrong, and wrong by an amount that *grows* the deeper a symbol sits in the module, so the listing looks perfectly plausible. In one test `sc` placed `main` at an address that disassembles as `sprintf+0x22E`. The symbol *names* are fine; only the addresses are corrupt.
+- **`gs` is not really a single-step.** It plants a temporary breakpoint at the fall-through address (`PC + instruction length`) and runs to it. So it steps *over* `bsr`/`jsr`, and across a *taken* branch it keeps going until that fall-through is reached anyway — a whole loop iteration later, or never, if the address is unreachable (dead code after a `bra`). Prefer `b <name>` + `g` to land on a chosen spot. A runaway is always recoverable with **Ctrl-C**, which returns you to a fresh `dbg:` prompt.
+
+When in doubt, disassemble an address (`di <addr>`) before trusting it — a function entry should look like a prologue.
 
 <details>
 <summary>How the fix was found</summary>
