@@ -125,7 +125,7 @@ type:      FACT
 target:    all
 verify:    from-manual
 topic:     io
-claim:     "Certain system values, such as disc addresses, are maintained in three-byte form rather than four-byte" on OS-9. The standard library provides l3tol() (3-byte integers to long) and ltoi3s() (long to 3-byte integers) specifically so C arithmetic can be performed on these values.
+claim:     OS-9 stores certain system values, including disk addresses, in 3-byte form rather than 4-byte form. The standard library provides l3tol() (3-byte to long conversion) and ltoi3s() (long to 3-byte conversion) to enable C arithmetic on these values.
 context:   This documents that OS-9 RBF-style disk block addresses (LSNs) are natively 3 bytes wide, a fact independent of CPU word size, requiring explicit conversion when treated as C longs.
 source:    OS-9 C Compiler manual, "L3tol,Ltoi3s", p. 4-15
 --- END ---

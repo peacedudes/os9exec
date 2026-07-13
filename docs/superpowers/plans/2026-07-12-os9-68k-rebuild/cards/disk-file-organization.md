@@ -6,7 +6,7 @@ verify:    from-manual
 topic:     rbf-storage
 claim:     RBF implements a tree-structured file system designed for efficient disk space usage, resistance to accidental damage, and fast file access with relative simplicity.
 context:    -
-source:     Disk File Organization manual, "Basic Disk Organization"
+source:     Disk File Organization manual, "Basic Disk Organization", p. 7-1
 --- END ---
 
 --- CARD ---
@@ -17,7 +17,7 @@ verify:    from-manual
 topic:     rbf-storage
 claim:     RBF supports logical sector sizes in integral binary multiples from 256 to 32,768 bytes. If the physical disk cannot directly support the logical sector size, the driver module must divide or combine physical sectors to simulate the required logical size.
 context:    -
-source:     Disk File Organization manual, "Basic Disk Organization"
+source:     Disk File Organization manual, "Basic Disk Organization", p. 7-1
 --- END ---
 
 --- CARD ---
@@ -28,7 +28,7 @@ verify:    from-manual
 topic:     rbf-storage
 claim:     OS-9 abstracts disk addresses as Logical Sector Numbers (LSNs) numbered 0 to (n-1), eliminating hardware dependencies on track, surface, and sector numbering. The disk driver or controller is responsible for mapping LSNs to physical addresses.
 context:    -
-source:     Disk File Organization manual, "Basic Disk Organization"
+source:     Disk File Organization manual, "Basic Disk Organization", p. 7-1
 --- END ---
 
 --- CARD ---
@@ -39,7 +39,7 @@ verify:    from-manual
 topic:     rbf-storage
 claim:     LSN 0 always contains the identification sector, which describes the disk's physical and logical format, allocation map size, root directory location, volume name, creation date/time, and (for bootable disks) the starting LSN and size of the OS9Boot file.
 context:    -
-source:     Disk File Organization manual, "Identification Sector"
+source:     Disk File Organization manual, "Identification Sector", p. 7-3
 --- END ---
 
 --- CARD ---
@@ -50,7 +50,7 @@ verify:    from-manual
 topic:     rbf-storage
 claim:     Every OS-9 disk has the same basic structure: identification sector at LSN 0, disk allocation map usually at LSN 1, and root directory immediately following the allocation map.
 context:    -
-source:     Disk File Organization manual, "Basic Disk Organization"
+source:     Disk File Organization manual, "Basic Disk Organization", p. 7-1
 --- END ---
 
 --- CARD ---
@@ -292,7 +292,7 @@ verify:    from-manual
 topic:     rbf-directory
 claim:     The root directory is the parent directory of all other files and directories on the disk, accessed via the physical device name (e.g., /d1). It is located at the LSN specified in DD_DIR of the identification sector.
 context:    -
-source:     Disk File Organization manual, "Root Directory"
+source:     Disk File Organization manual, "Root Directory", p. 7-4
 --- END ---
 
 --- CARD ---
@@ -303,7 +303,7 @@ verify:    from-manual
 topic:     rbf-file-structure
 claim:     OS-9 uses multiple-contiguous-segment file structure: segments are physically contiguous sectors, and if a file cannot fit in one segment, additional segments are allocated (e.g., when expanded after creation or when sufficient contiguous free space is unavailable).
 context:    -
-source:     Disk File Organization manual, "Basic File Structure"
+source:     Disk File Organization manual, "Basic File Structure", p. 7-4
 --- END ---
 
 --- CARD ---
@@ -314,7 +314,7 @@ verify:    from-manual
 topic:     rbf-file-structure
 claim:     File segments are kept in close physical proximity to minimize disk head movement. Small files typically have only one segment, resulting in fastest access time. It is good practice to initialize file size to maximum expected size during creation to optimize storage allocation.
 context:    -
-source:     Disk File Organization manual, "Basic File Structure"
+source:     Disk File Organization manual, "Basic File Structure", p. 7-4
 --- END ---
 
 --- CARD ---
@@ -325,7 +325,7 @@ verify:    from-manual
 topic:     rbf-file-structure
 claim:     Every file has a file descriptor sector (FD) that contains a list of data segments with starting LSNs and sizes, plus metadata: file attributes, owner ID, modification time, link count, and file size. The FD is system-use only and not directly accessible to users.
 context:    -
-source:     Disk File Organization manual, "Basic File Structure"
+source:     Disk File Organization manual, "Basic File Structure", p. 7-4
 --- END ---
 
 --- CARD ---
@@ -424,7 +424,7 @@ verify:    from-manual
 topic:     rbf-allocation
 claim:     Each device descriptor module has a segment allocation size value specifying the minimum number of sectors to allocate to a new segment. This avoids excessive tiny segments when files expand. Higher values suit systems with large files; lower values suit systems with many small files.
 context:    -
-source:     Disk File Organization manual, "Segment Allocation"
+source:     Disk File Organization manual, "Segment Allocation", p. 7-5
 --- END ---
 
 --- CARD ---
@@ -435,7 +435,7 @@ verify:    from-manual
 topic:     rbf-allocation
 claim:     When a file is created, it has no data segments allocated. Write operations past the end-of-file trigger allocation of additional sectors in minimum allocation size increments. An attempt is made to expand the last segment before adding a new segment.
 context:    -
-source:     Disk File Organization manual, "Segment Allocation"
+source:     Disk File Organization manual, "Segment Allocation", p. 7-5
 --- END ---
 
 --- CARD ---
@@ -446,7 +446,7 @@ verify:    from-manual
 topic:     rbf-allocation
 claim:     When a file is closed, if not all allocated sectors are used, the last segment is truncated and unused sectors are deallocated in the bitmap. However, if a file is closed while not at end-of-file (in write or update mode), the last segment is not truncated, preserving excess space for random-access files. A seek(0) before close prevents loss of reserved space.
 context:    "This behavior differs from typical file systems and is necessary to avoid rapid segment fragmentation in random-access databases."
-source:     Disk File Organization manual, "Segment Allocation"
+source:     Disk File Organization manual, "Segment Allocation", p. 7-5
 --- END ---
 
 --- CARD ---
@@ -457,7 +457,7 @@ verify:    from-manual
 topic:     rbf-directory
 claim:     Directory files consist of integral 32-byte entries. Each entry has a 28-byte file name field (DIR_NM, bytes 0-27) with the sign bit of the last character set. The first byte is zero for deleted/unused entries. Byte 28 is unused (must be zero). Bytes 29-31 contain the 3-byte LSN of the file's FD sector (DIR_FD).
 context:    -
-source:     Disk File Organization manual, "Directory File Format"
+source:     Disk File Organization manual, "Directory File Format", p. 7-6
 --- END ---
 
 --- CARD ---
@@ -468,7 +468,7 @@ verify:    from-manual
 topic:     rbf-directory
 claim:     When a directory file is created, two entries are automatically created: dot (.) referring to the directory itself and double-dot (..) referring to its parent directory.
 context:    -
-source:     Disk File Organization manual, "Directory File Format"
+source:     Disk File Organization manual, "Directory File Format", p. 7-6
 --- END ---
 
 --- CARD ---
@@ -479,7 +479,7 @@ verify:    from-manual
 topic:     rbf-io
 claim:     A device can be opened for raw physical I/O by appending the @ character to the device name (e.g., /d2@). Standard open/close/read/write/seek system calls apply. This allows byte/sector access by physical address, bypassing the normal file system.
 context:    "Used for diagnostic and utility programs; bypasses file security."
-source:     Disk File Organization manual, "Raw Physical I/O on RBF Devices"
+source:     Disk File Organization manual, "Raw Physical I/O on RBF Devices", p. 7-7
 --- END ---
 
 --- CARD ---
@@ -490,7 +490,7 @@ verify:    from-manual
 topic:     rbf-io
 claim:     For raw physical I/O, seek to address = LSN × logical sector size. To find logical sector size, read PD_SctSiz from the path descriptor; if 0, assume 256 bytes. Example: for 1024-byte sectors, seek to address 3072 to read sector 3.
 context:    -
-source:     Disk File Organization manual, "Raw Physical I/O on RBF Devices"
+source:     Disk File Organization manual, "Raw Physical I/O on RBF Devices", p. 7-7
 --- END ---
 
 --- CARD ---
@@ -501,7 +501,7 @@ verify:    from-manual
 topic:     rbf-io
 claim:     Only super-users can open the raw device for write. Non-super-users can only read the identification sector (LSN 0) and the allocation bitmap; attempts to read past this return end-of-file error. Raw physical I/O bypasses file security entirely.
 context:    -
-source:     Disk File Organization manual, "Raw Physical I/O on RBF Devices"
+source:     Disk File Organization manual, "Raw Physical I/O on RBF Devices", p. 7-7
 --- END ---
 
 --- CARD ---
@@ -512,7 +512,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     Record locking preserves file integrity when multiple processes access the same file. RBF implements conflict detection and prevention: detecting when a record is being modified and deferring reads until the record is safe.
 context:    -
-source:     Disk File Organization manual, "Record Locking"
+source:     Disk File Organization manual, "Record Locking", p. 7-7
 --- END ---
 
 --- CARD ---
@@ -523,7 +523,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     RBF provides true record locking on a byte basis. When a file is opened in update mode, any read operation locks out records starting at the current file pointer for the number of bytes requested. The locked region remains locked until the next read, write, or close.
 context:    -
-source:     Disk File Organization manual, "Record Locking and Unlocking"
+source:     Disk File Organization manual, "Record Locking and Unlocking", p. 7-8
 --- END ---
 
 --- CARD ---
@@ -534,7 +534,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     Reading files opened in read or execute mode does not cause record locking, since records cannot be updated in these modes.
 context:    -
-source:     Disk File Organization manual, "Record Locking and Unlocking"
+source:     Disk File Organization manual, "Record Locking and Unlocking", p. 7-8
 --- END ---
 
 --- CARD ---
@@ -545,7 +545,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     Only one portion of a file may be locked at a time. To lock multiple regions, open multiple paths to the same file; RBF detects same-process ownership and prevents mutual lockout. Alternatively, lock the entire file before updating multiple records.
 context:    -
-source:     Disk File Organization manual, "Record Locking and Unlocking"
+source:     Disk File Organization manual, "Record Locking and Unlocking", p. 7-8
 --- END ---
 
 --- CARD ---
@@ -556,7 +556,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     The single-user (S) bit in the file attribute byte marks a file as non-sharable, preventing more than one process from opening it. Setting this bit during file creation or later using the attr utility triggers error #253 if another process attempts to open the file.
 context:    -
-source:     Disk File Organization manual, "Non-Sharable Files"
+source:     Disk File Organization manual, "Non-Sharable Files", p. 7-8
 --- END ---
 
 --- CARD ---
@@ -567,7 +567,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     A non-sharable file can be duplicated via I$Dup or inherited by child processes, potentially making it accessible to multiple processes despite the non-sharable attribute. It is usually a bad idea to have two processes actively using a disk file through the same inherited path.
 context:    -
-source:     Disk File Organization manual, "Non-Sharable Files"
+source:     Disk File Organization manual, "Non-Sharable Files", p. 7-8
 --- END ---
 
 --- CARD ---
@@ -578,7 +578,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     EOF (end-of-file) lock occurs when reading or writing at the end of file. The EOF lock is held until a read or write occurs that is not at end-of-file. EOF lock is the only time a write automatically locks out any part of the file. This prevents simultaneous file extension by multiple processes.
 context:    -
-source:     Disk File Organization manual, "End of File Lock"
+source:     Disk File Organization manual, "End of File Lock", p. 7-9
 --- END ---
 
 --- CARD ---
@@ -589,7 +589,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     When a program creates a file for sequential output, EOF lock is immediately gained, preventing other processes from passing the writer. This enables spooler utilities to begin reading an output file before the writer finishes.
 context:    -
-source:     Disk File Organization manual, "End of File Lock"
+source:     Disk File Organization manual, "End of File Lock", p. 7-9
 --- END ---
 
 --- CARD ---
@@ -600,7 +600,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     Deadlock occurs when two processes attempt to gain control of the same two disk areas simultaneously, each blocking the other. RBF detects this and returns error #254 to the process causing the deadlock.
 context:    -
-source:     Disk File Organization manual, "Deadlock Detection"
+source:     Disk File Organization manual, "Deadlock Detection", p. 7-9
 --- END ---
 
 --- CARD ---
@@ -611,7 +611,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     To avoid deadlock, access records of shared files in the same sequence across all concurrent processes. For example, always read the index file before the data file, never the reverse. Simply retrying a deadlocked operation is ineffective; at least one process must release its control for others to proceed.
 context:    -
-source:     Disk File Organization manual, "Deadlock Detection"
+source:     Disk File Organization manual, "Deadlock Detection", p. 7-10
 --- END ---
 
 --- CARD ---
@@ -622,7 +622,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     Do not open a file for update if only reading is intended. Files opened read-only do not cause record locking and generally run faster. On multi-user systems, files routinely opened for update on shared files can cause extended record-lock contention.
 context:    -
-source:     Disk File Organization manual, "Record Locking Details for I/O Functions"
+source:     Disk File Organization manual, "Record Locking Details for I/O Functions", p. 7-10
 --- END ---
 
 --- CARD ---
@@ -633,7 +633,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     Read and ReadLine operations cause record lock-out only if the file is opened in update mode. The locked region includes all bytes from current file pointer for the requested byte count. A ReadLine requesting 256 bytes locks exactly 256 bytes regardless of actual bytes read before carriage return.
 context:    -
-source:     Disk File Organization manual, "Record Locking Details for I/O Functions"
+source:     Disk File Organization manual, "Record Locking Details for I/O Functions", p. 7-10
 --- END ---
 
 --- CARD ---
@@ -644,7 +644,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     A locked record is released by: another read operation, a write operation, file close, or a record lock SetStat call. Any read or write of zero bytes releases any record lock, EOF lock, or file lock.
 context:    -
-source:     Disk File Organization manual, "Record Locking Details for I/O Functions"
+source:     Disk File Organization manual, "Record Locking Details for I/O Functions", p. 7-10
 --- END ---
 
 --- CARD ---
@@ -655,7 +655,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     Write and WriteLine calls always release any currently locked record. A write of zero bytes releases EOF lock and file lock. Writing usually does not lock any portion of the file unless it occurs at end-of-file, which gains EOF lock.
 context:    -
-source:     Disk File Organization manual, "Record Locking Details for I/O Functions"
+source:     Disk File Organization manual, "Record Locking Details for I/O Functions", p. 7-10
 --- END ---
 
 --- CARD ---
@@ -666,7 +666,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     Seek operations do not affect record locking.
 context:    -
-source:     Disk File Organization manual, "Record Locking Details for I/O Functions"
+source:     Disk File Organization manual, "Record Locking Details for I/O Functions", p. 7-10
 --- END ---
 
 --- CARD ---
@@ -677,7 +677,7 @@ verify:    from-manual
 topic:     rbf-locking
 claim:     Two SetStat codes deal with record locking: SS_Lock locks or releases part of a file; SS_Ticks sets the length of time a program will wait for a locked record.
 context:    -
-source:     Disk File Organization manual, "Record Locking Details for I/O Functions"
+source:     Disk File Organization manual, "Record Locking Details for I/O Functions", p. 7-10
 --- END ---
 
 --- CARD ---
@@ -688,7 +688,7 @@ verify:    from-manual
 topic:     rbf-security
 claim:     Each file has a group/user ID identifying the owner, copied from the process descriptor when the file is created. File security is enforced through the owner ID and attribute byte, specifying read/write/execute access for owner and public (different group ID).
 context:    -
-source:     Disk File Organization manual, "File Security"
+source:     Disk File Organization manual, "File Security", p. 7-11
 --- END ---
 
 --- CARD ---
@@ -699,7 +699,7 @@ verify:    from-manual
 topic:     rbf-security
 claim:     Whenever a file is opened, access permissions are checked on all directories in the pathlist and the file itself. Without read permission on a directory, no files in that directory are accessible.
 context:    -
-source:     Disk File Organization manual, "File Security"
+source:     Disk File Organization manual, "File Security", p. 7-11
 --- END ---
 
 --- CARD ---
@@ -710,7 +710,7 @@ verify:    from-manual
 topic:     rbf-security
 claim:     Any super-user (group ID of zero) may access any file. Files owned by super-user cannot be accessed by other groups unless specific permissions are set. Module files owned by super-user must also be owned by super-user or the modules are not loaded.
 context:    -
-source:     Disk File Organization manual, "File Security"
+source:     Disk File Organization manual, "File Security", p. 7-11
 --- END ---
 
 --- CARD ---
@@ -721,7 +721,7 @@ verify:    from-manual
 topic:     rbf-security
 claim:     FD_OWN is a 2-byte field, but RBF only reads the low-order byte of both group ID and user ID from the password file. A user with ID 256.512 is mistaken for the super-user by RBF.
 context:    "The password file permits 2 bytes for group ID and 2 bytes for user ID, but RBF truncates to 1 byte per field."
-source:     Disk File Organization manual, "File Security"
+source:     Disk File Organization manual, "File Security", p. 7-11
 --- END ---
 
 --- CARD ---
@@ -732,6 +732,6 @@ verify:    from-manual
 topic:     rbf-io
 claim:     The special "@" raw device file is treated as a different file from the normal device name for record-locking purposes. Record lock conflicts are only checked between processes using the same "@" device path. Use extreme care opening "@" in update mode since record locking overhead is kept low.
 context:    -
-source:     Disk File Organization manual, "Raw Physical I/O on RBF Devices" and "Record Locking Details for I/O Functions"
+source:     Disk File Organization manual, "Raw Physical I/O on RBF Devices" (p. 7-7) and "Record Locking Details for I/O Functions" (p. 7-10)
 --- END ---
 

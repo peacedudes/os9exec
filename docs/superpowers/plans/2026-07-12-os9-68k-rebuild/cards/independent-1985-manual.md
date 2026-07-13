@@ -158,7 +158,7 @@ type:      BEHAVIOR
 target:    68k
 verify:    from-manual
 topic:     process-management
-claim:     F$Fork creates a new process which becomes a "child" of the caller. The system parses the module name string and searches the system module directory. If the program is already in memory, the module is linked and executed. Otherwise, the name string is used as a pathlist to load the file from mass storage. The primary module's module header determines the process's initial data area size. OS-9 allocates contiguous RAM equal to the required data storage size plus any additional size given in d1, plus the size of any parameter passed.
+claim:     F$Fork initiates a new child process. The system first checks whether the named module is already loaded; if so, it links and runs it directly. If not, the name is treated as a file path and the first module from that file is loaded into memory. The child process's memory allocation combines the data area size specified in the module header with additional space from d1 and space for any passed parameters; all required memory must be contiguous.
 context:   Input: d0.w=desired module type/revision (0=any), d1.l=additional memory size, d2.l=parameter size, d3.w=number of I/O paths to copy, d4.w=priority, (a0)=module name pointer, (a1)=parameter pointer. Output: d0.w=child process ID, (a0)=updated past module name.
 source:    the independent 1985-era OS-9/68000 technical manual, §14-14 "F$Fork"
 --- END ---
@@ -719,7 +719,7 @@ type:      BEHAVIOR
 target:    68k
 verify:    from-manual
 topic:     process-management
-claim:     F$Exit is the means by which a process can terminate itself. When called, it closes all open paths, deallocates the process's data memory area, and unlinks its primary module and user trap handlers. If the parent is waiting via F$Wait, the parent is moved to the active queue and informed of the child's death. The status code passed to F$Exit is returned to the parent. Processes should only return an OS-9 error code or zero if no error occurred.
+claim:     F$Exit terminates the calling process by releasing all resources: open paths are closed, the data memory is deallocated, and both the primary module and any installed user trap handlers are unlinked. A parent process waiting on the terminating child via F$Wait receives the status code passed in d1.w. By convention, this code should be an OS-9 error code or zero to indicate success.
 context:   The parent must perform an F$Wait before the process descriptor is returned to the system. If the parent is dead, the process descriptor is freed immediately.
 context:   Input: d1.w = status code to be returned to parent. Output: process is terminated.
 source:    the independent 1985-era OS-9/68000 technical manual, §14-12 "F$Exit"
