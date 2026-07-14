@@ -162,7 +162,7 @@ uint32_t WriteCharsToPTY( char* buffer, uint32_t n, int consoleID, Boolean do_lf
       return n;
 
     #else
-      #ifndef linux
+      #ifndef __GNUC__ /* MPW-only pragma; GCC warns it is ignoring it. Gate on the COMPILER, not the OS -- "not linux" wrongly includes mingw. */
       #pragma unused( buffer,n,consoleID,do_lf )
       #endif
       

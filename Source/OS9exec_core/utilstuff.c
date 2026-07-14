@@ -1080,7 +1080,10 @@ Boolean VolInfo( const char* pathname, char* volname )
       #pragma unused(pathname)
       strcpy( volname,"" );
       
-    #elif defined linux
+    /* UNIX, not linux: macOS and mingw matched no branch at all here, so volname
+     * was returned untouched (i.e. whatever the caller's buffer happened to hold)
+     * while we still returned true. Every UNIX-ish host has a single "/" root. */
+    #elif defined UNIX
       strcpy( volname,"/" );
 
     #elif defined(windows32)

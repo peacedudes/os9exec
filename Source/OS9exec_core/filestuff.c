@@ -504,7 +504,7 @@ static void CheckH0( char* name, char* p, char** p3 )
       strcpy( name,"/h0" ); *p3= name;
 
     #else
-       #ifndef linux
+       #ifndef __GNUC__ /* MPW-only pragma; GCC warns it is ignoring it. Gate on the COMPILER, not the OS -- "not linux" wrongly includes mingw. */
        #pragma unused(name,p,p3)
        #endif
     #endif
@@ -829,9 +829,13 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
     if (!absolute) {
         /* --- it is a relative path: copy in default dir first (must end with PATHDELIM) */
                 p2= defDir_s;
+        /* UNIX, not linux: PATHDELIM is '/' on every UNIX-ish host (linux, macOS
+         * AND mingw), so they all want this fallback. Keyed on `linux` alone, the
+         * others got NO branch at all -- p2 stayed "" and the loop below copied
+         * nothing, so the `op--` after it walked back off the front of pathbuf. */
         #ifdef windows32
           if  (*p2==NUL) p2= ".\\"; /* special condition, if undefined */
-        #elif defined linux
+        #elif defined UNIX
           if  (*p2==NUL) p2= "./";  /* special condition, if undefined */
         #endif
 

@@ -613,7 +613,7 @@ static void regs_in_debugger( regs_type *rp )
       llm_os9_debug( rp, message );
 
     #else
-      #ifndef linux
+      #ifndef __GNUC__ /* MPW-only pragma; GCC warns it is ignoring it. Gate on the COMPILER, not the OS -- "not linux" wrongly includes mingw. */
       #pragma unused(rp)
       #endif
     

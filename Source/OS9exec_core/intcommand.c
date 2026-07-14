@@ -1775,7 +1775,7 @@ static void large_pipe_connect( ushort pid, syspath_typ* spC )
       } /* if */
     
     #else
-      #ifndef linux
+      #ifndef __GNUC__ /* MPW-only pragma; GCC warns it is ignoring it. Gate on the COMPILER, not the OS -- "not linux" wrongly includes mingw. */
       #pragma unused(pid)
       #endif
     #endif

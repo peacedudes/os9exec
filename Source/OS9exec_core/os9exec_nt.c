@@ -958,10 +958,13 @@ void get_hw()
       #endif
     #endif
       
-  #elif defined windows32
+  #elif defined windows32 || defined MINGW
+    /* MINGW too: it is not `windows32` (that macro is deliberately blocked for
+     * mingw), so the Windows build fell through to the "unknown" branch below and
+     * reported itself as hw_name "?" / platform "?". */
     hw_site= "PC";
 	hw_name= "Windows - PC"; platform= "x86"; // don't change hw_name, used at ".mgr_loop"
-	  
+
   #elif defined linux
     hw_site= "PC";
 	hw_name= "Linux - PC";   platform= "x86";
@@ -1595,8 +1598,8 @@ static void titles( void )
          upho_printf("- Mac Serial Interface Version       (c) 2000 by B. Forster\n");
        #endif
        
-     #elif defined windows32
-       upho_printf("- Windows Console Version\n");
+     #elif defined windows32 || defined MINGW
+       upho_printf("- Windows Console Version\n"); /* MINGW too -- it is not `windows32` */
      #elif defined linux
        upho_printf("- Linux XTerm Version\n");
      #else

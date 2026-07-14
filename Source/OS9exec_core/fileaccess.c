@@ -2792,7 +2792,7 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, ulong *attr )
 {
     os9err err= 0;
 
-    #if defined MACOS9 || defined linux
+    #if defined MACOS9 || defined linux || defined MINGW
       OSErr  oserr= 0;
     #endif
       
@@ -2933,8 +2933,15 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, ulong *attr )
       sprintf( cmd, "rmdir %s", pp );
       err= call_hostcmd( cmd, pid, 0,NULL ); if (err) return err;
 
+    #elif defined MINGW
+      /* mingw matched NONE of the branches above (it is not windows32, not
+       * MACOSX, not linux), so the directory was never removed -- yet the code
+       * below still reported success and flipped the type to fFile. Deleting a
+       * directory silently did nothing on Windows. Use rmdir(): the Microsoft
+       * CRT's remove() deletes files only, never directories. */
+      oserr= rmdir( pp ); if (oserr) err= host2os9err( oserr,E_DNE );
+
     #elif defined linux
-  //#elif defined UNIX
       oserr= remove( pp ); if (oserr) err= host2os9err( oserr,E_DNE );
     #endif
       
