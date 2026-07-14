@@ -597,7 +597,8 @@ os9err pSBlink( _pid_, _spP_, uint32_t *d2 )
 {
      byte*   bb= (byte  *)FROM68K(*d2);
      ushort* ww= (ushort*)FROM68K(*d2);
-        	
+
+     if (bb==NULL) return os9error(E_BPADDR); /* d2=0 would deref NULL; bad address */
      l2.col1  =           *(bb+0); /* assign values as done in the "led_drv" */
      l2.ratio1= os9_word( *(ww+1) );
      l2.col2  =           *(bb+4);
@@ -610,7 +611,8 @@ os9err pGBlink( _pid_, _spP_, uint32_t *d2 )
 {
      byte*   bb= (byte  *)FROM68K(*d2);
      ushort* ww= (ushort*)FROM68K(*d2);
-        	
+
+     if (bb==NULL) return os9error(E_BPADDR); /* d2=0 would deref NULL; bad address */
      *(bb+0)=          l2.col1; /* assign values as done in the "led_drv" */
      *(ww+1)= os9_word(l2.ratio1);
      *(bb+4)=          l2.col2;

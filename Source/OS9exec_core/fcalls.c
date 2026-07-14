@@ -472,8 +472,12 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
     ushort*      itab= (ushort*)FROM68K(rp->a[1]);
     ushort       vect;
     process_typ* cp= &procs[cpid];
-   
-   
+
+    /* a1 is the REQUIRED init-table pointer; a guest passing 0 would deref NULL
+       and crash the host.  Return E_BPADDR instead.  (a0=0 is legal here -- it
+       means "use the current stack" -- so only a1 is guarded.) */
+    if (itab==NULL) return os9error(E_BPADDR);
+
     while (*itab!=0xFFFF) {
              vect = *itab >> 2; /* get vector number */
         if ((vect>=FIRSTEXCEPTION) && (vect<FIRSTEXCEPTION+NUMEXCEPTIONS)) {
@@ -573,8 +577,15 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
     uint32_t     evId;
 
     
+    /* Ev_Link/Creat/Delet dereference the event-name pointer (a0) -- via evLink/
+       evCreat/evDelet and strlen(p) -- so a guest passing 0 would deref NULL and
+       crash the host.  The evId-based ops (UnLnk/Wait/Signl) never touch it, so
+       guard only the name-using cases; return E_BPADDR for a null name. */
+    if (p==NULL && (evCode==Ev_Link || evCode==Ev_Creat || evCode==Ev_Delet))
+        return os9error(E_BPADDR);
+
     switch (evCode) {
-        case Ev_Link:        err= evLink( p, &evId ); 
+        case Ev_Link:        err= evLink( p, &evId );
                         if (!err) rp->d[0]=   evId;
                         break;
                         
@@ -1002,7 +1013,9 @@ os9err OS9_F_GBlkMp( regs_type *rp, _pid_ )
     rp->d[2]= totalMem;
     rp->d[3]= memsz;
 
-    b= (uint32_t*)FROM68K(rp->a[0]); *b= 0; /* no segments available */
+    b= (uint32_t*)FROM68K(rp->a[0]);
+    if (b==NULL) return os9error(E_BPADDR); /* a0 = required result buffer; 0 = bad address, not a NULL host write */
+    *b= 0; /* no segments available */
     return 0;
 } /* OS9_F_GBlkMp */
 
