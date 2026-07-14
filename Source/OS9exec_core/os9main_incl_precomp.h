@@ -156,7 +156,14 @@
 /* WINTEL can't be separated :-) */
 #ifdef __INTEL__
   // except for the "bright future"
-  #if !defined macintosh && !defined MINGW
+  /* `!defined linux` is required for CORRECTNESS, not just style: Linux also
+   * defines __INTEL__ (just below, and __INTEL__ means "little-endian host"),
+   * and defines neither macintosh nor MINGW -- so without excluding it here,
+   * Linux would derive `windows32` and get routed through the classic Win32
+   * path (WINFILES/backslash PATHDELIM/etc). It works today ONLY because Linux's
+   * __INTEL__ is defined textually AFTER this block; the explicit exclusion makes
+   * that no longer depend on ordering. */
+  #if !defined macintosh && !defined MINGW && !defined linux
     #define windows32
   #endif
 #endif
