@@ -2292,7 +2292,9 @@ Boolean RBF_ImgSize( long size )
       char*      pp;
       Str255     nMac;
       char       sv[OS9PATHLEN];
-        
+
+      *isFolder= false; /* every exit must leave this defined -- see win_unix variant */
+
       strcpy( sv, os9path );
       pp=     sv; CutRaw( &pp );
       err= parsepath( 0,  &pp, nMac, false ); if (err) return E_PNNF;
@@ -2531,6 +2533,13 @@ Boolean RBF_ImgSize( long size )
       FILE*  stream;
       char   bb[STD_SECTSIZE]; /* one sector */
 
+      /* Callers branch on *isFolder without first checking the returned error
+         (OS9_Device), so every exit from here must leave it defined -- including
+         the two early E_PNNF returns below, which used to leave the caller's
+         local holding stack garbage.  A path that does not resolve is not a
+         folder, so false is the right answer for them. */
+      *isFolder= false;
+
       strcpy    ( sv, os9path );
       pp= (char*)&sv; CutRaw( &pp );
       if (*pp==NUL || *pp!=PSEP) return E_PNNF; /* converted to an OS-9 path !! */
@@ -2639,11 +2648,11 @@ static Boolean OS9_Device( char* os9path, ushort mode, ptype_typ *typeP )
     byte   pdtyp;
     
     #ifdef MACOS9
-      Boolean isFolder;
+      Boolean isFolder= false;
       FSSpec  fs,afs;
 
     #elif defined win_unix
-      Boolean isFolder;
+      Boolean isFolder= false;
       char    rbfname[OS9PATHLEN];
     #endif
     
