@@ -660,7 +660,7 @@ os9err send_signal( ushort spid, ushort signal )
     short  sv;
   #endif
 	
-  process_typ* cp  = &procs[currentpid]; /* ptr to my procs dsc */
+  process_typ* cp  = &procs[proc_slot(currentpid)]; /* ptr to my procs dsc */
   process_typ* sigp;                     /* ptr to procs dsc to which the signal will be sent */
   sig_typ*     s   = &sig_queue;
   save_type*   svd;

@@ -281,8 +281,11 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
   /* put char to console and perform CR/LF expansion etc. */
   void ConsPutc( char c )
   {   
-      /* save this info in terminal interface system */
-      gLastwritten_pid= currentpid;
+      /* save this info in terminal interface system.
+         0 = "nobody": emulator banner output is written while currentpid is the
+         MAXPROCESSES "no process" sentinel, and that must not become a Ctrl-C
+         signal target (KeyToBuffer) nor a procs[] index (lw_pid). */
+      gLastwritten_pid= proc_slot( currentpid );
     
       if (gConsoleID>=TTY_Base) {
           #ifdef PIP_SUPPORT

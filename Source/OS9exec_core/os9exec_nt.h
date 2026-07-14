@@ -1272,6 +1272,15 @@ extern  ttydev_typ  ttydev[MAXTTYDEV];
 
 /* the processes */
 extern  process_typ procs[MAXPROCESSES];
+
+/* currentpid is MAXPROCESSES while no process is running (startup, shutdown,
+ * between processes), so it is NOT a valid procs[] index -- the table's last
+ * element is MAXPROCESSES-1.  Emulator-generated output still travels the
+ * ordinary path layer during those windows, and procs[0] is the system
+ * pseudo-process that carries it ("title output thru process 0",
+ * init_syspaths()).  Map the sentinel onto that slot instead of indexing off
+ * the end of the table.  get_syspathd() already guards the same way. */
+#define proc_slot(pid) ((pid)<MAXPROCESSES ? (pid) : 0)
 extern  ushort      dbg_parent_pid[MAXPROCESSES];  /* 0 = normal; else PID of debug parent */
 extern  os9addr_t   dbg_regsave_addr[MAXPROCESSES]; /* 68k arena address of debug reg frame */
 extern  byte        dbg_step_pending[MAXPROCESSES]; /* non-zero while parent awaits DExec result */

@@ -2281,7 +2281,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
   #endif
   {
   //int          sv= sig;
-    process_typ* cp = &procs[currentpid]; // pointer to procs   descriptor
+    process_typ* cp = &procs[proc_slot(currentpid)]; // pointer to procs   descriptor
     regs_type*   crp= &cp->os9regs;       // pointer to process' registers
 
     cp->exiterr= E_BUSERR;

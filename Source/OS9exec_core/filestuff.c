@@ -1483,7 +1483,7 @@ os9err usrpath_open( ushort pid,ushort *up, ptype_typ type, const char* pathname
 os9err syspath_write( ushort pid,ushort spnum, uint32_t *len, void* buffer, Boolean wrln )
 {
     os9err         err;
-    procid*        pd= &procs[pid].pd;
+    procid*        pd= &procs[proc_slot(pid)].pd;
     fmgr_typ*      f;
     pathopfunc_typ wproc;
     syspath_typ*   spP= get_syspathd( pid,spnum );
@@ -1506,7 +1506,7 @@ os9err syspath_write( ushort pid,ushort spnum, uint32_t *len, void* buffer, Bool
     }
     
     #ifdef TERMINAL_CONSOLE
-      gLastwritten_pid= pid; /* save this info in terminal interface system */
+      gLastwritten_pid= proc_slot( pid ); /* save this info in terminal interface system */
     #endif
    
                      f= fmgr_op[spP->type];
@@ -1527,7 +1527,7 @@ os9err syspath_write( ushort pid,ushort spnum, uint32_t *len, void* buffer, Bool
 os9err usrpath_write(ushort pid,ushort up, uint32_t *len, void* buffer, Boolean wrln)
 {
     if (up>=MAXUSRPATHS) return os9error(E_BPNUM);
-    return syspath_write(pid,procs[pid].usrpaths[up],len,buffer,wrln);
+    return syspath_write(pid,procs[proc_slot(pid)].usrpaths[up],len,buffer,wrln);
 } /* usrpath_write */
 
 /* print to user path */
