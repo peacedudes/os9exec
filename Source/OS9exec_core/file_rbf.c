@@ -1875,6 +1875,10 @@ os9err int_unmount( ushort pid, int argc, char** argv )
         }
     }   
 
+    if (nargc==0) { unmount_usage( argv[0], pid ); return 1; } /* else nargv[0] is
+                     an uninitialised pointer -- `unmount` with no device name would
+                     dereference it in AbsPath below */
+
     name= nargv[0]; if (AbsPath(name)) name++;
     
     do {
@@ -3389,7 +3393,7 @@ os9err pRWTrk( ushort pid, syspath_typ* spP, uint32_t* trackNr )
         dev->tmp_sct[ii]= 0xE5; /* fill with formatting pattern */
     
     err= pRdsize( pid,spP, &scts, &dtype );
-    
+
     for (ii=0; ii<scts; ii++) { sctNr= *trackNr*DEFAULT_SCT + ii;
       err=    WriteSector( dev, sctNr,1, dev->tmp_sct ); if (err) return err;
     }
