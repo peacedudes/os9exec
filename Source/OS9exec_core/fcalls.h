@@ -84,6 +84,12 @@ os9err OS9_F_SUser  (regs_type *rp, ushort cpid);
 os9err OS9_F_UnLoad (regs_type *rp, ushort cpid);
 os9err OS9_F_RTE    (regs_type *rp, ushort cpid);
 os9err OS9_F_GPrDBT (regs_type *rp, ushort cpid);
+
+/* Build one process descriptor image; refresh the arena-resident descriptor
+ * block table (and the images it points at). Shared by F$GPrDsc, F$GPrDBT and
+ * F$SetSys D_PrcDBT so they cannot drift apart. */
+void   BuildPrcDsc  (ushort id, ushort cpid, ulong32 usp, procid* pd);
+void   Update_PrcDBT(regs_type *rp, ushort cpid);
 os9err OS9_F_Julian (regs_type *rp, ushort cpid);
 os9err OS9_F_TLink  (regs_type *rp, ushort cpid);
 os9err OS9_F_DatMod (regs_type *rp, ushort cpid);

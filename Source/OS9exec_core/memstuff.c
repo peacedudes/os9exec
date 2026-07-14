@@ -208,6 +208,28 @@ void init_all_mem(void)
     /* allocate a zeroed I/O device table in the arena so D_DevTbl returns a valid 68k address */
     if (devtbl_arena==NULL)
         devtbl_arena= (byte*)get_mem( 0x0900 );
+
+    /* The process-descriptor block table, the descriptor images it points at, the
+     * path table, and the per-process signal scratch areas -- all in the arena,
+     * for the same reason mdirField and devtbl_arena are: the guest is handed
+     * their 68k ADDRESSES (F$SetSys D_PrcDBT/D_PthDBT, F$GPrDBT, P$SigDat), and
+     * an address is only usable if it names memory the 68k side can reach. These
+     * used to be plain host globals, so the "pointers" the guest got were
+     * truncated host addresses -- meaningless, and (landing inside the arena by
+     * chance) they read unrelated emulator memory instead of faulting.
+     *
+     * Allocated ONCE, here, and reused for the life of the run: the contents are
+     * refreshed in place by Update_PrcDBT() on each call, never reallocated, so
+     * there is nothing to leak. Fixed cost: 129 * 2048 = 258KB of descriptors
+     * plus ~5KB of tables, out of a 32MB arena. */
+    if (prDBT==NULL)
+        prDBT       = (uint32_t*)get_mem( MAXPROCESSES * sizeof(uint32_t) );
+    if (prcDsc==NULL)
+        prcDsc      = (procid*)  get_mem( MAXPROCESSES * sizeof(procid)   );
+    if (syspth==NULL)
+        syspth      = (uint32_t*)get_mem( MAXSYSPATHS  * sizeof(uint32_t) );
+    if (sigdat_arena==NULL)
+        sigdat_arena= (byte*)    get_mem( MAXPROCESSES * SIG_SCRATCH      );
 } /* init_all_mem */
 
 

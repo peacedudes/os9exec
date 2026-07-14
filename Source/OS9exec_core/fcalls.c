@@ -792,51 +792,118 @@ os9err OS9_F_RTE( _rp_, ushort cpid )
     return err;
 } /* OS9_F_RTE */
 
+/* Build the OS-9 process descriptor image for process <id> into <pd>.
+ * <cpid> is the caller (only used to mark the running process' queue id), <usp>
+ * the user stack pointer to report. Shared by F$GPrDsc (which copies the image
+ * into the caller's buffer) and Update_PrcDBT (which refreshes the arena-
+ * resident images the process descriptor block table points at), so the two can
+ * never drift apart. */
+void BuildPrcDsc( ushort id, ushort cpid, ulong32 usp, procid* pd )
+{
+  process_typ*     cp= &procs[ id ];
+  pmem_typ*        cm= &pmem [ id ];
+  traphandler_typ* tp;
+  errortrap_typ*   ep;
+  int              k;
+  ulong            memsz;
+
+  memcpy( pd,&cp->pd, sizeof(procid) );
+
+  pd->_usp= os9_long( usp );
+
+  // <_state> and <queueid> will be assigned directly
+  if (id==cpid) pd->_queueid = '*';
+
+  pd->_scall =            os9_byte( cp->lastsyscall );
+  pd->_pmodul= os9_long( TO68K(os9mod(cp->mid)) );
+
+  // get the list of the currently connected trap handlers (bfo)
+  for (k=0; k<NUMTRAPHANDLERS; k++) {
+    tp = &cp->TrapHandlers[ k ];
+    pd->_traps [ k ]= os9_long( TO68K(tp->trapmodule) );
+    pd->_trpmem[ k ]= os9_long( tp->trapmem );
+    pd->_trpsiz[ k ]= 0;
+  } // for
+
+  // get the list of the currently installed error trap handlers (LuZ)
+  for (k=0; k<NUMEXCEPTIONS; k++) {
+    ep= &cp->ErrorTraps[ k ];
+
+    pd->except[ k ]= os9_long( ep->handleraddr );
+    pd->_exstk[ k ]= os9_long( ep->handlerstack );
+  } // for
+
+  // get the list of the currently opened paths
+  for (k=0; k<MAXUSRPATHS; k++) {
+        pd->_path[ k ] = os9_word( cp->usrpaths[ k ] );
+  } // for
+
+  // ... and get the total size from the first segment
+  memsz= 0;
+
+  for (k=0; k<MAXMEMBLOCKS; k++) {
+    if (cm->m[ k ].base!=NULL) {
+      pd->_memimg[ 0 ]= os9_long( TO68K(cm->m[ k ].base) );
+      memsz+= cm->m[ k ].size;
+    } // if
+  } // for
+  pd->_blksiz[ 0 ]= os9_long( memsz );
+} /* BuildPrcDsc */
+
+
+/* Refresh the process descriptor block table and the descriptor images it points
+ * at -- both arena-resident (see init_all_mem), which is the whole point: the
+ * guest gets 68k addresses it can actually dereference.
+ *
+ * The table previously held raw HOST addresses of the emulator's own procs[]
+ * structs ("not the right ptr, but ..." said the old comment). Those structs
+ * live outside the 68k arena, so no address of them is meaningful to the guest
+ * at ANY integer width -- and truncated to 32 bits they happened to land back
+ * inside the arena, so a guest walking the table silently read unrelated
+ * emulator memory instead of faulting. Now each live process gets its descriptor
+ * image rebuilt in place in the arena, and the table entry is that image's real
+ * 68k address; dead slots are 0, exactly as OS-9 expects.
+ *
+ * Rebuilt in place on every call -- the images and the table are allocated once
+ * at startup and reused forever, so repeated calls cannot leak. Entry 0 is left
+ * alone: it carries the table header (process count + descriptor size) that
+ * init_processes() wrote. */
+void Update_PrcDBT( regs_type* rp, ushort cpid )
+{
+    int k;
+
+    for (k=1; k<MAXPROCESSES; k++) {
+        if (procs[k].state==pUnused) { prDBT[k]= 0; continue; }
+
+        /* the running process' live SP is in <rp>; the others' is the one saved
+         * in their register frame when they were last switched out */
+        BuildPrcDsc( (ushort)k, cpid,
+                     (k==cpid) ? rp->a[7] : procs[k].os9regs.a[7],
+                     &prcDsc[k] );
+
+        prDBT[k]= os9_long( TO68K( &prcDsc[k] ) );
+    } /* for */
+} /* Update_PrcDBT */
+
+
 os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
 /* F$GPrDBT:
  * Input:   d1.l = maximum number of bytes to copy
- *          (a0) = Buffer pointer 
- *       
+ *          (a0) = Buffer pointer
+ *
  * Output:  d1.l = Actual number of bytes copied
- * Error:   d1.w = Appropriate error code        
- *             
+ * Error:   d1.w = Appropriate error code
+ *
  */
 {
-    int k;
-    uint32_t *ptr,*lim;
-    short *s,  *sl;
+    uint32_t cnt= MAXPROCESSES * sizeof(uint32_t); /* the whole table image */
 
-    /* Walk the buffer with byte-pointer arithmetic. <ptr> is a HOST pointer
-     * (FROM68K = emul_base + 68k offset), and routing it through a `long` to
-     * add the byte count truncated it to 32 bits on Windows (LLP64), where the
-     * arena sits above 4GB -- so <lim> landed in the wrong place and the copy
-     * loop below silently wrote nothing. mingw-w64 flags it: "cast from pointer
-     * to integer of different size". No integer cast is needed at all. */
-    ptr= (uint32_t *)  FROM68K(rp->a[0]);
-    lim= (uint32_t *)( (byte*)ptr + rp->d[1] );
+    Update_PrcDBT( rp, currentpid );
 
-    s  = (short *)ptr;
-    sl = (short *)lim;
-    
-    if ( s<sl ) { *s= (short)os9_word(MAXPROCESSES-1); s++; }; /* no process 0 */
-    if ( s<sl ) { *s= os9_word(2048);           s++; }; /* the size of the real descriptor */
-    
-    ptr= (uint32_t *)s;                                 /* start with process nr 1 */
-    for (k=1; ( k<MAXPROCESSES ) && ( ptr<lim ); k++ )
-    {
-      if (procs[k].state==pUnused)
-           { *ptr= 0; }
-      else { *ptr= os9_long((ulong) &procs[k]); } /* not the right ptr, but ... */
-      
-      ptr++;
-    }
-    
-    /* bytes written (host span) -- pointer difference, not a difference of
-     * truncated pointers. The old `(long)ptr - (long)FROM68K(...)` happened to
-     * yield the right answer even on Windows (both sides lost the same high
-     * bits, so the difference survived), but it was still a truncating cast of
-     * a host pointer; say what is meant instead. */
-    rp->d[1]= (ulong32)( (byte*)ptr - (byte*)FROM68K(rp->a[0]) );
+    if (cnt > rp->d[1]) cnt= rp->d[1]; /* clip to the caller's buffer */
+    memcpy( (byte*)FROM68K(rp->a[0]), (byte*)prDBT, cnt );
+
+    rp->d[1]= cnt; /* bytes copied */
     return 0;
 } /* OS9_F_GPrDBT */
 
@@ -853,59 +920,13 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
  */
 {
   procid           pd; // this is a local construction buffer for the Process descriptor
-  int              k;
-  ulong            memsz;
   ushort           id= (ushort)loword( rp->d[ 0 ] );
   process_typ*     cp= &procs[ id ];
-  pmem_typ*        cm= &pmem [ id ];
-  traphandler_typ* tp;
-  errortrap_typ*   ep;
 
   if (cp->state==pUnused) return E_IPRCID; // this is not a valid process
 
-  memcpy( &pd,&cp->pd, sizeof(procid) );
+  BuildPrcDsc( id, cpid, rp->a[ 7 ], &pd );
 
-  pd._usp= os9_long( rp->a[ 7 ] );
-
-  // <_state> and <queueid> will be assigned directly
-  if (id==cpid) pd._queueid = '*';
-    
-  pd._scall =            os9_byte( cp->lastsyscall );
-  pd._pmodul= os9_long( TO68K(os9mod(cp->mid)) );
-//upe_printf( "pmodul1=%08X\n", os9_long( (ulong)pd._pmodul ) );
-
-  // get the list of the currently connected trap handlers (bfo)
-  for (k=0; k<NUMTRAPHANDLERS; k++) {
-    tp = &cp->TrapHandlers[ k ];
-    pd._traps [ k ]= os9_long( TO68K(tp->trapmodule) );
-    pd._trpmem[ k ]= os9_long( tp->trapmem );
-    pd._trpsiz[ k ]= 0;
-  } // for
-
-  // get the list of the currently installed error trap handlers (LuZ)
-  for (k=0; k<NUMEXCEPTIONS; k++) {
-    ep= &cp->ErrorTraps[ k ];
-        
-    pd.except[ k ]= os9_long( ep->handleraddr );
-    pd._exstk[ k ]= os9_long( ep->handlerstack );
-  } // for
-
-  // get the list of the currently opened paths
-  for (k=0; k<MAXUSRPATHS; k++) {
-        pd._path[ k ] = os9_word( cp->usrpaths[ k ] );
-  } // for
-     
-  // ... and get the total size from the first segment
-  memsz= 0;
-    
-  for (k=0; k<MAXMEMBLOCKS; k++) {
-    if (cm->m[ k ].base!=NULL) {
-      pd._memimg[ 0 ]= os9_long( TO68K(cm->m[ k ].base) );
-      memsz+= cm->m[ k ].size;
-    } // if
-  } // for
-  pd._blksiz[ 0 ]= os9_long( memsz );
-          
   memcpy( (byte*)FROM68K(rp->a[ 0 ]), &pd, loword( rp->d[ 1 ] ) );
   /* P$DbgReg ($2A8) = address of register frame buffer in debugger's static storage.
    * P$DbgPar ($2AC) = non-zero when process is being debugged (prevents debug from
@@ -1002,9 +1023,7 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
     process_typ* cp  = &procs[cpid];
 
     ulong     v;
-    uint32_t* ptr;
-    int       k;
-        
+
     switch (offs) {
       case D_ID      : v=                   MODSYNC; break;
       case D_Init    : v=       (ulong) init_module; break;
@@ -1026,18 +1045,14 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
          
       case D_ModDir  : Update_MDir(); v=  b;                                       break;
       case D_ModDir_L: Update_MDir(); v=  b + MAXMODULES * sizeof(mdir_entry);     break;
-      case D_PrcDBT  : v= (ulong)prDBT;
-      
-                       ptr= &prDBT[1];                           /* start with process nr 1 */
-                       for (k=1; k<MAXPROCESSES; k++ ) {
-                           if (procs[k].state==pUnused)
-                                *ptr= 0;
-                           else *ptr= os9_long( (ulong) &procs[k] ); /* is now the right ptr, but ... */
-      
-                           ptr++;
-                       }                             break; /* prc table image  */
-                       
-      case D_PthDBT  : v=  (ulong)           syspth; break; /* pth table image  */
+      /* Both tables are arena-resident, so TO68K() yields an address the guest can
+       * actually follow -- same idiom as D_ModDir/D_DevTbl above. They used to
+       * return raw host addresses of host globals, which the 68k side could not
+       * meaningfully dereference. */
+      case D_PrcDBT  : Update_PrcDBT( rp, cpid );           /* refresh in place */
+                       v= TO68K(prDBT);  break;             /* prc table image  */
+
+      case D_PthDBT  : v= TO68K(syspth); break;             /* pth table image  */
       case D_Ticks   : v=           GetSystemTick(); break; /* system heartbeat */
       case D_TotRAM  : v=                 max_mem(); break;
       case D_MinBlk  : v=                        16; break; /* as on real OS-9 systems */

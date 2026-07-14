@@ -304,7 +304,12 @@ void init_processes()
         pd->_task  = 0;
      // pd->_resvd1= os9_word(0xBD00); /* invisible at DevPak von 68K OS-9 V1.2 */
         pd->_deadlk= 0;                /* as in real OS-9 */
-        pd->_sigdat= os9_long( TO68K(&procs[k].sigdat) );
+        /* Give this process its slice of the arena-resident signal scratch, then
+         * publish its 68k address. Previously this took TO68K() of a field inside
+         * the HOST procs[] global -- memory outside the arena entirely, so the
+         * address handed to the guest's signal handler was garbage. */
+        procs[k].sigdat= sigdat_arena + (size_t)k * SIG_SCRATCH;
+        pd->_sigdat    = os9_long( TO68K(procs[k].sigdat) );
 
         /* clear all memory segments ... */
         for (j=0; j<32; j++) {

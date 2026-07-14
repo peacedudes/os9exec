@@ -427,7 +427,7 @@ mdir_entry *mdirField = NULL;
 
 /* the system paths */
 syspath_typ syspaths[MAXSYSPATHS];
-uint32_t    syspth  [MAXSYSPATHS]; /* big-endian 32-bit path table entries */
+uint32_t*   syspth = NULL; /* arena-resident, allocated in init_all_mem */
 
 /* the SCSI devices */
 scsi_typ    scsi[MAXSCSI];
@@ -437,7 +437,9 @@ ttydev_typ  ttydev[MAXTTYDEV];
 
 /* the processes */
 process_typ  procs[MAXPROCESSES];
-uint32_t     prDBT[MAXPROCESSES];              /* big-endian 32-bit process descriptor offsets */
+uint32_t*    prDBT       = NULL; /* all three arena-resident, allocated in init_all_mem */
+procid*      prcDsc      = NULL;
+byte*        sigdat_arena= NULL;
 ushort       dbg_parent_pid[MAXPROCESSES];     /* 0 = normal; else PID of debug parent */
 os9addr_t    dbg_regsave_addr[MAXPROCESSES];   /* 68k arena address of debug register frame */
 byte         dbg_step_pending[MAXPROCESSES];   /* non-zero while parent is waiting for DExec result */

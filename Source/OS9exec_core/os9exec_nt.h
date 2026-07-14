@@ -1176,7 +1176,13 @@ typedef struct {
                 os9addr_t memstart;         /* the process' static storage start addr (68k arena offset) */
                 os9addr_t memtop;           /* the process' static storage top pointer (68k arena offset) */
              // memblock_typ    os9memblocks[MAXMEMBLOCKS]; /* the process' allocated memory blocks */
-                byte sigdat[SIG_SCRATCH];
+                /* Points into the 68k arena (sigdat_arena), NOT into this host
+                 * struct: P$SigDat in the process descriptor is a 68k ADDRESS
+                 * handed to the guest's signal handler, so the bytes it names
+                 * have to be memory the guest can actually reach. Held here as
+                 * a plain pointer so SET_OS9L(cp->sigdat,...) writes straight
+                 * into the arena the guest reads. */
+                byte* sigdat;
                 
                 /* exceptions */
                 errortrap_typ     ErrorTraps[NUMEXCEPTIONS];    /* BusErr .. Privilege (Vector #2..#8) */
@@ -1249,7 +1255,7 @@ extern  mdir_entry *mdirField;
 
 /* the system paths */
 extern  syspath_typ syspaths [MAXSYSPATHS];
-extern  uint32_t    syspth   [MAXSYSPATHS]; /* big-endian 32-bit path table entries */
+extern  uint32_t*   syspth;  /* MAXSYSPATHS big-endian 32-bit path table entries, IN THE ARENA */
 
 
 /* the RBF and SCSI devices */
@@ -1268,7 +1274,13 @@ extern  os9addr_t   dbg_bkpt_list[MAXPROCESSES][16]; /* F$DExec breakpoint addre
 extern  ushort      dbg_bkpt_count[MAXPROCESSES];   /* valid entries in dbg_bkpt_list */
 extern  long        dbg_remaining[MAXPROCESSES];    /* instructions left to execute; -1 = continuous */
 extern  uint32_t    dbg_exec_count[MAXPROCESSES];   /* instructions executed so far this F$DExec call */
-extern  uint32_t    prDBT[MAXPROCESSES]; /* big-endian 32-bit process descriptor offsets */
+/* All three live IN THE 68k ARENA (see init_all_mem), because the guest is
+ * handed their addresses via F$SetSys D_PrcDBT/D_PthDBT and F$GPrDBT. A table
+ * of pointers is only meaningful if both the table AND what it points at are
+ * memory the 68k side can address -- see the comment on Update_PrcDBT. */
+extern  uint32_t*   prDBT;       /* MAXPROCESSES big-endian entries: 68k addr of each descriptor */
+extern  procid*     prcDsc;      /* MAXPROCESSES descriptor images the above point at */
+extern  byte*       sigdat_arena; /* MAXPROCESSES * SIG_SCRATCH; procs[k].sigdat points in here */
 
 /* the signal queue */
 extern  sig_typ     sig_queue;
