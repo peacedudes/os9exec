@@ -7,6 +7,11 @@
 ! READ #path,x ... ENDWHILE` always attempts one over-read on its final
 ! iteration and needs `ON ERROR GOTO` to catch it cleanly.
 !
+! ROOT-CAUSED in basic09-fileio-eof-seek-test.bas: this is NOT a bug in
+! os9exec's file-position tracking (SEEKing arbitrarily far past the end
+! never flips EOF() either) -- BASIC09's EOF() behaves like C's feof(),
+! a sticky flag only a real failed READ sets, not a live position check.
+!
 ! LIVE RESULT (68k): both checks PASS, ERR=211 confirmed on the over-read
 PROCEDURE t_fileio2
 DIM path: BYTE
