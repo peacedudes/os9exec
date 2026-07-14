@@ -471,7 +471,7 @@ os9err OS9_I_Seek( regs_type *rp, ushort cpid )
     uint32_t pos =        rp->d[1];
 
     err= usrpath_seek( cpid,path, pos );
-    debugprintf(dbgFiles,dbgDetail,("# I$Seek: path=%d: New position=$%lX, err=%d\n",
+    debugprintf(dbgFiles,dbgDetail,("# I$Seek: path=%d: New position=$%X, err=%d\n",
                                        path,pos, err ));
     return err;
 } /* OS9_I_Seek */

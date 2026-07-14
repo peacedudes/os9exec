@@ -1285,12 +1285,12 @@ os9err syspath_close( ushort pid, ushort sp )
         sp==procs[ 0 ].usrpaths[usrStderr]) {
     /* don't close this path because this is used for main system's output */
     	debugprintf(dbgFiles,dbgNorm,("# syspath_close: don't close syspath=%d\n",
-                                         sp,spP->linkcount)); return 1; /* let the path open, this is not an error */
+                                         sp)); return 1; /* let the path open, this is not an error */
     }
     
     /* --- must close path */
     debugprintf(dbgFiles,dbgNorm,("# syspath_close: close of syspath=%d really closes path\n",
-                                     sp,spP->linkcount));
+                                     sp));
 
         err= ((pfunc_cl_t)fmgr_op[spP->type]->close)( pid,spP );
     if (err==1) return 0;     /* err=1: let the path open, this is not an error */
@@ -1509,7 +1509,7 @@ os9err syspath_write( ushort pid,ushort spnum, uint32_t *len, void* buffer, Bool
     if (!err) os9_long_inc( &pd->_wbytes, *len ); /* for statistics*/
     if (!err && debugcheck(dbgSysCall,dbgDetail)) showbuff( spP, buffer,*len );
         
-    debugprintf(dbgFiles,dbgDeep,("# syspath_write: pid=%d, type=%d, writeln=%d, written=%ld, err=%d\n",
+    debugprintf(dbgFiles,dbgDeep,("# syspath_write: pid=%d, type=%d, writeln=%d, written=%u, err=%d\n",
                                      pid,spP->type,wrln,*len,err));
     return err;
 } /* syspath_write */

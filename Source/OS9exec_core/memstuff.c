@@ -172,7 +172,7 @@ void init_all_mem(void)
     if (emul_base==NULL) { /* allocate the 68k RAM arena once */
         emul_base= (unsigned char*)calloc( (size_t)emul_arena_size, 1 );
         if (emul_base==NULL) {
-            upe_printf( "Cannot allocate 68k memory arena (%lu bytes) !!!\n", emul_arena_size );
+            upe_printf( "Cannot allocate 68k memory arena (%u bytes) !!!\n", (uint32_t)emul_arena_size );
         }
         emul_next= emul_base + EMUL_RESERVED; /* keep the low page out of circulation */
         emul_end = emul_base + emul_arena_size;
@@ -555,14 +555,14 @@ void release_mem( void* membase )
       } // if
       
       if (release_ok( membase,memsz )) {
-        debugprintf(dbgMemory,dbgNorm,("# release_mem: release block     at %p (size=%5u) %8d\n",
-                                          membase,memsz, totalMem ));
+        debugprintf(dbgMemory,dbgNorm,("# release_mem: release block     at %p (size=%5u) %8u\n",
+                                          membase,(uint32_t)memsz, (uint32_t)totalMem ));
         return;
       } /* if */
     #endif
 
-    debugprintf(dbgMemory,dbgNorm,("# release_mem: release block     at %p (size=%5u) %8d\n",
-                                      membase,memsz, totalMem ));
+    debugprintf(dbgMemory,dbgNorm,("# release_mem: release block     at %p (size=%5u) %8u\n",
+                                      membase,(uint32_t)memsz, (uint32_t)totalMem ));
       
     #ifdef MACMEM
       DisposePtr( membase );
@@ -590,8 +590,8 @@ static void release_memblock( ushort pid, ushort memblocknum )
     
   if (m->base==NULL) return;
     
-  debugprintf(dbgMemory,dbgNorm,("# release_memblock:    block #%-2d at %p (size=%5u) %8d pid=%d\n",
-                                    memblocknum, m->base, (uint32_t)m->size, totalMem, pid ));
+  debugprintf(dbgMemory,dbgNorm,("# release_memblock:    block #%-2d at %p (size=%5u) %8u pid=%d\n",
+                                    memblocknum, m->base, (uint32_t)m->size, (uint32_t)totalMem, pid ));
     
   #ifndef MACMEM     
     UnlockMemRange( m->base, m->size );
@@ -704,8 +704,8 @@ void* get_mem( ulong memsz )
                 memtable[k].size= memsz;
                 LockMemRange( pp, memsz ); /* keep always paged in !! */ 
                
-                debugprintf(dbgMemory,dbgNorm,("# get_mem:    allocate block     at $%08X (size=%5u) %8d\n",
-                                                  (ulong)pp, memsz, totalMem ));
+                debugprintf(dbgMemory,dbgNorm,("# get_mem:    allocate block     at %p (size=%5u) %8u\n",
+                                                  pp, (uint32_t)memsz, (uint32_t)totalMem ));
                 return pp;
             } /* if */
         } /* for */
@@ -738,8 +738,8 @@ void* os9malloc( ushort pid, ulong memsz )
       //#endif
     } // if
    
-    debugprintf(dbgMemory,dbgNorm,("# os9malloc:  allocate block #%-2d at $%08X (size=%5u) %8d pid=%d\n",
-                                      k, (ulong)pp, memsz, totalMem, pid ));
+    debugprintf(dbgMemory,dbgNorm,("# os9malloc:  allocate block #%-2d at %p (size=%5u) %8u pid=%d\n",
+                                      k, pp, (uint32_t)memsz, (uint32_t)totalMem, pid ));
     return pp;
 } /* os9malloc */
 
@@ -752,8 +752,8 @@ os9err os9free( ushort pid, void* membase, ulong memsz )
   memblock_typ* m;
   int           k;
 
-  debugprintf(dbgMemory,dbgDetail, ( "# os9free:      free request   at %p (size=%lu) pid=%d\n",
-                                        membase, memsz, pid ) );
+  debugprintf(dbgMemory,dbgDetail, ( "# os9free:      free request   at %p (size=%u) pid=%d\n",
+                                        membase, (uint32_t)memsz, pid ) );
   if (membase!=NULL) {
     for (k=0; k<MAXMEMBLOCKS; k++) {
             m= &cm->m[ k ];
@@ -772,8 +772,8 @@ os9err os9free( ushort pid, void* membase, ulong memsz )
             return 0; /* freed ok */
           } // if
           
-          debugprintf(dbgMemory,dbgNorm, ( "# os9free:     release block #%-2d at %p, but wrong size=%lu (specified=%4u) %8d\n",
-                                              k, membase, m->size, (uint32_t)memsz, totalMem ) );
+          debugprintf(dbgMemory,dbgNorm, ( "# os9free:     release block #%-2d at %p, but wrong size=%u (specified=%4u) %8u\n",
+                                              k, membase, (uint32_t)m->size, (uint32_t)memsz, (uint32_t)totalMem ) );
           break;
         } // if
             
@@ -783,8 +783,8 @@ os9err os9free( ushort pid, void* membase, ulong memsz )
   } // if
   
 //upe_printf( "bad block %08X size=%d\n", membase, memsz );
-  debugprintf(dbgMemory+dbgAnomaly,dbgNorm, ("# os9free: Block at %p (size=%lu) not found in pid=%d's memory list\n",
-                                                membase, memsz, pid ) );
+  debugprintf(dbgMemory+dbgAnomaly,dbgNorm, ("# os9free: Block at %p (size=%u) not found in pid=%d's memory list\n",
+                                                membase, (uint32_t)memsz, pid ) );
   return os9error(E_BPADDR); /* no memory was allocated here */
 } /* os9free */
 

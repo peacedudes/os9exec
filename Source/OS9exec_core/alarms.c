@@ -83,7 +83,7 @@ void A_Insert( alarm_typ* aa )
 	alarm_typ* q;
 	int        k;
 
-    debugprintf(dbgProcess,dbgNorm,("# A_Insert: aa=%08X\n", (ulong)aa ));
+    debugprintf(dbgProcess,dbgNorm,("# A_Insert: aa=%p\n", (void*)aa ));
 	for (k=MAXALARMS-1; k>0; k--) {
 		    q= alarm_queue[k-1];
 		if (q!=NULL) {
@@ -108,7 +108,7 @@ void A_Remove( alarm_typ* aa )
 	
 	int  k;   /* be careful: index k+1 !! */
 
-    debugprintf(dbgProcess,dbgNorm,("# A_Remove: aa=%08X\n", (ulong)aa ));
+    debugprintf(dbgProcess,dbgNorm,("# A_Remove: aa=%p\n", (void*)aa ));
 	for (k=0; k<MAXALARMS-1; k++) {
 		    q=   alarm_queue[k];
 		if (q!=NULL && q==aa) { q->pid= 0; fnd= true; }    

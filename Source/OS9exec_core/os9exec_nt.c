@@ -729,7 +729,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
       if (*envp[k]=='@') {
          /* -- OS-9 environment variables must start with a '@' */			
          h=strlen(envp[k]); /* env variable name */
-   		debugprintf(dbgStartup,dbgDeep,("# prepParams: counting envp[%d]='%s', len=%d, reserved=%d\n",k,envp[k],h,h+strlen(envp[k]+h+1)+1));
+   		debugprintf(dbgStartup,dbgDeep,("# prepParams: counting envp[%d]='%s', len=%d, reserved=%lu\n",k,envp[k],h,(unsigned long)(h+strlen(envp[k]+h+1)+1)));
          envsiz+=h+strlen(envp[k]+h+1)+1; /* env variable contents plus one for the '=' */
          os9envc++; /* count OS-9 environment variables */
       }
@@ -1707,7 +1707,7 @@ static Boolean TCALL_or_Exception( process_typ* cp, regs_type* crp, ushort cpid 
 			if (mp->_mexcpt!=0) {
 				/* there is an exception entry point, call it */
 				crp->pc=TO68K(mp)+os9_long(mp->_mexcpt); /* set new PC into exception handling routine */
-				debugprintf(dbgTrapHandler,dbgNorm,("# main loop: Calling exception entry point of pid=%s's main module\n",cpid));
+				debugprintf(dbgTrapHandler,dbgNorm,("# main loop: Calling exception entry point of pid=%d's main module\n",cpid));
 			}
 			else { /* no exception entry point: Abort process */
 				cp->exiterr= os9error(E_ITRAP); /* set exit code */

@@ -221,8 +221,8 @@ os9err getPipe( _pid_, syspath_typ* spP, uint32_t buffsize )
     p->broken    = false;    /* not yet broken */
     p->pipeDirCnt= 0;        /* pipe dir count */
     
-    debugprintf( dbgFiles,dbgDetail,("# getPipe: (name='%s') created with buffer[%u] @ $%lX\n",
-                 spP->name, buffsize, (ulong)buf));
+    debugprintf( dbgFiles,dbgDetail,("# getPipe: (name='%s') created with buffer[%u] @ %p\n",
+                 spP->name, buffsize, (void*)buf));
     return 0;
 } /* getPipe */
 
@@ -264,8 +264,8 @@ os9err releasePipe( ushort pid, syspath_typ* spP )
     }
 
     release_mem( p->buf );
-    debugprintf( dbgFiles,dbgDetail,("# releasePipe: (name='%s') @ $%lX\n",
-                 spP->name, p->buf ));
+    debugprintf( dbgFiles,dbgDetail,("# releasePipe: (name='%s') @ %p\n",
+                 spP->name, (void*)p->buf ));
 
     release_mem( p );
     spP->u.pipe.pchP= NULL; /* and make it invisible */
@@ -457,12 +457,12 @@ static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
     /* first, copy as much as possible into the buffer */
     remaining= *lenP - p->bwritten; /* remaining to be written */
     bytes= numfree < remaining ? numfree : remaining; /* what we can write now */
-    debugprintf(dbgFiles,dbgDetail,("# pWriteSysTaskExe (ln=%s): %ld bytes still requested by pid=%ld, %ld already written, %ld free in pipe\n",
+    debugprintf(dbgFiles,dbgDetail,("# pWriteSysTaskExe (ln=%s): %d bytes still requested by pid=%d, %d already written, %d free in pipe\n",
                                        wrln ? "true":"false", remaining, pid, p->bwritten, numfree));
         
     /* copy loop */
     buf= (byte*)buffer + p->bwritten; /* position the buffer pointer */
-    debugprintf(dbgFiles,dbgDeep,("# pWriteSysTaskExe: buffer start=$%lX, writing now from $%lX\n",buffer,(ulong) buf));
+    debugprintf(dbgFiles,dbgDeep,("# pWriteSysTaskExe: buffer start=%p, writing now from %p\n",(void*)buffer,(void*)buf));
 
     if (spP->type==fTTY) {
          ot   = (struct _sgs*)&spP->opt;
@@ -503,7 +503,7 @@ static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
     p->bwritten+= bytes-nn; /* we have written so many now */
     if (remaining<0) remaining= 0;
     
-    debugprintf(dbgFiles,dbgDetail,("# pWriteSysTaskExe: %ld bytes written, remaining now=%ld\n",nn,remaining));
+    debugprintf(dbgFiles,dbgDetail,("# pWriteSysTaskExe: %d bytes written, remaining now=%d\n",nn,remaining));
 
     if (bytes>nn &&                      spP->signal_to_send!=0) {
     //debugprintf(dbgSysCall,dbgNorm,("# SEND SIGNAL isInt=%d: pid=%d => pid=%d sig=%d\n", 
@@ -523,7 +523,7 @@ static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
         /* caller wants to write more... */
         if (spP->linkcount<2 && spP->name[0]==0) {
             /* ...but no one else will read it, so end things now (unnamed pipes only) */
-            debugprintf(dbgFiles,dbgDetail,("# pWriteSysTaskExe: aborting pipe write with %ld total bytes written and E_WRITE\n",p->bwritten));
+            debugprintf(dbgFiles,dbgDetail,("# pWriteSysTaskExe: aborting pipe write with %d total bytes written and E_WRITE\n",p->bwritten));
             Reactivate( pid, cp, "Reactivate pWriteSysTaskExe (disconnect)" );
             return os9error(E_WRITE);   /* pipe is broken */
         }
@@ -549,7 +549,7 @@ static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
         Reactivate( pid, cp, "Reactivate pWriteSysTaskExe" );
 
         *lenP= p->bwritten; /* number of bytes written to pipe in that I/O call */
-        debugprintf(dbgFiles,dbgDetail,("# pWriteSysTaskExe: pipe write successful, %ld total bytes written\n",p->bwritten));
+        debugprintf(dbgFiles,dbgDetail,("# pWriteSysTaskExe: pipe write successful, %d total bytes written\n",p->bwritten));
         /* go on */     
     }
     
@@ -601,7 +601,7 @@ static os9err pWriteSysTaskLn( ushort pid, syspath_typ* spP, regs_type* rp )
 /* write to pipe buffer */
 os9err pPwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
 {
-    debugprintf( dbgFiles,dbgDetail,("# pPwrite: requests %ld bytes\n",*n ));
+    debugprintf( dbgFiles,dbgDetail,("# pPwrite: requests %d bytes\n",*n ));
     spP->u.pipe.pchP->bwritten= 0; /* start of new write request */
     
     /* system task routine will do the rest */
@@ -612,7 +612,7 @@ os9err pPwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
 /* writeln to pipe buffer */
 os9err pPwriteln( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
 {
-    debugprintf( dbgFiles,dbgDetail,("# pPwriteln: requests %ld bytes\n",*n ));
+    debugprintf( dbgFiles,dbgDetail,("# pPwriteln: requests %d bytes\n",*n ));
     spP->u.pipe.pchP->bwritten= 0; /* start of new write request */
 
     /* system task routine will do the rest */
@@ -640,13 +640,13 @@ static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP,
     /* first, copy as much as wanted or ready */
     remaining= *lenP - p->bread; /* remaining to be read */
     bytes    = remaining>numready ? numready : remaining; /* what we can read now */
-    debugprintf(dbgFiles,dbgDetail,("# pReadSysTaskExe (ln=%s): %ld bytes still requested by pid=%d, %ld already delivered, %ld ready in pipe\n",
+    debugprintf(dbgFiles,dbgDetail,("# pReadSysTaskExe (ln=%s): %d bytes still requested by pid=%d, %d already delivered, %d ready in pipe\n",
                                        rdln ? "true":"false", remaining, pid, p->bread, numready));
     /* copy loop */
     nn = 0;
     buf= (byte*)buffer + p->bread; /* position the buffer pointer */
-    debugprintf( dbgFiles,dbgDeep,("# pReadSysTaskExe: buffer start=$%lX, reading now to $%lX\n",
-                                      buffer, (ulong)buf ));
+    debugprintf( dbgFiles,dbgDeep,("# pReadSysTaskExe: buffer start=%p, reading now to %p\n",
+                                      (void*)buffer, (void*)buf ));
 
     for (nn=0; nn<bytes; nn++) {
         *buf++=*(p->prp++);
@@ -668,7 +668,7 @@ static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP,
     
     p->bread  +=nn; /* we have read so many now */
     remaining -=nn; /* calc what we've left */
-    debugprintf(dbgFiles,dbgDetail,("# pReadSysTaskExe: %ld bytes read, remaining %ld (link=%d, consumers=%d)\n",
+    debugprintf(dbgFiles,dbgDetail,("# pReadSysTaskExe: %d bytes read, remaining %d (link=%d, consumers=%d)\n",
                 nn,remaining,spP->linkcount,p->consumers));
 
     if (!rdln && p->bread>0) remaining= 0; /* don't wait in normal read mode, when got at least 1 char */
@@ -679,7 +679,7 @@ static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP,
         /* caller wants more... */
         if (spP->linkcount<=p->consumers || p->consumers<=0) { /* eof condition must be checked !! */
             /* ...but no one else will deliver, so end things now */
-            debugprintf(dbgFiles,dbgDetail,("# pReadSysTaskExe: aborting pipe read with %ld total bytes read%s\n",
+            debugprintf(dbgFiles,dbgDetail,("# pReadSysTaskExe: aborting pipe read with %d total bytes read%s\n",
                                                p->bread, p->bread==0 ? " and E_EOF" : ""));
           //set_os9_state( pid, pActive ); /* re-activate, finish I$Read(Ln) now */
             if (!syW) Reactivate( pid, cp, "Reactivate pReadSysTaskExe (disconnect)" );
@@ -705,7 +705,7 @@ static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP,
         
         *lenP= p->bread; /* number of bytes read from pipe in that I/O call */
         p->consumers--;  /* We are not a waiting consumer any more */
-        debugprintf(dbgFiles,dbgDetail,("# pReadSysTaskExe: pipe read successful, %ld total bytes read\n",
+        debugprintf(dbgFiles,dbgDetail,("# pReadSysTaskExe: pipe read successful, %d total bytes read\n",
                     p->bread));
         /* go on */     
     }
@@ -784,7 +784,7 @@ os9err pPread( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
     
   if (p->broken) return E_EOF;
     
-  debugprintf( dbgFiles,dbgDetail,("# pPread: requests %ld bytes\n",*n ));
+  debugprintf( dbgFiles,dbgDetail,("# pPread: requests %d bytes\n",*n ));
   p->bread= 0;    /* start of new read request */
   p->consumers++; /* I'm now a consumer, too */
 
@@ -802,7 +802,7 @@ os9err pPreadln( ushort pid, syspath_typ *spP, uint32_t *n, char* buffer )
   pipechan_typ* p  = spP->u.pipe.pchP;
   if           (p->broken) return E_EOF;
     
-  debugprintf( dbgFiles,dbgDetail,("# pPreadln: requests %ld bytes\n",*n ));
+  debugprintf( dbgFiles,dbgDetail,("# pPreadln: requests %d bytes\n",*n ));
   p->bread=0;     /* start of new read request */
   p->consumers++; /* I'm now a consumer, too */
 

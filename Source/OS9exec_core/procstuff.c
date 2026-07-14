@@ -1051,10 +1051,10 @@ void do_arbitrate( ushort allowedIntUtil )
   sprocess= &procs[spid];
   atLeast1= (sprocess->state==pSleeping);
     
-  debugprintf(dbgTaskSwitch,dbgDetail,("# arbitrate: after correction: current pid=%d (state=%d), arbitrate=%d\n",
+  debugprintf(dbgTaskSwitch,dbgDetail,("# arbitrate: after correction: current pid=%d (state=%s), arbitrate=%d\n",
                                           cpid,PStateStr(cp),      arbitrate));
   do {
-    debugprintf(dbgTaskSwitch,dbgDeep,("# arbitrate: checking pid=%d (state=%d), arbitrate=%d\n",
+    debugprintf(dbgTaskSwitch,dbgDeep,("# arbitrate: checking pid=%d (state=%s), arbitrate=%d\n",
                                             spid,PStateStr(sprocess),arbitrate));
     if (arbitrate) {
       /* next process */
@@ -1446,7 +1446,7 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
     if (os9modules[mid].isBuiltIn) return os9error(E_MNF);
 
     /* -- prepare data area */
-    debugprintf(dbgProcess,dbgDetail,("# prepFork: extra memory=%ld (= paramsiz:%ld + memplus:%ld)\n",
+    debugprintf(dbgProcess,dbgDetail,("# prepFork: extra memory=%u (= paramsiz:%u + memplus:%u)\n",
                                     memplus+paramsiz, paramsiz,memplus));
     err= prepData( newpid,theModule,memplus+paramsiz, &memsiz, &mp ); if (err) return err; /* no room for data */
 

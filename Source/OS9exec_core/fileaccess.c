@@ -367,7 +367,7 @@ os9err pFread( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
   
     /* show read for debug */
     if (debugcheck(dbgFiles,dbgDetail)) {
-        uphe_printf("%08X: ", cnt );
+        uphe_printf("%08lX: ", cnt );
         for  (k=0; k<16 && k<cnt; k=k+2) {
                          upe_printf( "%02X" , (byte)buffer[k  ] );
             if (k+1<cnt) upe_printf( "%02X ", (byte)buffer[k+1] );
@@ -495,7 +495,7 @@ os9err pFreadln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
       #endif
     #endif
     
-    debugprintf( dbgFiles,dbgDetail,("# pFreadLn: requested=%ld, returned=%ld\n", *n, cnt ));
+    debugprintf( dbgFiles,dbgDetail,("# pFreadLn: requested=%d, returned=%ld\n", *n, cnt ));
     
     *n= cnt;
     return 0;
@@ -555,7 +555,7 @@ os9err pFwrite( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
     cnt= fwrite( (void*)buffer, 1,*n, spP->stream );
     fflush( spP->stream ); /* don't forget this */
 
-    debugprintf(dbgFiles,dbgDeep,("# pFwrite: requested=%ld, written=%ld, ferror=%d, errno=%d\n",*n,cnt,ferror(spP->stream),errno));
+    debugprintf(dbgFiles,dbgDeep,("# pFwrite: requested=%d, written=%ld, ferror=%d, errno=%d\n",*n,cnt,ferror(spP->stream),errno));
     if (cnt<0) return c2os9err(errno,E_WRITE); /* default: general write error */
   #endif
   
@@ -1297,7 +1297,7 @@ os9err pFseek( _pid_, syspath_typ* spP, uint32_t *posP )
     #else
       if (fseek( spP->stream, (long)*posP, SEEK_SET )==0) return 0;
 
-      debugprintf(dbgFiles,dbgDetail,("# pFseek: tried to seek to $%08lX, got errno=%d\n",*posP,errno));
+      debugprintf(dbgFiles,dbgDetail,("# pFseek: tried to seek to $%08X, got errno=%d\n",*posP,errno));
 
       #if !defined(__MWERKS__) && !defined(linux)
       if (errno==ESPIPE || errno==ENXIO)
@@ -1306,7 +1306,7 @@ os9err pFseek( _pid_, syspath_typ* spP, uint32_t *posP )
       #endif
       {
           /* try extending file */
-          debugprintf(dbgFiles,dbgDetail,("# pFseek: Trying to extend file to size=$%08lX\n",*posP));
+          debugprintf(dbgFiles,dbgDetail,("# pFseek: Trying to extend file to size=$%08X\n",*posP));
           fflush(spP->stream); /* unbuffer everything */
 //        fildes= fileno( spP->stream );  /* was for FIOSETEOF ioctl */
 
@@ -2417,7 +2417,7 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
   #endif
     
 //printf( "pos=%8d n=%4d '%s'\n", *pos, *n, spP->name );
-  debugprintf(dbgFiles,dbgDetail,("# pDread: requests $%lX bytes\n",*n)); 
+  debugprintf(dbgFiles,dbgDetail,("# pDread: requests $%X bytes\n",*n));
   cnt= *n;
   if  (*n==0) return 0;
         
@@ -2521,7 +2521,7 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
     
   /* sucessful, set number of bytes actually read */
   *n-= cnt; /* adjust to show actually read # of bytes */
-  debugprintf(dbgFiles,dbgDetail,("# pDread: returned $%lX bytes\n",*n)); 
+  debugprintf(dbgFiles,dbgDetail,("# pDread: returned $%X bytes\n",*n));
 
   /*
   printf( "buf=%8d n=%4d '%s'\n", buffer, *n, spP->name );

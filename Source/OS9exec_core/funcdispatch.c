@@ -903,10 +903,16 @@ static char *time_disp(ulong t)
     secs= ms/1000;
     mins= secs/60;
     
-    if (ms==0) sprintf( tbuf, "" );
+    /* (uint32_t) casts, not "%llu": these are `ulong`, which is `unsigned long`
+     * on LP64 but `unsigned long long` on Windows -- so no single length modifier
+     * fits both. The values are elapsed-time components, comfortably 32-bit.
+     * (Only mingw ever complained; on LP64 `%lu` happens to line up.) */
+    if (ms==0) tbuf[0]= NUL; /* was sprintf(tbuf,"") -- an empty format string */
     else {
-        if (mins==0) sprintf( tbuf,       "%2lu.%03lu\"",        secs % 60, ms % 1000 );
-        else         sprintf( tbuf, "%0lu'%02lu.%03lu\"", mins, secs % 60, ms % 1000 );
+        if (mins==0) sprintf( tbuf,     "%2u.%03u\"",
+                              (uint32_t)(secs % 60), (uint32_t)(ms % 1000) );
+        else         sprintf( tbuf, "%0u'%02u.%03u\"", (uint32_t)mins,
+                              (uint32_t)(secs % 60), (uint32_t)(ms % 1000) );
     }
 
     return tbuf;
@@ -952,7 +958,9 @@ static void show_line( Boolean show, ushort mode,
   //else       sprintf( perc,"%c%1.1f%%", ustrcmp( "TOTAL idle",name )==0 ? '+':' ', f );
     else       sprintf( perc,"%1.1f%%", f );
         
-    upo_printf("  %c%-19s  %10ld  %10s %7s %12s\n", c,name, t,nnnn, perc, time_disp(t) );
+    /* t is `ulong` (a tick count) -- cast, don't re-spell the format: see time_disp */
+    upo_printf("  %c%-19s  %10u  %10s %7s %12s\n",
+               c,name, (uint32_t)t, nnnn, perc, time_disp(t) );
 } /* show_line */
 
 

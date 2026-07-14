@@ -344,7 +344,7 @@ static os9err ReadSector( rbfdev_typ* dev, ulong sectorNr,
 //                                         sectorNr, sectorLim-1, dev->imgScts, dev->totScts );
 
     debugprintf(dbgFiles,dbgNorm,("# RBF read  sectorNr: $%06X (n=%d) @ $%08X\n",
-                                     sectorNr, nSectors, pos));
+                                     (uint32_t)sectorNr, (uint32_t)nSectors, (uint32_t)pos));
     if (sectorNr>0) {
       if (dev->totScts==0)        return E_NOTRDY;
       if (dev->totScts<sectorLim) return E_EOF; /* out of valid range */
@@ -445,7 +445,7 @@ static os9err WriteSector( rbfdev_typ* dev, ulong sectorNr,
 //                                         sectorNr, sectorLim-1, dev->imgScts, dev->totScts );
     
     debugprintf(dbgFiles,dbgNorm,("# RBF write sectorNr: $%06X (n=%d) @ $%08X\n",
-                                     sectorNr, nSectors, pos));
+                                     (uint32_t)sectorNr, (uint32_t)nSectors, (uint32_t)pos));
     if (sectorNr>0) {
       if (dev->totScts==0)        return E_NOTRDY;
       if (dev->totScts<sectorLim) return E_EOF; /* out of valid range */
@@ -1963,8 +1963,8 @@ static void Disp_RBF_DevsLine( rbfdev_typ* rb, char* name, Boolean statistic )
             
     if (statistic)
         upo_printf( "%10d /%10d   %10d /%10d\n",
-                     rb->rMiss, rb->rTot,
-                     rb->wMiss, rb->wTot );
+                     (uint32_t)rb->rMiss, (uint32_t)rb->rTot,
+                     (uint32_t)rb->wMiss, (uint32_t)rb->wTot );
     else 
         upo_printf( "%-8s %-7s %2d %4d %-3s %-21s %17s\n", 
                      StrBlk_Pt( w,7 ),
@@ -2118,7 +2118,7 @@ static os9err FD_Segment( syspath_typ* spP, byte *attr, ulong *size, ulong *tots
     
   *totsize= v;
   debugprintf(dbgFiles,dbgDetail,("# FD_Segment size/totsize/sect: %d %d $%x\n",
-                                     *size, *totsize, *sect ));
+                                     (uint32_t)*size, (uint32_t)*totsize, (uint32_t)*sect ));
   return 0;
 } /* FD_Segment */
 
@@ -2142,7 +2142,7 @@ static os9err GetThem( rbfdev_typ* dev, ulong pos, ulong scs, Boolean get_them )
            kk= scs;
     while (kk>0) {     /* use the device's temporary sector */
         debugprintf(dbgFiles,dbgNorm,("# GetThem (%s) sectorNr: $%x, pos/scs: $%x %d\n",
-                                         get_them ? "true":"false", asct, pos,scs ));
+                                         get_them ? "true":"false", (uint32_t)asct, (uint32_t)pos,(uint32_t)scs ));
         err= ReadSector ( dev, asct,1, dev->tmp_sct ); if (err) return err;
     
         while (kk>0) {
@@ -2282,8 +2282,8 @@ static os9err DeallocateBlocks( syspath_typ* spP )
         if (ii==16 && fd+1!=pos) GetThem( dev, fd, 1, false );
 
         if (scs>0) {
-            debugprintf(dbgFiles,dbgNorm,("# Dealloate ii/pos/scs: %4d $%x %d\n", 
-                                             ii, pos, scs ));
+            debugprintf(dbgFiles,dbgNorm,("# Dealloate ii/pos/scs: %4d $%x %d\n",
+                                             ii, (uint32_t)pos, scs ));
             if (ii==16 && fd+1==pos) { pos--; scs++; } /* add the fd sector */
             GetThem( dev, pos, scs, false ); /* release elements */
 
@@ -2524,8 +2524,8 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
         } // if
 
         rOK = true;
-        debugprintf(dbgFiles,dbgDeep,("# RBF %s: \"%s\" $%x bytes, sect: $%x, size: $%x\n", 
-                                         wMode ? "write":"read", dev->name, remain, sect, *rs));
+        debugprintf(dbgFiles,dbgDeep,("# RBF %s: \"%s\" $%x bytes, sect: $%x, size: $%x\n",
+                                         wMode ? "write":"read", dev->name, remain, (uint32_t)sect, (uint32_t)*rs));
       //if (sect==0) upe_printf( "Write 0 raw=%d\n", spP->rawMode );
                 
         if (lnmode) {       /* depends on read or write */
@@ -3280,8 +3280,8 @@ os9err pRsetFD( _pid_, syspath_typ* spP, byte *buffer )
 /* set the current FD sector */
 {
     ulong maxbyt= 16;
-    debugprintf(dbgFiles,dbgNorm,("# RBF setFD (fd/bytes): $%x %d\n", 
-                                     spP->u.rbf.fd_nr, maxbyt ));
+    debugprintf(dbgFiles,dbgNorm,("# RBF setFD (fd/bytes): $%x %d\n",
+                                     spP->u.rbf.fd_nr, (uint32_t)maxbyt ));
 
     memcpy( spP->fd_sct, buffer, maxbyt );  /* copy to the buffer */
     return WriteFD( spP );

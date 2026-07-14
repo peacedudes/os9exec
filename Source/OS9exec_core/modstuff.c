@@ -1108,7 +1108,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         isBuiltIn= false; /* is no resource-based module */
                         
         debugprintf(dbgModules,dbgNorm,
-          ("# load_module: loaded %ld bytes from module's file\n", loadbytes));
+          ("# load_module: loaded %u bytes from module's file\n", loadbytes));
           
         if (bootPos==0) err= usrpath_close( pid, path );
         break; /* module data loaded */
@@ -1140,7 +1140,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
             
             /* allocate memory for the module */
             debugprintf(dbgModules,dbgDetail,
-              ("# load_module: module file size = %ld\n",dsize));
+              ("# load_module: module file size = %u\n",dsize));
 
                 pp= get_mem( dsize );
             if (pp==NULL) {
@@ -1154,7 +1154,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
             
             theModuleP= pp;
             debugprintf(dbgModules,dbgNorm,
-              ("# load_module: allocated memory %ld @ $%08lX\n", dsize, theModuleP));
+              ("# load_module: allocated memory %u @ %p\n", dsize, (void*)theModuleP));
                 
             #ifdef MACFILES
               loadbytes= dsize; /* now read module */
@@ -1173,7 +1173,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
 
             
             debugprintf(dbgModules,dbgNorm,
-              ("# load_module: loaded %ld bytes from file\n", loadbytes));
+              ("# load_module: loaded %u bytes from file\n", loadbytes));
               
             #ifdef MACFILES
               FSClose(refNum);
@@ -1202,8 +1202,8 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         os9modules[mid].modulebase= theModuleP; /* enter pointer in free table entry */   
         os9modules[mid].isBuiltIn = isBuiltIn;
         debugprintf(dbgModules,dbgNorm,
-          ("# load_module: (found) mid=%d, theModuleP=%08lX, ^theModuleP=%08lX\n",
-              mid, (ulong) theModuleP, os9_long( *(uint32_t*)theModuleP )));
+          ("# load_module: (found) mid=%d, theModuleP=%p, ^theModuleP=%08X\n",
+              mid, (void*) theModuleP, (uint32_t)os9_long( *(uint32_t*)theModuleP )));
    
         os9modules[mid].linkcount= 1; /* module is loaded and linked */
         
@@ -1239,7 +1239,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         	crc= calc_crc( (byte*)theModuleP, modSize, 0xFFFFFFFF );
         if (crc!=0xFF800FE3) {
             debugprintf(dbgModules,dbgNorm,
-              ("# load_module: bad crc, crc result=$%08lX (should be $FF800FE3)\n",crc));
+              ("# load_module: bad crc, crc result=$%08X (should be $FF800FE3)\n",crc));
             /* bad CRC */
             err= E_BMCRC; break;
         } /* if */
@@ -1540,16 +1540,16 @@ os9err prepData(ushort pid, mod_exec *theModule, uint32_t memplus, uint32_t *msi
    
    /* -- allocate memory for data */
    memsz=os9_long(theModule->_mdata); /* basic data size */
-   debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: Basic data size = %ld\n",memsz));
+   debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: Basic data size = %u\n",memsz));
    memsz+=os9_long(theModule->_mstack); /* stack data size */
    memsz+=EXTRAEMUSTACK; /* add some extra stack space, because emulation requires more than real OS-9 */
    memsz+=memplusall; /* additional memory for all processes */
 
-   debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: Basic + Stack data size = %ld\n",memsz));
+   debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: Basic + Stack data size = %u\n",memsz));
    memsz+=memplus; /* additional memory space */
-   debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: Basic + Stack + additional data size = %ld\n",memsz));
+   debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: Basic + Stack + additional data size = %u\n",memsz));
    memsz=(memsz+15) & 0xFFFFFFF0; /* round up to next 16-boundary */
-   debugprintf(dbgModules+dbgProcess,dbgNorm,("# prepData: Adjusted total data size = %ld\n",memsz));
+   debugprintf(dbgModules+dbgProcess,dbgNorm,("# prepData: Adjusted total data size = %u\n",memsz));
 
        bp=os9malloc( pid,memsz ); /* allocate OS-9 memory block */
    if (bp==NULL) return os9error(E_NORAM);    /* not enough RAM */
@@ -1560,25 +1560,25 @@ os9err prepData(ushort pid, mod_exec *theModule, uint32_t memplus, uint32_t *msi
    p2+= 4; cnt= GET_OS9L(p2, 0); /* number of bytes to copy */
    p2+= 4;
 
-   debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: idata at $%08lX, data offset start=$%08lX, bytecount=$%lX\n",p2,p,cnt));
+   debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: idata at %p, data offset start=%p, bytecount=$%X\n",(void*)p2,(void*)p,cnt));
    while (cnt-- >0) *p++ = *p2++; /* copy initialized data */
    /* -- adjust initialized data and object pointers */
    p2  = (byte*)theModule+os9_long(theModule->_midref); /* initalized data references */
    offs= TO68K(theModule); /* for first table, use code start address as offset (68k) */
 
    for (k=0;k<2;k++) {
-      debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: irefs correction to base address $%08lX\n",offs));
+      debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: irefs correction to base address $%08X\n",offs));
       while (GET_OS9L(p2, 0) != 0) {
          p=bp + ((ulong)os9_word(*((ushort *)p2))<<16); /* calc group's base address */
          p2+=2; /* step over base address word */
-         debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: irefs group at $%08lX, count=%d\n",
-            (ulong) p,os9_word(*((ushort *)p2))));
+         debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: irefs group at %p, count=%d\n",
+            (void*) p,os9_word(*((ushort *)p2))));
 
          for (cnt= os9_word(*((ushort *)p2));cnt>0;cnt--) {
             p2+= 2; /* step to next offset word */
             {  byte *fp= p+os9_word(*((ushort *)p2));
-               debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: original value at $%08lX = $%08lX; offset=$%08lX\n",
-                   (ulong)fp, GET_OS9L(fp, 0), offs));
+               debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: original value at %p = $%08X; offset=$%08X\n",
+                   (void*)fp, GET_OS9L(fp, 0), offs));
                /* now correct: read 4-byte big-endian field, add offset, write back */
                SET_OS9L(fp, 0, GET_OS9L(fp, 0) + offs);
             }
@@ -1589,7 +1589,7 @@ os9err prepData(ushort pid, mod_exec *theModule, uint32_t memplus, uint32_t *msi
       offs= TO68K(bp); /* for second table, use data base pointer as offset (68k) */
    }
 
-   debugprintf(dbgModules+dbgProcess,dbgNorm,("# prepData: Finally allocated static for pid=%d:  %ld Bytes at $%lX\n",pid,memsz,bp));
+   debugprintf(dbgModules+dbgProcess,dbgNorm,("# prepData: Finally allocated static for pid=%d:  %u Bytes at %p\n",pid,memsz,(void*)bp));
    *mp=bp;
    *msiz=memsz;
    return 0;
