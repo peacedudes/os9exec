@@ -65,13 +65,41 @@ let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/dd/CMDS"
 /// ESC on a final line signals EOF to the shell.
 /// Times out after `timeout` seconds to prevent hangs from blocking the suite.
 /// If DOCKER_IMAGE is set, runs via Docker; otherwise runs locally (assumes dd symlink exists).
-func os9(_ commands: [String], timeout: TimeInterval = 15, paced: Bool = false,
+/// True when tests run inside a container (Docker or Apple Container) rather than
+/// against the locally built binary.
+let containerized = dockerImage != nil || containerImage != nil
+
+/// Per-command budget. A container pays for image start-up and a cold emulator
+/// boot (the UAE CPU tables are rebuilt every run) on top of the command itself,
+/// which pushed the slower commands (list, pr, tar, build...) past the native 15s
+/// and made them report "(timeout)" as if they had failed. Give containers room.
+let defaultTimeout: TimeInterval = containerized ? 45 : 15
+
+/// Stop a container by name. On timeout we MUST do this: terminating the `docker
+/// run` client does not stop the container it started -- the container keeps
+/// running, keeps the pipes open, and the suite hangs forever instead of
+/// reporting a timeout. (Seen for real: one container left "Up 18 minutes" with
+/// the whole run wedged behind it.)
+func killContainer(_ name: String) {
+    let runtime = dockerImage != nil ? "docker" : "container"
+    let kill = Process()
+    kill.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    kill.arguments     = [runtime, "kill", name]
+    kill.standardOutput = FileHandle.nullDevice
+    kill.standardError  = FileHandle.nullDevice
+    try? kill.run()
+    kill.waitUntilExit()
+}
+
+func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bool = false,
          disk: String = diskPath) -> String {
     let setup  = "chx \(sdkCmds)\nload math cio\n"
     let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
 
     let process = Process()
     let speedFlag: [String] = paced ? [] : ["-r"]
+    // Named so a timeout can actually stop it -- see killContainer above.
+    let containerName = "os9test-\(UUID().uuidString.prefix(8))"
 
     if let image = dockerImage {
         // Run via Docker: mount local dd directory and pipe stdin/stdout
@@ -81,7 +109,8 @@ func os9(_ commands: [String], timeout: TimeInterval = 15, paced: Bool = false,
             "run",
             "--rm",
             "-i",
-            "-v", diskPath + ":/dd",
+            "--name", containerName,
+            "-v", disk + ":/dd",
             image
         ] + speedFlag + ["shell"]
     } else if let image = containerImage {
@@ -92,7 +121,8 @@ func os9(_ commands: [String], timeout: TimeInterval = 15, paced: Bool = false,
             "run",
             "--rm",
             "-i",
-            "-v", diskPath + ":/dd",
+            "--name", containerName,
+            "-v", disk + ":/dd",
             image
         ] + speedFlag + ["shell"]
     } else {
@@ -134,6 +164,7 @@ func os9(_ commands: [String], timeout: TimeInterval = 15, paced: Bool = false,
     }
 
     if readGroup.wait(timeout: .now() + timeout) == .timedOut {
+        if containerized { killContainer(containerName) } // client != container
         process.terminate()
         process.waitUntilExit()
         return "(timeout)"
@@ -259,8 +290,14 @@ check("dump: shows hex",         contains: "4afc",     "dump \(sdkCmds)/echo")
 // interleaving of prompts/echoes vs. paced output can legitimately differ
 // between paced and unpaced runs without either one losing or corrupting
 // data. That's not what this test exists to catch.
+// This one is genuinely paced (that's the point), so it is the slowest test in the
+// suite -- ~15s even natively, which is exactly the default timeout. Inside a
+// container the extra startup pushed it over, and it "failed" with 0 lines purely
+// from timing out. Give it real headroom rather than let it flap.
 do {
-    let pacedOutput   = os9(["tmode baud=115200", "dump \(sdkCmds)/echo"], paced: true)
+    let pacedTimeout: TimeInterval = containerized ? 90 : 45
+    let pacedOutput   = os9(["tmode baud=115200", "dump \(sdkCmds)/echo"],
+                            timeout: pacedTimeout, paced: true)
     let unpacedOutput = os9(["tmode baud=115200", "dump \(sdkCmds)/echo"])
 
     func hexDumpLines(_ s: String) -> [Substring] {
@@ -518,16 +555,35 @@ let scratchDevice   = "h9"
 let scratchHostPath = repoRoot.appendingPathComponent(scratchDevice).path
 try? FileManager.default.removeItem(atPath: scratchHostPath) // in case a previous run left it behind
 
-noError("mount -k: creates blank RBF image", "mount -k=500K \(scratchDevice)")
-noError("rbf: dir /h9 on fresh image",       "dir /h9")
-check  ("rbf: free /h9 reports sectors",     contains: "sectors", "free /h9")
-noError("rbf: dcheck /h9 structure intact",  "dcheck /h9")
-check  ("rbf: dsave -ive populates+verifies", contains: "f1",
+// One session, not four: `mount -k` writes its image relative to the emulator's
+// own working directory, so the four steps used to depend on that scratch file
+// surviving between four separate os9exec processes. A container throws its
+// filesystem away at exit (--rm), so the follow-up steps ran against an image
+// that no longer existed. Doing the whole mount/dir/free/dcheck sequence in one
+// session removes the cross-process dependency and tests exactly the same thing.
+run("rbf: mount -k image is dir/free/dcheck clean",
+    expectation: "no OS-9 error, and free reports sectors",
+    commands: ["mount -k=500K \(scratchDevice)", "dir /h9", "free /h9", "dcheck /h9"]) {
+        !$0.contains("Error #") && $0.contains("sectors")
+    }
+// Each of these mounts its own image, so clear the previous one: locally the
+// scratch image persists in the repo root between processes (in a container it
+// does not), and `mount -k` would otherwise be handed a file that already exists.
+try? FileManager.default.removeItem(atPath: scratchHostPath)
+
+// Mounts its own image (self-contained, so a container's throwaway filesystem is
+// fine), and asserts on the DUMPED BYTES of the copied file ("dsav" = 6473 6176)
+// rather than on the name "f1": the shell echoes every command line back, so
+// `contains: "f1"` matched the echo of `copy ... /f1` and would have passed even
+// if dsave had written nothing at all.
+check  ("rbf: dsave -ive populates+verifies", contains: "6473 6176",
+    "mount -k=500K \(scratchDevice)",
     "echo dsave test content >/dd/t_dsavesrc",
     "makdir /dd/t_dsavedir",
     "copy /dd/t_dsavesrc /dd/t_dsavedir/f1",
-    "chd /dd/t_dsavedir", "dsave -ive /h9", "dir /h9",
-    "chd /dd", "del /dd/t_dsavesrc", "del /dd/t_dsavedir/f1", "deldir -q /dd/t_dsavedir")
+    "chd /dd/t_dsavedir", "dsave -ive /h9",
+    "chd /dd", "dump /h9/f1",
+    "del /dd/t_dsavesrc", "del /dd/t_dsavedir/f1", "deldir -q /dd/t_dsavedir")
 
 try? FileManager.default.removeItem(atPath: scratchHostPath)
 

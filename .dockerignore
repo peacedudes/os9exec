@@ -1,0 +1,8 @@
+# Deny everything, then allow only what the build actually needs. The repo root
+# also holds disk images and the h0/h1 symlinks (which point OUTSIDE the repo and
+# so cannot be part of a build context anyway) -- without this, `docker build`
+# ships ~125MB of context to compile a handful of C files.
+*
+
+!Source
+!GNUmakefile

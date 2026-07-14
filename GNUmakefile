@@ -86,7 +86,7 @@ UAE_SUPPRESS = -Wno-unused-variable -Wno-unused-but-set-variable \
 
 VPATH = $(CORE):$(PLAT):Source/OS9execMPW:$(APPEMU):$(UAE)
 
-.PHONY: all prod clean test
+.PHONY: all prod clean test test-linux warnings
 
 all: $(OBJDIR) $(EXE)
 
@@ -144,3 +144,31 @@ clean:
 
 test: $(EXE)
 	swift run --package-path test
+
+# Run the same integration suite against a real Linux build, in Docker.
+#
+# Worth doing even from macOS -- the platforms disagree in ways that hide bugs:
+# on Linux/ARM plain `char` is UNSIGNED (it is signed on macOS, even on arm64),
+# and gcc-on-Linux warns about things clang and mingw-gcc both miss. The first
+# run of this target found os9exec spinning forever on every file read, because
+# `char c = fgetc(...)` could never equal EOF where char is unsigned.
+test-linux:
+	docker build -f docker/Dockerfile -t os9exec:linux .
+	DOCKER_IMAGE=os9exec:linux swift run --package-path test
+
+# Compile-only sweep across all three toolchains. Each one sees bugs the others
+# do not: mingw (LLP64) catches host pointers truncated through 32-bit ints,
+# gcc-on-Linux catches NULL/format issues clang ignores, clang catches its own.
+# All three must be warning-clean.
+warnings:
+	@echo "=== host ($(CC)) ==="
+	@$(MAKE) -B --no-print-directory 2>&1 | grep -c "warning:" | sed 's/^/  warnings: /'
+	@echo "=== linux (gcc, in docker) ==="
+	@docker run --rm -v "$(CURDIR)/Source:/src/Source:ro" -v "$(CURDIR)/GNUmakefile:/src/GNUmakefile:ro" \
+	  -w /src ubuntu:24.04 sh -c 'apt-get update -qq >/dev/null 2>&1 && \
+	  apt-get install -y -qq build-essential >/dev/null 2>&1 && mkdir -p /tmp/b && \
+	  make CC=gcc OBJDIR=/tmp/b EXE=/tmp/b/os9exec 2>&1 | grep -c "warning:"' | sed 's/^/  warnings: /'
+	@echo "=== windows (mingw-w64, LLP64) ==="
+	@$(MAKE) -B --no-print-directory OS=Windows_NT CC=x86_64-w64-mingw32-gcc \
+	  OBJDIR=/tmp/os9exec-win EXE=/tmp/os9exec-win/os9exec.exe 2>&1 \
+	  | grep -c "warning:" | sed 's/^/  warnings: /'
