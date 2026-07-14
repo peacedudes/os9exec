@@ -30,7 +30,7 @@
 #   content without appropriate authorisation.
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-SESSION="os9exec"
+SESSION="${OS9REPL_SESSION:-os9exec}"  # override with OS9REPL_SESSION=<name> to avoid colliding with a concurrent caller
 TIMEOUT=${OS9REPL_TIMEOUT:-20}  # seconds per command (override with OS9REPL_TIMEOUT=60)
 KEY_DELAY=${OS9REPL_KEY_DELAY:-0.3}   # seconds between keystrokes in vi mode
 
