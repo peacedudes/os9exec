@@ -1490,7 +1490,12 @@ uint32_t calc_crc(byte *p, uint32_t size, uint32_t accum)
 {
    uint32_t count,b,b1;
    int i,j;
-    
+
+   /* p can be FROM68K(a guest register); a guest passing address 0 (e.g. a bad
+      F$CRC call) yields NULL -- return the CRC unchanged rather than dereference
+      NULL and crash the host. */
+   if (p==NULL) return accum;
+
    for (count=0;count<size;count++) {
       accum&=0x00FFFFFF;
       b=*(p++)<<16;

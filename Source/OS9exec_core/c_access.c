@@ -145,6 +145,14 @@ void MoveBlk( void* dst, void* src, ulong size )
   unsigned char* s;
   unsigned char* d;
 
+  /* src/dst often come from FROM68K(a guest register); a guest passing address
+     0 yields NULL here.  A zero-length move is a no-op anyway, and moving to/from
+     a NULL host pointer would crash the emulator, so skip it -- callers that pass
+     a real length with a null pointer get an empty result instead of a host
+     crash (F$CpyMem, F$GModDr, and the F$Fork/F$Chain parameter copy all rely on
+     this; for a fork with no parameters a1 is legitimately 0 with size 0). */
+  if (size==0 || dst==NULL || src==NULL) return;
+
   if (src>=dst) {    // condition for forward/backward copy
     s= (unsigned char*)src;   // normal forward copy
     d= (unsigned char*)dst;

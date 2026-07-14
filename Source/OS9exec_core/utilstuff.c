@@ -285,7 +285,14 @@ char* nullterm( char* s1, const char* s2, ushort max )
 {
     char *res= s1;
     ushort  n=  0;
-    
+
+    /* s2 is FROM68K(a guest register); a guest passing address 0 yields NULL
+       here.  Treat it as an empty string instead of dereferencing NULL and
+       crashing the host -- the caller then gets an empty name and fails with a
+       normal error (E_MNF / E_BPNAM) downstream.  This one guard covers every
+       F$ syscall that reads a path/name argument through nullterm(). */
+    if (s2==NULL) { *s1= NUL; return (char*)s2; }
+
     regcheck( currentpid,"nullterm inptr",(uintptr_t)s2,RCHK_ARU+RCHK_MEM );
     while(*s2>' ') {
         if (n++<max) *s1++= *s2++; /* don't use max-- structure any more */

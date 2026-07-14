@@ -1456,7 +1456,11 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
 
     regcheck( newpid,"Param writing start",TO68K(p2),            RCHK_MEM );
     regcheck( newpid,"Param writing end",  TO68K(p2)+paramsiz-1, RCHK_MEM );
-    for (cnt=0; cnt<paramsiz; cnt++) *(p2++)= *(p++);
+    /* paramptr is FROM68K(a1) from F$Fork/F$Chain; a1=0 with paramsiz>0 is a bad
+       call that would deref NULL here.  Skip the copy rather than crash the host
+       (a1=0 with paramsiz=0 -- a fork with no parameters -- is legitimate and
+       already copies nothing). */
+    if (paramptr!=NULL) for (cnt=0; cnt<paramsiz; cnt++) *(p2++)= *(p++);
 
     /* check if module is executeable and */
     /* check if this module is not in the "black list" of OS9exec */
