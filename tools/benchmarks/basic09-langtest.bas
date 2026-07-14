@@ -76,12 +76,17 @@
 !    never gets a chance to intercept (t_onerror2.bas). Avoid REAL division
 !    by a value that could be zero; there's no ON ERROR guard against it.
 !
-!    UNRESOLVED, lower priority: combining GOTO+GOSUB+ON ERROR GOTO with
-!    numbered lines 100/200/300 in ONE procedure (see the deleted
-!    t_gotogosub combined test) produced a compile-time
-!    `Error #000:069 (Unmatched Control Structure)` even though each
-!    construct is individually confirmed working in isolation above. Not
-!    root-caused — flagged for a future session if it matters again.
+!    RESOLVED (was "unresolved, lower priority"): the earlier "combined
+!    GOTO+GOSUB+ON ERROR GOTO" compile bug was fully root-caused as a
+!    much narrower, real compiler bug -- see
+!    basic09-oneline-if-goto-bug-test.bas. A single-line `IF cond THEN
+!    GOTO n` / `IF cond THEN GOSUB n` (no ENDIF) is UNCONDITIONALLY
+!    broken on 68k -- always Error #000:069, even completely alone with
+!    nothing else in the procedure. Not about jump direction, not
+!    GOTO-specific, not about combining constructs at all -- the
+!    combined test just happened to use this exact form for its
+!    loop-back GOTO. The BLOCK form (IF cond THEN / GOTO n / ENDIF)
+!    always works; use it always for any conditional GOTO/GOSUB.
 !
 ! 4. FIX() ROUNDS TO NEAREST, IT DOES NOT TRUNCATE (found this session).
 !    basic09-language.md previously said "Truncates a REAL to INTEGER."
