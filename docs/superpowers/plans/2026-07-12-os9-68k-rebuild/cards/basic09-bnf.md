@@ -27,6 +27,19 @@ forced a check against the actual manual grammar at authoring time —
 treat any `authored` card as needing exactly this kind of direct-grep
 verification before trusting it, not just internal-consistency review.
 
+**SECOND CORRECTION (2026-07-14, later same day):** the `print-formatting`
+card's fix above was itself incomplete — it only fixed the comma/colon
+separator and left the card's `"###.##"` pound-sign format-string example
+in place. That entire format-string style was ALSO a fabrication — never
+real BASIC09 syntax at all (BASIC09 uses directive LETTERS: `R8.2`, `I4`,
+`S8`, `H4`, `B8`, `E12.3`, not `#` placeholders). This was live-tested and
+fully rewritten below. Lesson on top of the lesson: catching one error in
+a card doesn't mean the card is now clean — the colon-vs-comma fix
+"looked complete" and passed casual review for an entire session before
+a deeper live-test (triggered by trying to actually run the corrected
+example) revealed the format-string grammar itself was never checked
+against the manual at all, just the separator punctuation around it.
+
 --- CARD ---
 id:        basic09-bnf-declarations-and-types
 type:      CONCEPT
@@ -98,17 +111,30 @@ source:    authored
 id:        basic09-bnf-print-formatting
 type:      CONCEPT
 target:    all
-verify:    authored
+verify:    live-tested (2026-07-14 — see below; the original "authored"
+           card here was a fabrication, corrected)
 topic:     basic09-syntax
 claim:     |
   print-stmt   ::= "PRINT" [ print-list ]
-  print-using  ::= "PRINT" "USING" format-string "," print-list
+  print-using  ::= "PRINT" [ "#" path-expr ] "USING" format-string "," print-list
   print-item   ::= expr | "TAB" "(" expr ")"
+  format-spec  ::= directive-letter width [ "." fraction ] [ justify ]
+                  | "T" n | "X" n | "'" literal-text "'"
+                  | count "(" format-spec { "," format-spec } ")"
+  directive-letter ::= "R" | "E" | "I" | "H" | "S" | "B"
+                  ! real / exponential / integer / hex-dump / string / boolean
+  justify      ::= "<" | ">" | "^"     ! left / right / center
 
   Example:
-    PRINT USING "###.##", price
-context:   Delta from generic BASIC — plain `PRINT` with comma/semicolon-separated items behaves close to a generic BASIC's expectation. `PRINT USING` is the real delta: it takes a FORTRAN-style format-specification string (field width, decimal places, hex, etc.) controlling exact output layout, available both in normal program `PRINT` statements and in the interactive debug-mode `PRINT` command — a model expecting only generic BASIC's plain comma-separated PRINT should not assume formatted output requires manual string-padding logic; `PRINT USING` already does it.
-source:    authored
+    PRINT USING "'Average: ',R6.2", avg
+context:   Delta from generic BASIC — plain `PRINT` with comma/semicolon-separated items behaves close to a generic BASIC's expectation. `PRINT USING` is the real delta, and NOT in the way this card originally claimed: BASIC09's format string does NOT use `#`-placeholder syntax the way many other BASICs do (`"###.##"` was a fabrication — never real BASIC09 syntax, and caused a live compile/runtime error). The real format string uses directive LETTERS (`R8.2` for a real number 8 chars wide with 2 fraction digits, `I4` for a 4-wide integer, `S8` for an 8-wide string, `H4` for a 4-wide hex dump, `B8` for boolean, `E12.3` for exponential), each optionally followed by a justify character. A model expecting `#`-placeholder formatting (from Microsoft BASIC, COBOL, etc.) will guess wrong here — this is the single most dangerous "looks like something I already know" trap in the whole language. Also note the path-number placement: `PRINT #path USING fmt, list` puts `#path` right after `PRINT`, before `USING` — `PRINT USING #path, ...` is a syntax error.
+source:    live-tested — see basic09-language.md's PRINT USING section
+           and tools/benchmarks/basic09-printusing-*.bas in os9exec-git_code
+           for the full live-verification trail, including a confirmed
+           manual-vs-implementation divergence (BOOLEAN format prints
+           "True" not "TRUE") and a resolved OCR ambiguity in the
+           justify symbols ("^" for center, not the manual's garbled
+           degree-sign character).
 --- END ---
 
 --- CARD ---
