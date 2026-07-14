@@ -76,17 +76,20 @@
 !    never gets a chance to intercept (t_onerror2.bas). Avoid REAL division
 !    by a value that could be zero; there's no ON ERROR guard against it.
 !
-!    RESOLVED (was "unresolved, lower priority"): the earlier "combined
-!    GOTO+GOSUB+ON ERROR GOTO" compile bug was fully root-caused as a
-!    much narrower, real compiler bug -- see
-!    basic09-oneline-if-goto-bug-test.bas. A single-line `IF cond THEN
-!    GOTO n` / `IF cond THEN GOSUB n` (no ENDIF) is UNCONDITIONALLY
-!    broken on 68k -- always Error #000:069, even completely alone with
-!    nothing else in the procedure. Not about jump direction, not
-!    GOTO-specific, not about combining constructs at all -- the
-!    combined test just happened to use this exact form for its
-!    loop-back GOTO. The BLOCK form (IF cond THEN / GOTO n / ENDIF)
-!    always works; use it always for any conditional GOTO/GOSUB.
+!    RESOLVED (was "unresolved, lower priority" -- and briefly
+!    mischaracterized as "a real compiler bug" before checking the
+!    manual's actual IF grammar): the earlier "combined GOTO+GOSUB+ON
+!    ERROR GOTO" compile error was just invalid syntax on this project's
+!    own part, not any kind of bug. The manual defines two distinct IF
+!    forms -- Type 1 `IF cond THEN linenum` (bare line number, NO "GOTO"
+!    keyword, no ENDIF -- see basic09-iftype1-test.bas) and Type 2
+!    `IF cond THEN <statements> ENDIF` (ENDIF mandatory, on its own line
+!    -- see basic09-iftype2-test.bas). `IF cond THEN GOTO n` mixes the
+!    two: has the GOTO keyword (illegal in Type 1) and omits ENDIF
+!    (required in Type 2) -- neither form, never valid, correctly
+!    rejected with Error #000:069 (basic09-oneline-if-goto-bug-test.bas,
+!    kept as a negative test). Use Type 1 for a bare conditional jump,
+!    or Type 2 with ENDIF on its own line for anything else.
 !
 ! 4. FIX() ROUNDS TO NEAREST, IT DOES NOT TRUNCATE (found this session).
 !    basic09-language.md previously said "Truncates a REAL to INTEGER."

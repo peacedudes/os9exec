@@ -1,18 +1,19 @@
-! REAL COMPILER BUG in real 68k BASIC09: this is the minimal possible
-! repro. A single-line `IF cond THEN GOTO n` (no ENDIF) always fails to
-! compile with Error #000:069 (Unmatched Control Structure) -- even
-! standing completely alone, nothing else in the procedure. Bisected via
-! basic09-oneline-if-*-variants (not all committed -- see the write-up
-! in basic09-language.md's Control Structures section and gotchas.md):
-! NOT about jump direction (forward-targeting fails identically to
-! backward), NOT GOTO-specific (IF cond THEN GOSUB n fails the same
-! way), NOT about combining with other constructs (fails alone). The
-! BLOCK form (IF cond THEN / GOTO n / ENDIF) always works -- use it,
-! always, for any conditional GOTO/GOSUB. This also explains an earlier,
-! messier "GOTO+GOSUB+ON ERROR GOTO combined" finding that turned out to
-! be the exact same bug wearing a more complicated disguise.
+! CORRECTED (was wrongly filed as "a real compiler bug"): this is
+! INVALID SYNTAX, not a bug. The manual defines two distinct IF forms --
+! Type 1 `IF cond THEN linenum` (bare line number, NO "GOTO" keyword,
+! no ENDIF) and Type 2 `IF cond THEN <statements> ENDIF` (ENDIF is
+! mandatory, unlike the bracketed-optional ELSE). `IF cond THEN GOTO 10`
+! below has the GOTO keyword (illegal in Type 1) AND omits ENDIF
+! (required in Type 2) -- it's neither form, a hybrid that was never
+! valid syntax. The compiler is CORRECTLY rejecting it with
+! Error #000:069. See basic09-iftype1-test.bas and
+! basic09-iftype2-test.bas for the two real, working forms, and
+! basic09-language.md's Control Structures section for the full
+! grammar. Kept as a negative test: confirms this specific invalid
+! syntax is (still) correctly rejected, not accidentally accepted.
 !
-! LIVE RESULT (68k): Error #000:069 at LOAD time, every time.
+! LIVE RESULT (68k): Error #000:069 at LOAD time, every time -- CORRECT
+! rejection of invalid syntax, not a bug.
 PROCEDURE t_biF
 DIM i: INTEGER
 i = 0
