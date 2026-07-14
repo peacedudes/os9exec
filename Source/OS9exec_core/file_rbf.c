@@ -3392,7 +3392,9 @@ os9err pRWTrk( ushort pid, syspath_typ* spP, uint32_t* trackNr )
     for (ii=0; ii<dev->sctSize; ii++)
         dev->tmp_sct[ii]= 0xE5; /* fill with formatting pattern */
     
-    err= pRdsize( pid,spP, &scts, &dtype );
+    err= pRdsize( pid,spP, &scts, &dtype );  if (err) return err; /* else scts is
+                     uninitialised: pRdsize returns DevSize()'s error without setting
+                     *size, and the format loop below would run a garbage sector count */
 
     for (ii=0; ii<scts; ii++) { sctNr= *trackNr*DEFAULT_SCT + ii;
       err=    WriteSector( dev, sctNr,1, dev->tmp_sct ); if (err) return err;
