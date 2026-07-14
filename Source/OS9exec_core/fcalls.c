@@ -260,8 +260,14 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
     mod_exec *theModule; /* OS-9 module header */
     char     mpath[OS9PATHLEN],*p;
     ushort   mid;
-    ushort   mode  = loword(rp->d[0]); /* attributes */
-    Boolean  exedir= IsExec(mode) || (mode==0) || (mode==0x80); 
+    ushort   mode  = loword(rp->d[0]) & 0x00ff; /* d0.b only: the access mode is a
+                    byte, and a caller like RunB leaves other data (type/language)
+                    in the high byte.  Reading the whole word made a $0200 in d0
+                    look like a non-default, non-exec mode, so exedir came out false
+                    and F$Load searched the DATA directory instead of the execution
+                    directory (F$Load must never use the data dir).  Same byte-mask
+                    fix already applied to I$Open/I$Create in icalls.c. */
+    Boolean  exedir= IsExec(mode) || (mode==0) || (mode==0x80);
                                                        /* mode=0 is a strange default, */
                             /* but seems to be correct as default for exedir in 'load' */
                                /* Attention !!! Colored memory (bit 7) is %%% ignored. */ 
