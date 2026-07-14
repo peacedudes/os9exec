@@ -228,12 +228,29 @@ typedef unsigned int ulong32;
 #define FIRSTUSERTRAP    1
 
 
-/* definition of the header of a OS-9 traphandler module */
+/* definition of the header of a OS-9 traphandler module.
+ * This struct is overlaid directly on a module header in the 68k arena, so
+ * every field must be exactly the 32 bits the header actually holds -- hence
+ * os9addr_t, as in every other module-header struct (see module_from_book.h).
+ * `long` was 8 bytes wide on LP64, which pushed _mtrapterm to $050 instead of
+ * $04C and made os9_long() shift a signed 64-bit value (undefined behaviour;
+ * it only produced the right answer on little-endian hosts, by accident of the
+ * macro's 0xFF000000 masks). The checks below pin the layout. */
 typedef  struct {
-            mod_exec progmod;
-            long _mtrapinit;
-            long _mtrapterm;
-         } mod_trap;
+            mod_exec  progmod;    /* $000  program module header (72 bytes) */
+            os9addr_t _mtrapinit; /* $048  offset to trap handler init routine */
+            os9addr_t _mtrapterm; /* $04C  offset to trap handler terminate routine */
+         } mod_trap;              /* sizeof = $050 = 80 bytes */
+
+#define MOD_TRAP_CHECK(field, expected_offset) \
+    typedef char mod_trap_offset_check_##field \
+        [ (offsetof(mod_trap, field) == (expected_offset)) ? 1 : -1 ]
+
+MOD_TRAP_CHECK(progmod,    0x000);
+MOD_TRAP_CHECK(_mtrapinit, 0x048);
+MOD_TRAP_CHECK(_mtrapterm, 0x04C);
+
+typedef char mod_trap_size_check[(sizeof(mod_trap) == 0x050) ? 1 : -1];
 
 
 /* traphandler description */
