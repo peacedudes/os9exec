@@ -237,9 +237,18 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
             q--;
         } /* while */
     } /* loop */
-    
+
+    /* If the backward search consumed the ENTIRE path without finding any
+     * existing prefix -- not even the device root resolved -- q has walked to
+     * adname-1.  There is nothing to reconstruct forward; running the loop
+     * below would write PATHDELIM at adname[-1] (a 1-byte stack underflow, found
+     * by ASan via `chd /nonexistent`).  The path simply does not exist, so
+     * report E_PNNF -- the same result the forward loop gives on a missing
+     * component, and the same empty-path guard GetRBFName's own loop already has. */
+    if (q<adname) err= E_PNNF;
+
     /* and forward again with uppercase/converted strings */
-    while (q<qs) {
+    while (!err && q<qs) {
         *q++= PATHDELIM;
         
         qc= adname+strlen(adname)-1;
