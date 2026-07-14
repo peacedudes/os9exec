@@ -146,20 +146,24 @@
 ! leading spaces survive. Test assertion was wrong, not the compiler; see
 ! basic09-language.md's function table.
 !
-! STILL NOT COMPLETED, listed here so a future pass doesn't rediscover the
-! gap: numeric type auto-widening when mixing BYTE/INTEGER/REAL in one
-! expression, a decimal-point-forces-REAL check,
-! BOOLEAN-used-in-numeric-expression (should be a runtime error, untested),
-! DATA/READ/RESTORE (incl. the documented wraparound-when-exhausted),
-! EOF/ERR/POS, and a sequential file I/O round-trip (CREATE/WRITE/READ/
-! CLOSE). The Tandy manual's ch.8 "Disk Files" (extracted this session, see
-! basic09-language.md's Sequential vs. random access files section) has
-! worked example programs for sequential append/replace and random-access
-! TYPE-record files ready to adapt into tests here.
+! All previously-open Task 24 items are now RESOLVED — see the "REMAINING
+! TASK 24 ITEMS" note further down this header for the full list and
+! pointers to the individual test files.
 !
 ! TYPE records and GOTO/GOSUB/ON ERROR GOTO (incl. the fires-once question
 ! and the divide-by-zero split behavior) are now RESOLVED — see the
 ! numbered findings above.
+!
+! REMAINING TASK 24 ITEMS: ALL RESOLVED as of this session — see
+! basic09-numwiden-test.bas (numeric widening + division-truncation-
+! before-widening rule), basic09-boolnum-test.bas (BOOLEAN in a numeric
+! expression is a COMPILE-TIME E_ILLARG error, not runtime),
+! basic09-dataread-test.bas (DATA/READ/RESTORE incl. wraparound),
+! basic09-fileio-test.bas + basic09-fileio-eof-test.bas (sequential file
+! round-trip; EOF() stays FALSE until an over-read is actually attempted,
+! which raises the standard OS-9 `E$EOF` (211) — a real gotcha for the
+! natural `WHILE NOT EOF DO READ...ENDWHILE` loop idiom, which needs an
+! ON ERROR GOTO to catch the final over-read cleanly).
 !
 ! No 6809 emulator exists in this project (see 6809/STATUS.md) — the
 ! divergence-probe values above are 68k-only. Written in portable BASIC09
