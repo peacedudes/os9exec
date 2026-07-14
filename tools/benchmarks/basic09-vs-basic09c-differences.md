@@ -10,12 +10,13 @@ written as a handoff artifact for `basic09c`'s author, using the same
 test files as `tools/benchmarks/basic09-*-test.bas` in this directory
 where the two overlap.
 
-**Method:** everything under "Live-verified matches" and "Confirmed
-divergences" below was checked by actually running code on both sides —
-the real binary via `os9exec`, and `basic09c`'s own committed test suite
-(`test/*.test`) plus a direct read of its source (`src/Basic09*.cpp`).
-Nothing here is guessed from the manual alone without a live check on at
-least one side.
+**Method:** everything here was checked by actually running code on
+both sides — the real binary via `os9exec`, and `basic09c` itself,
+built from source this session (`cmake` + `ninja`, Homebrew LLVM) and
+exercised with small standalone `.b09` programs, cross-checked against
+its own committed test suite (`test/*.test`) and source
+(`src/Basic09*.cpp`) where useful. Nothing here is guessed from the
+manual alone without a live check on at least one side.
 
 ## Confirmed divergences (worth `basic09c`'s author knowing about)
 
@@ -126,7 +127,10 @@ documentation before being fixed, so it's worth recording that
   a complete fabrication, never real BASIC09 syntax. `basic09c`'s
   `print-using-formats.test` already uses the correct directive-letter
   grammar throughout (`R8.2`, `I4`, `H4`, `S8`, `E12.3`, `B5`) with no
-  trace of the pound-sign style ever having been assumed.
+  trace of the pound-sign style ever having been assumed — confirmed by
+  building `basic09c` and running a subset of that test's own program
+  directly: field widths, hex output, and center-justify all matched
+  its expected output exactly.
 - **`PRINT #path USING fmt, list` path-number placement** — `#path`
   right after `PRINT`, before `USING`. Confirmed in `basic09c`'s parser
   handling and matches the manual's real grammar.
@@ -188,48 +192,123 @@ targeting a fundamentally different execution model:
   representation, but OS-9-specific file attributes (execute permission
   bits, OS-9 directory-entry format) don't apply under `basic09c`.
 
-## Open questions — not yet checked in either direction
+## `basic09c` was built and run directly to answer the rest
 
-These came up in this session's real-BASIC09 testing but weren't
-cross-checked against `basic09c`'s source or test suite; flagged
-honestly as gaps rather than claims:
+Everything below was checked by actually building `basic09c` from source
+(`cmake` + `ninja`, Homebrew LLVM, this session) and compiling/running
+small `.b09` programs through it — not inferred from reading source
+alone.
 
-- **Divide-by-zero.** Real BASIC09 (68k, `os9exec`) has two very
-  different failure modes: `INTEGER÷0` silently falls through with no
-  error at all; `REAL÷0` crashes the entire process via an uncatchable
-  68k CPU trap (`E_TRAPV`), never reaching `ON ERROR GOTO`. Whether
-  `basic09c` reproduces either behavior, traps cleanly, or does
-  something else entirely (e.g. a well-defined runtime error) wasn't
-  checked — would need reading `Basic09IR.cpp`'s division-emission code
-  or writing a test.
-- **`BOOLEAN` in a numeric expression.** Confirmed on real BASIC09 as a
-  **compile-time** error (`Error #000:067 E_ILLARG`) — the program never
-  starts running. A quick grep of `basic09c`'s `Basic09Semantic.cpp`
-  didn't turn up an obvious equivalent check; unclear whether `basic09c`
-  enforces the same restriction, coerces silently, or something else.
-- **Division truncates based on operand types, not destination type.**
-  Real BASIC09: `r = i / 3` (both `i` and `3` effectively INTEGER)
-  computes truncating INTEGER division first, then widens the
-  already-truncated result into a REAL destination — the fraction is
-  gone. Not checked against `basic09c`'s own type-coercion rules in
-  `Basic09Semantic.cpp`/`Basic09IR.cpp`.
-- **INTEGER overflow direction.** A long-standing, still-unresolved
-  discrepancy in this project: the manual claims 68k INTEGER overflow
-  wraps to a *positive* value; live testing on the real binary shows
-  ordinary two's-complement negative wraparound instead. Not checked
-  against `basic09c`'s own integer arithmetic lowering.
-- **The GOTO+GOSUB+ON ERROR GOTO combined-construct bug.** Real BASIC09
-  hits a compile-time `Error #000:069 (Unmatched Control Structure)`
-  when GOTO, GOSUB, and ON ERROR GOTO with numbered-line targets are all
-  used together in one procedure, even though each works individually in
-  isolation. Never root-caused on the real binary (proprietary, no
-  source access) and never tried against `basic09c`.
-- **`RND(n<0)` reseed determinism.** Confirmed fully deterministic on
-  real BASIC09 (same negative seed reproduces an identical subsequent
-  `RND(0)` sequence). Not checked whether `basic09c`'s RNG has the same
-  seeding contract, or uses a different (e.g. host-`libc`-backed) RNG
-  entirely, which would make bit-for-bit sequence matching against real
-  hardware impossible regardless.
+### `INTEGER` is 16-bit in `basic09c` — matches the *original 6809* spec, not the 68k port
+
+`basic09c`'s type-lowering code (`Basic09IR.cpp`, the `BasicType ==
+"INTEGER"` case) maps `INTEGER` to LLVM `i16`, not `i32`. That's the
+**original 6809 BASIC09 width** (confirmed via the manual and this
+project's own 6809 documentation), not the 32-bit width the Microware
+68k port uses (confirmed live this session: `SIZE(INTEGER)=4` on the
+68k binary). This is the single most important thing to know before
+comparing any numeric behavior between `basic09c` and the 68k binary
+tested elsewhere in this document — they're testing genuinely different
+target widths, both legitimately "real BASIC09," just different
+editions. (First surfaced when `i:=100000; r:=i/3` gave a nonsensical
+`-10357` under `basic09c` — `100000` silently overflows a 16-bit
+INTEGER at the assignment, before division ever runs. Retested with
+16-bit-safe values below.)
+
+### Divide-by-zero — `basic09c` never crashes, on either type
+
+Real BASIC09 (68k, `os9exec`): `INTEGER÷0` silently falls through with
+no error; `REAL÷0` **crashes the entire process** via an uncatchable
+68k CPU trap (`E_TRAPV`), never reaching `ON ERROR GOTO`.
+
+`basic09c` (tested live): `INTEGER÷0` also falls through with no error,
+leaving the result as `0` (real BASIC09's left-behind value in this case
+was never checked, so this specific number isn't a confirmed
+divergence). `REAL÷0` computes ordinary **IEEE-754 `inf`** and keeps
+running normally — no crash at all. This is a real, load-bearing
+divergence: a BASIC09 program that (accidentally or on purpose) divides
+a REAL by zero crashes outright on real hardware but silently produces
+`inf` and continues under `basic09c`. Any test or program relying on
+"REAL÷0 crashes / never happens" behaves completely differently under
+`basic09c`.
+
+### `BOOLEAN` in a numeric expression — `basic09c` allows it, silently coercing `TRUE`→`1`
+
+Real BASIC09: compile-time error (`Error #000:067 E_ILLARG`) — the
+program never starts running.
+
+`basic09c` (tested live): `n:=flag+1` with `flag:BOOLEAN=TRUE` compiles
+with zero errors or warnings at any stage (`--syntax-only`,
+`--analyze-only`, `--compile` all clean) and runs, printing `2` —
+`TRUE` silently coerces to `1`. A real, confirmed semantic gap: code
+that (by accident) mixes a BOOLEAN into arithmetic is rejected outright
+on real hardware but runs to completion under `basic09c`.
+
+### Division truncates before widening — CONFIRMED MATCH
+
+Real BASIC09: `r = i / 3` (both effectively INTEGER) truncates first,
+then widens the already-truncated result into a REAL destination.
+
+`basic09c` (tested live, using a 16-bit-safe value given the INTEGER
+width difference above): `i:=1000; r:=i/3` → `333` (truncated);
+`r:=i/3.0` → `333.333` (REAL operand forces real division). Exact match
+to real BASIC09's rule.
+
+### INTEGER overflow direction — this project's own long-standing discrepancy, now resolved in one direction
+
+The manual claims 68k INTEGER overflow wraps to a *positive* value;
+live testing on the real 68k binary showed ordinary negative
+two's-complement wrap instead — previously left as an "unresolved
+discrepancy" in this project's own documentation.
+
+`basic09c` (tested live, at its own 16-bit width): `i:=32767; i:=i+1` →
+`-32768` — ordinary negative two's-complement wrap, matching the real
+68k binary's behavior and NOT the manual's claim. Two independent
+implementations (a real Microware binary and a from-scratch
+reimplementation) now agree with each other and disagree with the
+manual — strong evidence the manual's "positive wrap" claim is simply
+wrong, though this still isn't proof of real 6809 hardware behavior (no
+6809 emulator exists in this project to check directly).
+
+### The GOTO+GOSUB+ON ERROR GOTO combined-construct compile bug does NOT reproduce in `basic09c`
+
+Real BASIC09 hits a compile-time `Error #000:069 (Unmatched Control
+Structure)` when GOTO, GOSUB, and ON ERROR GOTO with numbered-line
+targets are all used together in one procedure, even though each works
+individually in isolation. Never root-caused on the real binary
+(proprietary, no source access).
+
+`basic09c` (tested live): the equivalent combined construct compiles
+with zero errors and runs correctly. This supports the theory that the
+real binary's error is a quirk/limitation in the Microware compiler's
+own internal control-structure validation, not a genuine language-level
+restriction — a from-scratch reimplementation with no reason to
+replicate an undocumented internal quirk simply doesn't hit it.
+
+### `RND(n<0)` does NOT reseed in `basic09c` — and its RNG isn't seeded from entropy at all
+
+Real BASIC09: `RND(n<0)` reseeds the generator using `ABS(n)` as the
+seed; live-verified fully deterministic (same seed reproduces an
+identical subsequent `RND(0)` sequence), and reseed calls return a
+value `>=0`.
+
+`basic09c`'s `RND` implementation (`Basic09IR.cpp`) calls `drand48()`
+for `RND(0)` and computes `drand48() * n` for `RND(n)` with **no
+special-casing for negative `n` at all** — there is no reseed logic.
+Live-verified: `RND(-42)` returns `-35.3004` — a **negative** value
+(since `drand48()` is always in `[0,1)`, multiplying by a negative `n`
+gives a negative result), a complete divergence from the documented
+reseed contract. **Separately**, `basic09c`'s RNG appears to have no
+entropy-based seeding at program start at all: running the exact same
+compiled program twice, as two entirely separate processes, produced
+the identical "random" sequence both times (`1.98232, -35.3004,
+-14.8401`, byte-for-byte the same). This looks like an unintentional
+bug rather than a deliberate design choice — `drand48()` without an
+explicit `srand48()` call uses a fixed default seed per the C standard,
+so every run of every `basic09c`-compiled program currently produces
+the same "random" numbers. Worth flagging directly: this would silently
+break any program relying on `RND` for actual randomness (games,
+simulations, anything non-deterministic) across runs.
 
 ## Source material
 
@@ -239,6 +318,8 @@ Microware binary via `os9exec` this session — see the individual
 captured output each finding is based on, and
 `~/.claude/skills/os9-dev/references/basic09/basic09-language.md` /
 `gotchas.md` for the fuller write-up of each. All `basic09c` findings
-come from reading its `test/*.test` lit tests and `src/Basic09*.cpp`
-source directly (as of this session; `basic09c` is under active
-development and any of this may have already changed).
+come from building `basic09c` from source this session and running
+small test programs through it directly, cross-checked against its
+`test/*.test` lit tests and `src/Basic09*.cpp` source (as of this
+session; `basic09c` is under active development and any of this may
+have already changed).
