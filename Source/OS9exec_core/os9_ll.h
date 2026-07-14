@@ -194,6 +194,7 @@
    happens ONLY at this register/memory boundary -- in-world values are always
    offsets and are never stored as real addresses. */
 extern unsigned char *emul_base;
+extern unsigned char *emul_end;   /* one past the end of the arena (memstuff.c) */
 
 /* a 32-bit 68k word: an in-world register or address. Exactly the width of a
    real 68k register, so it also matches UAE's uae_u32 regstruct fields. */
@@ -204,6 +205,21 @@ typedef unsigned int ulong32;
 
 #define TO68K(hostptr)  ((ulong32)( (hostptr)==NULL ? 0 : (unsigned char*)(hostptr) - emul_base ))
 #define FROM68K(addr)   ( (addr)==0 ? NULL : (void*)( emul_base + (addr) ) )
+
+/* Validate a resolved guest pointer (a FROM68K result) as a real host pointer
+   into the 68k arena.  Because the arena is one contiguous block, a single
+   range test catches BOTH the null case (guest address 0 -> NULL, which is
+   below emul_base) AND an out-of-range address (offset >= arena size -> at or
+   past emul_end).  IN_ARENA checks a single pointer; RANGE_IN_ARENA checks that
+   a whole [p, p+len) span fits, with an overflow guard on p+len.  A syscall that
+   is handed a bad pointer should reject it with E_BPADDR rather than dereference
+   it and crash the host -- there is no MMU here to fault the guest instead. */
+#define IN_ARENA(p) \
+    ( (const unsigned char*)(p) >= emul_base && (const unsigned char*)(p) < emul_end )
+#define RANGE_IN_ARENA(p,len) \
+    ( (const unsigned char*)(p) >= emul_base && \
+      (const unsigned char*)(p) + (len) <= emul_end && \
+      (const unsigned char*)(p) + (len) >= (const unsigned char*)(p) )
 
 
 /* floating point register */

@@ -476,7 +476,7 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
     /* a1 is the REQUIRED init-table pointer; a guest passing 0 would deref NULL
        and crash the host.  Return E_BPADDR instead.  (a0=0 is legal here -- it
        means "use the current stack" -- so only a1 is guarded.) */
-    if (itab==NULL) return os9error(E_BPADDR);
+    if (!IN_ARENA(itab)) return os9error(E_BPADDR);
 
     while (*itab!=0xFFFF) {
              vect = *itab >> 2; /* get vector number */
@@ -581,7 +581,7 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
        evCreat/evDelet and strlen(p) -- so a guest passing 0 would deref NULL and
        crash the host.  The evId-based ops (UnLnk/Wait/Signl) never touch it, so
        guard only the name-using cases; return E_BPADDR for a null name. */
-    if (p==NULL && (evCode==Ev_Link || evCode==Ev_Creat || evCode==Ev_Delet))
+    if ((evCode==Ev_Link || evCode==Ev_Creat || evCode==Ev_Delet) && !IN_ARENA(p))
         return os9error(E_BPADDR);
 
     switch (evCode) {
@@ -971,7 +971,7 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
    * carry these fields directly in os9exec. */
   { ushort req_bytes = loword(rp->d[1]);
     byte*   buf      = (byte*)FROM68K(rp->a[0]);
-    if (buf != NULL && dbg_regsave_addr[id] != 0 && req_bytes >= 0x2B0) {
+    if (RANGE_IN_ARENA(buf, 0x2B0) && dbg_regsave_addr[id] != 0 && req_bytes >= 0x2B0) {
         uint32_t frame_be = os9_long(dbg_regsave_addr[id]);
         memcpy(buf + 0x2A8, &frame_be, 4);
         uint32_t par_be = os9_long((uint32_t)dbg_parent_pid[id]);
@@ -1014,7 +1014,7 @@ os9err OS9_F_GBlkMp( regs_type *rp, _pid_ )
     rp->d[3]= memsz;
 
     b= (uint32_t*)FROM68K(rp->a[0]);
-    if (b==NULL) return os9error(E_BPADDR); /* a0 = required result buffer; 0 = bad address, not a NULL host write */
+    if (!RANGE_IN_ARENA(b,sizeof(uint32_t))) return os9error(E_BPADDR); /* a0 = required result buffer; out of arena = bad address */
     *b= 0; /* no segments available */
     return 0;
 } /* OS9_F_GBlkMp */
@@ -1173,7 +1173,7 @@ os9err OS9_F_GModDr( regs_type *rp, _pid_ )
     ulong cnt=        rp->d[1];
     ulong mx = MAXMODULES * sizeof(mdir_entry); if (cnt>mx) cnt= mx;
 
-    if (b==NULL && cnt>0) return os9error(E_BPADDR); /* a0 = required dest buffer */
+    if (cnt>0 && !RANGE_IN_ARENA(b,cnt)) return os9error(E_BPADDR); /* a0 = required dest buffer */
     Update_MDir();
     MoveBlk( b, (byte*)mdirField, cnt );
         
@@ -1197,7 +1197,7 @@ os9err OS9_F_CpyMem( regs_type *rp, _pid_ )
     byte* dst= (byte*)FROM68K(rp->a[1]);
     ulong cnt= (ulong)rp->d[1];
 
-    if ((src==NULL || dst==NULL) && cnt>0) return os9error(E_BPADDR); /* both required when copying */
+    if (cnt>0 && (!RANGE_IN_ARENA(src,cnt) || !RANGE_IN_ARENA(dst,cnt))) return os9error(E_BPADDR); /* both required when copying */
     MoveBlk( dst,src, cnt );
     debugprintf(dbgMemory,dbgDeep,("# F$CpyMem: copied %u bytes from %p to %p\n", (uint32_t)cnt,src,dst ));
     return 0;
@@ -1411,7 +1411,7 @@ os9err OS9_F_Fork( regs_type *rp, ushort cpid )
     /* --- scan and display parameters */
     p= (char*)FROM68K(rp->a[1]);
     n= rp->d[2];
-    if (p==NULL) n= 0; /* a1=0: no parameter area to display, don't deref NULL */
+    if (!IN_ARENA(p)) n= 0; /* a1 not a valid arena pointer: nothing to display */
 
     while (n-->0) {
       if (*p<' ') break;
@@ -1637,7 +1637,7 @@ os9err OS9_F_DExec( regs_type *rp, ushort cpid )
     dbg_bkpt_count[childpid] = bkptcnt;
     if (bkptcnt > 0) {
         bkptlist = (uint32_t*)FROM68K(rp->a[0]);
-        if (bkptlist != NULL) { /* a0=0 with bkptcnt>0 is a bad call: no list, no breakpoints */
+        if (RANGE_IN_ARENA(bkptlist, (ulong)bkptcnt*sizeof(uint32_t))) { /* else bad a0: no list, no breakpoints */
             for (i = 0; i < bkptcnt; i++) dbg_bkpt_list[childpid][i] = os9_long(bkptlist[i]);
         }
         else dbg_bkpt_count[childpid] = 0;
@@ -1965,7 +1965,8 @@ os9err OS9_F_CRC( regs_type *rp, _pid_ )
     rp->d[1]=calc_crc( (byte*)"\0", 1, rp->d[1]); /* update with one additional 0 byte */
   }
   else {
-    /* update CRC over given area */
+    /* update CRC over given area (a0..a0+d0); reject a range outside the arena */
+    if (rp->d[0]>0 && !RANGE_IN_ARENA(FROM68K(rp->a[0]), rp->d[0])) return os9error(E_BPADDR);
     rp->d[1]=calc_crc( (byte*)FROM68K(rp->a[0]), rp->d[0], rp->d[1]);
   } // if
 
@@ -1982,7 +1983,7 @@ os9err OS9_F_SetCRC( regs_type *rp, _pid_ )
     ulong     modsize;
     ushort    hpar;
 
-    if (m==NULL) return os9error(E_BPADDR); /* a0 = required module image; 0 = bad address */
+    if (!IN_ARENA(m)) return os9error(E_BPADDR); /* a0 = required module image; out of arena = bad address */
     if      (os9_word(m->_mh._msync)!=MODSYNC) return os9error(E_BMID); /* no good module */
     modsize= os9_long(m->_mh._msize);
 
@@ -2012,7 +2013,7 @@ os9err OS9_F_PrsNam( regs_type *rp, _pid_ )
     ushort n;
 
     p=(char *)FROM68K(rp->a[0]);
-    if (p==NULL) return os9error(E_BPADDR); /* a0 = required name to parse; 0 = bad address */
+    if (!IN_ARENA(p)) return os9error(E_BPADDR); /* a0 = required name to parse; out of arena = bad address */
     debugprintf(dbgFiles,dbgDeep,("# F$PrsNam: input string='%s'\n",p));
     if (*p=='/') rp->a[0]=TO68K(++p); /* assign updated ptr to path element */
     n=0; /* pathlist size=0 */
@@ -2044,7 +2045,7 @@ os9err OS9_F_CmpNam( regs_type *rp, _pid_ )
     /* get pointers */
     pat   =       (char*)FROM68K(rp->a[0]);
     targ  =       (char*)FROM68K(rp->a[1]);
-    if (pat==NULL || targ==NULL) return os9error(E_BPADDR); /* both required; 0 = bad address */
+    if (!IN_ARENA(pat) || !IN_ARENA(targ)) return os9error(E_BPADDR); /* both required; out of arena = bad address */
     patend= pat + loword(rp->d[1]); /* attention, high word can be <> 0 */
     spat  = NULL;
     

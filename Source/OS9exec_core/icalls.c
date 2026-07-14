@@ -326,7 +326,7 @@ os9err OS9_I_WritLn( regs_type *rp, ushort cpid )
     path= loword(rp->d[0]);
     cnt =        rp->d[1];
     buff= (char*)FROM68K(rp->a[0]);
-    if (buff==NULL && cnt>0) return os9error(E_BPADDR); /* a0 = write buffer; 0 with a length is a bad address */
+    if (cnt>0 && !RANGE_IN_ARENA(buff,cnt)) return os9error(E_BPADDR); /* a0 = write buffer; must fit in the arena */
 
     path= path & 0x7f; /* mask the specific OS9exec non-debug flag */
    
@@ -377,7 +377,7 @@ os9err OS9_I_Write( regs_type *rp, ushort cpid )
     path= loword(rp->d[0]);
     cnt =        rp->d[1];
     buff= (char*)FROM68K(rp->a[0]);
-    if (buff==NULL && cnt>0) return os9error(E_BPADDR); /* a0 = write buffer; 0 with a length is a bad address */
+    if (cnt>0 && !RANGE_IN_ARENA(buff,cnt)) return os9error(E_BPADDR); /* a0 = write buffer; must fit in the arena */
 
     /* now write */
     err= usrpath_write(cpid,path, &cnt,buff, false);
@@ -417,7 +417,7 @@ os9err OS9_I_ReadLn( regs_type *rp, ushort cpid )
     p=(char *)  FROM68K(rp->a[0]);
     path=loword(rp->d[0]);
     cnt =       rp->d[1];
-    if (p==NULL && cnt>0) return os9error(E_BPADDR); /* a0 = read buffer; 0 with a length is a bad address */
+    if (cnt>0 && !RANGE_IN_ARENA(p,cnt)) return os9error(E_BPADDR); /* a0 = read buffer; must fit in the arena */
 
     err= usrpath_read(cpid,path,&cnt,p,true); if (err) return err;
     rp->d[1]= cnt; /* return # of chars actually read */
@@ -451,7 +451,7 @@ os9err OS9_I_Read( regs_type *rp, ushort cpid )
    p=(char *)  FROM68K(rp->a[0]);
    path=loword(rp->d[0]);
    cnt =       rp->d[1];
-   if (p==NULL && cnt>0) return os9error(E_BPADDR); /* a0 = read buffer; 0 with a length is a bad address */
+   if (cnt>0 && !RANGE_IN_ARENA(p,cnt)) return os9error(E_BPADDR); /* a0 = read buffer; must fit in the arena */
 
    err=usrpath_read(cpid,path,&cnt,p,false); if (err) return err;
    rp->d[1]= cnt; /* return # of chars actually read */
@@ -611,7 +611,7 @@ os9err OS9_I_Attach( regs_type *rp, _pid_ )
 {
 	char* name= (char*) FROM68K(rp->a[0]);
 
-	if (name!=NULL && ustrcmp( name,"/L2" )==0) { /* a0=0: don't strcmp a NULL name */
+	if (IN_ARENA(name) && ustrcmp( name,"/L2" )==0) { /* a0 out of arena: don't strcmp it */
 		rp->a[2]= 0x22002200; /* %%% /L2 identifier */
 		return 0;
 	} /* if */
