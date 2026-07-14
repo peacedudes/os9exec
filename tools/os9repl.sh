@@ -111,7 +111,10 @@ send_one_key() {
 
 cmd_start() {
     tmux kill-session -t "$SESSION" 2>/dev/null || true
-    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9DISK='$REPO/h0' ./os9exec $EXTRA_ARGS /h0/CMDS/shell"
+    # OS9STOP lets any account run the `stop`/`shutdown` internal command, not
+    # just group-0 super-users -- so an agent driving a session that logs in as
+    # a plain account (or gets stuck in a tsmon login loop) can always exit.
+    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9STOP=1 OS9DISK='$REPO/h0' ./os9exec $EXTRA_ARGS /h0/CMDS/shell"
     printf '[starting os9exec...]\n'
     if wait_prompt; then
         tmux send-keys -t "$SESSION" "setenv PATH /h0/CMDS:/h0/CMDS/SHARE" Enter
