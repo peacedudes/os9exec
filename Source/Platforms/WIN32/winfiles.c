@@ -224,8 +224,10 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
         *q++= PATHDELIM;
         
         qc= adname+strlen(adname)-1;
-        debugprintf( dbgFiles,dbgNorm,("# AdjustPath  =>  '%s'%s %08x %08x\n", 
-                     adname, creFile ?" cre":"", qc,qs ));
+        /* %p, not %08x: qc/qs are host pointers, and %08x pulls a 32-bit int
+         * out of the vararg stream -- half a 64-bit pointer, plus UB. */
+        debugprintf( dbgFiles,dbgNorm,("# AdjustPath  =>  '%s'%s %p %p\n",
+                     adname, creFile ?" cre":"", (void*)qc,(void*)qs ));
 
         fnd= CaseSens( adname,q, &reduS );
     
