@@ -1127,14 +1127,14 @@ os9err pKlock( ushort pid, _spP_, uint32_t *d0, uint32_t *d1)
     syspath_typ* spPX;
     syspath_typ* spPY;
     syspath_typ* spK; /* must be declared separately, don't know why ?! */
-    char         ind[5];
+    char         ind[12]; /* "%02d" of an int -- was [5], too small for a stray big value */
     char         pty[OS9PATHLEN];
     char         tty[OS9PATHLEN];
     int          k, newPty= 0;
     Boolean      found;
     
     while (true) { /* search for an unused tty/pty pair */
-        sprintf    ( ind, "%02d", newPty );
+        snprintf   ( ind,sizeof(ind), "%02d", newPty ); /* ind is [5]: bound it */
         strcpy( tty,"tty" );
         strcat( tty, ind  );
         strcpy( pty,"pty" );

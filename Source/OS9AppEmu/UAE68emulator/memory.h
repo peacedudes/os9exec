@@ -208,9 +208,12 @@ static __inline__ void put_byte(uaecptr addr, uae_u32 b)
 
 static __inline__ int valid_address( uaecptr addr, uae_u32 size )
 {
-  #ifndef linux
+  /* #pragma unused is an MPW/CodeWarrior-ism; GCC just warns that it is
+   * ignoring it (clang quietly accepts it). Gate on the COMPILER, not on the
+   * OS -- "not linux" wrongly included mingw. */
+  #ifndef __GNUC__
     #pragma unused(addr,size)
- #endif
+  #endif
  
  /* return get_mem_bank(addr).check(addr, size); */
     return 1; /* all addresses can be translated (as there is no translation! %%% */

@@ -1004,9 +1004,9 @@ void Console_Name( int term_id, char* consname )
 
 char* OS9exec_Name( void )
 {
-    static char theName[15];
-    
-    sprintf( theName, "OS9exec V%x.%02x", exec_version,exec_revision );
+    static char theName[24]; /* was [15] -- "OS9exec V" is already 9 chars */
+
+    snprintf( theName,sizeof(theName), "OS9exec V%x.%02x", exec_version,exec_revision );
     return   theName;
 } /* OS9exec_Name */
 
@@ -1311,7 +1311,7 @@ static int HashF( char* name )
   const ulong AccStart= 0xffffffff;
   ulong rslt;
   int  i, len;  
-  char ups[MAX_PATH]; // let the original be case sensitive for Linux
+  char ups[OS9_MAXPATH]; // let the original be case sensitive for Linux
   
                len= strlen( name );  
   for (i= 0; i<len+1; i++) {
@@ -1337,7 +1337,7 @@ os9err FD_ID( const char* pathname, dirent_typ* dEnt,
   #endif
 
   #define ATTR_DIR 0x0010
-  char      tmp[MAX_PATH];
+  char      tmp[OS9_MAXPATH];
   int       ii, hh, n;
 //direntry* m;
   Boolean   doit;
@@ -2093,8 +2093,11 @@ Boolean SCSI_Device( const char* os9path,
     } // if
     
     // is false, but useful anyway
-    if     (ustrcmp( p,  "SCF"     )==0) { *typeP= fSCF;
-        if (ustrcmp( dvn,"vmod"    )==0)   *typeP= fVMod; return false; }
+    if (ustrcmp( p,"SCF" )==0) {
+        *typeP= fSCF;
+        if (ustrcmp( dvn,"vmod" )==0) *typeP= fVMod;
+        return false; /* unconditional -- it just didn't look it */
+    }
     if     (ustrcmp( p,  "SOCKMAN" )==0 ||
             ustrcmp( p,  "SFM"     )==0) { *typeP= fNET;  return false; }
     if     (ustrcmp( p,  "PKMAN"   )==0) { *typeP= fPTY;  return false; }

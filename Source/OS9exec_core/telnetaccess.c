@@ -247,18 +247,29 @@ void WindowTitle( char* title, Boolean vmod )
     p="";
   #endif
     
-  sprintf( title, "%s%s", OS9exec_Name(), p );
-    
+  /* Composed in a local buffer and appended by offset, rather than sprintf'ing
+   * <title> into itself via "%s". Passing the destination as one of its own
+   * source arguments is overlapping source/destination -- undefined behaviour,
+   * which mingw-w64 flags as -Wrestrict. Both callers hand us a 255-byte buffer. */
+  char buf[ 255 ];
+  size_t used;
+
+  snprintf( buf,sizeof(buf), "%s%s", OS9exec_Name(), p );
+
   #ifdef TERMINAL_CONSOLE
-    if (vmod) sprintf( title, "%s  /vmod - display for  \"%s\"", 
-                       title, gTitle );
-    else {    
+    used= strlen( buf );
+
+    if (vmod) snprintf( buf+used, sizeof(buf)-used,
+                        "  /vmod - display for  \"%s\"", gTitle );
+    else {
       #ifndef windows32
         Console_Name( gConsoleID, (char*)&cons );
-        sprintf( title, "%s  /%s - terminal window", title, cons );
+        snprintf( buf+used, sizeof(buf)-used, "  /%s - terminal window", cons );
       #endif
     } // if
   #endif
+
+  strcpy( title, buf );
 } /* WindowTitle */
 
 

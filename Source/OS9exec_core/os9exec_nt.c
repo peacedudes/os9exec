@@ -565,7 +565,7 @@ dir_type mdir;	                  /* current module dir */
   
 #else
   /* the default module load directory OS9MDIR */
-  char    mdirPath[MAX_PATH];	  /* current mdir path */
+  char    mdirPath[OS9_MAXPATH];	  /* current mdir path */
 #endif
 
 

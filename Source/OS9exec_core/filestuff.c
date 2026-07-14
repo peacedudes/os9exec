@@ -359,8 +359,12 @@ static void disp_line( ushort pid, ushort sp, char* ups, syspath_typ* spP,
                       if (p->size>=1000) sprintf( szs, "%1.0fk", (float)(p->size/1024) );
                       else               sprintf( szs, "%3u",            p->size       );
 
-                               sprintf( aa, "%c>%d:%s", p->broken? '/':'-', p->sp_lock, szs );
-                      if (n>0) sprintf( aa, "%s:%d",    aa, n );
+                               snprintf( aa,sizeof(aa), "%c>%d:%s",
+                                         p->broken? '/':'-', p->sp_lock, szs );
+                      /* append -- the old form sprintf'd <aa> into itself via
+                       * "%s", i.e. overlapping source and destination: UB */
+                      if (n>0) { size_t used= strlen( aa );
+                                 snprintf( aa+used, sizeof(aa)-used, ":%d", n ); }
                     } // if
                    
                     upo_printf( "%-13s", aa ); break;

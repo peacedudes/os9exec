@@ -234,8 +234,16 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
     strcat(nmS,fromname);
     nameS= nmS;
     
-        typeS= IO_Type( cpid,nameS, 0x00 ); /* get the device type: Mac/PC or RBF */
-    if (typeS!=fRBF) parsepath( cpid, &nameS, pS, exe_dir ); nameS= pS;
+    typeS= IO_Type( cpid,nameS, 0x00 ); /* get the device type: Mac/PC or RBF */
+
+    /* <nameS= pS> belongs INSIDE the guard: pS is only filled by parsepath(), so
+     * on the RBF path (where parsepath is skipped) this used to point nameS at an
+     * uninitialized stack buffer. Harmless only because the RBF branch below reads
+     * nmS rather than nameS -- one edit away from being a real bug. */
+    if (typeS!=fRBF) {
+        parsepath( cpid, &nameS, pS, exe_dir );
+        nameS= pS;
+    }
 
     strcpy(nmD,todir);
     strcat(nmD,PSEP_STR);
@@ -245,8 +253,12 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
     strcat(nmD,destname);
     nameD= nmD;
     
-        typeD= IO_Type( cpid,nameD, 0x00 );
-    if (typeD!=fRBF) parsepath( cpid, &nameD, pD, exe_dir ); nameD= pD;
+    typeD= IO_Type( cpid,nameD, 0x00 );
+
+    if (typeD!=fRBF) { /* same as the source side above */
+        parsepath( cpid, &nameD, pD, exe_dir );
+        nameD= pD;
+    }
     
         len= strlen( destname );
     if (len>DIRNAMSZ)

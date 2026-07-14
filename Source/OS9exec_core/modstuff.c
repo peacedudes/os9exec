@@ -1033,7 +1033,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
 
             #else
             if (*mdirPath!=0) {
-                char pathbuf[MAX_PATH]; /* temp buffer for path */
+                char pathbuf[OS9_MAXPATH]; /* temp buffer for path */
                 debugprintf(dbgModules,dbgNorm,("# load_module: trying to load from OS9MDIR: %s\n",mdirPath));
                 strcpy(pathbuf,mdirPath);
                 strcat(pathbuf,PATHDELIM_STR ); /* at least Linux requires this separator */

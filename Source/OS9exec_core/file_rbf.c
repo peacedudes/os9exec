@@ -580,8 +580,12 @@ static void ReleaseBuffers( syspath_typ* spP )
 {
 //upe_printf( "Relbuffers %d %08X %08X\n", spP->nr, spP->fd_sct,spP->rw_sct);
 
-  if (spP->fd_sct!=NULL) release_mem( spP->fd_sct ); spP->fd_sct= NULL;
-  if (spP->rw_sct!=NULL) release_mem( spP->rw_sct ); spP->rw_sct= NULL;
+  /* the NULLing is unconditional -- on its own line, so it reads that way */
+  if (spP->fd_sct!=NULL) release_mem( spP->fd_sct );
+  spP->fd_sct= NULL;
+
+  if (spP->rw_sct!=NULL) release_mem( spP->rw_sct );
+  spP->rw_sct= NULL;
 } /* ReleaseBuffers */
 
 static os9err ReleaseIt( ushort pid, rbfdev_typ* dev )
@@ -1027,7 +1031,11 @@ static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sct
 
             base= get_mem( sctSize*totScts );
     if    ( base==NULL ) return false;
-    memset( base,          sctSize*totScts, 0 ); // clear all
+    /* memset(dst, VALUE, LENGTH) -- the value and length were transposed, making
+     * this a zero-LENGTH memset that cleared nothing at all, despite the comment.
+     * Harmless only because get_mem() happens to hand back zeroed arena pages;
+     * the moment it didn't, a fresh disk would come up full of stale bytes. */
+    memset( base, 0, sctSize*totScts ); // clear all
     memcpy( base,RAM_zero, sctSize );
 
     f= allocSize + 1; fN= f*sctSize; // root dir fd sector position
@@ -1144,7 +1152,9 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
                  ali[OS9PATHLEN],
                  tmp[OS9PATHLEN],
                  imgpath[OS9PATHLEN],
-                 ers[12], *q, *p, *v;
+                 /* "  #000:%03d" is 7 fixed chars + up to 5 digits (err is a
+                  * ushort) + NUL = 13, which never fit in the old [12] */
+                 ers[16], *q, *p, *v;
     rbfdev_typ*  dev;
     ptype_typ    type;
     int          ii, n;
@@ -1489,7 +1499,7 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
                    dev->tmp_sct= NULL;
     } // if
         
-    sprintf( ers,"  #000:%03d", err );
+    snprintf( ers,sizeof(ers),"  #000:%03d", err );
     debugprintf(dbgFiles,dbgNorm,("# RBF open: \"%s\" (%d%s%s)\n", 
                                      cmp, cdv, dev->installed ? "/installed":"", 
                                      err ? ers:""));
@@ -1934,7 +1944,10 @@ static void Disp_RBF_DevsLine( rbfdev_typ* rb, char* name, Boolean statistic )
     char  s [OS9NAMELEN];
     char  u [OS9PATHLEN];
     char  vI[20], vT[20];
-    char  v [20], w [20];
+    /* v holds "(<vI>/<vT>)" -- two 20-byte strings plus 3 punctuation chars, so
+     * 20 could not possibly hold it: a mere "(123.456MB/123.456MB)" is 22 bytes
+     * and smashed the stack on a large enough image. Size it to actually fit. */
+    char  v [2*20+4], w [20];
 
     long long sizeI= (long long)rb->imgScts * rb->sctSize;
     long long sizeT= (long long)rb->totScts * rb->sctSize;
@@ -1956,8 +1969,8 @@ static void Disp_RBF_DevsLine( rbfdev_typ* rb, char* name, Boolean statistic )
     }
     
     Kb   ( vT, sizeT );
-    if (sizeI==sizeT) sprintf( v,    "(%s)",                 vT );
-    else              sprintf( v, "(%s/%s)", Kb( vI, sizeI ),vT );
+    if (sizeI==sizeT) snprintf( v,sizeof(v),    "(%s)",                 vT );
+    else              snprintf( v,sizeof(v), "(%s/%s)", Kb( vI, sizeI ),vT );
     
     upo_printf( "%-10s ", StrBlk_Pt( s,10 ) );
             

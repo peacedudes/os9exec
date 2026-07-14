@@ -1510,7 +1510,11 @@ os9err pFsetsz( ushort pid, syspath_typ* spP, uint32_t *sizeP )
                    i= strlen( tmpName );
             while (i>=0  &&   tmpName[ i ]!='/') i--;
             tmpName[ i+1 ]= NUL;
-            sprintf( tmpName, "%s.tmpfile.%d", tmpName, pid );
+            /* Append -- do NOT sprintf a buffer into itself. "%s" of <tmpName>
+             * while writing to <tmpName> is overlapping source/destination, which
+             * is undefined behaviour, quite apart from the overflow risk. */
+            { size_t used= strlen( tmpName );
+              snprintf( tmpName+used, sizeof(tmpName)-used, ".tmpfile.%d", pid ); }
             
             err= fclose( spP->stream );
             err= remove               ( tmpName );
@@ -1955,7 +1959,7 @@ static void setFD( syspath_typ* spP, void* fdl, byte *buffer )
     #ifdef MACFILES  
       CInfoPBRec* cipbP= fdl;
     #else
-      #ifndef linux
+      #ifndef __GNUC__ /* MPW-only pragma; GCC warns it is ignoring it */
       #pragma unused(fdl)
       #endif
     #endif

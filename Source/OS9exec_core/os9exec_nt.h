@@ -373,9 +373,14 @@
 #define MAX_PICTS         8 /* max number of picts to be displayed at /vmod display */
 #define MAXTRIES_DEL    100 /* max tries to delete a file */
 
-#ifndef windows32
-  #define MAX_PATH     1024
-#endif
+/* OS9_MAXPATH, NOT MAX_PATH: Windows already defines MAX_PATH (as 260) in
+ * windef.h, so defining our own 1024 on top of it made the effective value
+ * depend on include order -- and mdirPath[] is an `extern` buffer shared across
+ * translation units, so a TU that saw Windows' 260 while the TU that DEFINES the
+ * buffer saw 1024 would disagree about its size and happily write off the end.
+ * mingw-w64 warned about the redefinition 28 times; it was right to. Use a name
+ * the system cannot collide with. */
+#define OS9_MAXPATH    1024
 
 // -------------------------------------------------------------------
 /* number of "processes" OS9exec can handle. 
@@ -1380,7 +1385,7 @@ extern dir_type mdir;                  /* current module dir */
  
 #else
   /* the default module load directory OS9MDIR */
-  extern    char   mdirPath[MAX_PATH];    /* current mdir path */
+  extern    char   mdirPath[OS9_MAXPATH];    /* current mdir path */
 #endif
 
 

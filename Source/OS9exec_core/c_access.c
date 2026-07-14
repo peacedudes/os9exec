@@ -194,7 +194,8 @@ void IntToStr( char* s, int i ) {
 
 void IntToStrN( char* s, int i, int n )
 {
-  char form[ 20 ]; // format string
+  char form[ 32 ]; // format string; built from caller-supplied widths, so leave
+                   // room for a full 10-digit int in the width field
   
   if (n==MAXINTEGER) { IntToStr( s, i ); return; }
 
@@ -212,13 +213,14 @@ void UIntToStr( char* s, unsigned int i ) {
 
 void UIntToStrN( char* s, unsigned int i, int n )
 {
-  char form[ 20 ]; // format string
+  char form[ 32 ]; // format string; built from caller-supplied widths, so leave
+                   // room for a full 10-digit int in the width field
   int  r= 0;
   
   if (n==MAXINTEGER) { UIntToStr( s, i ); return; }
   
   if (n>8) { r= n-8; n= 8; } // keep spaces for the remaining part of > 8 
-  sprintf   ( form, "%s%ds%s0%dX", "%", r, "%", n );
+  snprintf  ( form,sizeof(form), "%s%ds%s0%dX", "%", r, "%", n );
   sprintf( s, form, "", i );
 } // UIntToStrN
 
@@ -232,7 +234,8 @@ void BoolToStr ( char* s, int bo ) {
 
 void BoolToStrN( char* s, int bo, int n )
 {
-  char form[ 20 ]; // format string
+  char form[ 32 ]; // format string; built from caller-supplied widths, so leave
+                   // room for a full 10-digit int in the width field
   
   if (n==MAXINTEGER) { BoolToStr( s, bo ); return; }
 
@@ -244,7 +247,8 @@ void BoolToStrN( char* s, int bo, int n )
 
 void RealToStr( char* s, double d, int res )
 {
-  char form[ 20 ]; // format string
+  char form[ 32 ]; // format string; built from caller-supplied widths, so leave
+                   // room for a full 10-digit int in the width field
   
   switch (res) {
     case MAXINTEGER: sprintf( form, "%sE",    "%" ); break;
@@ -259,7 +263,8 @@ void RealToStr( char* s, double d, int res )
 
 void RealToStrN( char* s, double d, int n, int res )
 {
-  char form[ 20 ]; // format string
+  char form[ 32 ]; // format string; built from caller-supplied widths, so leave
+                   // room for a full 10-digit int in the width field
   
   switch (res) {
     case MAXINTEGER: sprintf( form, "%s%dE",    "%", n ); break;

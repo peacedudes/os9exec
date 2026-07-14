@@ -2004,7 +2004,7 @@ os9err call_hostcmd( char* cmdline, ushort pid, int moreargs, char **argv )
       return host2os9err( err,E_IFORKP );
     
     #else
-      #ifndef linux
+      #ifndef __GNUC__ /* MPW-only pragma; GCC warns it is ignoring it */
       #pragma unused(cmdline,pid,moreargs,argv)
       #endif
 
