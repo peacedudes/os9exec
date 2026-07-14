@@ -81,6 +81,13 @@ delta() {
     '
 }
 
+# Escape a literal string for tmux send-keys -l: even in literal mode, tmux's
+# own command parser still treats a bare ';' as a command separator (verified
+# empirically — '-l --' alone does NOT protect it), so it must be backslash-escaped.
+tmux_escape() {
+    printf '%s' "${1//;/\\;}"
+}
+
 # Send one key token — single character or named key — without Enter.
 # Named keys: Escape, Enter, Up, Down, Left, Right, BSpace, Tab, Space
 send_one_key() {
@@ -96,7 +103,7 @@ send_one_key() {
         Tab|tab)             tmux send-keys -t "$SESSION" "Tab" ;;
         Space|space)         tmux send-keys -t "$SESSION" " " ;;
         C-*)                 tmux send-keys -t "$SESSION" "$k" ;;
-        *)                   tmux send-keys -t "$SESSION" "$k" ;;
+        *)                   tmux send-keys -t "$SESSION" -l -- "$(tmux_escape "$k")" ;;
     esac
 }
 
@@ -127,7 +134,8 @@ cmd_send() {
     wait_prompt || return 1
     local before
     before=$(pane)
-    tmux send-keys -t "$SESSION" "$cmd" Enter
+    tmux send-keys -t "$SESSION" -l -- "$(tmux_escape "$cmd")"
+    tmux send-keys -t "$SESSION" Enter
     sleep 0.1
     local i=0 limit=$(( TIMEOUT * 7 )) after
     while [ $i -lt $limit ]; do
@@ -179,7 +187,8 @@ cmd_vi() {
     wait_prompt || return 1
 
     printf '[launching VI %s]\n' "$file"
-    tmux send-keys -t "$SESSION" "VI $file" Enter
+    tmux send-keys -t "$SESSION" -l -- "$(tmux_escape "VI $file")"
+    tmux send-keys -t "$SESSION" Enter
     sleep 1.5          # wait for vi to draw initial screen
     cmd_snap "initial screen"
 
