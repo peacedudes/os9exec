@@ -126,9 +126,11 @@ Boolean CaseSens( char* pathname, char* filename, Boolean *reduS )
         if (ustrcmp( tmp,     name )==0) { ok= true; *reduS= true; break; }
     } /* loop */          
     
-    closedir( d );
-    
-    if (ok) strcpy( filename,dEnt->d_name ); /* overwrite it */
+    /* copy BEFORE closedir(): dEnt points into the DIR stream's buffer, which
+     * closedir() frees -- reading dEnt->d_name afterwards is a use-after-free.
+     * Same fix as linuxfiles.c CaseSens. */
+    if (ok) strcpy( filename,dEnt->d_name ); /* dEnt still valid here */
+    closedir( d );                           /* frees dEnt -- must come after */
     *(filename-1)= PATHDELIM; /* cut them together again */
     debugprintf( dbgFiles,dbgNorm,("# CaseSens: (out) '%s' %d\n", pathname,ok ));
     return ok;

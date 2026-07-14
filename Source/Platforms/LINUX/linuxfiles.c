@@ -122,9 +122,14 @@ Boolean CaseSens( char* pathname, char* filename, Boolean *reduS )
         if (ustrcmp( tmp,     name )==0) { ok= true; *reduS= true; break; }
     } /* loop */          
     
-    closedir( d );
-    
-    if (ok) strcpy( filename,dEnt->d_name ); /* overwrite it */
+    /* Copy the matched name BEFORE closedir(): dEnt points into the DIR
+     * stream's own buffer, which closedir() frees -- reading dEnt->d_name
+     * afterwards is a use-after-free (caught by ASan on an ordinary file open).
+     * The freed d_name is garbage of arbitrary length, so the strcpy then
+     * overran <filename> (a slice of the path buffer) and corrupted the path,
+     * which is what later blew up AdjustPath's reconstruction loop too. */
+    if (ok) strcpy( filename,dEnt->d_name ); /* dEnt still valid here */
+    closedir( d );                           /* frees dEnt -- must come after */
     *(filename-1)= PATHDELIM; /* cut them together again */
     debugprintf( dbgFiles,dbgNorm,("# CaseSens: (out) '%s' %d\n", pathname,ok ));
     return ok;
