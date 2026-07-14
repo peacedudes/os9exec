@@ -893,7 +893,13 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 		if (extra & 0x0400)
 		    regs.fpiar = m68k_dreg (regs, opcode & 7);
 	    }
-	} else if ((opcode & 0x38) == 1) {
+	/* == 8, not == 1: this tests the 68k addressing MODE field, bits 5..3, so
+	 * (opcode & 0x38) is always a multiple of 8 and could never equal 1 -- the
+	 * whole An-direct branch below was dead code. Mode 1 (An direct) therefore
+	 * fell through to the memory-EA path below, which treated the address
+	 * register as a memory address. Affects FMOVE.L of FPcr/FPsr/FPIAR to/from
+	 * an address register (e.g. `fmove.l fpiar,a0`). */
+	} else if ((opcode & 0x38) == 8) {
 	    if (extra & 0x2000) {
 		if (extra & 0x1000)
 		    m68k_areg (regs, opcode & 7) = regs.fpcr;
