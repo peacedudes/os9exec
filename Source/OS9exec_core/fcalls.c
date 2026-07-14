@@ -897,11 +897,18 @@ os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
  */
 {
     uint32_t cnt= MAXPROCESSES * sizeof(uint32_t); /* the whole table image */
+    byte*    dst= (byte*)FROM68K( rp->a[0] );
+
+    /* a0 is guest-supplied, and FROM68K maps 68k address 0 to NULL -- so a guest
+     * passing a null buffer would memcpy() to NULL and take the whole emulator
+     * down with it. Give it an error instead. (Caught by gcc's -Wnonnull on the
+     * Linux build; neither clang nor mingw-gcc spotted it.) */
+    if (dst==NULL) return E_BPADDR;
 
     Update_PrcDBT( rp, currentpid );
 
     if (cnt > rp->d[1]) cnt= rp->d[1]; /* clip to the caller's buffer */
-    memcpy( (byte*)FROM68K(rp->a[0]), (byte*)prDBT, cnt );
+    memcpy( dst, (byte*)prDBT, cnt );
 
     rp->d[1]= cnt; /* bytes copied */
     return 0;
@@ -922,12 +929,14 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
   procid           pd; // this is a local construction buffer for the Process descriptor
   ushort           id= (ushort)loword( rp->d[ 0 ] );
   process_typ*     cp= &procs[ id ];
+  byte*            dst= (byte*)FROM68K( rp->a[ 0 ] );
 
   if (cp->state==pUnused) return E_IPRCID; // this is not a valid process
+  if (dst==NULL)          return E_BPADDR; // guest passed a null buffer -- see F$GPrDBT
 
   BuildPrcDsc( id, cpid, rp->a[ 7 ], &pd );
 
-  memcpy( (byte*)FROM68K(rp->a[ 0 ]), &pd, loword( rp->d[ 1 ] ) );
+  memcpy( dst, &pd, loword( rp->d[ 1 ] ) );
   /* P$DbgReg ($2A8) = address of register frame buffer in debugger's static storage.
    * P$DbgPar ($2AC) = non-zero when process is being debugged (prevents debug from
    * treating the process as undebugger).  Both injected here since procid doesn't

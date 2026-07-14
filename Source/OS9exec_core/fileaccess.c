@@ -391,7 +391,16 @@ os9err pFreadln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
       #define   READCHUNKSZ 200
     #else
       char* p;
-      char  c;
+      /* int, NOT char: fgetc() returns an int precisely so that EOF (-1) cannot
+       * collide with any real byte value. Stored in a plain `char`, the compare
+       * `c==EOF` below only works where `char` happens to be SIGNED. It is
+       * unsigned on ARM Linux (and on plain ARM generally), where EOF became 255,
+       * `c==EOF` was never true, and the read loop below never terminated: it
+       * spun forever appending 0xFF, so `list`/`pr`/`tee`/`tar` on any file just
+       * hung, emitting garbage until killed. macOS keeps char signed even on
+       * arm64, which is why this never showed up there. Confirmed on Linux
+       * aarch64: (char)EOF == EOF is false. */
+      int   c;
     #endif
      
     assert( buffer!=NULL );
@@ -486,7 +495,7 @@ os9err pFreadln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
             return cnt==0 ? os9error(E_EOF) : 0; /* return EOF only if on first char */
           } // if
             
-          *p++= c; /* save in the buffer */        
+          *p++= (char)c; /* save in the buffer (narrow only after the EOF test) */
           cnt++;
           if (c==CR) break; /* abort on CR */
         } // while
