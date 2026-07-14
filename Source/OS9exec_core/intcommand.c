@@ -318,7 +318,9 @@ static os9err int_debughalt( ushort pid, int argc, char** argv )
     Boolean   fullScreen= false;
     char*     p;
     ushort*   usp;
-    ushort    level;
+    ushort    level= 0; /* '-s' jumps to getmask without passing through '-d', which is
+                           what sets this; the "if (level>2) set all" there must not act
+                           on stack garbage.  Only '-dx' (level=3) means "set all". */
     unsigned long lnum; /* sscanf target -- must match "%lu"'s real width, see below */
   //ptype_typ type;
   //ulong     size;
