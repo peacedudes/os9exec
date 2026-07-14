@@ -319,6 +319,7 @@ static os9err int_debughalt( ushort pid, int argc, char** argv )
     char*     p;
     ushort*   usp;
     ushort    level;
+    unsigned long lnum; /* sscanf target -- must match "%lu"'s real width, see below */
   //ptype_typ type;
   //ulong     size;
     
@@ -424,7 +425,12 @@ static os9err int_debughalt( ushort pid, int argc, char** argv )
                                 p= argv[k];
                             }
                             
-                            if (sscanf( p,"%lu", &screenW )<1) screenW= 0;
+                            /* via an `unsigned long` temp, not straight into the
+                             * `ulong`: "%lu" writes 4 bytes on Windows (LLP64)
+                             * but `ulong` is 8, so scanning direct left half the
+                             * variable uninitialized. See os9main.c's getlnum. */
+                            if (sscanf( p,"%lu", &lnum )<1) lnum= 0;
+                            screenW= lnum;
                             break;
                 
                 case 'y' :  if (*(p+1)=='=') p+=2;
@@ -433,8 +439,9 @@ static os9err int_debughalt( ushort pid, int argc, char** argv )
                                 p= argv[k];
                             }
                             
-                            if (sscanf( p,"%lu", &screenH )<1) screenH= 0;
-                            break; 
+                            if (sscanf( p,"%lu", &lnum )<1) lnum= 0; /* see 'x' above */
+                            screenH= lnum;
+                            break;
 
                 default  :  idbg_usage( argv[ 0 ] );
                             printf("# Error: unknown option '%c'\n",*p);
@@ -1456,7 +1463,7 @@ static os9err int_crash( _pid_, _argc_, _argv_ )
   
   a= (ulong*)0xCE00BEF0;                            /* non existing address */
   a= (ulong*)*a;
-  upe_printf( "a=%08X\n", a );  /* must do something with <a>, because high */
+  upe_printf( "a=%p\n", (void*)a );  /* must do something with <a>, because high */
                     /* optimizing system would remove the <a> assignment !! */
   return 0;
 } /* int_crash */
@@ -1653,8 +1660,8 @@ os9err _errmsg(os9err err, char* format, ...)
     upe_printf("%s: ",icmname);
     vsprintf(obuf,format,vp);
     va_end(vp);
-    
-    upe_printf(obuf);
+
+    upe_printf("%s",obuf); /* already formatted -- a '%' in the message must not re-format */
     return err;
 } /* _errmsg */
 
@@ -1692,7 +1699,7 @@ os9err prepArgs( char *arglist, ushort *argcP, char*** argP )
 
   localargv= get_mem( (argc+1)*sizeof(char**) );
 
-  debugprintf( dbgUtils,dbgNorm, ("# prepArgs: arglist @ $%08lX argc=%d\n",(ulong)arglist, argc ));
+  debugprintf( dbgUtils,dbgNorm, ("# prepArgs: arglist @ %p argc=%d\n",(void*)arglist, argc ));
 
   argc   = 0; /* start again */
   p      = arglist;
@@ -1718,7 +1725,7 @@ os9err prepArgs( char *arglist, ushort *argcP, char*** argP )
   if (pp==NULL) return os9error(E_NORAM);
     
   p=(char *)(pp + argc +1);
-  debugprintf(dbgUtils,dbgDeep,("# prepArgs: argc=%d, argv[] @ $%lX, args @ $%lX\n",argc,(ulong)pp, (ulong)p));
+  debugprintf(dbgUtils,dbgDeep,("# prepArgs: argc=%d, argv[] @ %p, args @ %p\n",argc,(void*)pp, (void*)p));
   
   /* now copy argv[] and args, leave argv[ 0 ] free */
   for (k=0; k<argc; k++) {
@@ -1727,8 +1734,8 @@ os9err prepArgs( char *arglist, ushort *argcP, char*** argP )
     if (*(p-1)==0x20) *(p-1)=0; else *p++=0; /* replace space by terminator or append it at end */
   } // for
   
-  debugprintf(dbgUtils,dbgDeep,("# prepArgs: prepared argc=%d, params @ $%08lX\n",
-                                   argc,(ulong)pp));
+  debugprintf(dbgUtils,dbgDeep,("# prepArgs: prepared argc=%d, params @ %p\n",
+                                   argc,(void*)pp));
                                    
   release_mem( localargv );
   

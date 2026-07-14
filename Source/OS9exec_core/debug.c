@@ -269,9 +269,13 @@ void _debugprintf(char *format, ...)
     vsprintf(buffer,format,vp);
     va_end                (vp);
     
+    /* "%s", buffer -- NOT buffer: it is already-formatted text, so any '%' that
+     * survived into it (a filename, a module name, an error description) would
+     * otherwise be read as a fresh specifier and consume varargs that were never
+     * passed. The printf() branch just above always had this right. */
     if (cp->isIntUtil &&
        !cp->isNative) printf( "%s", buffer );
-    else          upe_printf( buffer );
+    else          upe_printf( "%s", buffer );
 
     /* look if also halt enabled for that class */
     debug_halt( tempmask );
@@ -378,7 +382,7 @@ void debug_procdump( process_typ* cp, int cpid )
          else
                strcpy(filename, "");
     
-         upo_printf("        %06s %02d %-05s /%s",
+         upo_printf("        %6s %02d %-5s /%s",
                     prefix,
                     i,
                     typename,
@@ -454,7 +458,7 @@ void debug_procdump( process_typ* cp, int cpid )
    }
 
    /* Static memory */
-   upo_printf("       Memory: Static    -     %08X - %08X %7ld bytes\n",
+   upo_printf("       Memory: Static    -     %08X - %08X %7u bytes\n",
           cp->memstart,
           cp->memtop,
           (cp->memtop - cp->memstart));

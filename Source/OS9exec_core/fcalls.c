@@ -723,8 +723,8 @@ os9err OS9_F_Icpt( regs_type *rp, ushort cpid )
     cp->pd._sigvec= os9_long(rp->a[0]);  /* set address of intercept routine */
     cp->icpta6    =                  rp->a[6]; /* set data pointer for intercept routine */
     debugprintf(dbgProcess,dbgNorm,
-      ("# F$Icpt: set intercept of pid=%d to pc=$%08lx, a6=$%08lx\n",
-          cpid,os9_long((ulong)cp->pd._sigvec),cp->icpta6));
+      ("# F$Icpt: set intercept of pid=%d to pc=$%08x, a6=$%08x\n",
+          cpid,(uint32_t)os9_long((ulong)cp->pd._sigvec),(uint32_t)cp->icpta6));
     return 0;
 } /* OS9_F_Icpt */
 
@@ -1105,7 +1105,7 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
       default        : v= 0; if (debug[dbgNorm] & dbgAnomaly) upe_printf( "F$SetSys: unimplemented %04X (size=%X)\n", offs,size );
     } // switch
     
-    debugprintf(dbgPartial,dbgNorm,("# F$SetSys: %04X %x %d\n", offs, size, v));
+    debugprintf(dbgPartial,dbgNorm,("# F$SetSys: %04X %x %d\n", offs, size, (uint32_t)v));
     
     switch (size) {
       case          -1 : rp->d[2]=v<<24; break; /* two different ways to read them */
@@ -1158,7 +1158,7 @@ os9err OS9_F_CpyMem( regs_type *rp, _pid_ )
     ulong cnt= (ulong)rp->d[1];
     
     MoveBlk( dst,src, cnt );
-    debugprintf(dbgMemory,dbgDeep,("# F$CpyMem: copied %lu bytes from %p to %p\n", cnt,src,dst ));
+    debugprintf(dbgMemory,dbgDeep,("# F$CpyMem: copied %u bytes from %p to %p\n", (uint32_t)cnt,src,dst ));
     return 0;
 } /* OS9_F_CpyMem */
 
@@ -1258,7 +1258,7 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
     size= rp->d[0];
     p= nullterm( mpath,(char*)FROM68K(rp->a[0]),OS9PATHLEN );
     debugprintf(dbgModules,dbgNorm,("# F$DatMod: for '%s', size=%d, mode=$%04X\n",
-                                       mpath,size, loword(rp->d[3])));
+                                       mpath,(uint32_t)size, loword(rp->d[3])));
 
     /* Is there already a module with the same name ? */
     if ((mid=      find_mod_id( mpath ))<MAXMODULES) return os9error(E_KWNMOD); 
@@ -1941,8 +1941,8 @@ os9err OS9_F_SetCRC( regs_type *rp, _pid_ )
     modsize= os9_long(m->_mh._msize);
 
     hpar= calc_parity( (ushort*)m, 23 ); /* byte-order insensitive */
-    debugprintf(dbgModules,dbgNorm,("# F$SetCRC: Module @ %p (size=%lu): new parity=$%04X\n",
-                                       m, modsize, hpar));
+    debugprintf(dbgModules,dbgNorm,("# F$SetCRC: Module @ %p (size=%u): new parity=$%04X\n",
+                                       (void*)m, (uint32_t)modsize, hpar));
     m->_mh._mparity= hpar;                  /* byte-order insensitive */
     mod_crc( m );
 
@@ -2065,7 +2065,7 @@ os9err OS9_F_PErr( regs_type *rp, _pid_ )
     get_error_strings(err, &nam,&desc);
     
     sprintf(msgbuffer,"Error #%03d:%03d (%s) %s\n",err>>8,err &0xFF,nam,desc);
-    upe_printf(msgbuffer);
+    upe_printf("%s",msgbuffer); /* already formatted -- a '%' in <desc> must not re-format */
     return 0;
 } /* OS9_F_PErr */
 
