@@ -974,6 +974,24 @@ Boolean KeyToBuffer( ttydev_typ* mco, char key )
     }
             
     mco->inBuf[ mco->inBufUsed++ ]= key; /* update the buffer */
+
+    /* Data is now ready on this terminal.  If a process armed "signal on data
+       ready" (SS_SSig) on it, wake it now.  The arming path is that process's
+       OWN open of the device -- a different syspath than the terminal's main
+       one (mco->spP) -- so we can't just look at mco->spP; deliver to every
+       syspath bound to this same terminal (matching term_id) that has a signal
+       pending.  tsmon depends on this: it arms SS_SSig then F$Sleeps and never
+       reads the device itself, so without delivering here the terminal is dead
+       to keypresses.  (syspath_read delivers the same signal, but only when
+       someone actually reads the path.) */
+    { int k; ushort tid= mco->spP->term_id;
+      for (k=0; k<MAXSYSPATHS; k++) { syspath_typ* s= &syspaths[k];
+          if (s->signal_to_send && s->term_id==tid) {
+              send_signal( s->signal_pid, s->signal_to_send );
+                           s->signal_to_send= 0;
+          }
+      }
+    }
     return true;
 } /* KeyToBuffer */
 
