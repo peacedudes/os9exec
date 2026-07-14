@@ -1,6 +1,12 @@
 /*
  *  errno_from_book.h  —  OS-9/68000 error codes
  *
+ *  See errno_from_docs.h for a more complete alternative (full 0-255 range,
+ *  cross-referenced against multiple manuals via this project's os9-dev
+ *  skill) — the two define the same macro names at the same values and
+ *  must not both be #included in the same translation unit. This file is
+ *  kept for its narrower, single-source (book-only) derivation history.
+ *
  *  Primary source:
  *    "The OS-9 Guru, Book 1: The Facts" (Galactic Industrial Ltd.)
  *    https://www.icdia.co.uk/books_os9/os9guru/index.html
