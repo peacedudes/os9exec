@@ -977,6 +977,9 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
           }
 
           while (cnt<*maxlenP) {
+              Boolean needsLF; /* does this char carry a trailing auto-LF? */
+              int     need;    /* FIFO slots this char needs (2 if CR+LF) */
+
               c= buffer[cnt];
               if (ot->_sgs_case && islower(c)) {
                   /* lower case -> upper case
@@ -984,17 +987,33 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                   c = toupper(c);
               }
 
+              /* A CR that gets an auto-LF and its LF must reach the FIFO
+               * TOGETHER. The old code pushed the CR, then pushed the LF
+               * best-effort and dropped it whenever the FIFO happened to be full
+               * -- which under baud pacing it routinely is by the end of a long
+               * write. The line was then left un-terminated (a bare CR), so the
+               * next thing written -- the shell prompt after `login` -- landed on
+               * top of it. Treat CR+LF as one atomic 2-byte unit: require room
+               * for both, and if there isn't room, park BEFORE pushing the CR so
+               * resume retries the pair (never a lone CR). Unpaced output goes
+               * straight to the screen and can't drop anything, exactly as before. */
+              needsLF= (wrln && c!=NUL && c==ot->_sgs_eorch && ot->_sgs_alf);
+              need   = needsLF ? 2 : 1;
+
               if (paced) {
-                  if (!fifo_push( dev, c )) {
+                  if (BAUD_FIFO_SIZE - dev->count < need) {
                       cp->saved_cnt  = cnt;
                       cp->saved_state= cp->state;
                       set_os9_state( pid, pWaitWrite, "ConsoleOut" );
                       arbitrate= true;
                       break;
                   }
+                                fifo_push( dev, c  );
+                  if (needsLF)  fifo_push( dev, LF );
               }
               else {
-                  ConsPutc( c );
+                                ConsPutc( c  );
+                  if (needsLF)  ConsPutc( LF );
               }
               cnt++;
 
@@ -1012,14 +1031,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
               }
 
               if (wrln && c!=NUL && c==ot->_sgs_eorch) {
-                  if (ot->_sgs_alf) {
-                      /* trailing auto-linefeed: best-effort. In the extremely
-                         narrow case where the FIFO is exactly full right when
-                         this would be queued, it's dropped rather than adding
-                         a second blocking path just for one cosmetic byte. */
-                      if (paced) fifo_push( dev, LF ); else ConsPutc( LF );
-                  }
-                  break;
+                  break; /* end of record -- LF (if any) already delivered above */
               }
           } /* while */
 
