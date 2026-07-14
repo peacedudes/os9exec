@@ -806,9 +806,15 @@ os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
     uint32_t *ptr,*lim;
     short *s,  *sl;
 
+    /* Walk the buffer with byte-pointer arithmetic. <ptr> is a HOST pointer
+     * (FROM68K = emul_base + 68k offset), and routing it through a `long` to
+     * add the byte count truncated it to 32 bits on Windows (LLP64), where the
+     * arena sits above 4GB -- so <lim> landed in the wrong place and the copy
+     * loop below silently wrote nothing. mingw-w64 flags it: "cast from pointer
+     * to integer of different size". No integer cast is needed at all. */
     ptr= (uint32_t *)  FROM68K(rp->a[0]);
-    lim= (uint32_t *)( rp->d[1] + (long)ptr );
-    
+    lim= (uint32_t *)( (byte*)ptr + rp->d[1] );
+
     s  = (short *)ptr;
     sl = (short *)lim;
     
@@ -825,7 +831,12 @@ os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
       ptr++;
     }
     
-    rp->d[1]= (long)ptr - (long)FROM68K(rp->a[0]); /* bytes written (host span) */
+    /* bytes written (host span) -- pointer difference, not a difference of
+     * truncated pointers. The old `(long)ptr - (long)FROM68K(...)` happened to
+     * yield the right answer even on Windows (both sides lost the same high
+     * bits, so the difference survived), but it was still a truncating cast of
+     * a host pointer; say what is meant instead. */
+    rp->d[1]= (ulong32)( (byte*)ptr - (byte*)FROM68K(rp->a[0]) );
     return 0;
 } /* OS9_F_GPrDBT */
 

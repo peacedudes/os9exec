@@ -128,20 +128,31 @@ long lVersion()
 // -------------------------------------------------------------------------------------------------------
 // copy the block with <size> form <src> to <dst
 // forward and backward mode supported (in case of overlapping structures
-void MoveBlk( void* dst, void* src, unsigned long size )
+// <size> is ulong (the header's type) rather than a spelled-out `unsigned long`:
+// on Windows (LLP64) those are different widths, so writing it out here compiled
+// this definition against a 32-bit size while every caller passed a 64-bit one.
+//
+// The reverse path walks the pointers directly. It used to route them through an
+// `(unsigned long)` cast to do the arithmetic -- which is only pointer-width on
+// LP64. On Windows it silently discarded the top half of both host addresses and
+// then dereferenced the wreckage; mingw-w64 says so out loud ("cast from pointer
+// to integer of different size"). Reached from winfiles.c's Conv_to_2e and from
+// the free-list shuffles in memstuff.c, both of which copy with src<dst. Plain
+// pointer arithmetic needs no cast at all and is correct on every platform.
+void MoveBlk( void* dst, void* src, ulong size )
 {
-  unsigned long  n;
+  ulong          n;
   unsigned char* s;
   unsigned char* d;
-    
+
   if (src>=dst) {    // condition for forward/backward copy
     s= (unsigned char*)src;   // normal forward copy
     d= (unsigned char*)dst;
     for ( n=0; n<size; n++ ) { *d= *s; s++; d++; }
   }
-  else {             // reverse ordered copy 
-    s= (unsigned char*)( (unsigned long)src + size-1 );
-    d= (unsigned char*)( (unsigned long)dst + size-1 );
+  else {             // reverse ordered copy
+    s= (unsigned char*)src + size-1;
+    d= (unsigned char*)dst + size-1;
     for ( n=0; n<size; n++ ) { *d= *s; s--; d--; }
   } // if
 } // MoveBlk
