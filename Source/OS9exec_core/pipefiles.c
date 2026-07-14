@@ -559,11 +559,22 @@ static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
 
 
 /* system task routines to complete pipe write request */
+/* <dd> (systask_offs) is a small byte offset into the caller's buffer -- how far
+ * the blocked write already got -- NOT an arena base. rp->a[0] is a 32-bit
+ * EMULATED 68k address, so it has to go through FROM68K (= emul_base + addr) to
+ * become a host pointer, exactly as the read-side pReadSysTask/pReadSysTaskLn
+ * below already do. Casting it straight to char* (as this did) yields a host
+ * pointer built from a bare guest address, which pWriteSysTaskExe then
+ * dereferences (`c= *buf++`) -- a wild read on any host whose arena isn't based
+ * at 0. Latent rather than fatal today only because the systask continuation
+ * runs solely when a write BLOCKS on a full pipe/tty buffer; I could not force
+ * that path to trigger, so this fix is by symmetry with the read side, not by
+ * reproduction. */
 static os9err pWriteSysTask( ushort pid, syspath_typ* spP, regs_type* rp )
 {
     os9err   err;
     ulong    dd= procs[pid].systask_offs;
-    char*    a0= (char*)(rp->a[0] + dd);
+    char*    a0= (char*)FROM68K(rp->a[0]) + dd;
     uint32_t d1= (uint32_t)(rp->d[1] - dd);
 
     err= pWriteSysTaskExe( pid,spP, &d1,a0, false, (systaskfunc_typ)pWriteSysTask );
@@ -571,11 +582,12 @@ static os9err pWriteSysTask( ushort pid, syspath_typ* spP, regs_type* rp )
     return err;
 } /* pWriteSysTask */
 
+/* Same missing FROM68K as pWriteSysTask above -- see the comment there. */
 static os9err pWriteSysTaskLn( ushort pid, syspath_typ* spP, regs_type* rp )
 {
     os9err   err;
     ulong    dd= procs[pid].systask_offs;
-    char*    a0= (char*)(rp->a[0] + dd);
+    char*    a0= (char*)FROM68K(rp->a[0]) + dd;
     uint32_t d1= (uint32_t)(rp->d[1] - dd);
 
     err= pWriteSysTaskExe( pid,spP, &d1,a0, true,  (systaskfunc_typ)pWriteSysTaskLn );
