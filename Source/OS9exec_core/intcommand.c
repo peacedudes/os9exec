@@ -1586,8 +1586,10 @@ static int IntCmdIndex( const char* name )
       } // if
 
       if (strcmp( p, name )==0) return index; // found
-            
-      p= q+1;
+
+      if (q!=NULL) p= q+1; /* advance past the separator; when q==NULL the loop
+                              exits, so the old unconditional `p= q+1` computed
+                              NULL+1 -- undefined behaviour (caught by UBSan) */
     } while (q!=NULL);
         
     index++;
