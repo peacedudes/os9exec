@@ -199,9 +199,9 @@ Boolean F_Avail( const char* pathname )
     
     isd= IsTrDir( info.st_mode ); /* it is a directory ? */
     ok = isd ||   info.st_size>0; /* size is > 0 */
-    debugprintf(dbgStartup,dbgNorm,("# F_Avail '%s' %s (%s) size=%d %08X\n", pathname, ok ? "true":"false",
+    debugprintf(dbgStartup,dbgNorm,("# F_Avail '%s' %s (%s) size=%lld %08X\n", pathname, ok ? "true":"false",
                                                                         isd ? "dir":"file",
-                                                                        info.st_size, info.st_mode ));
+                                                                        (long long)info.st_size, info.st_mode ));
     return ok;
 } /* F_Avail */
 
@@ -605,6 +605,14 @@ void os9_main( int argc, char **argv, char **envp )
   int     k, kX;
   char*   p;
   ulong*  ulp;
+  /* scanf writes through the pointer you hand it, so its length modifier must
+   * match the DESTINATION's real storage -- a cast cannot fix that. "%lu" writes
+   * an `unsigned long`, which is 8 bytes on LP64 but only 4 on Windows (LLP64),
+   * while `ulong` is 8 bytes on both. Scanning straight into a `ulong*` therefore
+   * filled just half of it on Windows and left the top half uninitialized --
+   * including for -M, the 68k arena size. Scan into a real `unsigned long`, then
+   * assign. */
+  unsigned long lnum;
   ushort* usp;
   char    modifier;
   char*   toolname;
@@ -768,19 +776,21 @@ void os9_main( int argc, char **argv, char **envp )
 
                       p= argv[ k ];
                       modifier=0;
+                      lnum= 0;
                       if (*p=='$') {
-                        if (sscanf(++p,"%lx%c", ulp, &modifier)<1) {
+                        if (sscanf(++p,"%lx%c", &lnum, &modifier)<1) {
                           printf("# Error in hex number '$%s'\n",p);
                           exit( 1 );
                         } // if
                       }
                       else {
-                        if (sscanf(p,"%ld%c", ulp, &modifier)<1) {
+                        if (sscanf(p,"%lu%c", &lnum, &modifier)<1) {
                           printf("# Error in decimal number '%s'\n",p);
                           exit( 1 );
                         } // if
                       } // if
-                            
+                      *ulp= lnum; /* now store it, at the destination's real width */
+
                       switch (tolower(modifier)) {
                         case 'm' : *ulp *=1024; /* fall into Kbytes */
                         case 'k' : *ulp *=1024;
