@@ -331,9 +331,20 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
     theModule=(mod_exec *)get_module_ptr(mid);
     retword(rp->d[0])=os9_word(theModule->_mh._mtylan);
     debugprintf(dbgModules,dbgNorm,("# F$Link: actual type/lang=$%04X\n",loword(rp->d[0])));
-        
-    /* module does not match request, forget it */
-    if (tylan!=0 && tylan!=os9_word(theModule->_mh._mtylan)) return os9error(E_MNF); /* no such module found */
+
+    /* Module type/language must match what the caller asked for -- but the type
+     * (high byte) and language (low byte) are matched INDEPENDENTLY, each with 0
+     * meaning "any" (MT_ANY / ML_ANY).  A full-word compare was wrong: e.g. RunB
+     * links a packed BASIC09 procedure with $0200 ("subroutine, any language"),
+     * which must match the module's $0202 (subroutine, Basic I-code) -- the old
+     * `tylan!=actual` rejected it with E_MNF, so RunB never found an in-memory
+     * packed module and fell back to a cwd-relative F$Load instead. */
+    { ushort act= os9_word(theModule->_mh._mtylan);
+      ushort rTyp= tylan>>BpB, rLan= tylan & 0xFF; /* requested type / language */
+      ushort aTyp= act  >>BpB, aLan= act   & 0xFF; /* actual    type / language */
+      if ((rTyp!=MT_ANY && rTyp!=aTyp) ||
+          (rLan!=ML_ANY && rLan!=aLan)) return os9error(E_MNF); /* not this module */
+    }
         
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
     rp->a[0]= TO68K(p);
