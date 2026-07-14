@@ -461,7 +461,14 @@ unsigned long REGPARAM2 op_d0_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s8)get_byte(dsta); upper = (uae_s32)(uae_s8)get_byte(dsta+1);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s8)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	/* CMP2/CHK2 out-of-bounds test (68020): when lower>upper (signed) the bounds
+	 * denote a range that WRAPS the signed boundary -- e.g. an address pair like
+	 * [0,0xFFFFFFFF] read as [0,-1] -- and a value is out of bounds only when it is
+	 * below lower AND above upper (&&), not OR. The generated code shipped with `||`
+	 * here, so every wrapping bound (GCC emits `chk2.l bounds,%sp` as a stack-limit
+	 * guard with [0,0xFFFFFFFF]) trapped spuriously and killed the whole GNU utility
+	 * set at its first prologue. Corrected to && in every CMP2/CHK2 variant below. */
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel27; }
 }
 }}}m68k_incpc(4);
@@ -482,7 +489,7 @@ unsigned long REGPARAM2 op_e8_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s8)get_byte(dsta); upper = (uae_s32)(uae_s8)get_byte(dsta+1);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s8)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel28; }
 }
 }}}m68k_incpc(6);
@@ -504,7 +511,7 @@ unsigned long REGPARAM2 op_f0_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s8)get_byte(dsta); upper = (uae_s32)(uae_s8)get_byte(dsta+1);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s8)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel29; }
 }
 }}}}endlabel29: ;
@@ -519,7 +526,7 @@ unsigned long REGPARAM2 op_f8_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s8)get_byte(dsta); upper = (uae_s32)(uae_s8)get_byte(dsta+1);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s8)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel30; }
 }
 }}}m68k_incpc(6);
@@ -535,7 +542,7 @@ unsigned long REGPARAM2 op_f9_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s8)get_byte(dsta); upper = (uae_s32)(uae_s8)get_byte(dsta+1);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s8)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel31; }
 }
 }}}m68k_incpc(8);
@@ -553,7 +560,7 @@ unsigned long REGPARAM2 op_fa_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s8)get_byte(dsta); upper = (uae_s32)(uae_s8)get_byte(dsta+1);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s8)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel32; }
 }
 }}}m68k_incpc(6);
@@ -572,7 +579,7 @@ unsigned long REGPARAM2 op_fb_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s8)get_byte(dsta); upper = (uae_s32)(uae_s8)get_byte(dsta+1);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s8)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel33; }
 }
 }}}}endlabel33: ;
@@ -1906,7 +1913,7 @@ unsigned long REGPARAM2 op_2d0_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s16)get_word(dsta); upper = (uae_s32)(uae_s16)get_word(dsta+2);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s16)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel105; }
 }
 }}}m68k_incpc(4);
@@ -1927,7 +1934,7 @@ unsigned long REGPARAM2 op_2e8_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s16)get_word(dsta); upper = (uae_s32)(uae_s16)get_word(dsta+2);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s16)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel106; }
 }
 }}}m68k_incpc(6);
@@ -1949,7 +1956,7 @@ unsigned long REGPARAM2 op_2f0_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s16)get_word(dsta); upper = (uae_s32)(uae_s16)get_word(dsta+2);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s16)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel107; }
 }
 }}}}endlabel107: ;
@@ -1964,7 +1971,7 @@ unsigned long REGPARAM2 op_2f8_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s16)get_word(dsta); upper = (uae_s32)(uae_s16)get_word(dsta+2);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s16)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel108; }
 }
 }}}m68k_incpc(6);
@@ -1980,7 +1987,7 @@ unsigned long REGPARAM2 op_2f9_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s16)get_word(dsta); upper = (uae_s32)(uae_s16)get_word(dsta+2);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s16)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel109; }
 }
 }}}m68k_incpc(8);
@@ -1998,7 +2005,7 @@ unsigned long REGPARAM2 op_2fa_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s16)get_word(dsta); upper = (uae_s32)(uae_s16)get_word(dsta+2);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s16)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel110; }
 }
 }}}m68k_incpc(6);
@@ -2017,7 +2024,7 @@ unsigned long REGPARAM2 op_2fb_0(uae_u32 opcode) /* CHK2 */
 	lower=(uae_s32)(uae_s16)get_word(dsta); upper = (uae_s32)(uae_s16)get_word(dsta+2);
 	if ((extra & 0x8000) == 0) reg = (uae_s32)(uae_s16)reg;
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel111; }
 }
 }}}}endlabel111: ;
@@ -2560,7 +2567,7 @@ unsigned long REGPARAM2 op_4d0_0(uae_u32 opcode) /* CHK2 */
 	{uae_s32 upper,lower,reg = regs.regs[(extra >> 12) & 15];
 	lower=get_long(dsta); upper = get_long(dsta+4);
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel136; }
 }
 }}}m68k_incpc(4);
@@ -2580,7 +2587,7 @@ unsigned long REGPARAM2 op_4e8_0(uae_u32 opcode) /* CHK2 */
 	{uae_s32 upper,lower,reg = regs.regs[(extra >> 12) & 15];
 	lower=get_long(dsta); upper = get_long(dsta+4);
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel137; }
 }
 }}}m68k_incpc(6);
@@ -2601,7 +2608,7 @@ unsigned long REGPARAM2 op_4f0_0(uae_u32 opcode) /* CHK2 */
 	{uae_s32 upper,lower,reg = regs.regs[(extra >> 12) & 15];
 	lower=get_long(dsta); upper = get_long(dsta+4);
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel138; }
 }
 }}}}endlabel138: ;
@@ -2615,7 +2622,7 @@ unsigned long REGPARAM2 op_4f8_0(uae_u32 opcode) /* CHK2 */
 	{uae_s32 upper,lower,reg = regs.regs[(extra >> 12) & 15];
 	lower=get_long(dsta); upper = get_long(dsta+4);
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel139; }
 }
 }}}m68k_incpc(6);
@@ -2630,7 +2637,7 @@ unsigned long REGPARAM2 op_4f9_0(uae_u32 opcode) /* CHK2 */
 	{uae_s32 upper,lower,reg = regs.regs[(extra >> 12) & 15];
 	lower=get_long(dsta); upper = get_long(dsta+4);
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel140; }
 }
 }}}m68k_incpc(8);
@@ -2647,7 +2654,7 @@ unsigned long REGPARAM2 op_4fa_0(uae_u32 opcode) /* CHK2 */
 	{uae_s32 upper,lower,reg = regs.regs[(extra >> 12) & 15];
 	lower=get_long(dsta); upper = get_long(dsta+4);
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel141; }
 }
 }}}m68k_incpc(6);
@@ -2665,7 +2672,7 @@ unsigned long REGPARAM2 op_4fb_0(uae_u32 opcode) /* CHK2 */
 	{uae_s32 upper,lower,reg = regs.regs[(extra >> 12) & 15];
 	lower=get_long(dsta); upper = get_long(dsta+4);
 	SET_ZFLG (upper == reg || lower == reg);
-	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper || reg < lower);
+	SET_CFLG (lower <= upper ? reg < lower || reg > upper : reg > upper && reg < lower);
 	if ((extra & 0x800) && GET_CFLG) { Exception(6,oldpc); goto endlabel142; }
 }
 }}}}endlabel142: ;
