@@ -132,7 +132,21 @@ Boolean out_of_mem(ushort pid, os9addr_t addr);
   void    trigcheck  ( char  *msg, char *name );
 #endif
 
-void  _debugprintf( char *format, ... );
+/* PRINTF_FMT: let the compiler type-check the format string against the args.
+ * These are real vararg printf calls, so a wrong specifier is undefined
+ * behaviour, not a cosmetic slip -- and the mistakes are invisible on LP64 while
+ * being wrong on LLP64 (or vice versa), which is exactly the sort of thing a
+ * human should never be asked to police by eye. With this attribute the compiler
+ * catches every one, on both toolchains. Keep it on: 124 latent mismatches were
+ * found the day it was first switched on. */
+#if defined __GNUC__
+  #define PRINTF_FMT( fmtArg,firstVararg ) \
+          __attribute__(( format( printf, fmtArg,firstVararg ) ))
+#else
+  #define PRINTF_FMT( fmtArg,firstVararg )
+#endif
+
+void  _debugprintf( char *format, ... ) PRINTF_FMT( 1,2 );
 void   debug_prep ( void );
 void   debug_procdump(process_typ *cp, int cpid);
 os9err debug_help ( ushort pid, int argc, char **argv );

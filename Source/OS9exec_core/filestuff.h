@@ -106,10 +106,11 @@ os9err syspath_write     ( ushort pid, ushort  sp, uint32_t *len, void* buffer, 
 os9err usrpath_write     ( ushort pid, ushort  up, uint32_t *len, void* buffer, Boolean wrln );
 
 void usrpath_printf      ( ushort pid, ushort  up, const char* format, ... );
-void     upo_printf                              ( const char* format, ... );
-void    upho_printf                              ( const char* format, ... );
-void     upe_printf                              ( const char* format, ... );
-void    uphe_printf                              ( const char* format, ... );
+/* format-checked by the compiler -- see PRINTF_FMT in debug.h */
+void     upo_printf                              ( const char* format, ... ) PRINTF_FMT( 1,2 );
+void    upho_printf                              ( const char* format, ... ) PRINTF_FMT( 1,2 );
+void     upe_printf                              ( const char* format, ... ) PRINTF_FMT( 1,2 );
+void    uphe_printf                              ( const char* format, ... ) PRINTF_FMT( 1,2 );
 void    main_printf                              ( const char* format, ... );
 void copyright();
 
