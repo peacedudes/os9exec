@@ -143,7 +143,6 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
     stdinPipe.fileHandleForWriting.write(Data(input.utf8))
     stdinPipe.fileHandleForWriting.closeFile()
 
-    let sem = DispatchSemaphore(value: 0)
     var output = ""
     // Read stdout and stderr concurrently to avoid deadlock
     let readGroup = DispatchGroup()
@@ -600,6 +599,99 @@ check  ("ramdisk: dsave -ive populates+verifies", contains: "f1",
     "copy /dd/t_ramsrc /dd/t_ramdir/f1",
     "chd /dd/t_ramdir", "mount -r=200 /ram9", "dsave -ive /ram9", "dir /ram9", "unmount ram9",
     "chd /dd", "del /dd/t_ramsrc", "del /dd/t_ramdir/f1", "deldir -q /dd/t_ramdir")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FILESYSTEM SELF-TESTS   (name prefix "fs:" — run just these with
+//   swift run --package-path test OS9Tests fs:)
+// ══════════════════════════════════════════════════════════════════════════════
+// Two mental categories of test live in this file:
+//   1. COMMAND SMOKE TESTS (everything above) — "does `grep` / `tar` / `dsave`
+//      run and produce plausible output" — they depend on which command modules
+//      we happen to have working.
+//   2. SELF-TESTS (this section, plus the RBF/ramdisk/baud ones above) — they
+//      test the emulator's OWN guaranteed behavior, provision everything they
+//      need, and assert exact outcomes. Anyone can run them; nothing external
+//      is assumed.
+// These verify the file system itself: that every legal spelling of a path
+// resolves to the SAME right place, that NO path trick escapes a host-native
+// device root into the host OS (the confinement the emulator must guarantee —
+// see the '..'-past-root regression, git log), and that OS-9 permissions are
+// honored on an RBF image. Local-only: they plant fixtures and a canary on the
+// host beside the device root, which a container's mounted /dd can't express.
+if !containerized {
+    let fsHostDir    = diskPath + "/USR/CLAUDE/fsselftest"   // under /dd, host-visible
+    let fsSubHost    = fsHostDir + "/SUB"
+    let marker       = "FSMARK_\(UUID().uuidString.prefix(8))"
+    // the canary lives in the device root's HOST PARENT — it must NEVER be
+    // reachable from inside OS-9 by any path trick.
+    let canaryName   = "FSCANARY_\(UUID().uuidString.prefix(8))"
+    let canaryHost   = URL(fileURLWithPath: diskPath).deletingLastPathComponent()
+                          .appendingPathComponent(canaryName).path
+    let canarySecret = "CANARYLEAK_\(UUID().uuidString.prefix(8))"
+
+    // provision on the host (deterministic; OS-9 files use CR line endings)
+    try? FileManager.default.createDirectory(atPath: fsSubHost, withIntermediateDirectories: true)
+    try? (marker + "\r").write(toFile: fsSubHost + "/deep", atomically: true, encoding: .utf8)
+    try? (canarySecret + "\r").write(toFile: canaryHost, atomically: true, encoding: .utf8)
+    // a host symlink INSIDE the device pointing OUT at the canary — the realpath
+    // confinement must refuse to follow it out of the device root.
+    try? FileManager.default.createSymbolicLink(atPath: fsSubHost + "/esclink",
+                                                withDestinationPath: canaryHost)
+
+    // guard: the whole confinement half is vacuous if the canary wasn't written
+    if (try? String(contentsOfFile: canaryHost, encoding: .utf8))?.contains(canarySecret) != true {
+        print("FAIL: fs: setup — canary file not planted"); failed += 1
+    }
+
+    let sub = "/dd/USR/CLAUDE/fsselftest/SUB"   // OS-9 working dir for these
+
+    // ---- resolution: every legal spelling must read the SAME marker file ----
+    // (the marker tests double as the positive control for the confinement
+    //  tests below: they prove `list` really does surface a file's contents.)
+    func resolves(_ label: String, _ spelling: String) {
+        run("fs: resolve \(label)", expectation: "reads the marker via '\(spelling)'",
+            commands: ["chd \(sub)", "list \(spelling)"]) { $0.contains(marker) }
+    }
+    resolves("relative",              "deep")
+    resolves("dot-relative",          "./deep")
+    resolves("absolute /dd",          "/dd/USR/CLAUDE/fsselftest/SUB/deep")
+    resolves("/h0 device alias",      "/h0/USR/CLAUDE/fsselftest/SUB/deep")
+    resolves("double slash",          "/dd//USR/CLAUDE/fsselftest/SUB/deep")
+    resolves("embedded /./",          "/dd/./USR/CLAUDE/fsselftest/SUB/deep")
+    resolves("parent round-trip",     "../SUB/deep")
+    resolves("through SYS and back",  "/dd/SYS/../USR/CLAUDE/fsselftest/SUB/deep")
+    resolves("case-insensitive",      "/dd/usr/claude/FSSELFTEST/sub/DEEP")
+    resolves("multi-dot to root",     "...../USR/CLAUDE/fsselftest/SUB/deep")       // up-4 == /dd, then descend
+    resolves("over-walk clamps+keeps","............/USR/CLAUDE/fsselftest/SUB/deep") // '..' past root: clamp, keep tail (regression guard)
+
+    // ---- confinement: the host canary outside the root must be UNREACHABLE ----
+    func blocked(_ label: String, _ spelling: String) {
+        run("fs: confine \(label)", expectation: "canary NOT leaked via '\(spelling)'",
+            commands: ["chd \(sub)", "list \(spelling)"]) { !$0.contains(canarySecret) }
+    }
+    blocked("/dd/../canary",        "/dd/../\(canaryName)")
+    blocked("/dd/../../canary",     "/dd/../../\(canaryName)")
+    blocked("deep ../ escape",      "../../../../../\(canaryName)")
+    blocked("over-walk escape",     "............/\(canaryName)")
+    blocked("through SYS escape",   "/dd/SYS/../../\(canaryName)")
+    blocked("/h0 alias escape",     "/h0/../\(canaryName)")
+    blocked("symlink out of device","esclink")            // realpath confinement must not follow it out
+
+    try? FileManager.default.removeItem(atPath: fsHostDir)
+    try? FileManager.default.removeItem(atPath: canaryHost)
+
+    // ---- permissions: OS-9 attributes are honored on an RBF image ----
+    // (Host-native devices delegate permissions to the host FS and do NOT
+    //  enforce OS-9 write-protect; an RBF image is a real OS-9 filesystem the
+    //  emulator owns, so `attr` changes take effect there.)
+    let permDev = "h8"
+    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(permDev).path)
+    run("fs: perms honored on RBF (write bit clears)",
+        expectation: "after 'attr -nw -npw' the readback shows no write bit",
+        commands: ["mount -k=200K \(permDev)", "chd /\(permDev)",
+                   "echo PDATA >f", "attr f -nw -npw", "attr f"]) { $0.contains("-------r") }
+    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(permDev).path)
+}
 
 // ── Results ───────────────────────────────────────────────────────────────────
 
