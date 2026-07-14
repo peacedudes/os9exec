@@ -1083,15 +1083,20 @@ Boolean VolInfo( const char* pathname, char* volname )
 {
     Boolean ok= true;
 
-    #ifdef macintosh
+    /* UNIX FIRST, before macintosh: every UNIX-ish host -- Linux, mingw, AND
+     * modern macOS (which defines both `macintosh` and `UNIX`) -- has a single
+     * "/" root and should report it uniformly. macOS used to fall into the
+     * legacy `macintosh` branch below and return "" instead, a 1-platform-vs-2
+     * divergence observable through a raw LSN0 read. Only genuine classic Mac OS
+     * (MACOS9: `macintosh` defined, `UNIX` not) now reaches the empty-string
+     * HFS-volume branch. */
+    #ifdef UNIX
+      (void)pathname;
+      strcpy( volname,"/" );
+
+    #elif defined macintosh
       #pragma unused(pathname)
       strcpy( volname,"" );
-      
-    /* UNIX, not linux: macOS and mingw matched no branch at all here, so volname
-     * was returned untouched (i.e. whatever the caller's buffer happened to hold)
-     * while we still returned true. Every UNIX-ish host has a single "/" root. */
-    #elif defined UNIX
-      strcpy( volname,"/" );
 
     #elif defined(windows32)
       char    sysname[OS9NAMELEN];
