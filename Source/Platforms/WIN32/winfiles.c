@@ -197,8 +197,25 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
         size_t rl= strlen( startRoot );
         if (ustrncmp( adname,startRoot,rl )!=0 ||
             (adname[rl]!=NUL && adname[rl]!=PATHDELIM)) {
-            strncpy( adname, startRoot, OS9PATHLEN-1 );
-            adname[OS9PATHLEN-1]= NUL;
+            /* '..' walked above the device root. Clamp the walk AT the root but
+             * keep whatever followed it -- do not silently drop it. `..../SYS`
+             * from /h0/USR/CLAUDE collapses above the root to <parent>/SYS; the
+             * old code replaced it with the bare root and lost /SYS, so
+             * `dir ..../SYS` listed /h0 instead of /h0/SYS. Rebuild as <root> +
+             * <escaped tail below the deepest dir it still shares with the root>;
+             * result always begins with <root>, so it stays confined. Keep in
+             * step with the identical fix in linuxfiles.c. */
+            char   tail[OS9PATHLEN];
+            size_t i= 0, cut= 0;
+            while (adname[i]!=NUL && adname[i]==startRoot[i]) {
+                if (adname[i]==PATHDELIM) cut= i; /* last shared '/'  */
+                i++;
+            }
+            if (adname[i]==NUL && (startRoot[i]==NUL || startRoot[i]==PATHDELIM))
+                cut= i; /* escaped path is a whole-component prefix of the root */
+            strncpy( tail,   adname+cut, OS9PATHLEN-1 ); tail[OS9PATHLEN-1]= NUL;
+            strncpy( adname, startRoot,  OS9PATHLEN-1 ); adname[OS9PATHLEN-1]= NUL;
+            strncat( adname, tail, OS9PATHLEN-1-strlen(adname) );
         }
     }
 

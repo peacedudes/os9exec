@@ -193,8 +193,29 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
         size_t rl= strlen( startRoot );
         if (ustrncmp( adname,startRoot,rl )!=0 ||
             (adname[rl]!=NUL && adname[rl]!=PATHDELIM)) {
-            strncpy( adname, startRoot, OS9PATHLEN-1 );
-            adname[OS9PATHLEN-1]= NUL;
+            /* '..' walked above the device root. Clamp the walk AT the root, but
+             * keep whatever followed it -- do not silently drop it. Example:
+             * `..../SYS` from /h0/USR/CLAUDE collapses (textually, above the root)
+             * to <parent-of-h0>/SYS; the old code replaced the whole string with
+             * the bare root and lost /SYS, so `dir ..../SYS` listed /h0 instead of
+             * /h0/SYS. OS-9 semantics: extra ".."s at a device root are no-ops.
+             * Rebuild as <root> + <the escaped path's tail below the deepest
+             * directory it still shares with the root>. The result always begins
+             * with <root>, so it stays confined -- strictly safer than before,
+             * never weaker. */
+            char   tail[OS9PATHLEN];
+            size_t i= 0, cut= 0;
+            while (adname[i]!=NUL && adname[i]==startRoot[i]) {
+                if (adname[i]==PATHDELIM) cut= i; /* last shared '/'  */
+                i++;
+            }
+            /* escaped path is itself a whole-component prefix of the root
+             * (ran out exactly at a root component boundary) -> empty tail */
+            if (adname[i]==NUL && (startRoot[i]==NUL || startRoot[i]==PATHDELIM))
+                cut= i;
+            strncpy( tail,   adname+cut, OS9PATHLEN-1 ); tail[OS9PATHLEN-1]= NUL;
+            strncpy( adname, startRoot,  OS9PATHLEN-1 ); adname[OS9PATHLEN-1]= NUL;
+            strncat( adname, tail, OS9PATHLEN-1-strlen(adname) );
         }
     }
 
