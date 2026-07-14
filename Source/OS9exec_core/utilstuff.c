@@ -559,8 +559,15 @@ os9err c2os9err(int cliberr,ushort suggestion)
    
    if (!cliberr) return 0;
    switch (cliberr) {
-      #if !defined(__MWERKS__) && !defined(linux)
-        /* %%% seems not to have ANY usable error codes ! */
+      /* EPERM/ENOENT/ENOSPC/EIO are standard POSIX errno values, present and
+       * usable on every live platform (verified: Linux gives 1/2/28/5). This
+       * used to be gated `!defined(linux)` with a comment claiming Linux had
+       * "no usable error codes" -- wrong, and the classic OS-as-proxy bug: it
+       * meant Linux alone fell through to the generic `suggestion` for these
+       * four, so e.g. a disk-full write returned E_WRITE instead of E_FULL, and
+       * a missing file returned the caller's fallback instead of E_PNNF.
+       * __MWERKS__ (dead CodeWarrior legacy) stays excluded, untouched. */
+      #ifndef __MWERKS__
         case EPERM  : err=E_FNA;      break;
         case ENOENT : err=E_PNNF;     break;
         case ENOSPC : err=E_FULL;     break;

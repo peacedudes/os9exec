@@ -68,14 +68,21 @@
   #define    powerc
   #define    UNIX
   #define    USE_UAEMU
-  
-  // Distinguish arm64 from Intel (both are little-endian on Apple Silicon)
+
+  /* __INTEL__ here means "little-endian host", NOT x86 -- the os9_word/os9_long
+   * byte-swap macros below are gated on it and are needed on arm64 too. Define it
+   * for EVERY little-endian host, and add __ARM64__ only as an extra platform ID.
+   * This mirrors the canonical block in os9main_incl_precomp.h. The earlier
+   * if/else here left __INTEL__ UNDEFINED on Apple Silicon, which would have
+   * selected the no-swap (68k-native BE) path on a little-endian host -- wrong.
+   * Dead today (os9exec_incl.h includes os9main_incl_precomp.h, which defines
+   * `macintosh`, before this header, so this whole block is skipped), but kept
+   * correct so a direct include or a reordering can't silently break endianness. */
   #ifndef __BIG_ENDIAN__
     #if defined __arm64__ || defined __aarch64__
       #define __ARM64__
-    #else
-      #define __INTEL__
     #endif
+    #define __INTEL__
   #endif
 #endif
 

@@ -658,11 +658,12 @@ static os9err int_devs( _pid_, int argc, char** argv )
     #endif
     
     if (!statistic && !rbf_devs) {
-        #ifdef windows32
-              tdev= &main_mco; 
+        /* main_mco is the live console on ALL platforms (installed unconditionally
+         * under win_unix in filestuff.c), not just legacy windows32 -- the gate
+         * meant `idevs` never listed the console device anywhere. */
+              tdev= &main_mco;
           if (tdev->installed && tdev->spP!=NULL)
               devs_printf( tdev->spP, "console","scf" );
-        #endif
 
                      spP= &syspaths[sysStdnil];
         devs_printf( spP, "null",    "scf" );
@@ -1996,13 +1997,17 @@ os9err call_hostcmd( char* cmdline, ushort pid, int moreargs, char **argv )
       
       return host2os9err( GetLastError(),E_IFORKP );
     
-    #elif defined MACOSX
+    #elif defined UNIX
+      /* UNIX, not MACOSX: system() is standard C, available on Linux and mingw
+       * too. Gated on MACOSX alone, both of those fell through to the "not
+       * implemented" stub below and silently returned success (0) while doing
+       * nothing. (void) casts rather than #pragma unused so it's clean on clang
+       * AND gcc.) */
       os9err err;
-      
-      #pragma unused(pid,moreargs,argv)
+      (void)pid; (void)moreargs; (void)argv;
       err= system( cmdline );
       return host2os9err( err,E_IFORKP );
-    
+
     #else
       #ifndef __GNUC__ /* MPW-only pragma; GCC warns it is ignoring it */
       #pragma unused(cmdline,pid,moreargs,argv)
@@ -2010,9 +2015,9 @@ os9err call_hostcmd( char* cmdline, ushort pid, int moreargs, char **argv )
 
       // Call MPW command???
       // Launch program???
-      upe_printf("Calling external commands not yet implemented!\n");  
+      upe_printf("Calling external commands not yet implemented!\n");
       return 0;
-    #endif  
+    #endif
 } /* call_hostcmd */
 
 /* eof */

@@ -853,8 +853,14 @@ ushort debugwait( void )
             case 'w' : if (sscanf(&inp[1],"%d",  &without_pid)<1) {  without_pid= 0; }; break;
             case 'j' : if (sscanf(&inp[1],"%d", &justthis_pid)<1) { justthis_pid= 0; }; break;
             
-            default  : 
-                          #ifdef macintosh
+            default  :
+                          /* MACOS9, not macintosh: the [B]/[T] commands this text
+                           * advertises are gated on MACOS9 (the case 'b'/'t'
+                           * handlers above), which is never defined in a modern
+                           * build -- but `macintosh` IS defined on live macOS, so
+                           * the help used to promise B/T while pressing them just
+                           * re-printed this help. Match the gate to the handlers. */
+                          #ifdef MACOS9
                             upe_printf("[X]extra-[G]o, [T]continue in debugger (mac context), [K[xx]] Kill process [xx], [Q]uit emulation\n");
                             upe_printf("[B[xx|B]] Call MacsBug with OS9 regs [of pid=xx]/[B] directly, [R[xx]] Regs [of pid=xx]\n");
                           #else
