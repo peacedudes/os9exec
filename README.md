@@ -169,7 +169,7 @@ Some real OS-9 binaries assume an RBF file system and use low-level disk calls w
 | `ihit` | Show directory hash hit rate (cache efficiency) |
 | `idbg` / `debughalt` | Enter the emulator's interactive debugger |
 | `dhelp` | List all debug/stop mask bit values (same as `idbg` → `dh`) |
-| `stop` / `shutdown` | Exit os9exec cleanly |
+| `stop` / `shutdown` | Exit os9exec cleanly. Requires super-user; set `OS9STOP=1` in the host environment to let any logged-in account exit (handy when a `tsmon`/`login` session isn't super). |
 | `rename` | Rename a file or directory |
 | `move` / `mv` | Move files or directories (replaces RBF-only real `mv`) |
 | `mount` / `unmount` | Mount, or create and mount, an RBF image or RAM disk at runtime |
