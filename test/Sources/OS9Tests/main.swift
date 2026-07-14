@@ -680,16 +680,24 @@ if !containerized {
     try? FileManager.default.removeItem(atPath: fsHostDir)
     try? FileManager.default.removeItem(atPath: canaryHost)
 
-    // ---- permissions: OS-9 attributes are honored on an RBF image ----
-    // (Host-native devices delegate permissions to the host FS and do NOT
-    //  enforce OS-9 write-protect; an RBF image is a real OS-9 filesystem the
-    //  emulator owns, so `attr` changes take effect there.)
+    // ---- permissions: NOT enforced (a pinned known-limitation test) ----
+    // OS-9 file permissions do not work in os9exec. Every process runs as the
+    // super-user (0.0) and every file is owned 0.0 (`dir -e` confirms), and in
+    // OS-9 the super-user bypasses ALL permission checks -- so even a file with
+    // every attribute bit cleared stays fully readable and deletable. The bits
+    // round-trip in the `attr` DISPLAY (they are stored) but nothing ever checks
+    // them; ownership is never anything but 0.0. This is asserted so it flips RED
+    // the day enforcement (or real ownership) is implemented, prompting whoever
+    // does it to rewrite this into a real enforcement test. See ROADMAP.
+    // Assert on dump's hex (not `list`) so the shell's echo of `echo abc >f`
+    // can't satisfy the check -- only an actual successful read of f can.
     let permDev = "h8"
     try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(permDev).path)
-    run("fs: perms honored on RBF (write bit clears)",
-        expectation: "after 'attr -nw -npw' the readback shows no write bit",
+    run("fs: KNOWN-LIMITATION permissions not enforced (all bits off, still readable)",
+        expectation: "dump of a permission-stripped file still shows its bytes",
         commands: ["mount -k=200K \(permDev)", "chd /\(permDev)",
-                   "echo PDATA >f", "attr f -nw -npw", "attr f"]) { $0.contains("-------r") }
+                   "echo abc >f", "attr f -nr -nw -ne -npr -npw -npe",
+                   "dump f"]) { $0.contains("6162 63") }
     try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(permDev).path)
 }
 
