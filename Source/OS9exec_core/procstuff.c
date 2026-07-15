@@ -974,7 +974,18 @@ void DoWait( void )
     wait_time.tv_nsec= delay_ns;
     nanosleep( &wait_time, NULL );
   //slp_idleticks++;
-                
+
+    /* Mirror the windows32 branch's HandleEvent() call below: without this,
+     * a process sleeping forever on a keypress-delivered signal (e.g. tsmon
+     * waiting for the first keystroke on /term at boot, wakeUpTick pinned to
+     * MAXINT) can never be woken once do_arbitrate finds no runnable process
+     * at all -- that idle path only ever reaches DoWait(), never the main
+     * loop's periodic CheckInputBuffers() spin-check, so stdin is never
+     * polled and the wake signal is never delivered. Confirmed live via
+     * lldb: procs[tsmon].state stayed pSleeping with wakeUpTick=2147483647
+     * and pd._signal=0 even after keystrokes were sent into the pty. */
+    CheckInputBuffers();
+
   #elif defined windows32
   //ulong ticks= GetSystemTick();
     Sleep( 1 ); // sleep for a short time
