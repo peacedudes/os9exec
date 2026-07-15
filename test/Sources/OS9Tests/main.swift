@@ -680,25 +680,87 @@ if !containerized {
     try? FileManager.default.removeItem(atPath: fsHostDir)
     try? FileManager.default.removeItem(atPath: canaryHost)
 
-    // ---- permissions: NOT enforced (a pinned known-limitation test) ----
-    // OS-9 file permissions do not work in os9exec. Every process runs as the
-    // super-user (0.0) and every file is owned 0.0 (`dir -e` confirms), and in
-    // OS-9 the super-user bypasses ALL permission checks -- so even a file with
-    // every attribute bit cleared stays fully readable and deletable. The bits
-    // round-trip in the `attr` DISPLAY (they are stored) but nothing ever checks
-    // them; ownership is never anything but 0.0. This is asserted so it flips RED
-    // the day enforcement (or real ownership) is implemented, prompting whoever
-    // does it to rewrite this into a real enforcement test. See ROADMAP.
-    // Assert on dump's hex (not `list`) so the shell's echo of `echo abc >f`
-    // can't satisfy the check -- only an actual successful read of f can.
-    let permDev = "h8"
+    // ---- permissions: ENFORCED on RBF images (real ownership + attribute bits) ----
+    // claude (1.7) and dog (1.3) are blank-password non-super accounts already in
+    // this disk's /dd/SYS/password -- see os9-dev skill's REPL notes for how this
+    // was live-verified (login really does F$SUser to a distinct Grp.Usr). su (0.0)
+    // is just this suite's default top-level session -- no login needed for it.
+    let permDev     = "h8"
+    let permDevPath = "/\(permDev)"
     try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(permDev).path)
-    run("fs: KNOWN-LIMITATION permissions not enforced (all bits off, still readable)",
-        expectation: "dump of a permission-stripped file still shows its bytes",
-        commands: ["mount -k=200K \(permDev)", "chd /\(permDev)",
-                   "echo abc >f", "attr f -nr -nw -ne -npr -npw -npe",
-                   "dump f"]) { $0.contains("6162 63") }
+
+    // NOTE: every sequence below that ends still logged in as claude/dog closes
+    // with an explicit "logout" before the run/check helpers' implicit final
+    // ESC. Confirmed via direct os9exec REPL runs (see task-2-report.md): login
+    // forks a nested "claude:"/"dog:" shell, and the harness only sends ONE
+    // terminating ESC. If the sequence ends inside that nested shell, the ESC
+    // is consumed there and the outer top-level "$" shell hangs forever waiting
+    // for more input that will never come -- the process times out and os9()
+    // returns the literal string "(timeout)", which trivially fails a
+    // `contains: "Error #"` check and trivially PASSES a `!contains("Error #")`
+    // check, silently masking the real result either way. This is a harness/
+    // login-nesting artifact, unrelated to permission enforcement -- adding the
+    // trailing "logout" (already used correctly elsewhere in this block) fixes
+    // it and lets the real output flow through to the assertions.
+    run("fs: permission — claude creates+owns a file, can read it back",
+        expectation: "dump of a freshly created file shows its bytes to its own creator",
+        commands: ["mount -k=200K \(permDev)", "chd \(permDevPath)",
+                   "login claude", "chd \(permDevPath)",
+                   "echo abc >f", "dump f", "logout"]) { $0.contains("6162 63") }
+
+    check("fs: permission — owner locks self out by clearing owner-read",
+        contains: "Error #",
+        "chd \(permDevPath)", "login claude", "chd \(permDevPath)",
+        "attr f -nr", "dump f", "logout")
+
+    check("fs: permission — super-user still bypasses every check",
+        contains: "6162 63",
+        "chd \(permDevPath)", "dump f")
+
+    check("fs: permission — non-owner (dog) blocked from a file with no public bits",
+        contains: "Error #",
+        "chd \(permDevPath)", "login dog", "chd \(permDevPath)", "dump f", "logout")
+
+    check("fs: permission — owner restores public-read, non-owner can now read",
+        contains: "6162 63",
+        "chd \(permDevPath)", "login claude", "chd \(permDevPath)", "attr f -pr", "logout",
+        "login dog", "chd \(permDevPath)", "dump f", "logout")
+
+    check("fs: permission — non-owner cannot change attributes on a file they don't own",
+        contains: "Error #",
+        "chd \(permDevPath)", "login dog", "chd \(permDevPath)", "attr f -nr", "logout")
+
     try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(permDev).path)
+
+    // ---- permissions: directories (read gates traversal, write gates create/delete) ----
+    let dirPermDev  = "ha"
+    let dirPermPath = "/\(dirPermDev)"
+    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(dirPermDev).path)
+
+    run("fs: permission dir — dog can create inside claude's dir while public r+w are set",
+        expectation: "makdir's default attrs (owner+public rwx) let a non-owner create inside",
+        commands: ["mount -k=200K \(dirPermDev)", "chd \(dirPermPath)",
+                   "login claude", "chd \(dirPermPath)", "makdir sub", "logout",
+                   "login dog", "chd \(dirPermPath)/sub", "echo x >g",
+                   "logout"]) { !$0.contains("Error #") }
+
+    check("fs: permission dir — write blocked once public-write is cleared",
+        contains: "Error #",
+        "chd \(dirPermPath)", "login claude", "chd \(dirPermPath)", "attr sub -npw", "logout",
+        "login dog", "chd \(dirPermPath)/sub", "echo x >g2", "logout")
+
+    check("fs: permission dir — directory itself unreachable once public-read is also cleared",
+        contains: "Error #",
+        "chd \(dirPermPath)", "login claude", "chd \(dirPermPath)", "attr sub -npr", "logout",
+        "login dog", "chd \(dirPermPath)/sub", "logout")
+
+    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(dirPermDev).path)
+
+    // ---- host-native devices: unaffected -- no real permission bits to enforce ----
+    check("fs: permission — host-native device ignores attribute bits (unchanged behavior)",
+        contains: "6162 63",
+        "mount -k=0 hb", "chd /hb", "echo abc >f", "attr f -nr -nw -ne -npr -npw -npe", "dump f")
+    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent("hb").path)
 }
 
 // ── Results ───────────────────────────────────────────────────────────────────
