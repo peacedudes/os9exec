@@ -2107,11 +2107,16 @@ static void Set_FDOwn( syspath_typ* spP, ushort owner )
 
 typedef enum { permRead, permWrite, permExec } perm_typ;
 
+static ushort CallerOwner( ushort pid )
+/* the calling process's own group.user, packed the same way FD_OWN is */
+{
+    return (ushort)( (os9_word(procs[pid].pd._group)<<BpB) | os9_word(procs[pid].pd._user) );
+} /* CallerOwner */
+
 static Boolean IsOwner( ushort pid, ushort ownerWord )
 /* true if the caller's group.user matches the file's owner word */
 {
-    ushort caller= (ushort)( (os9_word(procs[pid].pd._group)<<BpB) | os9_word(procs[pid].pd._user) );
-    return caller==ownerWord;
+    return CallerOwner(pid)==ownerWord;
 } /* IsOwner */
 
 static Boolean has_perm( ushort pid, byte att, ushort ownerWord, perm_typ want )
@@ -2815,7 +2820,7 @@ static os9err CreateNewFile( ushort pid, syspath_typ* spP, byte fileAtt, char* n
     ulong       dfd=  rbf->fd_nr;
     uint32_t*   d  = &rbf->deptr;
     ulong       fd, scs, ascs, sTmp;
-    ushort      owner= (ushort)( (os9_word(procs[pid].pd._group)<<BpB) | os9_word(procs[pid].pd._user) );
+    ushort      owner= CallerOwner(pid);
 
     if (strlen(name)>DIRNAMSZ) return E_BPNAM;
     
