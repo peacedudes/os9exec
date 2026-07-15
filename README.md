@@ -1,6 +1,6 @@
 # OS9exec — Complete OS-9/68k emulator
 
-Run actual OS-9 binaries on your modern computer. OS9exec emulates the 68k processor and OS-9 kernel, giving you a real OS-9 shell with pipes, redirection, job control, and the complete filesystem.
+Run real OS-9/68k binaries on a modern machine. OS9exec emulates the 68000 and the OS-9 kernel — a genuine OS-9 shell with pipes, redirection, job control, and a full filesystem.
 
 **Platforms:** macOS (arm64/Intel), Linux (64-bit/32-bit), Windows (native, via mingw-w64), Docker.
 
@@ -10,12 +10,12 @@ Run actual OS-9 binaries on your modern computer. OS9exec emulates the 68k proce
 
 ```sh
 git clone https://github.com/peacedudes/os9exec.git
-cd os9exec-git_code
+cd os9exec
 make
 OS9DISK=/path/to/your/os9disk ./os9exec shell
 ```
 
-That's it: **1)** build it, **2)** point `OS9DISK` at a directory (or disk image) with a `CMDS` folder full of OS-9 binaries, **3)** run. From within OS-9 the disk is known as /dd.
+That's it: **1)** build it, **2)** point `OS9DISK` at a directory (or disk image) with a `CMDS` folder full of OS-9 binaries, **3)** run. From within OS-9 the disk is known as `/dd`.
 
 ```
 $ dir /dd/CMDS
@@ -32,9 +32,33 @@ Prefer a prebuilt binary, Docker, or Apple Container instead of building? See [O
 
 ## What's new
 
-- **`mount -k=<size>`** creates a ready-to-use blank OS-9 disk in one command — no separate `format` step. `mount -k=0` creates a plain host folder instead. See [Creating new disk images](#creating-new-disk-images).
-- **`mount -r=<size>`** (RAM disks) now actually works — it was silently broken in every prior build.
-- **OS-9's own `debug` command works for the first time** — full register display, single-stepping, breakpoints. See [OS-9 `debug` now works](#os-9-debug-now-works).
+Since the tagged `v0.0.0`, this branch fixes a large class of crashes, hangs, and boots-to-nowhere. What a returning OS-9 user will notice:
+
+**More real software runs**
+- **The GNU utilities work.** ~22 tools from the Microware GNU archive died at their first instruction on a spurious bounds trap (`CHK2`/`CMP2`) — fixed; they launch and run.
+- **Packed BASIC09 modules run under `runb`** (F$Link/F$Load wildcard and access-mode bugs fixed). *Behavior change:* a packed module in the current directory no longer auto-runs — `load` it, or put it in an execution directory.
+- **BASIC09 can call compiled C** through a small assembly shim.
+- **`ls` and `ls -l`** (freeware, `dd/CMDS/SHARE/ls`) list directories correctly.
+
+**Boots and interacts cleanly**
+- **`tsmon` → `login` boot reaches a prompt.** A keypress now delivers the data-ready signal `tsmon` blocks on, and the idle scheduler no longer deadlocks on an empty run queue. Set `OS9STOP=1` so a plain (non-super) login can still `stop`/`shutdown`.
+- **Ctrl-C / Ctrl-E interrupt anything**, whatever the process is doing (previously a no-op outside a few states).
+- **`dir` no longer hangs** on certain directories.
+- **Full-screen apps position the cursor correctly** — a stray host LF→CRLF translation had broken cursor motion for `vi` and curses programs.
+
+**Disks and devices**
+- **`mount -k=<size>`** creates a ready-to-use blank RBF image (`-k=0`: a plain host folder) in one command — no separate `format` step. See [Creating new disk images](#creating-new-disk-images).
+- **`mount -r=<size>` RAM disks** now actually work — silently broken in every prior build.
+- **Devices stay inside their root** — no path can climb out of `/dd` into the host filesystem.
+- **`OS9DISK` / `OS9Hx` paths containing `./` or `../` work** — they used to silently redirect every file access to the device root.
+
+**More robust**
+- **OS-9's own `debug` command works for the first time** — live register display, single-stepping, breakpoints. See [OS-9 `debug` now works](#os-9-debug-now-works).
+- **A buggy program can't crash the emulator through a syscall** — a wild or null pointer handed to a system call now returns `E_BPADDR`, as real OS-9 would, instead of faulting the host.
+- **Console baud-rate pacing** — output trickles at the path's configured baud rate like real serial hardware; `-r` restores full speed for scripts.
+
+**More platforms**
+- **Native Windows** (mingw-w64) and **ARM / 32-bit Linux** now run. ARM Linux was completely broken — an unsigned-`char` assumption made every file read hang.
 
 ---
 
@@ -258,6 +282,8 @@ The full syscall surface — file I/O, process management, module loading, pipes
 
 **Time:** os9exec has no internal clock. `F$Time` delegates to the host, so `date` and file timestamps always reflect the host's system time. `setime` accepts a date but has no effect — the host clock is authoritative.
 
+**File permissions:** not enforced. Every file is created owned by `0.0`, and accounts run as super-user, so the attribute bits don't gate access. Fine for a single-user emulator; don't rely on OS-9 permissions for isolation.
+
 **Hardware-dependent commands** (`backup`, `format`, `tape`, `kermit`, raw `com`, `rdump`, `fsave`/`frestore`) require physical devices that are not emulated and will not work.
 
 **Terminal I/O:** Full screen apps (`vi`, `less`, editors) require `TERM` to be set and a compatible termcap entry. The included `dd/SYS/termcap` covers `xterm`, `xterm-256color`, and `vt100`. `vi` is included in `dd/CMDS/SHARE` and is the recommended editor.
@@ -268,7 +294,7 @@ Everything else in a standard OS-9/68k SDK CMDS directory can be expected to run
 
 ## Other ways to run it
 
-The [3-step Quick start](#quick-start) above is the recommended path — it's one command (`make`) and gets you today's fixes. The [GitHub Releases](https://github.com/peacedudes/os9exec/releases) page still only has the older tagged `v0.0.0` binaries; no new release has been cut yet.
+The [3-step Quick start](#quick-start) is the recommended path — one `make`, and you get every fix above. The [GitHub Releases](https://github.com/peacedudes/os9exec/releases) page still carries only the older tagged `v0.0.0` binaries; no new release has been cut yet.
 
 <details>
 <summary>Download a binary instead of building</summary>
@@ -300,7 +326,7 @@ docker run -it -v /path/to/your/os9:/dd ghcr.io/peacedudes/os9exec:latest /dd/CM
 Or build locally:
 ```sh
 git clone https://github.com/peacedudes/os9exec.git
-cd os9exec-git_code
+cd os9exec
 docker build -f docker/Dockerfile -t os9exec .
 docker run -it -v /path/to/your/os9:/dd os9exec /dd/CMDS/shell
 ```
@@ -315,7 +341,7 @@ docker run -it -v /path/to/your/os9:/dd os9exec /dd/CMDS/shell
 container system start
 
 git clone https://github.com/peacedudes/os9exec.git
-cd os9exec-git_code
+cd os9exec
 container build -f docker/Dockerfile -t os9exec:apple .
 container run -it -v /path/to/your/os9:/dd os9exec:apple /dd/CMDS/shell
 ```
