@@ -2780,7 +2780,7 @@ static os9err CreateNewFile( ushort pid, syspath_typ* spP, byte fileAtt, char* n
     ulong       dfd=  rbf->fd_nr;
     uint32_t*   d  = &rbf->deptr;
     ulong       fd, scs, ascs, sTmp;
-    ushort      owner= (ushort)( (procs[pid].pd._group<<BpB) | procs[pid].pd._user );
+    ushort      owner= (ushort)( (os9_word(procs[pid].pd._group)<<BpB) | os9_word(procs[pid].pd._user) );
 
     if (strlen(name)>DIRNAMSZ) return E_BPNAM;
     
