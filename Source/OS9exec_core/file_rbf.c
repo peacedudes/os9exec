@@ -2088,12 +2088,22 @@ static byte FDAtt( syspath_typ* spP )
 static void Set_FDAtt( syspath_typ* spP, byte att )
 /* set the file attributes  */
 /* but only if not root directory */
-{   
+{
     rbf_typ*    rbf= &spP->u.rbf;
     rbfdev_typ* dev= &rbfdev[rbf->devnr];
 
-    if (rbf->fd_nr!=dev->root_fd_nr) spP->fd_sct[0]= att;   
+    if (rbf->fd_nr!=dev->root_fd_nr) spP->fd_sct[0]= att;
 } /* Set_FDAtt */
+
+static ushort FDOwn( syspath_typ* spP )
+/* get the file owner: packed group.user, group<<8|user */
+{   return GET_OS9W(spP->fd_sct, 1);
+} /* FDOwn */
+
+static void Set_FDOwn( syspath_typ* spP, ushort owner )
+/* set the file owner: packed group.user, group<<8|user */
+{   SET_OS9W(spP->fd_sct, 1, owner);
+} /* Set_FDOwn */
 
 static void Set_FDLnk( syspath_typ* spP, byte lnk )
 /* set the link count */
@@ -2618,19 +2628,20 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     return err;
 } /* DoAccess */
 
-static os9err Create_FD( syspath_typ* spP, byte att, ulong size )
+static os9err Create_FD( syspath_typ* spP, byte att, ushort owner, ulong size )
 {
     rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr];
-    
+
     int  ii;
     for (ii=0; ii<dev->sctSize; ii++) { /* clear sector */
           spP->fd_sct[ii]= NUL;
     }
 
-    Set_FDAtt     ( spP,  att ); /* attributes */
-    Set_FDLnk     ( spP,    1 ); /* the link count */
-    Set_FDSize    ( spP, size ); /* file size  */
-    return WriteFD( spP );       /* write FD sector */
+    Set_FDAtt     ( spP,  att   ); /* attributes */
+    Set_FDOwn     ( spP,  owner ); /* creator's group.user */
+    Set_FDLnk     ( spP,    1   ); /* the link count */
+    Set_FDSize    ( spP, size   ); /* file size  */
+    return WriteFD( spP );         /* write FD sector */
 } /* Create_FD */
 
 static os9err OpenDir( rbfdev_typ* dev, ulong dfd, ushort *sp )
@@ -2759,7 +2770,7 @@ static os9err touchfile_RBF( syspath_typ* spP, Boolean creDat )
     return WriteFD( spP );
 } /* touchfile_RBF */
 
-static os9err CreateNewFile( syspath_typ* spP, byte fileAtt, char* name, ulong csize )
+static os9err CreateNewFile( ushort pid, syspath_typ* spP, byte fileAtt, char* name, ulong csize )
 {
     os9err      err;
     rbf_typ*    rbf= &spP->u.rbf;
@@ -2769,6 +2780,7 @@ static os9err CreateNewFile( syspath_typ* spP, byte fileAtt, char* name, ulong c
     ulong       dfd=  rbf->fd_nr;
     uint32_t*   d  = &rbf->deptr;
     ulong       fd, scs, ascs, sTmp;
+    ushort      owner= (ushort)( (procs[pid].pd._group<<BpB) | procs[pid].pd._user );
 
     if (strlen(name)>DIRNAMSZ) return E_BPNAM;
     
@@ -2780,8 +2792,8 @@ static os9err CreateNewFile( syspath_typ* spP, byte fileAtt, char* name, ulong c
     err= AllocateBlocks ( spP, scs, &fd,  &ascs, 0 ); if (err) return err;
   //printf( "c) err=%d, ascs=%d\n", err, ascs );
          spP->u.rbf.fd_nr=          fd; /* access them correctly */
-         spP->u.rbf.fddir=     dfd;     
-    err= Create_FD      ( spP,         fileAtt, 0 ); if (err) return err;
+         spP->u.rbf.fddir=     dfd;
+    err= Create_FD      ( spP,         fileAtt, owner, 0 ); if (err) return err;
     err= Access_DirEntry( dev, dfd, fd,   name, d ); if (err) return err;
 
     if (scs>1) { // Adaption for scs>1 only
@@ -2951,7 +2963,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
         if (err) {
             if (err==E_EOF) {           /* do not create new sub paths !! */
                 if (cre && strcmp( p,"" )==0) {            /* create it ? */
-                    err= CreateNewFile( spP, procs[pid].fileAtt,
+                    err= CreateNewFile( pid, spP, procs[pid].fileAtt,
                           (char*)&cmp_entry, procs[pid].cre_initsize );
                     rbf->currPos= 0;  /* initialize position to 0 */
                     rbf->lastPos= 0;
