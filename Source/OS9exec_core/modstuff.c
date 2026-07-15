@@ -1611,14 +1611,16 @@ os9err install_traphandler( ushort pid, ushort trapidx,
     os9err err;
     ushort mid;
 
-    debugprintf(dbgTrapHandler,dbgNorm,("# Installing Traphandler for pid=%d, Trap #%d\n",pid,trapidx+1));
+    debugprintf(dbgTrapHandler,dbgNorm,("# Installing Traphandler for pid=%d, Trap #%d, mpath='%s'\n",pid,trapidx+1,mpath));
     if (trapidx>=NUMTRAPHANDLERS) return os9error(E_ITRAP); /* invalid trap code */
     tp=&(procs[pid].TrapHandlers[trapidx]);
     if (tp->trapmodule!=NULL) return os9error(E_ITRAP); /* a handler is already installed for this trap */
 
     
-    /* load from exe dir */ 
-    err= link_load( pid,mpath,&mid ); if (err) return err;
+    /* load from exe dir */
+    err= link_load( pid,mpath,&mid );
+    debugprintf(dbgTrapHandler,dbgNorm,("# install_traphandler: link_load('%s') for pid=%d returned err=$%02X\n",mpath,pid,err));
+    if (err) return err;
     
     /* now prepare the trap handler data */
     theModule=(mod_exec *) get_module_ptr(mid);
