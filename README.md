@@ -282,7 +282,7 @@ The full syscall surface — file I/O, process management, module loading, pipes
 
 **Time:** os9exec has no internal clock. `F$Time` delegates to the host, so `date` and file timestamps always reflect the host's system time. `setime` accepts a date but has no effect — the host clock is authoritative.
 
-**File permissions:** not enforced. Every file is created owned by `0.0`, and accounts run as super-user, so the attribute bits don't gate access. Fine for a single-user emulator; don't rely on OS-9 permissions for isolation.
+**File permissions:** enforcement on **RBF disk images** is landing now — owner/group stamping at creation plus attribute-bit checks on open, create, and delete (super-user bypasses, as on real OS-9). Until it ships, and for host-native directories generally, every file reads as owned by `0.0` with all access allowed — don't rely on OS-9 permissions for isolation yet.
 
 **Hardware-dependent commands** (`backup`, `format`, `tape`, `kermit`, raw `com`, `rdump`, `fsave`/`frestore`) require physical devices that are not emulated and will not work.
 
