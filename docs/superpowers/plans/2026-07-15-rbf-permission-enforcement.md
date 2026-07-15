@@ -115,8 +115,10 @@
       ulong       dfd=  rbf->fd_nr;
       uint32_t*   d  = &rbf->deptr;
       ulong       fd, scs, ascs, sTmp;
-      ushort      owner= (ushort)( (procs[pid].pd._group<<BpB) | procs[pid].pd._user );
+      ushort      owner= (ushort)( (os9_word(procs[pid].pd._group)<<BpB) | os9_word(procs[pid].pd._user) );
   ```
+
+  **Note:** `pd._group`/`pd._user` are stored in the guest's raw (big-endian) process-descriptor layout, not host-native — every other place in this codebase that combines them into one value wraps both in `os9_word()` first (see `fcalls.c:702`). Omitting the wrap here silently corrupts the packed word on a little-endian host (this was caught in task review, not in the original plan draft — the plan draft omitted `os9_word()` and got it wrong).
 
   Then change the `Create_FD` call site inside the same function (line 2784) from:
   ```c
@@ -288,7 +290,7 @@ This replaces the pinned `fs: KNOWN-LIMITATION permissions not enforced` test wi
   static Boolean IsOwner( ushort pid, ushort ownerWord )
   /* true if the caller's group.user matches the file's owner word */
   {
-      ushort caller= (ushort)( (procs[pid].pd._group<<BpB) | procs[pid].pd._user );
+      ushort caller= (ushort)( (os9_word(procs[pid].pd._group)<<BpB) | os9_word(procs[pid].pd._user) );
       return caller==ownerWord;
   } /* IsOwner */
 
