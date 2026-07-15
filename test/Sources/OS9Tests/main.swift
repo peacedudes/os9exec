@@ -732,6 +732,30 @@ if !containerized {
 
     try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(permDev).path)
 
+    // ---- permissions: file-level write bit (has_open_perm's write path) ----
+    // `>` redirection always requests create, so re-running it against a file
+    // that already exists hits E_CEF ("creating existing file") before the
+    // write-bit check is ever reached -- that would pass trivially regardless
+    // of the write bit, which is not what we want to test. `touch` opens an
+    // EXISTING file for write without requesting create, so it lands squarely
+    // on has_open_perm's write path (live-verified: E_FNA when owner-write is
+    // cleared, succeeds when it's set).
+    let filePermDev     = "hc"
+    let filePermDevPath = "/\(filePermDev)"
+    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(filePermDev).path)
+
+    run("fs: permission — owner locks self out of writing own file (write bit via touch)",
+        expectation: "clearing only owner-write blocks touch (open-for-write) on the owner's own file",
+        commands: ["mount -k=200K \(filePermDev)", "chd \(filePermDevPath)",
+                   "login claude", "chd \(filePermDevPath)",
+                   "echo abc >f", "attr f -nw", "touch f", "logout"]) { $0.contains("Error #") }
+
+    check("fs: permission — owner can still read that same file (write lockout is write-specific)",
+        contains: "6162 63",
+        "chd \(filePermDevPath)", "login claude", "chd \(filePermDevPath)", "dump f", "logout")
+
+    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(filePermDev).path)
+
     // ---- permissions: directories (read gates traversal, write gates create/delete) ----
     let dirPermDev  = "ha"
     let dirPermPath = "/\(dirPermDev)"
@@ -755,6 +779,32 @@ if !containerized {
         "login dog", "chd \(dirPermPath)/sub", "logout")
 
     try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(dirPermDev).path)
+
+    // ---- permissions: pRdelete's parent-directory write check ----
+    // Deletion is gated on the PARENT DIRECTORY's write permission, not on who
+    // owns the file being deleted (live-verified below): dog lacks public-write
+    // on claude's "sub2", so dog's "del f" is blocked even though dog can still
+    // see/traverse into sub2 (public-read stays set). claude, who has owner-write
+    // on the directory, deletes the same file with no trouble -- the positive
+    // control that proves the negative result above isn't vacuous.
+    let delDev     = "hd"
+    let delDevPath = "/\(delDev)"
+    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(delDev).path)
+
+    run("fs: permission del — dog blocked from deleting a file in claude's dir (no public-write)",
+        expectation: "pRdelete's parent-directory write check rejects a non-owner without dir write",
+        commands: ["mount -k=200K \(delDev)", "chd \(delDevPath)",
+                   "login claude", "chd \(delDevPath)", "makdir sub2", "chd sub2", "echo abc >f",
+                   "chd ..", "attr sub2 -npw", "logout",
+                   "login dog", "chd \(delDevPath)/sub2", "del f", "logout"]) {
+        $0.contains("Error #")
+    }
+
+    check("fs: permission del — claude (dir owner, has write) deletes the same file fine",
+        absent: "Error #",
+        "chd \(delDevPath)/sub2", "login claude", "chd \(delDevPath)/sub2", "del f", "logout")
+
+    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(delDev).path)
 
     // ---- host-native devices: unaffected -- no real permission bits to enforce ----
     check("fs: permission — host-native device ignores attribute bits (unchanged behavior)",

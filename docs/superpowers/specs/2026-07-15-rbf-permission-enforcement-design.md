@@ -67,9 +67,11 @@ Add `Get_FDOwn`/`Set_FDOwn` accessors next to the existing `FDAtt`/`FDSize`
 family in `file_rbf.c`, operating on `FD_OWN` (offset `$01`, 2 bytes) via
 the existing `GET_OS9W`/`SET_OS9W` macros. Pack the owner word the same way
 this codebase already packs group.user elsewhere (`fcalls.c:702`:
-`os9_word(pd->_group)<<BpB | os9_word(pd->_user)`) — consistent with the
-skill doc's documented RBF quirk that only the **low-order byte** of each
-ID is ever compared, which only makes sense if both IDs live in one word.
+`os9_word(pd->_group)<<BpB | os9_word(pd->_user)`). Ownership is decided by
+a full 16-bit match on this packed word (group and user both matching
+exactly) — self-consistent, since the same formula both stamps the owner
+word at creation and rebuilds the caller's word for comparison (see
+`CallerOwner` in `file_rbf.c`).
 
 - `Create_FD` gains an owner-word parameter, stamped from the *creating*
   process's `pd._group`/`pd._user`.
@@ -92,9 +94,12 @@ read/write/execute. Logic:
   every existing test runs as super-user, so **zero existing test
   behavior changes** — only a test that explicitly `login`s as a non-super
   account can ever hit a `false` from this helper.
-- Otherwise: compare the low byte of the caller's packed group.user word
-  against the low byte of `ownerWord`. Match → test the owner bit. No
-  match → test the public bit.
+- Otherwise: compare the caller's full 16-bit packed group.user word
+  against `ownerWord` (both group and user must match exactly — see
+  `IsOwner`/`CallerOwner`). This is self-consistent with §1: the owner
+  word is stamped and compared using the identical packing formula, so a
+  full-word match is the correct (and only sensible) comparison. Match →
+  test the owner bit. No match → test the public bit.
 
 ### 3. Enforcement wiring
 
