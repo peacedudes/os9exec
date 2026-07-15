@@ -2105,9 +2105,44 @@ static void Set_FDOwn( syspath_typ* spP, ushort owner )
 {   SET_OS9W(spP->fd_sct, 1, owner);
 } /* Set_FDOwn */
 
+typedef enum { permRead, permWrite, permExec } perm_typ;
+
+static Boolean IsOwner( ushort pid, ushort ownerWord )
+/* true if the caller's group.user matches the file's owner word */
+{
+    ushort caller= (ushort)( (os9_word(procs[pid].pd._group)<<BpB) | os9_word(procs[pid].pd._user) );
+    return caller==ownerWord;
+} /* IsOwner */
+
+static Boolean has_perm( ushort pid, byte att, ushort ownerWord, perm_typ want )
+/* single-bit permission test: super-user always passes; otherwise pick the
+ * owner or public bit-triplet depending on ownership, and test one bit. */
+{
+    byte ownerBit, publicBit;
+
+    if (is_super(pid)) return true;
+
+    switch (want) {
+      case permRead : ownerBit= 0x01; publicBit= 0x08; break;
+      case permWrite: ownerBit= 0x02; publicBit= 0x10; break;
+      default       : ownerBit= 0x04; publicBit= 0x20; break; /* permExec */
+    } /* switch */
+
+    return (att & (IsOwner(pid,ownerWord) ? ownerBit : publicBit)) != 0;
+} /* has_perm */
+
+static Boolean has_open_perm( ushort pid, byte att, ushort ownerWord, ushort mode )
+/* every access type actually requested by <mode> (R/W/E) must be granted */
+{
+    if (IsRead (mode) && !has_perm(pid,att,ownerWord,permRead )) return false;
+    if (IsWrite(mode) && !has_perm(pid,att,ownerWord,permWrite)) return false;
+    if (IsExec (mode) && !has_perm(pid,att,ownerWord,permExec )) return false;
+    return true;
+} /* has_open_perm */
+
 static void Set_FDLnk( syspath_typ* spP, byte lnk )
 /* set the link count */
-{ spP->fd_sct[8]= lnk;    
+{ spP->fd_sct[8]= lnk;
 } /* Set_FDLnk */
 
 static os9err FD_Segment( syspath_typ* spP, byte *attr, ulong *size, ulong *totsize, 
@@ -2935,13 +2970,15 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
             if (err) break;       /* for all other errors: break */
             
             err= ReadFD( spP ); if (err) break;
-            if (root) { 
+            if (root) {
                 strcpy( spP->name,pathname+1 );
                 err= FD_Segment( spP, &attr,&size,&totsize,&sect,&slim, &pref ); if (err) break;
                 rbf->lastPos= size;                   /* last pos is the filesize */
                 rbf->att    = attr;                   /* save attributes */
-                return 0; 
+                if (!has_perm( pid, attr, FDOwn(spP), permRead )) return E_FNA;
+                return 0;
             } // if
+            if (!has_perm( pid, FDAtt(spP), FDOwn(spP), permRead )) { err= E_FNA; break; }
                               p++; /* cut root path */
             err= CutOS9Path( &p, (char*)&cmp_entry ); if (err) break;
         }
@@ -2949,6 +2986,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
             if (*pathname==NUL) { err= E_FNA; break; }
             rbf->fd_nr= ls; /* take current path */
             err= ReadFD( spP );      if (err) break;
+            if (!has_perm( pid, FDAtt(spP), FDOwn(spP), permRead )) { err= E_FNA; break; }
         }
     } while (false);
     if (err) return err;
@@ -2963,10 +3001,15 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
         if (err) {
             if (err==E_EOF) {           /* do not create new sub paths !! */
                 if (cre && strcmp( p,"" )==0) {            /* create it ? */
-                    err= CreateNewFile( pid, spP, procs[pid].fileAtt,
-                          (char*)&cmp_entry, procs[pid].cre_initsize );
-                    rbf->currPos= 0;  /* initialize position to 0 */
-                    rbf->lastPos= 0;
+                    if (!has_perm( pid, FDAtt(spP), FDOwn(spP), permWrite )) {
+                        err= E_FNA;
+                    }
+                    else {
+                        err= CreateNewFile( pid, spP, procs[pid].fileAtt,
+                              (char*)&cmp_entry, procs[pid].cre_initsize );
+                        rbf->currPos= 0;  /* initialize position to 0 */
+                        rbf->lastPos= 0;
+                    }
                 }
                 else err= E_PNNF; /* OS-9 expects E_PNNF, if entry not found */
 
@@ -2990,7 +3033,13 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
             rbf->lastPos= size;                   /* last pos is the filesize */
             rbf->att    = attr;                   /* save attributes */
             isFileEntry= (attr & 0x80)==0x00;     /* recognized as file entry */
-            
+
+            /* every directory reached along the path -- intermediate or the
+             * final target -- needs read permission to be searched/entered */
+            if (!isFileEntry && !has_perm( pid, attr, FDOwn(spP), permRead )) {
+                err= E_FNA; break;
+            }
+
             err= CutOS9Path( &p, (char*)&cmp_entry ); if (err) break;
 
             if (*cmp_entry==NUL) {                /* no more sub directories */
@@ -2999,6 +3048,8 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
                 if   (isFileEntry) {              /* if it is a file entry */
                   if (isFile) {
                     if (cre)  err= E_CEF;         /* already there */
+                    else if (!has_open_perm( pid, attr, FDOwn(spP), *modeP ))
+                              err= E_FNA;          /* requested access not granted */
                     else      err= 0;             /* is there as file -> ok */
                   }
                   else      { err= E_FNA;         /* is path, should be file */
@@ -3183,6 +3234,16 @@ os9err pRdelete( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
     
     dev= &rbfdev[spP->u.rbf.devnr]; /* can't be assigned earlier */
     dfd=         spP->u.rbf.fddir;
+
+    { /* deleting removes an entry from the parent directory: needs write there */
+        ushort  dsp;
+        os9err  dperr= OpenDir( dev, dfd, &dsp );
+        if (dperr) { usrpath_close( pid, path ); return dperr; }
+        Boolean okToDel= has_perm( pid, FDAtt(&syspaths[dsp]), FDOwn(&syspaths[dsp]), permWrite );
+        os9err  dcerr = CloseDir( dsp );
+        if (!okToDel) { usrpath_close( pid, path ); return E_FNA; }
+        if (dcerr)    { usrpath_close( pid, path ); return dcerr; }
+    }
 
     do {
       err= Delete_DirEntry ( dev, dfd, (char*)&spP->name ); if (err) break;
@@ -3372,8 +3433,9 @@ os9err pRsetsz( _pid_, syspath_typ* spP, uint32_t *size )
 } /* pRsetsz */
 
 os9err pRsetatt( _pid_, syspath_typ* spP, uint32_t *attr )
-/* set the attributes of a file */
+/* set the attributes of a file -- owner or super-user only */
 {
+    if (!is_super(pid) && !IsOwner(pid, FDOwn(spP))) return E_FNA;
     Set_FDAtt     ( spP, (byte)*attr ); /* byte ordering is already correct */
     return WriteFD( spP );
 } /* pRsetatt */
