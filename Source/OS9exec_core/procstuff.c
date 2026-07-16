@@ -1409,7 +1409,13 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
        This also handles commands with no OS-9 binary (ihelp, icmds, iprocs, ...) that
        were previously unreachable because link_load failed before prepFork was ever called. */
     #ifdef INT_CMD
-          cp->isIntUtil= isintcommand( mpath, &cp->isNative, &modBase )>=0;
+        /* A genuine resident module must win over a same-named internal command
+         * (same guard as OS9_F_Link/link_module, 881f05f): without it, mid!=0
+         * here (link_load already resolved a real module -- e.g. a packed
+         * BASIC09 procedure named "move") is still overridden by the internal
+         * command, so F$Fork/F$Chain never launch the real module at all. */
+          cp->isIntUtil= isintcommand( mpath, &cp->isNative, &modBase )>=0
+                         && find_mod_id( mpath )>=MAXMODULES;
       if (cp->isIntUtil) {
         set_os9_state( newpid, pActive, "prepFork" );
         if (!cp->isNative) cp->mid= 0; // assign "OS9exec" module, for non-PtoC modules
