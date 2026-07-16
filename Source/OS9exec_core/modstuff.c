@@ -1331,6 +1331,17 @@ os9err link_module( ushort pid, const char* name, ushort* midP )
   #ifdef INT_CMD
   Boolean isNative= false;
         isInt= isintcommand( lName, &isNative, &modBase )>=0 && !isNative;
+    if (isInt && find_mod_id( lName )<MAXMODULES) {
+      /* A genuine resident module must win over a same-named internal
+         command: on a real OS-9, F$Link searches only the module directory.
+         Without this check, a packed BASIC09 module group containing a
+         procedure named after an internal command (e.g. "move") can never
+         RUN it -- F$Link gets hijacked to 'OS9exec' and BASIC09 reports
+         error 043 (unknown procedure). Internal-command substitution stays
+         strictly as a fallback for names with no real module behind them. */
+      isInt   = false;
+      modBase = NULL;
+    } // if
     if (isInt) {
       debugprintf(dbgModules,dbgNorm,
                  ( "# link_module: internal cmd '%s' => try 'OS9exec' instead\n", lName ));

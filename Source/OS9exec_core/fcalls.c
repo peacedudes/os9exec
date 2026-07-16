@@ -318,7 +318,16 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
     {
         Boolean isNative_ = false;
         void*   modBase_  = NULL;
-        if (isintcommand(mname, &isNative_, &modBase_) >= 0) {
+        /* A genuine resident module must win over a same-named internal
+         * command: real OS-9 F$Link searches only the module directory.
+         * Without the find_mod_id guard, a packed BASIC09 module group
+         * containing a procedure named after an internal command (the 1984
+         * "towers" demo has one called "move") gets this fake answer with a
+         * NULL module pointer/entry point -- BASIC09 then reads a "module"
+         * at guest address 0, failing as error 043, an illegal instruction,
+         * or a bus error depending on what happens to live there. */
+        if (isintcommand(mname, &isNative_, &modBase_) >= 0
+            && find_mod_id(mname) >= MAXMODULES) {
             /* Internal command: don't look up a real OS-9 module; return plausible
              * register values so the shell proceeds to F$Fork, where we intercept. */
             retword(rp->d[0])= tylan;  /* echo back requested type/lang */
