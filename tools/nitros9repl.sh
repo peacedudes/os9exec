@@ -34,6 +34,13 @@
 #     (`connect` keeps local echo on so humans can see their typing.)
 #   - A disconnected client does not close the guest's shell; reconnecting
 #     resumes the same session (backlogged output is replayed).
+#   - One client per channel: `connect` displaces the scripted pane's nc;
+#     the next `send` recreates it automatically.
+#   - Escape ($1B) is OS-9's default SCF end-of-file character, so the /n1
+#     shell exits normally when it reads one. Nothing respawns it (startup
+#     launches it once), so after an EOF a full `restart` is needed.
+#     `connect` filters Esc/arrow keys so a human can't send EOF by
+#     accident; to send one deliberately, use: key Escape
 #
 # Copyright notice (disk image content):
 #   Anything observable through this REPL depends on what is in your disk
@@ -112,9 +119,37 @@ send_one_key() {
     case "$k" in
         Enter|Return|enter)  tmux send-keys -t "$SESSION:chan" "Enter" ;;
         Space|space)         tmux send-keys -t "$SESSION:chan" " " ;;
+        # Escape is OS-9's default SCF end-of-file character: sending one to
+        # a program reading /n1 is a deliberate EOF (the /n1 shell itself
+        # exits on it, and only `restart` brings it back).
+        Escape|ESC|escape)   tmux send-keys -t "$SESSION:chan" "Escape" ;;
         C-*)                 tmux send-keys -t "$SESSION:chan" "$k" ;;
         *)                   tmux send-keys -t "$SESSION:chan" -l -- "$(tmux_escape "$k")" ;;
     esac
+}
+
+# The /N1 bridge pane the REPL types into and reads from.
+#   -icrnl -icanon: Enter reaches OS-9 as a bare CR, unbuffered
+#   -echo: no local echo (the guest doesn't echo either; delta starts at
+#          the prompt row)
+#   perl: converts OS-9's CR-only output to NL *unbuffered* (tr's
+#         line-buffered stdout would hold back the trailing prompt);
+#         the pane pty's default onlcr then renders NL as CRNL.
+open_chan_window() {
+    tmux new-window -t "$SESSION" -n chan \
+        "stty -icrnl -icanon -echo; nc 127.0.0.1 $CHAN_PORT | perl -e '\$|=1; while (sysread(STDIN,\$b,4096)) { \$b =~ tr/\\r/\\n/; print \$b }'"
+}
+
+# The server allows one client per channel: a `connect` displaces the chan
+# pane's nc and its window closes. Recreate it on demand so `send` keeps
+# working afterward.
+ensure_chan() {
+    tmux list-windows -t "$SESSION" -F '#W' 2>/dev/null | grep -qx chan && return 0
+    open_chan_window
+    sleep 0.5
+    # A fresh pane is blank (the previous client consumed the last prompt);
+    # a bare Enter elicits a new one from the shell.
+    at_prompt || tmux send-keys -t "$SESSION:chan" Enter
 }
 
 # ── subcommands ───────────────────────────────────────────────────────────────
@@ -158,13 +193,7 @@ cmd_start() {
     printf '[booting NitrOS-9 under XRoar (up to %ss)...]\n' "$BOOT_TIMEOUT"
 
     # Window 2 "chan": the /N1 bridge.
-    #   -icrnl -icanon: Enter reaches OS-9 as a bare CR, unbuffered
-    #   ocrnl: locally-echoed CRs render as newlines
-    #   perl: converts OS-9's CR-only output to NL *unbuffered* (tr's
-    #         line-buffered stdout would hold back the trailing prompt);
-    #         the pane pty's default onlcr then renders NL as CRNL.
-    tmux new-window -t "$SESSION" -n chan \
-        "stty -icrnl -icanon -echo; nc 127.0.0.1 $CHAN_PORT | perl -e '\$|=1; while (sysread(STDIN,\$b,4096)) { \$b =~ tr/\\r/\\n/; print \$b }'"
+    open_chan_window
 
     if wait_prompt "$BOOT_TIMEOUT"; then
         printf '[ready — {N1|..} shell prompt below]\n'
@@ -183,6 +212,7 @@ cmd_send() {
         printf '[session not running — use: start]\n' >&2
         return 1
     fi
+    ensure_chan
     wait_prompt || return 1
     local before
     before=$(pane)
@@ -210,6 +240,7 @@ cmd_key() {
         printf '[session not running — use: start]\n' >&2
         return 1
     fi
+    ensure_chan
     for k in "$@"; do
         send_one_key "$k"
     done
@@ -230,15 +261,20 @@ cmd_peek() {
 }
 
 # Interactive session for a human, in the calling terminal.
+#
+# The terminal stays in its normal canonical mode (local echo and line
+# editing just work); line endings are translated in the pipeline instead:
+# NL->CR toward OS-9, CR->NL back. The input stage also drops everything
+# but printable ASCII + CR: Escape ($1B) is OS-9's default SCF end-of-file
+# character, so a stray Esc or arrow key (ESC [ A) would make the guest
+# shell read EOF and exit — normal OS-9 behavior, but since startup only
+# launches that shell once, recovering means a full `restart`.
 cmd_connect() {
     printf '[connecting to /N1 on port %s — Ctrl-C to detach, session survives]\n' "$CHAN_PORT"
-    local saved
-    saved=$(stty -g)
-    trap 'stty "$saved"' EXIT INT TERM
-    stty -icrnl ocrnl -icanon
-    nc 127.0.0.1 "$CHAN_PORT" | perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\r/\n/; print $b }'
-    stty "$saved"
-    trap - EXIT INT TERM
+    printf '[line-oriented: local editing works; Esc/arrow keys are filtered]\n'
+    perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\n/\r/; $b =~ tr/\x20-\x7e\r//cd; print $b }' \
+        | nc 127.0.0.1 "$CHAN_PORT" \
+        | perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\r/\n/; print $b }'
 }
 
 cmd_server() {
