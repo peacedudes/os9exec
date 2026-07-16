@@ -40,6 +40,17 @@ can use it. Everything follows `DriveWire Specification.md` in this repo.
   split across reads), poll/read cycles, over-request handling, and a
   real-socket loopback test of the TCP driver.
 
+## Scope note
+
+The per-channel TCP bridges are part of the new TCP server driver, so the
+full experience (connect to a port, get a `/N1` session) is available in
+`--becker-port` mode today. In serial mode (`--port`, real hardware) the
+host now parses and tracks all virtual-channel traffic correctly, but no
+consumer is wired to the channels yet — `DriveWireDelegate.
+channelDataAvailable` and `DriveWireHost.writeToChannel(_:channel:)` are
+the seam; attaching the same TCP bridges to the serial driver would be a
+natural follow-up.
+
 ## Two guest-compatibility fixes found by live NitrOS-9 testing
 
 Tested end-to-end against NitrOS-9 EOU (dw_becker) under XRoar:
