@@ -379,6 +379,27 @@ Four header files are required in `Source/OS9exec_core/os9defs/` to build: `modu
 
 Requires `tmux` (`brew install tmux`).
 
+### NitrOS-9 (6809) REPL
+
+`tools/nitros9repl.sh` provides the same interface against a *real NitrOS-9
+system* running on an emulated CoCo3 — XRoar's "becker port" tunnels
+DriveWire over TCP to a DriveWire server whose virtual serial channel `/N1`
+carries a live shell:
+
+```sh
+./tools/nitros9repl.sh start            # boot server + XRoar to a /N1 shell (~40s)
+./tools/nitros9repl.sh send mdir        # send a command, get only new output
+./tools/nitros9repl.sh connect          # interactive session in your terminal
+./tools/nitros9repl.sh stop
+```
+
+Prerequisites beyond this repo: `xroar` (brew), a CoCo3 ROM, the NitrOS-9
+EOU `dw_becker` disk image, and `drivewire-cli` built from
+[drpitre/drivewire](https://github.com/drpitre/drivewire) with the
+virtual-serial-channel support (branch `virtual-serial`, developed here,
+pending upstream submission). The script header documents paths and
+environment overrides.
+
 ---
 
 ## Credits
