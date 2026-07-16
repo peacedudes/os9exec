@@ -1,5 +1,5 @@
 # Build stage
-FROM ubuntu:24.04 as builder
+FROM ubuntu:24.04 AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \

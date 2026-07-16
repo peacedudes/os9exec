@@ -1,5 +1,5 @@
 # Build os9exec for 32-bit Linux
-FROM i386/ubuntu:20.04 as builder
+FROM i386/ubuntu:20.04 AS builder
 
 # Prevent apt from blocking on an interactive debconf prompt (e.g. tzdata
 # asking for a timezone) -- a classic cause of a Docker build hanging
