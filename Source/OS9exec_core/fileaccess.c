@@ -1549,6 +1549,19 @@ os9err pFsetsz( ushort pid, syspath_typ* spP, uint32_t *sizeP )
               
               err= fclose( tmp__stream );
               err= remove( tmpName );
+            } else {
+              /* One of the two reopens failed (disk full/permissions) after
+               * the original was already closed and moved aside to <tmpName>
+               * above. Without this, execution fell through to an
+               * unconditional pFseek() on spP->stream at the end of this
+               * function -- a NULL dereference when the fopen just above
+               * failed. Close whichever handle did open, put the original
+               * content back under its real name so it isn't lost, and
+               * report the failure instead of continuing. */
+              if (spP->stream)  { fclose( spP->stream ); spP->stream= NULL; }
+              if (tmp__stream)    fclose( tmp__stream );
+              rename( tmpName, spP->fullName );
+              return os9error( err );
             } // if
           } // if
         }  // if
