@@ -49,6 +49,7 @@ Since the tagged `v0.0.0`, this branch fixes a large class of crashes, hangs, an
 **Disks and devices**
 - **`mount -k=<size>`** creates a ready-to-use blank RBF image (`-k=0`: a plain host folder) in one command — no separate `format` step. See [Creating new disk images](#creating-new-disk-images).
 - **`mount -r=<size>` RAM disks** now actually work — silently broken in every prior build.
+- **RBF file permissions are enforced for real** — files/dirs are stamped with their creator's identity at creation, and owner/public read-write-execute bits are checked on open, create, delete, and `attr` (super-user bypasses, as on real OS-9). Every file used to be owned `0.0` with every check skipped, regardless of attribute bits. Host-native directories are unaffected by design — see [Compatibility](#compatibility).
 - **Devices stay inside their root** — no path can climb out of `/dd` into the host filesystem.
 - **`OS9DISK` / `OS9Hx` paths containing `./` or `../` work** — they used to silently redirect every file access to the device root.
 
@@ -282,7 +283,7 @@ The full syscall surface — file I/O, process management, module loading, pipes
 
 **Time:** os9exec has no internal clock. `F$Time` delegates to the host, so `date` and file timestamps always reflect the host's system time. `setime` accepts a date but has no effect — the host clock is authoritative.
 
-**File permissions:** enforcement on **RBF disk images** is landing now — owner/group stamping at creation plus attribute-bit checks on open, create, and delete (super-user bypasses, as on real OS-9). Until it ships, and for host-native directories generally, every file reads as owned by `0.0` with all access allowed — don't rely on OS-9 permissions for isolation yet.
+**File permissions:** enforced on **RBF disk images** (including RAM disks, `mount -r` — same filesystem code, just backed by memory instead of a host file). A file/directory is stamped with its creator's `group.user` at creation, and owner/public read-write-execute bits are checked on open, create, delete, and `attr` changes — with an unconditional super-user bypass, matching real OS-9. **Host-native directories are unaffected, by design, not as a gap to be fixed:** `os9exec`'s directory-shim device maps a plain host folder as if it were an OS-9 filesystem, but a host directory has no on-disk file-descriptor sector to hold an owner or attribute byte in the first place — there's no real security field there to enforce. Every file on a host-native device still reads as owned by `0.0` with all access allowed; if you need OS-9 permissions to mean something, use an RBF image (`mount -k=<size>`).
 
 **Hardware-dependent commands** (`backup`, `format`, `tape`, `kermit`, raw `com`, `rdump`, `fsave`/`frestore`) require physical devices that are not emulated and will not work.
 
