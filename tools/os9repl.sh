@@ -6,8 +6,12 @@
 # command rather than the full scrollback.
 #
 # Usage:
-#   ./tools/os9repl.sh start              launch ./os9exec shell in a tmux session
+#   ./tools/os9repl.sh start              boot os9exec via /h0/startup (preloads the
+#                                          toolchain, then tsmon -> `User name?:`)
 #   ./tools/os9repl.sh send <cmd>         send one command, wait for prompt, print new output
+#                                          (right after start, send the bare account
+#                                          name, e.g. `send dog` -- tsmon already
+#                                          invoked login, so no `login <user>` verb)
 #   ./tools/os9repl.sh key <keys...>      send raw keystrokes (no Enter); special: Escape Enter Up Down Left Right
 #   ./tools/os9repl.sh snap [label]       print labeled snapshot of current pane
 #   ./tools/os9repl.sh vi <file> <seq>    run vi on file, execute key sequence, show screen at each step
@@ -17,9 +21,11 @@
 #   ./tools/os9repl.sh stop               kill the session
 #   ./tools/os9repl.sh restart            stop + make + start in one step
 #
-# Recognised prompts (both mean "ready for next input"):
+# Recognised prompts (all mean "ready for next input"):
 #   $              OS-9 shell
 #   for hlp)       debugwait() loop (ends every debug-prompt line)
+#   User name?:    tsmon's login prompt, right after boot
+#   Password:      only shown by accounts with a non-empty password
 #
 # Copyright notice (disk image content):
 #   Anything that Claude or another automated tool can observe through this
@@ -51,6 +57,9 @@ at_prompt() {
     last=$(printf '%s\n' "$content" | tail -1 | sed 's/[[:space:]]*$//')
     [ "$last" = '$' ] && return 0
     printf '%s' "$last" | grep -qE 'for hlp\)|^dbg:|^dis:|^tra:|^(su|claude|dog):$' && return 0
+    # tsmon's login sequence (boot now goes through /h0/startup -> tsmon ->
+    # login, not straight to a shell $ prompt) -- see cmd_start.
+    printf '%s' "$last" | grep -qE '^User name\?:$|^Password:$' && return 0
     # Also check last 5 lines (trace output may follow the prompt on same/next line)
     printf '%s\n' "$content" | tail -5 | grep -qE '(^|\s)dbg:\s*$|(^|\s)dis:\s*$|(^|\s)tra:\s*$' && return 0
     return 1
@@ -114,18 +123,34 @@ cmd_start() {
     # OS9STOP lets any account run the `stop`/`shutdown` internal command, not
     # just group-0 super-users -- so an agent driving a session that logs in as
     # a plain account (or gets stuck in a tsmon login loop) can always exit.
-    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9STOP=1 OS9DISK='$REPO/h0' ./os9exec $EXTRA_ARGS /h0/CMDS/shell"
+    #
+    # Boot through /h0/startup (shell is the boot program, /h0/startup is its
+    # procedure-file argument -- NOT a bootable target on its own, that fails
+    # with E_FNA) rather than launching straight into /h0/CMDS/shell. startup
+    # preloads the full toolchain (cio/csl/math, r68/l68/o68/runb, cc/cpp/c68/
+    # gcc2/cccp2/cc2, common file utilities) as memory-resident modules, which
+    # F$Fork's bare-name lookups resolve via F$Link regardless of any
+    # account's chx -- so `cc` forking `cpp` etc. just works without a chx
+    # workaround. Manually loading only `math cio` here (the old approach)
+    # left cpp/c68/r68/l68 unloaded, which looks like a chx/PATH problem
+    # (`cc: cannot execute the pre-processor`) but isn't one -- the fix is
+    # more preloading, not chx surgery. If something you need still isn't
+    # preloaded, add it to /h0/startup's `load` lines, don't patch chx.
+    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9STOP=1 OS9DISK='$REPO/h0' ./os9exec $EXTRA_ARGS shell /h0/startup"
     printf '[starting os9exec...]\n'
-    if wait_prompt; then
-        tmux send-keys -t "$SESSION" "setenv PATH /h0/CMDS:/h0/CMDS/SHARE" Enter
-        wait_prompt
-        tmux send-keys -t "$SESSION" "setenv TERM xterm-256color" Enter
-        wait_prompt
-        tmux send-keys -t "$SESSION" "load math cio" Enter
-        wait_prompt
-        printf '[ready]\n'
-        pane | grep -v '^[[:space:]]*$' | tail -5
-    fi
+    # startup ends in `tsmon /term`, which waits for a keypress before
+    # showing `User name?:` -- wait for that banner, then send one.
+    local i=0 limit=$(( TIMEOUT * 7 ))
+    while [ $i -lt $limit ]; do
+        alive || { printf '[os9exec exited]\n' >&2; return 1; }
+        pane | grep -qE 'OS-9 Ready -- modules loaded' && break
+        sleep 0.15
+        i=$(( i + 1 ))
+    done
+    tmux send-keys -t "$SESSION" Enter
+    wait_prompt   # waits for tsmon's `User name?:` (at_prompt now recognizes it)
+    printf '[ready -- log in: send <username>, e.g. `send dog`]\n'
+    pane | grep -v '^[[:space:]]*$' | tail -8
 }
 
 cmd_send() {
