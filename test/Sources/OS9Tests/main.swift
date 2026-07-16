@@ -806,6 +806,41 @@ if !containerized {
 
     try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(delDev).path)
 
+    // ---- permissions: RAM disk (mount -r) backed RBF gets identical enforcement ----
+    // A RAM disk is still a genuine RBF filesystem (same file_rbf.c path as an
+    // on-disk image, just backed by the emulator's own memory arena instead of a
+    // host file) -- this proves enforcement isn't accidentally specific to
+    // file-backed images. Each test below is fully self-contained (mounts its
+    // own fresh /ram7, does its own login(s), unmounts at the end): unlike a
+    // `mount -k` image, a RAM disk has no host file backing it, so nothing
+    // persists between separate os9exec processes -- each `run()`/`check()`
+    // call here is its own process and must build the whole scenario itself.
+    // All four scenarios below were first live-verified by hand via
+    // tools/os9repl.sh (see the os9-dev skill's REPL notes) before being
+    // written here, including the "logout" gotcha noted above.
+    run("fs: permission ramdisk — claude creates+owns a file, can read it back",
+        expectation: "dump of a freshly created file on a RAM-backed RBF device shows its bytes to its own creator",
+        commands: ["mount -r=200 /ram7", "chd /ram7",
+                   "login claude", "chd /ram7",
+                   "echo abc >f", "dump f", "logout", "unmount ram7"]) { $0.contains("6162 63") }
+
+    check("fs: permission ramdisk — owner locks self out by clearing owner-read",
+        contains: "Error #",
+        "mount -r=200 /ram7", "chd /ram7", "login claude", "chd /ram7",
+        "echo abc >f", "attr f -nr", "dump f", "logout", "unmount ram7")
+
+    check("fs: permission ramdisk — super-user still bypasses even after owner-read is cleared",
+        contains: "6162 63",
+        "mount -r=200 /ram7", "chd /ram7", "login claude", "chd /ram7",
+        "echo abc >f", "attr f -nr", "logout",
+        "chd /ram7", "dump f", "unmount ram7")
+
+    check("fs: permission ramdisk — non-owner (dog) blocked from a file with no public bits",
+        contains: "Error #",
+        "mount -r=200 /ram7", "chd /ram7", "login claude", "chd /ram7",
+        "echo abc >f", "logout",
+        "login dog", "chd /ram7", "dump f", "logout", "unmount ram7")
+
     // ---- host-native devices: unaffected -- no real permission bits to enforce ----
     check("fs: permission — host-native device ignores attribute bits (unchanged behavior)",
         contains: "6162 63",
