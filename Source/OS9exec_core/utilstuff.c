@@ -1265,7 +1265,7 @@ void CutUp( char* pathname, const char* prev )
                                 #endif
                                 case PSEP     : while  (q>pathname) {
                                                         q--;
-                                                  if  (*q==PATHDELIM || 
+                                                  if  (*q==PATHDELIM ||
                                                        *q==PSEP) {
                                                     if (q==pathname) { q= qs-1; break; }
                                                         q++;
@@ -1273,6 +1273,22 @@ void CutUp( char* pathname, const char* prev )
                                                     break;
                                                   } // if
                                                 } // while
+
+                                                /* A Windows drive-letter host path ("C:/...") has no
+                                                 * delimiter AT position 0 -- unlike "/..." on Unix, where
+                                                 * pathname[0] IS the root delimiter and the q==pathname
+                                                 * check just above always catches "collapsed all the way
+                                                 * back to root". Here the backward walk instead exhausts
+                                                 * via the outer q>pathname condition, leaving q on the
+                                                 * drive letter itself. Give it the identical "nothing
+                                                 * left to collapse into, we're at the root" treatment, or
+                                                 * the memmove below overwrites the drive letter with the
+                                                 * remaining path and silently drops it -- confirmed live:
+                                                 * "C:/../../../USR/..." collapsed to "./../../USR/...",
+                                                 * losing "C:" entirely and corrupting every subsequent
+                                                 * AdjustPath step for a path with more ".."-equivalents
+                                                 * than there are real directory levels. */
+                                                if (q==pathname && *q!=PATHDELIM && *q!=PSEP) q= qs-1;
 
                                                 memmove( q, qs, strlen(qs)+1 ); /* concatenate at the new position */
                                                 q--;
