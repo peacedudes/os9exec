@@ -205,6 +205,25 @@ Boolean F_Avail( const char* pathname )
     return ok;
 } /* F_Avail */
 
+#ifdef MINGW
+  /* egetenv()'s "is this already an absolute path?" checks below only test
+   * for a leading PATHDELIM ('/'), which is right for the Wine-oriented
+   * convention used elsewhere in this codebase (the realpath() shim strips
+   * the drive letter so every host path is driveless-from-root). Native
+   * Windows paths keep their drive letter ("C:/Users/...") and are never
+   * stripped on this route, so without this check a perfectly valid,
+   * already-absolute OS9DISK value gets wrongly treated as relative and
+   * prefixed with startPath -- confirmed live: "C:/Users/x/demo/freeware"
+   * became "C:/Users/x/demo/C:/Users/x/demo/freeware", found not to exist,
+   * and os9exec reported E_MNF for every module on the disk. */
+  static Boolean IsAbsHostPath( const char* p )
+  {
+      return *p==PATHDELIM || (isalpha((unsigned char)p[0]) && p[1]==':');
+  } /* IsAbsHostPath */
+#else
+  #define IsAbsHostPath(p) (*(p)==PATHDELIM)
+#endif
+
 char* egetenv( const char* name )
 {
     static char tmp[OS9PATHLEN];
@@ -317,14 +336,14 @@ char* egetenv( const char* name )
              * used as a directory prefix, rather than the resolved host
              * path -- confirmed live to cause a runaway repeated
              * re-resolution on a bare `dir` right after boot. */
-            if (!F_Avail(rslt) || isRBF || ( isWin && !cm ) || *rslt!=PATHDELIM) {
+            if (!F_Avail(rslt) || isRBF || ( isWin && !cm ) || !IsAbsHostPath(rslt)) {
               //upe_printf( "ty=%d fRBf=%d\n", IO_Type( 1, startPath, 0 ), fRBF ); // get device type: Mac/PC or RBF
 
                 if (cm) rslt= "/dd/CMDS"; /* make it suitable for RBF devices */
                 else {
                     debugprintf(dbgStartup,dbgNorm,("# startPath: '%s'\n", startPath));
                     strcpy( tmp,startPath );
-                    if (*rslt!=PATHDELIM) strcat( tmp,PATHDELIM_STR );
+                    if (!IsAbsHostPath(rslt)) strcat( tmp,PATHDELIM_STR );
                     
                     #ifdef windows32
                       if (*rslt==PATHDELIM && tmp[ strlen(tmp)-1 ]==PATHDELIM) rslt++;
@@ -340,10 +359,19 @@ char* egetenv( const char* name )
                 rslt= sv;
                 strcpy( tmp,startPath );
                 q=      tmp+strlen(tmp)-1;
-                while (*q!=PATHDELIM) q--;
+
+                /* Guard q>tmp: startPath is normally an absolute path (has
+                 * a leading PATHDELIM to stop at), but a value with no
+                 * delimiter at all would otherwise walk q below the start
+                 * of tmp[], reading unmapped memory while hunting for a
+                 * PATHDELIM that isn't there -- same reasoning as the
+                 * guarded walk in filestuff.c's device-root resolution.
+                 * Confirmed live: an empty startPath (see the MINGW
+                 * StartDir() fix) crashed here with 0xC0000005. */
+                while (*q!=PATHDELIM && q>tmp) q--;
                 *q= NUL; /* cut the string at delimiter */
 
-                if (*rslt!=PATHDELIM) strcat( tmp,PATHDELIM_STR );
+                if (!IsAbsHostPath(rslt)) strcat( tmp,PATHDELIM_STR );
                 strcat( tmp,rslt );
                 rslt=   tmp;
             } /* if */

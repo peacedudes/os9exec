@@ -985,7 +985,26 @@ void get_hw()
     char    sv    [OS9PATHLEN];
     char    result[OS9PATHLEN];
     struct  stat info;
-	
+
+    #ifdef MINGW
+      /* The inode-walk below (DirName matching d_ino/st_ino) needs real,
+       * unique inode numbers -- mingw-w64's dirent/stat emulation over the
+       * Win32 filesystem APIs doesn't provide those, so the very first walk
+       * iteration fails to match anything and this returns an empty string.
+       * Confirmed live: on real Windows (not Wine -- whose stat() emulation
+       * is closer to genuine POSIX and doesn't hit this) an empty startPath
+       * feeds egetenv()'s unbounded backward PATHDELIM scan, which walks off
+       * the buffer and crashes (0xC0000005) on the very first OS9DISK lookup.
+       * Ask Windows directly instead and normalize to this codebase's
+       * '/'-only path convention (same reasoning as the realpath() shim
+       * above -- PATHDELIM is '/' everywhere, even under MINGW). */
+      char* p;
+
+      if (getcwd( pathname,OS9PATHLEN )==NULL) strcpy( pathname,"" );
+      else for (p= pathname; *p; p++) if (*p=='\\') *p= '/';
+      return;
+    #endif
+
     strcpy( pathname,"" ); // start with an empty string
     strcpy( acc,    "." ); // and take current dir for start
     strcpy( result,  "" );

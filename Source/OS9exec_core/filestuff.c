@@ -821,7 +821,17 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
     { char* const pathbufEnd= pathbuf + OS9PATHLEN - 8;
 
     absolute= (*p=='/');
-    #ifdef windows32
+    #if defined windows32 || defined MINGW
+      /* MINGW too: it is not `windows32` (that macro is deliberately
+       * blocked for mingw -- see os9main_incl_precomp.h), so this drive-
+       * letter check was silently skipped on the mingw/native-Windows
+       * build. An already-absolute host path like "C:/Users/.../sh" then
+       * fell through to the relative-path branch below, which prepends
+       * the exec/data default dir unconditionally -- confirmed live:
+       * "C:/Users/x/demo/freeware/CMDS/sh" became
+       * "/C/Users/x/demo/freeware/CMDS/C:/Users/x/demo/freeware/CMDS/sh",
+       * which doesn't exist, so os9exec reported E_PNNF for every module
+       * load that went through this path. */
       if (!absolute)
            absolute= (*p!=NUL && p[1]==':' && p[2]==PATHDELIM);
     #endif
