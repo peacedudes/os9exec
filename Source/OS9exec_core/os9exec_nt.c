@@ -1102,6 +1102,29 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
 	strcpy( tmp, p ); p= tmp; /* make a local copy */
 	MakeOS9Path( p );
 
+	#ifdef MINGW
+	  /* MakeOS9Path() just encoded a Windows drive letter as a fake
+	   * single-char OS-9 "device" ("/C/Users/..."), which IO_Type()/
+	   * OS9_Device() below don't recognize -- it's not a real configured
+	   * device, just an artifact of round-tripping through OS-9 notation.
+	   * The classic windows32 build already reverses this same encoding
+	   * further down (the `#elif defined windows32` block), but only
+	   * AFTER this type check, and MINGW never takes that branch anyway
+	   * (windows32 is deliberately never defined for it -- see
+	   * os9main_incl_precomp.h). Reverse it here first, before the type
+	   * check, so cp->x.type/cp->d.type reflect the real host path.
+	   * Confirmed live: without this, IO_Type() returned fNone for the
+	   * exec directory, so every bare (no-path) module-name lookup like
+	   * "shell" fell through without ever using the correctly-resolved
+	   * datapath, reporting E_MNF even though the path resolved fine. */
+	  if (p[ 0 ]==PSEP &&
+	     (p[ 2 ]==PSEP ||
+	      p[ 2 ]=='\0')) {
+	      p[ 0 ]= p[ 1 ];
+	      p[ 1 ]= ':';
+	  }
+	#endif
+
         drP->type= IO_Type( 1,           p,mode ); // get device type: Mac/PC or RBF
     if (drP->type==fRBF) {
 		        change_dir( 1,drP->type, p,mode ); // set the types at procid 0
