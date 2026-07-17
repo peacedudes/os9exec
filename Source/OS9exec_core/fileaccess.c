@@ -1177,11 +1177,23 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
               }
           }
       }
-      
+
+      #ifdef MINGW
+        /* fopen() above follows a host symlink transparently -- confirm
+         * where it actually landed is still within a configured device
+         * root before handing back a live stream on it. See
+         * HostStreamWithinConfiguredDevice (utilstuff.c) for why this
+         * check lives here rather than in AdjustPath/realpath(). */
+        if (!HostStreamWithinConfiguredDevice( stream )) {
+            fclose( stream );
+            return os9error( E_PNNF );
+        }
+      #endif
+
     //spP->rw_sct= get_mem( BUFSIZ );
     //err= setvbuf( stream, spP->rw_sct, _IOFBF, BUFSIZ ); // make buffered I/O
       spP->stream=  stream;                                // assign stream
-    
+
       #ifdef win_unix
                 spP->dDsc= NULL; /* this is not a directory */
         strcpy( spP->fullName, pp );

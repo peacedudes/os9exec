@@ -177,6 +177,9 @@ dirent_typ* ReadTDir                       ( DIR*  d );
 Boolean PathFound    ( const char* pathname );
 Boolean FileFound    ( const char* pathname );
 Boolean HostPathWithinConfiguredDevice( const char* hostpath );
+#ifdef MINGW
+Boolean HostStreamWithinConfiguredDevice( FILE* stream ); /* utilstuff.c -- symlink-aware, MINGW only */
+#endif
 Boolean HostPathDeviceName( const char* hostpath, char* nameOut );
 Boolean IsHostDeviceRoot( const char* hostpath );
 Boolean FindConfiguredDeviceRoot( const char* hostpath, char* rootOut );

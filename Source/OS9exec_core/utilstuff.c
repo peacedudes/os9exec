@@ -242,7 +242,8 @@
 #include <stdlib.h>   /* realpath() (see _GNU_SOURCE note above); target_options.h only pulls this in for __MACH__ */
 
 #ifdef MINGW
-#include <io.h>       /* _access */
+#include <io.h>       /* _access, _fileno, _get_osfhandle */
+#include <windows.h>  /* HANDLE, GetFinalPathNameByHandleA -- see HostStreamWithinConfiguredDevice below */
 
 /* mingw-w64 has no realpath() (POSIX-only). _fullpath() canonicalizes a
  * path but, unlike realpath(), doesn't require it to exist -- callers here
@@ -2391,6 +2392,56 @@ Boolean RBF_ImgSize( long size )
       char nameOut[3];
       return HostPathDeviceName( hostpath, nameOut );
   } /* HostPathWithinConfiguredDevice */
+
+  #ifdef MINGW
+  /* AdjustPath()'s confinement check (winfiles.c, via
+   * HostPathWithinConfiguredDevice above) runs on the LEXICAL host path --
+   * a host symlink placed inside a device root but pointing outside it
+   * still lexically looks confined, and this file's realpath() shim above
+   * doesn't follow symlinks to catch it either (built on _fullpath(),
+   * which is purely lexical, unlike POSIX realpath()). A caller's actual
+   * fopen() DOES follow the symlink for real, though -- confirmed live: a
+   * symlink inside a device root pointing at a file outside it leaked
+   * that file's content past confinement.
+   *
+   * Deliberately NOT fixed by making realpath() itself symlink-aware
+   * (tried first, reverted): HostPathWithinConfiguredDevice runs on EVERY
+   * AdjustPath() call -- i.e. on every path resolution in the whole
+   * emulator -- so swapping realpath()'s underlying Win32 call for a
+   * more expensive/different one had broad, hard-to-characterize side
+   * effects elsewhere (module search for a logged-in user regressed).
+   * This is the narrow alternative: re-check confinement ONLY at the
+   * point a stream is actually opened (pFopen, fileaccess.c), against
+   * the stream's OWN already-open handle -- no extra CreateFile call, no
+   * interaction with concurrent access to the same file. If fopen()
+   * followed a symlink out of bounds, the handle's real resolved path
+   * won't match any configured device root, and the caller should refuse
+   * to hand back data read through it. */
+  Boolean HostStreamWithinConfiguredDevice( FILE* stream )
+  {
+      HANDLE h;
+      char   finalPath[PATH_MAX];
+      DWORD  len;
+      char*  p;
+
+      h= (HANDLE)_get_osfhandle( _fileno(stream) );
+      if (h==INVALID_HANDLE_VALUE) return true; /* can't check -- don't block a normal open */
+
+      len= GetFinalPathNameByHandleA( h, finalPath, PATH_MAX, FILE_NAME_NORMALIZED );
+      if (len==0 || len>=PATH_MAX) return true; /* couldn't resolve -- don't block a normal open */
+
+      /* Match realpath()'s own normalization above: strip the "\\?\"
+       * extended-length marker GetFinalPathNameByHandle always adds, drop
+       * the drive letter, flip \ to /. */
+      p= finalPath;
+      if (strncmp( p,"\\\\?\\",4 )==0) p+= 4;
+      if (p[0] && p[1]==':')           p+= 2;
+      if (p!=finalPath) memmove( finalPath,p, strlen(p)+1 );
+      for (p= finalPath; *p; p++) if (*p=='\\') *p= '/';
+
+      return HostPathWithinConfiguredDevice( finalPath );
+  } /* HostStreamWithinConfiguredDevice */
+  #endif
 
   /* Same resolution as HostPathWithinConfiguredDevice, but also reports
    * WHICH device (dd, h0-h9, ha-hz) <hostpath> falls within, via
