@@ -1841,19 +1841,52 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
       if (!isFolder) {
           stat_( pathname, &info );
           v= info.st_mode;
-      
-          if (v & S_IRUSR)    *att|= poRead;
-          if (v & S_IWUSR)    *att|= poWrite;
-          *att|= poExec; /* always — if (v & S_IXUSR) was here */
 
-          if (v & S_IROTH)    *att|= 0x08;
-          if (v & S_IWOTH)    *att|= 0x10;
-          *att|= 0x20;       /* always — if (v & S_IXOTH) was here */
-      
+          #ifdef MINGW
+            /* S_IRUSR/S_IWUSR (and, derived from them via repeated >>3
+             * shifts below, S_IRGRP/S_IWGRP/S_IROTH/S_IWOTH) are shadowed
+             * on MINGW by UAE68emulator/sysdeps.h's _WIN32-only block,
+             * which redefines them to FILEFLAG_READ(0x8)/FILEFLAG_WRITE(0x4)
+             * -- the UAE core's OWN Amiga-disk-image attribute-byte flags,
+             * unrelated to a real stat() st_mode value. That redefinition
+             * is legitimate for the UAE core's own internal use but leaks
+             * into this file via the shared include chain (confirmed live
+             * via -dM preprocessor dump: this translation unit sees
+             * S_IRUSR=$8/S_IWUSR=$4, not mingw-w64's real S_IRUSR=0400/
+             * S_IWUSR=0200) -- and because S_IROTH/S_IWOTH are computed as
+             * repeated right-shifts of the (already tiny) shadowed values,
+             * they collapse to a constant 0, permanently disabling "other"
+             * permission detection; "owner write" only looked like it
+             * worked because FILEFLAG_WRITE's bit position happened to
+             * coincide with a bit real files usually have set anyway.
+             * Fixed at the consumer with hardcoded portable POSIX values
+             * (fixed by definition, not derived) rather than by touching
+             * sysdeps.h/the UAE core, which the wider bug-hunt rules for
+             * this project deliberately avoid changing. */
+            { const mode_t realIRUSR=0000400, realIWUSR=0000200,
+                           realIROTH=0000004, realIWOTH=0000002;
+              if (v & realIRUSR) *att|= poRead;
+              if (v & realIWUSR) *att|= poWrite;
+              *att|= poExec; /* always — if (v & S_IXUSR) was here */
+
+              if (v & realIROTH) *att|= 0x08;
+              if (v & realIWOTH) *att|= 0x10;
+              *att|= 0x20;     /* always — if (v & S_IXOTH) was here */
+            }
+          #else
+            if (v & S_IRUSR)    *att|= poRead;
+            if (v & S_IWUSR)    *att|= poWrite;
+            *att|= poExec; /* always — if (v & S_IXUSR) was here */
+
+            if (v & S_IROTH)    *att|= 0x08;
+            if (v & S_IWOTH)    *att|= 0x10;
+            *att|= 0x20;       /* always — if (v & S_IXOTH) was here */
+          #endif
+
           #ifdef windows32
             *att|= 0x03; /* workaround because currently not visible */
           #endif
-      
+
           isFolder= IsTrDir(v);
       }
       
@@ -1971,8 +2004,8 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
         
 //    printf( "%d %10d '%s'\n", isFolder, os9_long(*sizeP), pathname );
     #endif
-    
-    
+
+
     /* copy FD beginning to caller's buffer */
     memcpy(buffer,fdbeg,maxbyt>FDS ? FDS : maxbyt);
 

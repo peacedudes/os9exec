@@ -878,6 +878,14 @@ Boolean IsTrDir( ushort umode )
 {
     #ifdef windows32
       return umode==0x4E00;
+    #elif defined MINGW
+      /* S_ISDIR() is shadowed on MINGW the same way S_IRUSR/S_IWUSR are
+       * (see the matching fix in fileaccess.c's getFD()): sysdeps.h's
+       * _WIN32-only block redefines it to `(a & FILEFLAG_DIR)` — the UAE
+       * core's own Amiga-disk-image attribute check, not a real stat()
+       * mode test. S_IFMT/S_IFDIR themselves are NOT shadowed (confirmed
+       * via -dM preprocessor dump), so check against those directly. */
+      return (umode & S_IFMT) == S_IFDIR;
     #else
       return S_ISDIR( umode ); /* it is a directory ? */
     #endif
