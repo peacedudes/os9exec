@@ -293,7 +293,36 @@ void HandleEvent( void )
 
   /* is there any event ? */
        ok= GetNumberOfConsoleInputEvents( hStdin, &n );
-  if (!ok || n==0) return;
+  if (!ok) {
+      /* GetNumberOfConsoleInputEvents fails whenever stdin isn't a real
+       * console -- every non-interactive caller redirects it from/to a
+       * pipe instead (the Swift integration-test harness among them, via
+       * Foundation.Pipe). This function had no fallback for that case at
+       * all, so bytes an automated caller writes to stdin just sit in the
+       * pipe forever and anything reading through KeyToBuffer() (e.g. the
+       * OS-9 shell's own input loop) hangs indefinitely even though real
+       * data is sitting there ready to read -- confirmed live: os9exec.exe
+       * produced zero output when driven over a plain pipe with no
+       * console attached, even for the simplest possible test. Mirror the
+       * UNIX branch below (ioctl FIONREAD + bounded read, feeding
+       * KeyToBuffer()) using the Win32 pipe equivalent, PeekNamedPipe +
+       * ReadFile. */
+      DWORD avail= 0;
+      int   room;
+
+      if (PeekNamedPipe( hStdin, NULL,0, NULL, &avail, NULL ) && avail>0) {
+          room= INBUFSIZE-1 - main_mco.inBufUsed;
+          if ((int)avail>room) avail= (DWORD)room;
+
+          while (avail-->0) {
+              DWORD got= 0;
+              if (!ReadFile( hStdin, &c,1,&got,NULL ) || got!=1) break;
+              if (c!=NUL) KeyToBuffer( &main_mco, c );
+          } // while
+      } // if
+      return;
+  }
+  if (n==0) return;
 
   /* if yes, get it. If it keydown, put char into input buffer */
        ok= ReadConsoleInput( hStdin, &ir, 1, &n );
