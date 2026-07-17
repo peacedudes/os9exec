@@ -188,6 +188,7 @@
   #include <utime.h>
   #ifdef MINGW
     #include <windows.h>  /* GetDiskFreeSpaceExA -- mingw-w64 has no statvfs */
+    #include <aclapi.h>   /* Get/SetNamedSecurityInfoA, SetEntriesInAclA -- see Set_FileReadAccess_Windows */
   #else
     #include <sys/statvfs.h>
   #endif
@@ -221,6 +222,7 @@ os9err pHgetFDInf( ushort pid, syspath_typ*, uint32_t *maxbytP,
                                              uint32_t *fdinf,   byte* buffer );
 
 os9err pFsetsz   ( ushort pid, syspath_typ*, uint32_t *sizeP );
+os9err pFsetatt  ( ushort pid, syspath_typ*,                   uint32_t *attr );
 os9err pHsetFD   ( ushort pid, syspath_typ*,                   byte* buffer );
 os9err pHdsize   ( ushort pid, syspath_typ*, uint32_t *size, uint32_t *dtype );
 
@@ -269,7 +271,7 @@ void init_File( fmgr_typ* f )
     /* setstat */
     ss->_SS_Size  = (pathopfunc_typ)pFsetsz;
     ss->_SS_Opt   = (pathopfunc_typ)pNop;    /* ignored */
-    ss->_SS_Attr  = (pathopfunc_typ)pNop;
+    ss->_SS_Attr  = (pathopfunc_typ)pFsetatt;
     ss->_SS_FD    = (pathopfunc_typ)pHsetFD;
     ss->_SS_WTrk  = (pathopfunc_typ)pUnimp; /* not used */
 } /* init_File */
@@ -881,12 +883,142 @@ os9err pHdsize( ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
 
     #elif defined UNIX
       struct utimbuf buf;
-          
+
       buf.actime = t;
       buf.modtime= t;
       utime( spP->fullName, &buf );
     #endif
   } /* Set_FileDate */
+
+  #ifdef MINGW
+  static void Set_FileReadAccess_Windows( const char* path, Boolean wantsRead )
+  /* Real ACL-based read-allow/deny for the "Everyone" well-known SID,
+   * matching write's "affects everyone" scope (the simple read-only
+   * attribute already does that broadly). Windows has no single-flag
+   * "unreadable" concept the way it does for write-denial (the read-only
+   * attribute) -- achieving a real read denial needs an explicit DENY
+   * ACE: NTFS ACL evaluation isn't "default deny" the way POSIX chmod
+   * is, so merely omitting an ALLOW entry doesn't block access if some
+   * OTHER inherited/existing ACE would otherwise grant it.
+   *
+   * mingw-w64's own stat() doesn't consult ACLs for its "other" read bit
+   * (confirmed live this session: broadening a file's ACL to grant
+   * Everyone:RX changed nothing) -- so `attr`'s DISPLAY won't reflect
+   * this real enforcement on Windows the way it can on Unix (where
+   * chmod and stat() agree by construction). The actual file access IS
+   * genuinely blocked at the host OS level regardless of what `attr`
+   * shows -- a known, accepted asymmetry (set is real, get is coarser),
+   * not a bug in this function. */
+  {
+      PACL                 oldDacl= NULL, newDacl= NULL;
+      PSECURITY_DESCRIPTOR sd= NULL;
+      EXPLICIT_ACCESSA     ea;
+      SID_IDENTIFIER_AUTHORITY worldAuth= SECURITY_WORLD_SID_AUTHORITY;
+      PSID                 everyoneSid= NULL;
+
+      if (!AllocateAndInitializeSid( &worldAuth, 1, SECURITY_WORLD_RID,
+                                      0,0,0,0,0,0,0, &everyoneSid ))
+          return;
+
+      if (GetNamedSecurityInfoA( (LPSTR)path, SE_FILE_OBJECT,
+              DACL_SECURITY_INFORMATION, NULL,NULL, &oldDacl,NULL, &sd )
+          == ERROR_SUCCESS) {
+
+          ZeroMemory( &ea, sizeof(ea) );
+          ea.grfAccessPermissions= FILE_GENERIC_READ;
+          ea.grfAccessMode       = wantsRead ? GRANT_ACCESS : DENY_ACCESS;
+          ea.grfInheritance      = NO_INHERITANCE;
+          ea.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+          ea.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+          ea.Trustee.ptstrName   = (LPSTR)everyoneSid;
+
+          if (SetEntriesInAclA( 1,&ea, oldDacl, &newDacl )==ERROR_SUCCESS) {
+              SetNamedSecurityInfoA( (LPSTR)path, SE_FILE_OBJECT,
+                  DACL_SECURITY_INFORMATION, NULL,NULL, newDacl,NULL );
+              LocalFree( newDacl );
+          } // if
+
+          if (sd) LocalFree( sd );
+      } // if
+
+      FreeSid( everyoneSid );
+  } /* Set_FileReadAccess_Windows */
+  #endif
+
+  static void Set_FileAttr( syspath_typ* spP, byte att )
+  /* Best-effort translation of an OS-9 attribute byte to a real host
+   * permission change, for host-native (non-RBF-image) files -- called
+   * from setFD() below (copy/dsave's default "duplicate FD from source"
+   * behavior, F$Fork's icalls.c:99 caller, etc. all route an SS_FD
+   * SetStat here) and from pFsetatt (the direct `attr` command's own
+   * SS_Attr SetStat) so both paths share one implementation.
+   *
+   * On Unix, owner and public map independently to real host bits
+   * (owner -> S_I?USR, public -> S_I?GRP|S_I?OTH), the same way exec
+   * already does below -- getFD()'s read side decodes them independently
+   * too, so a merge here would make attr's own display disagree with
+   * what was just set. Windows has no such distinction available
+   * (FILE_ATTRIBUTE_READONLY and the ACL grant below are both
+   * necessarily single, host-wide flags), so MINGW's wantsWrite/wantsRead
+   * below stay merged -- a real platform limitation, not a shortcut.
+   * Regardless of the per-bit mapping, os9exec always runs as one host
+   * user/process no matter which OS-9 account -- su, claude, dog -- is
+   * "logged in", so this intentionally applies to EVERY OS-9 session
+   * including super-user: RBF's own permission model already
+   * lets a non-super owner lock themselves out of their own file (no
+   * special owner exemption there either -- confirmed live,
+   * `attr f -nr ...` as the file's own creator genuinely blocks that
+   * same session's later read). Host-native goes one step further and
+   * doesn't exempt super-user either, because it CAN'T: RBF's su-bypass
+   * is a trivial software check in has_perm() (this project's own code),
+   * but a real host permission is enforced by the host OS kernel, which
+   * has no concept of OS-9 privilege at all -- os9exec is just an
+   * ordinary host process, not elevated, so even the file's own creator
+   * genuinely can't read a real no-read file back without first
+   * granting read access again (`attr +r`/`+pr`), the same way any other
+   * Unix process would need to. That's a deliberate, accepted design
+   * choice, not an oversight -- see project memory
+   * `windows-utm-vm-65-failures-triage` for the fuller reasoning. */
+  {
+      #ifdef MINGW
+        Boolean wantsWrite= (att & (poWrite|0x10))!=0; /* owner-write OR public-write */
+        Boolean wantsRead = (att & (poRead |0x08))!=0; /* owner-read  OR public-read  */
+
+        DWORD cur= GetFileAttributesA( spP->fullName );
+        if (cur==INVALID_FILE_ATTRIBUTES) return; /* can't stat it -- leave alone */
+        if (wantsWrite) cur &= ~(DWORD)FILE_ATTRIBUTE_READONLY;
+        else            cur |=  (DWORD)FILE_ATTRIBUTE_READONLY;
+        SetFileAttributesA( spP->fullName, cur );
+
+        Set_FileReadAccess_Windows( spP->fullName, wantsRead ); /* real ACL, see below */
+
+      #elif defined UNIX
+        struct stat info;
+        if (stat_( spP->fullName, &info )==0) {
+            mode_t m= info.st_mode;
+            Boolean ownWrite= (att & poWrite)!=0;
+            Boolean pubWrite= (att & 0x10   )!=0;
+            Boolean ownRead = (att & poRead )!=0;
+            Boolean pubRead = (att & 0x08   )!=0;
+            Boolean ownExec = (att & poExec )!=0;
+            Boolean pubExec = (att & 0x20   )!=0;
+
+            if (ownWrite) m |=  (mode_t)S_IWUSR; else m &= ~(mode_t)S_IWUSR;
+            if (pubWrite) m |=  (mode_t)(S_IWGRP|S_IWOTH);
+            else          m &= ~(mode_t)(S_IWGRP|S_IWOTH);
+
+            if (ownRead) m |=  (mode_t)S_IRUSR; else m &= ~(mode_t)S_IRUSR;
+            if (pubRead) m |=  (mode_t)(S_IRGRP|S_IROTH);
+            else         m &= ~(mode_t)(S_IRGRP|S_IROTH);
+
+            if (ownExec) m |=  (mode_t)S_IXUSR; else m &= ~(mode_t)S_IXUSR;
+            if (pubExec) m |=  (mode_t)(S_IXGRP|S_IXOTH);
+            else         m &= ~(mode_t)(S_IXGRP|S_IXOTH);
+
+            chmod( spP->fullName, m );
+        } // if
+      #endif
+  } /* Set_FileAttr */
 #endif
 
 #ifdef MACFILES
@@ -1166,15 +1298,27 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
             #endif
           #endif
         
+          if (IsRead(*modeP) || isW) {
               stream= fopen( pp,"rb" ); /* try to open for read, use binary mode */
-          if (stream==NULL) return os9error(E_PNNF); /* file not found */
+              if (stream==NULL) return os9error(E_PNNF); /* file not found */
 
-          if (isW) { /* open (also) for write */
-              fclose(stream);  /* close the read-only path again */
-                  stream= fopen( pp,"rb+" ); /* open for update, use binary mode */
-              if (stream==NULL) {
-                  return c2os9err(errno,E_FNA); /* default: file no access in this mode */
+              if (isW) { /* open (also) for write */
+                  fclose(stream);  /* close the read-only path again */
+                      stream= fopen( pp,"rb+" ); /* open for update, use binary mode */
+                  if (stream==NULL) {
+                      return c2os9err(errno,E_FNA); /* default: file no access in this mode */
+                  }
               }
+          }
+          else {
+              /* mode==0: caller requested neither read nor write -- a
+               * metadata-only open (e.g. attr's own F$Open before a
+               * GetStat/SetStat call). A real host read/write denial on
+               * the file's content must not block this, or attr could
+               * never be used to restore access once cleared. Mirrors
+               * RBF's has_open_perm(), which only checks the bits the
+               * open itself requests. */
+              stream= NULL;
           }
       }
 
@@ -1184,7 +1328,7 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
          * root before handing back a live stream on it. See
          * HostStreamWithinConfiguredDevice (utilstuff.c) for why this
          * check lives here rather than in AdjustPath/realpath(). */
-        if (!HostStreamWithinConfiguredDevice( stream )) {
+        if (stream && !HostStreamWithinConfiguredDevice( stream )) {
             fclose( stream );
             return os9error( E_PNNF );
         }
@@ -1253,7 +1397,8 @@ os9err pFclose( _pid_, syspath_typ* spP )
       if   (oserr) return host2os9err(oserr,E_UNIT);
       
     #else
-      if (fclose(spP->stream)<0) return c2os9err( errno, E_WRITE );    
+      /* spP->stream is NULL for a metadata-only open (mode==0, see pFopen) */
+      if (spP->stream && fclose(spP->stream)<0) return c2os9err( errno, E_WRITE );
       if (f->moddate_changed) Set_FileDate( spP, f->moddate );
       
     //release_mem( spP->rw_sct ); // don't use I/O buffer anymore
@@ -1661,7 +1806,21 @@ os9err pFsetsz( ushort pid, syspath_typ* spP, uint32_t *sizeP )
     if    (err==E_EOF) err= E_FULL;
     return err;
 } /* pFsetsz */
- 
+
+os9err pFsetatt( _pid_, syspath_typ* spP, uint32_t *attr )
+/* set the attributes of a host-native file -- best-effort translation to
+ * a real host permission change; see Set_FileAttr's own comment (above,
+ * near Set_FileDate) for exactly what this can and deliberately doesn't
+ * attempt, and why. Was pNop (a complete no-op) before this -- host-
+ * native files never actually reflected any attr-command change at all,
+ * regardless of platform. */
+{
+    #ifdef win_unix
+      Set_FileAttr( spP, (byte)*attr );
+    #endif
+    return 0;
+} /* pFsetatt */
+
 
 os9err pFeof( _pid_, syspath_typ* spP )
 /* check for EOF */
@@ -2048,6 +2207,14 @@ static void setFD( syspath_typ* spP, void* fdl, byte *buffer )
       cipbP->hFileInfo.ioFlMdDat= (ulong)u-OFFS_1904; /* fill it into Mac's record */
     #elif defined win_unix
       Set_FileDate( spP, u );
+      /* fdbeg[0] is the attribute byte -- `copy`'s default "duplicate FD
+       * from source file" behavior (see its own -n option help text)
+       * sends the WHOLE FD through this same SetStat SS_FD call, dates
+       * and attributes together; only the date half was ever applied
+       * here, silently dropping attributes on every copy/dsave onto a
+       * host-native destination. See Set_FileAttr's own comment for what
+       * this can and deliberately doesn't attempt. */
+      Set_FileAttr( spP, fdbeg[0] );
     #endif
 
   //printf( "Set_FileDate was1\n" );

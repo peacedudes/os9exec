@@ -49,9 +49,16 @@ Since the tagged `v0.0.0`, this branch fixes a large class of crashes, hangs, an
 **Disks and devices**
 - **`mount -k=<size>`** creates a ready-to-use blank RBF image (`-k=0`: a plain host folder) in one command — no separate `format` step. See [Creating new disk images](#creating-new-disk-images).
 - **`mount -r=<size>` RAM disks** now actually work — silently broken in every prior build.
-- **RBF file permissions are enforced for real** — files/dirs are stamped with their creator's identity at creation, and owner/public read-write-execute bits are checked on open, create, delete, and `attr` (super-user bypasses, as on real OS-9). Every file used to be owned `0.0` with every check skipped, regardless of attribute bits. Host-native directories are unaffected by design — see [Compatibility](#compatibility).
+- **RBF file permissions are enforced for real** — files/dirs are stamped with their creator's identity at creation, and owner/public read-write-execute bits are checked on open, create, delete, and `attr` (super-user bypasses, as on real OS-9). Every file used to be owned `0.0` with every check skipped, regardless of attribute bits.
+- **Host-native permissions are enforced for real too, best-effort per platform** — `attr` on a plain host folder (`mount -k=0`, or `OS9DISK` itself) now maps owner/public read-write-execute bits to a genuine host `chmod` (Unix) or read-only attribute + ACL (Windows), instead of being a silent no-op. There's no super-user exemption here: unlike RBF's bypass (a software check in `os9exec`'s own code), a real host permission is enforced by the host kernel, which has no concept of OS-9 privilege — even the file's own creator needs `attr +r`/`+pr` to read it back after clearing read. `copy`/`dsave`'s default FD-duplication now actually carries attributes (previously dates only) onto a host-native destination. See [Compatibility](#compatibility) for exact platform limits.
 - **Devices stay inside their root** — no path can climb out of `/dd` into the host filesystem.
 - **`OS9DISK` / `OS9Hx` paths containing `./` or `../` work** — they used to silently redirect every file access to the device root.
+
+**Windows**
+- **Non-interactive runs no longer hang.** Piped stdin (scripts, CI, `echo cmds | os9exec shell`) went unread entirely — every non-interactive Windows run just sat there.
+- **Drive-letter paths (`C:/...`) no longer get corrupted** by the `../` path-collapse logic, which assumed every path starts with a `/` the way Unix paths do.
+- **A UAE-internal macro leak fixed for real:** the emulator core's own Amiga-disk-image attribute flags were shadowing the standard POSIX `stat()` bit names on MINGW, silently breaking both file-attribute reads and directory detection.
+- **A symlink could escape a device's configured root** on native Windows; confinement is now re-checked against the resolved path.
 
 **More robust**
 - **OS-9's own `debug` command works for the first time** — live register display, single-stepping, breakpoints. See [OS-9 `debug` now works](#os-9-debug-now-works).
@@ -283,7 +290,13 @@ The full syscall surface — file I/O, process management, module loading, pipes
 
 **Time:** os9exec has no internal clock. `F$Time` delegates to the host, so `date` and file timestamps always reflect the host's system time. `setime` accepts a date but has no effect — the host clock is authoritative.
 
-**File permissions:** enforced on **RBF disk images** (including RAM disks, `mount -r` — same filesystem code, just backed by memory instead of a host file). A file/directory is stamped with its creator's `group.user` at creation, and owner/public read-write-execute bits are checked on open, create, delete, and `attr` changes — with an unconditional super-user bypass, matching real OS-9. **Host-native directories are unaffected, by design, not as a gap to be fixed:** `os9exec`'s directory-shim device maps a plain host folder as if it were an OS-9 filesystem, but a host directory has no on-disk file-descriptor sector to hold an owner or attribute byte in the first place — there's no real security field there to enforce. Every file on a host-native device still reads as owned by `0.0` with all access allowed; if you need OS-9 permissions to mean something, use an RBF image (`mount -k=<size>`).
+**File permissions:** enforced on **RBF disk images** (including RAM disks, `mount -r` — same filesystem code, just backed by memory instead of a host file). A file/directory is stamped with its creator's `group.user` at creation, and owner/public read-write-execute bits are checked on open, create, delete, and `attr` changes — with an unconditional super-user bypass, matching real OS-9.
+
+Host-native devices (a plain host folder mapped as an OS-9 filesystem, including `OS9DISK` itself) have no on-disk file-descriptor sector to hold an owner byte — ownership isn't tracked there (every file reads as owned `0.0`), and there's no software bypass for super-user the way RBF has one. But `attr`'s read/write/execute bits *are* mapped to a real host permission change, as faithfully as each platform allows:
+- **Unix (macOS/Linux):** owner and public map independently to real `chmod` bits (owner → `u`, public → `g`+`o`), the same for read, write, and execute. A file with no read bits genuinely can't be read back — including by `os9exec` itself — until `attr +r`/`+pr` restores it, the same as any other Unix process.
+- **Windows:** write is a single, host-wide flag (`FILE_ATTRIBUTE_READONLY`) — there's no separate owner-vs-public write on this platform, so clearing only one side still leaves the file writable. Read denial uses a real NTFS ACL (`DENY` for `Everyone`), which genuinely blocks access — but mingw's own `stat()` doesn't consult ACLs, so `attr`'s *display* won't reflect a read denial even though it's really enforced underneath.
+
+If you need OS-9 ownership semantics (not just read/write/execute enforcement) to mean something, use an RBF image (`mount -k=<size>`).
 
 **Hardware-dependent commands** (`backup`, `format`, `tape`, `kermit`, raw `com`, `rdump`, `fsave`/`frestore`) require physical devices that are not emulated and will not work.
 

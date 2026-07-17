@@ -408,7 +408,22 @@ check("os9gen: no device",       contains: "os9gen",      "os9gen")
 noError("cfp: shows help",       "cfp")
 
 // attr: show file attribute string
-check("attr: module attrs",      contains: "--e-r",  "attr -re \(sdkCmds)/echo")
+// `save echo` overwrites /dd/CMDS/echo's content in place (the file already
+// exists there, so this opens it for update, not a fresh create) -- its
+// real host write permission is therefore whatever it happened to inherit
+// from however this platform's h0 disk was created/transferred (e.g. can
+// come out world-writable on a Windows checkout, unlike a typical Unix
+// checkout's rwxr-xr-x), an accident of provenance this test doesn't mean
+// to depend on. So both write bits are passed explicitly (-nw -npw) rather
+// than left to that ambient state. Both, not just -npw: Windows has no
+// per-owner/public write distinction at the host level (a single
+// FILE_ATTRIBUTE_READONLY flag covers both, see Set_FileAttr's own
+// comment), so leaving owner-write untouched there would keep the merged
+// flag "writable" and defeat the point of clearing -npw at all.
+check("attr: module attrs",      contains: "--e-r",
+    "load \(sdkCmds)/echo", "save echo", "unlink echo",
+    "attr -re -nw -npw /dd/echo",
+    "del /dd/echo")
 noError("attr: data file attrs",                     "attr -re /dd/t_text")
 noError("text fixture: cleanup",                     "del /dd/t_text")
 
@@ -841,10 +856,27 @@ if !containerized {
         "echo abc >f", "logout",
         "login dog", "chd /ram7", "dump f", "logout", "unmount ram7")
 
-    // ---- host-native devices: unaffected -- no real permission bits to enforce ----
-    check("fs: permission — host-native device ignores attribute bits (unchanged behavior)",
+    // ---- host-native devices: real host permissions, best-effort per platform ----
+    // attr's own F$Open requests neither read nor write (mode==0 -- it only
+    // needs a path number for the GetStat/SetStat that follows), so a real
+    // host read/write denial on the file's content must not block it, or
+    // attr could never be used to restore access once cleared -- mirroring
+    // RBF's has_open_perm(), which only checks the bits an open actually
+    // requests. dump's own open genuinely requests read, so it stays denied
+    // for real until attr grants it back.
+    check("fs: permission — host-native device enforces a real read denial",
+        contains: "Error #",
+        "mount -k=0 hb", "chd /hb", "echo abc >f",
+        "attr f -nr -nw -ne -npr -npw -npe", "dump f")
+    // hb/f is left write-denied at the real host level by the check above;
+    // remove it so the next check's "echo abc >f" isn't trying to overwrite
+    // a file it (correctly) no longer has permission to touch.
+    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent("hb").path)
+
+    check("fs: permission — host-native: attr can still restore access it just revoked",
         contains: "6162 63",
-        "mount -k=0 hb", "chd /hb", "echo abc >f", "attr f -nr -nw -ne -npr -npw -npe", "dump f")
+        "mount -k=0 hb", "chd /hb", "echo abc >f",
+        "attr f -nr -nw -ne -npr -npw -npe", "attr f -r -pr", "dump f")
     try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent("hb").path)
 }
 
