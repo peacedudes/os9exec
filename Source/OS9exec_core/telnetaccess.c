@@ -317,6 +317,20 @@ void HandleEvent( void )
           while (avail-->0) {
               DWORD got= 0;
               if (!ReadFile( hStdin, &c,1,&got,NULL ) || got!=1) break;
+              /* Unlike a real console's Enter key (already CR via
+               * ReadConsoleInput below, no translation needed), an
+               * automated caller writing to this pipe (the Swift test
+               * harness, any non-interactive driver) sends genuine
+               * LF-terminated lines. ConsGetc()'s MINGW branch (consio.c)
+               * deliberately skips the LF<->CR swap it does for Unix,
+               * assuming every MINGW byte already arrived as CR -- true
+               * only for the console path, not this one. Without the swap
+               * here, ConsRead's endchar==CR check (consio.c) never
+               * matches, so a piped command line is never recognized as
+               * complete and the shell never dispatches it. Mirror the
+               * swap ConsGetc() already does for genuine Unix terminals. */
+              if      (c==LF) c= CR;
+              else if (c==CR) c= LF;
               if (c!=NUL) KeyToBuffer( &main_mco, c );
           } // while
       } // if
