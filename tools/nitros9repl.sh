@@ -184,12 +184,14 @@ cmd_start() {
 
     # Window 1 "xroar": headless CoCo3 boot straight into NitrOS-9.
     # NITROS9REPL_GUI=1 shows the emulator window instead (focus-stealing!).
+    # NITROS9REPL_EXTRA_XROAR passes through extra XRoar flags, e.g.
+    # NITROS9REPL_EXTRA_XROAR=-no-ratelimit for full-speed (non-real-time) runs.
     local ui="-ui null -ao null"
     [ -n "$NITROS9REPL_GUI" ] && ui=""
     tmux new-window -t "$SESSION" -n xroar -c "$DISKDIR" \
         "xroar -rompath '$NITROS9/roms' -machine coco3 -tv-input rgb -machine-cart ide \
          -cart-rom ./hdblba.rom -load-hd0 68IDE.ide -cart-becker \
-         -becker-port $BECKER_PORT -type 'DOS 0\\r\\r' $ui"
+         -becker-port $BECKER_PORT -type 'DOS 0\\r\\r' $ui $NITROS9REPL_EXTRA_XROAR"
     printf '[booting NitrOS-9 under XRoar (up to %ss)...]\n' "$BOOT_TIMEOUT"
 
     # Window 2 "chan": the /N1 bridge.
