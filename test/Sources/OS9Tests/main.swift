@@ -101,6 +101,14 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
     // Named so a timeout can actually stop it -- see killContainer above.
     let containerName = "os9test-\(UUID().uuidString.prefix(8))"
 
+    // `mount -k` writes its scratch image relative to the emulator's working
+    // directory, and every scratch-image cleanup below deletes repoRoot/<dev>.
+    // Without pinning cwd the two only agree when the harness happens to be
+    // launched from the repo root: run it from test/ and the images are created
+    // one directory away from where they are deleted, so they survive to
+    // pollute the next run's `mount -k`.
+    process.currentDirectoryURL = repoRoot
+
     if let image = dockerImage {
         // Run via Docker: mount local dd directory and pipe stdin/stdout
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
