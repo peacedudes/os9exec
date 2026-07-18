@@ -3378,19 +3378,27 @@ os9err pRsetFD( _pid_, syspath_typ* spP, byte *buffer )
     debugprintf(dbgFiles,dbgNorm,("# RBF setFD (fd/bytes): $%x %d\n",
                                      spP->u.rbf.fd_nr, (uint32_t)maxbyt ));
 
-    /* Same gate as pRsetatt: writing the FD rewrites the owner word and the
-     * attribute byte, so leaving it open let any process that could merely
-     * open a file for WRITE take ownership of it (live-verified: a plain user
-     * ran `chown` against a file owned 0.0 that only had public-write set, and
-     * became its owner), and equally let that process set attributes through
-     * SS_FD to side-step pRsetatt's check entirely. Checked before the copy so
-     * a rejected call leaves spP->fd_sct untouched.
-     *
-     * Deliberately mirrors pRsetatt rather than being stricter (super-user
-     * only, which is what real OS-9 requires to give a file away): copy/dsave
-     * duplicate the source FD onto a destination the caller just created and
-     * therefore owns, so an owner-or-super gate keeps those working. */
+    /* Baseline gate, same as pRsetatt: writing the FD rewrites the owner word
+     * and the attribute byte, so leaving it open let any process that could
+     * merely open a file for WRITE take ownership of it (live-verified: a
+     * plain user ran `chown` against a file owned 0.0 that only had
+     * public-write set, and became its owner), and equally let that process
+     * set attributes through SS_FD to side-step pRsetatt's check entirely.
+     * Checked before the copy so a rejected call leaves spP->fd_sct
+     * untouched. */
     if (!is_super(pid) && !IsOwner(pid, FDOwn(spP))) return E_FNA;
+
+    /* Beyond that, changing WHO owns the file needs the super-user, while an
+     * owner may still change the group half. Note this is NOT the Unix
+     * chown/chgrp split it resembles: OS-9's attribute byte has only owner
+     * and public triplets and no group permission class, so the group byte is
+     * simply the high half of the owner identity. Letting an owner move it is
+     * therefore still a partial give-away (1.3 can hand a file to 2.3) -- but
+     * a deliberate one, and it cannot reach the super-user: is_super requires
+     * BOTH halves zero, so with the user half locked here a non-super owner
+     * can reach 0.3 and never 0.0. */
+    if (!is_super(pid) &&
+        (GET_OS9W( buffer,1 ) & 0x00FF) != (FDOwn(spP) & 0x00FF)) return E_PERMIT;
 
     memcpy( spP->fd_sct, buffer, maxbyt );  /* copy to the buffer */
     return WriteFD( spP );
