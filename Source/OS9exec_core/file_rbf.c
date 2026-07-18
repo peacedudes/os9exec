@@ -3372,11 +3372,25 @@ os9err pRgetFDInf( _pid_, syspath_typ* spP, uint32_t *maxbytP,
 } /* pRgetFDInf */
 
 os9err pRsetFD( _pid_, syspath_typ* spP, byte *buffer )
-/* set the current FD sector */
+/* set the current FD sector -- owner or super-user only */
 {
     ulong maxbyt= 16;
     debugprintf(dbgFiles,dbgNorm,("# RBF setFD (fd/bytes): $%x %d\n",
                                      spP->u.rbf.fd_nr, (uint32_t)maxbyt ));
+
+    /* Same gate as pRsetatt: writing the FD rewrites the owner word and the
+     * attribute byte, so leaving it open let any process that could merely
+     * open a file for WRITE take ownership of it (live-verified: a plain user
+     * ran `chown` against a file owned 0.0 that only had public-write set, and
+     * became its owner), and equally let that process set attributes through
+     * SS_FD to side-step pRsetatt's check entirely. Checked before the copy so
+     * a rejected call leaves spP->fd_sct untouched.
+     *
+     * Deliberately mirrors pRsetatt rather than being stricter (super-user
+     * only, which is what real OS-9 requires to give a file away): copy/dsave
+     * duplicate the source FD onto a destination the caller just created and
+     * therefore owns, so an owner-or-super gate keeps those working. */
+    if (!is_super(pid) && !IsOwner(pid, FDOwn(spP))) return E_FNA;
 
     memcpy( spP->fd_sct, buffer, maxbyt );  /* copy to the buffer */
     return WriteFD( spP );
