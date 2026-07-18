@@ -2596,6 +2596,35 @@ Boolean RBF_ImgSize( long size )
    * fileaccess.c) to recognize when it is enumerating a device root's own
    * entries, so it can make the synthesized ".." entry self-referential
    * (RBF-root semantics) -- see the comment at that call site. */
+  /* Compare two already-canonicalized host paths for equality, tolerating one
+   * or more trailing path separators on either side.
+   *
+   * POSIX realpath() never returns a trailing separator (except for "/"
+   * itself), so on Unix/macOS a plain string compare was enough and this is
+   * a no-op. MinGW has no realpath(); the _fullpath()-based shim above
+   * PRESERVES a trailing separator, so a device root reached as ".../h0/"
+   * canonicalized to ".../h0/" and never matched the configured root's
+   * ".../h0". IsHostDeviceRoot then reported false for the device root
+   * itself, the synthesized ".." entry lost the self-reference that marks
+   * top-of-device, and every directory walker (pd, dsave) escaped the root
+   * and ran on until E_EOF.
+   *
+   * Fixed here at the comparison rather than in the realpath() shim: the shim
+   * is on the AdjustPath() hot path for every path resolution in the
+   * emulator, and a previous attempt to change its semantics caused
+   * wide-blast-radius regressions. Both separators are accepted because the
+   * Win32 canonicalizer can emit either. */
+  static Boolean SamePathIgnoringTrailingDelim( const char* a, const char* b )
+  {
+      size_t la= strlen( a );
+      size_t lb= strlen( b );
+
+      while (la>1 && (a[la-1]==PATHDELIM || a[la-1]=='/')) la--;
+      while (lb>1 && (b[lb-1]==PATHDELIM || b[lb-1]=='/')) lb--;
+
+      return (Boolean)( la==lb && ustrncmp( a,b, la )==0 );
+  } /* SamePathIgnoringTrailingDelim */
+
   Boolean IsHostDeviceRoot( const char* hostpath )
   {
       char  real[PATH_MAX];
@@ -2613,7 +2642,7 @@ Boolean RBF_ImgSize( long size )
             root=NULL, TwoCharDev( devbuf,&root,tmp ), \
             root!=NULL && *root!=NUL && \
             realpath( root,rootreal )!=NULL && \
-            ustrcmp( real,rootreal )==0 )
+            SamePathIgnoringTrailingDelim( real,rootreal ) )
 
       if (ROOT_IS( 'd','d' )) return true;
       for (ch= '0'; ch<='9'; ch++) if (ROOT_IS( 'h',ch )) return true;
