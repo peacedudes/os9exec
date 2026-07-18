@@ -60,6 +60,28 @@ window is 40 characters = 320 pixels wide, occupying window columns 40..359.
 A 40-character text row spans columns 40..357 — the same span — independently
 confirming the 320-pixel window width and an 8-pixel character cell.
 
+### Corrected conclusion — coordinates are screen-relative, rescaled
+
+A first pass concluded the space was "normalized to the window" and that
+`gfx-windowing.md` was *wrong* about `SCALESW`. **That was an overstatement,
+retracted here.** It came from testing only one geometry — a 320-pixel window
+on a 640-pixel screen — where "normalized to window" and "screen-relative,
+rescaled" both predict the same x/2.
+
+A second geometry separates them. On a type-6 (320-pixel) screen with a
+320-pixel window, a GFX2 `BOX` at x=20..200 landed at window offsets 20..200
+— **1:1**, not halved. So:
+
+    window pixel = coordinate * (window_width / screen_width)
+
+Coordinates live in the **screen's** pixel space and are rescaled into the
+window, which is what "screen-relative" in the manual actually means. The
+documentation's real defect is narrower: the "X range 0-639" quoted
+throughout is the range of a *640-wide* screen (types 5, 7); on a 320-wide
+screen (types 6, 8) it is 0-319. And nothing enforces it — `LINE` at x=639 on
+a 320-wide screen returned no error, matching GFX2's general absence of
+bounds checking.
+
 **Conclusion (`Live`):** with scaling on (the default), the documented
 0-639 x 0-191 coordinate range is a *normalized* space stretched to fit the
 **device window's** dimensions — not screen pixels. On a 320-pixel-wide
@@ -125,6 +147,61 @@ or screen-table exhaustion.
 
 Screen width for type 5 measured directly at **640 pixels** (the 40-column
 window covered exactly its left half), matching `5` = 640x192.
+
+## The BASIC09 calling sequence itself — verified
+
+Everything above until this point drove windint escape codes directly. This
+section tests what `gfx-windowing.md` actually documents: `RUN GFX2(...)`
+calls from BASIC09. Run through `tools/b09run.sh`, which builds a BASIC09
+command script on the guest and feeds it to BASIC09 on stdin.
+
+This sequence ran clean, each step printing its own marker:
+
+```
+DIM p:INTEGER
+OPEN #p,"/w5":WRITE
+RUN GFX2(p,"DWSET",6,0,0,40,24,0,1,1)
+RUN GFX2(p,"COLOR",2)
+RUN GFX2(p,"LINE",0,0,0,191)
+RUN GFX2(p,"BOX",20,20,200,150)
+RUN GFX2(p,"CIRCLE",400,100,50)
+RUN GFX2(p,"SELECT")
+CLOSE #p
+```
+
+Confirmed `Live`:
+- The documented **argument order and arity** are right — `DWSET`'s nine
+  parameters after the path, `COLOR`'s foreground, `LINE`'s four
+  coordinates, `BOX`'s two corners, `CIRCLE`'s centre-plus-radius.
+- Passing the path as the **first argument** (`RUN GFX2(p,"NAME",...)`)
+  works, as documented.
+- Drawing through GFX2 produces the same geometry as the equivalent raw
+  escape codes.
+- **No bounds checking.** `LINE` at x=639 on a 320-pixel-wide screen is
+  accepted silently. This matches the earlier `PALETTE` finding (register
+  99, colour 200 also accepted), so "GFX2 validates its arguments" should
+  not be assumed anywhere in the file.
+
+## Harness gotchas (these cost real time)
+
+- **There is no `kill` on this disk.** `kill <pid>` returns the shell's `?`,
+  which then sits on the input line and makes the *next* scripted command
+  fail in a confusing way. `dir /dd/cmds` has no `kill`. To dispose of a
+  background BASIC09 job, restart the REPL — that is the reliable cleanup.
+- **Never background a BASIC09 job without redirecting its output.** It
+  inherits `/N1`, and its prompts interleave with the REPL channel until the
+  REPL is parked at a stray `B:` prompt. Use `>/nil >>/nil` (OS-9 spells
+  stderr `>>`). The cost: errors become invisible, so validate any new call
+  sequence in the **foreground** with `PRINT` markers first, then background
+  it only to hold the window open for a screenshot.
+- **`e <name>` already creates the `PROCEDURE`/`END` skeleton.** Supplying
+  those lines yourself gives "Error #012 Illegal Statement Construction".
+- **Verify the script actually got written.** `build` is driven by raw
+  keystrokes with nothing to confirm they landed; if the channel was busy the
+  file ends up empty and BASIC09 then runs a no-op script and prints a
+  healthy-looking banner, which reads exactly like a passing test that drew
+  nothing. `b09run.sh` now checks, and refuses to start unless the channel is
+  at a shell prompt.
 
 ## Open questions (next session)
 
