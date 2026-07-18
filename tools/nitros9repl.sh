@@ -109,9 +109,21 @@ delta() {
          }' <(printf '%s\n' "$before") <(printf '%s\n' "$after")
 }
 
-# Escape a literal string for tmux send-keys -l (';' needs a backslash).
+# NOTE: tmux send-keys -l -- "$string" (a single already-quoted bash argv
+# element) delivers every byte of $string to the pane literally -- tmux does
+# not re-split or re-parse it for its own ';'-as-command-separator syntax
+# (that syntax only applies to a *bare*, unquoted ';' token typed directly on
+# a tmux command line). A previous version of this helper replaced ';' with
+# '\;' on the theory that tmux needed it escaped; live-verified (2026-07-18,
+# via the 6809 REPL) that this was wrong and actively harmful: it typed a
+# literal backslash into the guest before every semicolon in any BASIC09
+# line containing one (e.g. `PRINT #2, "x="; x` arrived on disk as
+# `PRINT #2, "x="\; x`), which is any PRINT statement using ';' as a
+# separator -- a common, previously-unnoticed source of corrupted typed
+# source. Kept as a no-op (not removed outright) so call sites don't need to
+# change and any future re-add of real escaping has one place to put it.
 tmux_escape() {
-    printf '%s' "${1//;/\\;}"
+    printf '%s' "$1"
 }
 
 send_one_key() {
@@ -186,8 +198,10 @@ cmd_start() {
     # NITROS9REPL_GUI=1 shows the emulator window instead (focus-stealing!).
     # NITROS9REPL_EXTRA_XROAR passes through extra XRoar flags, e.g.
     # NITROS9REPL_EXTRA_XROAR=-no-ratelimit for full-speed (non-real-time) runs.
+    # GUI mode still wants audio off -- the window is for screenshots
+    # (tools/cocoscreen.sh), not for listening to.
     local ui="-ui null -ao null"
-    [ -n "$NITROS9REPL_GUI" ] && ui=""
+    [ -n "$NITROS9REPL_GUI" ] && ui="-ao null"
     tmux new-window -t "$SESSION" -n xroar -c "$DISKDIR" \
         "xroar -rompath '$NITROS9/roms' -machine coco3 -tv-input rgb -machine-cart ide \
          -cart-rom ./hdblba.rom -load-hd0 68IDE.ide -cart-becker \

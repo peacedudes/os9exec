@@ -33,10 +33,17 @@ let unshifted: [Character: CGKeyCode] = [
 ]
 
 // Characters reachable only with Shift held, mapped to their base character.
+//
+// These are CoCo positions, not host-US positions.  XRoar maps host keys by
+// POSITION onto the CoCo matrix, and the two keyboards disagree on
+// punctuation.  The one that bites hardest: on a CoCo `"` lives over `2`, not
+// over the apostrophe — typing shift+apostrophe produces nothing at all, which
+// silently drops every string literal.  Anything outside this tested set
+// should be verified on screen before trusting it.
 let shifted: [Character: Character] = [
-    "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7",
-    "*": "8", "(": "9", ")": "0", "_": "-", "+": "=", "{": "[", "}": "]",
-    "|": "\\", ":": ";", "\"": "'", "<": ",", ">": ".", "?": "/", "~": "`",
+    "!": "1", "\"": "2", "#": "3", "$": "4", "%": "5", "&": "7",
+    "*": "8", "(": "9", ")": "0", "_": "-", "+": "=",
+    ":": ";", "<": ",", ">": ".", "?": "/",
 ]
 
 // Named keys, including the CoCo-specific spellings worth having aliases for.
@@ -57,16 +64,32 @@ guard let source = CGEventSource(stateID: .hidSystemState) else {
     exit(2)
 }
 
+let shiftKey: CGKeyCode = 56   // left shift
+
+// XRoar maps host keys BY POSITION, so a shifted character needs a real Shift
+// key held down around the keypress.  Setting CGEvent's .maskShift flag is not
+// enough — the flag alone yields the unshifted character (measured: "#32k"
+// arrived as "332k"), which silently corrupts every uppercase letter and quote.
 func press(_ code: CGKeyCode, shift: Bool = false, to pid: pid_t) {
     guard let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true),
           let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false) else { return }
+    var shiftDown: CGEvent?
+    var shiftUp: CGEvent?
     if shift {
+        shiftDown = CGEvent(keyboardEventSource: source, virtualKey: shiftKey, keyDown: true)
+        shiftUp = CGEvent(keyboardEventSource: source, virtualKey: shiftKey, keyDown: false)
+        shiftDown?.postToPid(pid)
+        usleep(holdMillis * 1000)
         down.flags = .maskShift
         up.flags = .maskShift
     }
     down.postToPid(pid)
     usleep(holdMillis * 1000)
     up.postToPid(pid)
+    if shift {
+        usleep(holdMillis * 1000)
+        shiftUp?.postToPid(pid)
+    }
     usleep(gapMillis * 1000)
 }
 
