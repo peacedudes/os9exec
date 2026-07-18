@@ -1,0 +1,30 @@
+Backs: os9-dev/references/common/unix-differences.md and
+       os9-dev/references/common/os9-tools-and-shell.md, output
+       redirection modifiers
+Tests: whether `>+` and `>-` are real (but previously undocumented-in-
+       primary-manuals) shell redirection forms, and what they do
+
+Via tools/nitros9repl.sh:
+
+  send: echo hello >+testfile1
+  observed: file created, content "hello"
+
+  send: echo first >testfile3
+  send: echo second >+testfile3
+  observed: testfile3 contains "first\nsecond" -- >+ appends
+
+  send: echo hello >-testfile2
+  observed: file created, content "hello"
+
+  send: echo third >-testfile3      (testfile3 already contained "first\nsecond")
+  observed: testfile3 now contains only "third" -- >- truncates/overwrites
+
+  send: echo fourth >testfile3      (testfile3 already exists)
+  observed: Error #218 - File Already Exists -- confirms bare `>` is
+            create-only and fails on an existing file (baseline check)
+
+Result: both forms are real, functioning shell syntax, undocumented in
+Using Professional OS-9 v2.4 (which lists only `<`/`>`/`>>`):
+  >path   create new file only; fails if it exists
+  >+path  append to existing file, or create
+  >-path  truncate existing file, or create

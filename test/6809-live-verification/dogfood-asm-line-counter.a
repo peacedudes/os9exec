@@ -1,0 +1,273 @@
+* Dogfood task 2026-07-18: an ordinary hand-written 6809 assembly OS-9
+* program, not tied to a specific skill claim (contrast with
+* signal-reserved-range.a in this same directory). Opens a file for
+* reading using raw I$ syscalls directly (I$Open/I$ReadLn/I$Close, no
+* BASIC09 involved), counts total lines and total characters (excluding
+* the CR line terminator each line ends with), and prints a two-line
+* decimal summary via I$WritLn. Filename comes in as a command-line
+* parameter, read directly from the entry-time X/D registers -- no
+* PARAM statement, this is what PARAM compiles down to.
+*
+* Assembled with `asm` (Standard NitrOS-9 6809/6309 Assembler), the only
+* one of the two available 6809 assemblers that works through this REPL
+* -- `rma` hangs indefinitely on this setup, see
+* 6809/assembly-and-tools.md. `asm lncnt.a -O=lncnt` (the leading `-`
+* on `O=` means silent overwrite); the object module lands in CMDS
+* (the execution directory), not the current/data directory.
+*
+* Two facts used here were NOT in the skill going in and had to be
+* determined live (see dogfood-report-asm-2026-07-18.md for the full
+* story):
+*   1. Command-line parameter register convention (undocumented in the
+*      skill for 6809): at entry, X points at a raw parameter area
+*      that starts with a single leading SPACE (the separator after
+*      the module name), then the literal argument text, then a
+*      trailing CR; D's low byte (== B) is the total byte count of
+*      that whole area (space + text + CR). This program peeks the
+*      first byte and skips it only if it actually is a space, then
+*      copies up to a CR/space/32-char cap into its own buffer and
+*      sign-bit-terminates the last copied byte before handing it to
+*      I$Open -- robust either way, and confirmed live via the OS-9
+*      debugger's `E`/`M` commands (raw memory dump showed the bytes
+*      20 6C 63 63 6F 75 6E 74 31 0D = " lccount1\r" starting at X).
+*   2. I$ReadLn's returned Y (actual line length) INCLUDES the
+*      terminating CR, unlike BASIC09's own READ statement (which
+*      strips it) -- found by comparing this program's raw char count
+*      against an independent fsize-based count, off by exactly one
+*      per line. Fixed by subtracting 1 from Y before accumulating,
+*      guarded against underflow on a theoretical zero return.
+*
+* One real bug found and fixed via the debugger, not guessing: the
+* first version of the decimal-print routine (PRDEC) reloaded the
+* 16-bit value being divided via `LDD VALUE,u` on every inner-loop
+* pass, not realizing LDD clobbers BOTH halves of D -- including A,
+* which was also being used (via INCA) as the digit accumulator for
+* that same inner loop. Every iteration silently wiped out the digit
+* count and replaced it with whatever the high byte of the
+* (partially-subtracted, wrapping) value happened to be, producing
+* garbage punctuation characters (",///" etc.) instead of digits. This
+* only showed up as data corruption, not a crash or assembler error --
+* found by single-stepping via debugger breakpoints (`B <addr>` / `G`)
+* at rdend/prdec/prdin/prddn and inspecting live register/memory state
+* with `:` and `M`, not by re-reading the source. Fixed by moving the
+* digit accumulator to its own scratch byte (DIGIT,u) instead of
+* sharing a register with the value being divided.
+*
+* An earlier, unrelated bug (fixed first, before this one): three
+* short `BEQ noparm` branches were out-of-range once the real read/
+* print logic pushed `noparm` more than 127 bytes away -- `asm` caught
+* this at assemble time ("***** Error: out of range"), fixed by
+* switching those three to `LBEQ`.
+*
+* An even earlier bug, in a throwaway probe program (pdump.a, not this
+* file) written first to determine the parameter-register convention:
+* forgetting the module header's declared total size must include the
+* module's own trailing 3-byte CRC (MOD's first operand needs to be a
+* label defined *after* `EMOD`, or `label+3` for one defined before)
+* produced a module with a corrupted/misaligned header -- `ident`
+* showed a blank name field, bad CRC, and garbage Edition byte. A
+* second bug in that same probe (a loop counter sharing register B
+* with a subroutine that also clobbered B, with no save/restore)
+* caused an actual unbounded write loop that overflowed the module's
+* small scratch data area and hung the emulated CPU solid, requiring
+* `nitros9repl.sh restart` to recover.
+*
+* Test input file (created via `tee`, content typed directly, verified
+* independently with `list` + `fsize` before ever running this
+* program against it):
+*
+*   lccount1 (3 lines):
+*     Hello from 6809 assembly     (24 chars)
+*     Second line of test data     (24 chars)
+*     Line three of the test file  (27 chars)
+*   fsize lccount1 -> 78 Bytes in 1 Files  (75 chars + 3 CR = 78, matches)
+*
+*   lccount2 (5 lines, including one deliberately blank trailing line):
+*     One
+*     Two two
+*     Three three three
+*     Four four four four
+*     <blank>
+*   fsize lccount2 -> 51 Bytes in 1 Files  (46 chars + 5 CR = 51, matches)
+*
+* Literal program output, both live on real NitrOS-9 (6809) via
+* nitros9repl.sh + asm:
+*
+*   lncnt lccount1  ->
+*     Lines: 00003
+*     Chars: 00075
+*
+*   lncnt lccount2  ->
+*     Lines: 00005
+*     Chars: 00046
+*
+* Both exactly match the independent fsize/list-based counts above.
+* Error paths also verified live:
+*   lncnt              -> Error: no filename given
+*   lncnt doesnotexist123 -> Error: cannot open file
+
+ nam LnCnt
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /LnCnt/
+PARMPTR equ 0
+MAXLEN equ 2
+FNLEN equ 3
+FNBUF equ 4
+LINEBUF equ 40
+LINECNT equ 140
+CHARCNT equ 142
+TMPY equ 144
+PATHNUM equ 146
+VALUE equ 148
+DIGIT equ 150
+OUTBUF equ 151
+start stx PARMPTR,u
+ tstb
+ lbeq noparm
+ subb #1
+ lbeq noparm
+ cmpb #32
+ ble lenok
+ ldb #32
+lenok stb MAXLEN,u
+ clr FNLEN,u
+ leax FNBUF,u
+ ldy PARMPTR,u
+ lda ,y
+ cmpa #$20
+ bne skipsp
+ leay 1,y
+skipsp equ *
+cpylp lda ,y+
+ cmpa #$20
+ beq cpydn
+ cmpa #$0D
+ beq cpydn
+ sta ,x+
+ inc FNLEN,u
+ ldb FNLEN,u
+ cmpb MAXLEN,u
+ bge cpydn
+ bra cpylp
+cpydn lda FNLEN,u
+ lbeq noparm
+ leax FNBUF,u
+ ldb FNLEN,u
+ decb
+ abx
+ lda ,x
+ ora #$80
+ sta ,x
+ leax FNBUF,u
+ lda #1
+ swi2
+ fcb $84
+ bcc openok
+ leax operr,pcr
+ ldy #operrl
+ lda #1
+ swi2
+ fcb $8C
+ clrb
+ swi2
+ fcb $06
+openok sta PATHNUM,u
+ clr LINECNT,u
+ clr LINECNT+1,u
+ clr CHARCNT,u
+ clr CHARCNT+1,u
+rdloop lda PATHNUM,u
+ leax LINEBUF,u
+ ldy #90
+ swi2
+ fcb $8B
+ bcs rdend
+ ldd LINECNT,u
+ addd #1
+ std LINECNT,u
+ cmpy #0
+ beq skipdec
+ leay -1,y
+skipdec sty TMPY,u
+ ldd CHARCNT,u
+ addd TMPY,u
+ std CHARCNT,u
+ bra rdloop
+rdend lda PATHNUM,u
+ swi2
+ fcb $8F
+ leax OUTBUF,u
+ leay lmsg,pcr
+ ldb #lmsgl
+ bsr copys
+ ldd LINECNT,u
+ std VALUE,u
+ bsr prdec
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #40
+ lda #1
+ swi2
+ fcb $8C
+ leax OUTBUF,u
+ leay cmsg,pcr
+ ldb #cmsgl
+ bsr copys
+ ldd CHARCNT,u
+ std VALUE,u
+ bsr prdec
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #40
+ lda #1
+ swi2
+ fcb $8C
+ clrb
+ swi2
+ fcb $06
+noparm leax noparmm,pcr
+ ldy #noparml
+ lda #1
+ swi2
+ fcb $8C
+ clrb
+ swi2
+ fcb $06
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+dectbl fdb 10000,1000,100,10,1
+lmsg fcc /Lines: /
+lmsgl equ *-lmsg
+cmsg fcc /Chars: /
+cmsgl equ *-cmsg
+operr fcc /Error: cannot open file/
+ fcb $0D
+operrl equ *-operr
+noparmm fcc /Error: no filename given/
+ fcb $0D
+noparml equ *-noparmm
+ emod
+eom equ *

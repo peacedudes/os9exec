@@ -1,0 +1,82 @@
+* Backs: os9-dev/references/6809/syscalls-and-module-format.md and
+*        os9-dev/references/common/ipc.md, "reserved vs. user-definable"
+*        signal-code range dispute (some sources say 4-255, one says 128-255)
+* Tests: whether the kernel enforces any boundary on signal delivery, or
+*        whether "reserved" is a documentation-only convention. Installs
+*        an intercept handler, sends itself code 50 (disputed range) and
+*        code 200 (undisputed user-definable), and prints which code the
+*        handler actually received.
+*
+* Result observed on NitrOS-9 (6809), via nitros9repl.sh + asm:
+*   GOT 50
+*   GOT 200
+* Both F$Send calls succeeded (carry clear) and the handler correctly
+* matched each code in turn (no SEND1/SEND2 FAILED, no GOT UNKNOWN) --
+* the kernel delivers code 50 and code 200 identically. "Reserved" is a
+* Microware documentation/naming convention only, not kernel-enforced.
+
+ nam sigtest
+ mod modend+3,nm,$11,$81,start,$0100
+nm fcs /SIGTEST/
+start equ *
+ leax hndlr,pcr
+ ldu #0
+ swi2
+ fcb $09          F$Icpt: install handler (X=routine, U=storage)
+ swi2
+ fcb $0C          F$ID: A=own PID
+ ldb #50
+ swi2
+ fcb $08          F$Send: A=dest PID (self), B=signal code 50
+ bcc ok1
+ leax fail1,pcr
+ ldy #40
+ lda #1
+ swi2
+ fcb $8C
+ok1 equ *
+ swi2
+ fcb $0C
+ ldb #200
+ swi2
+ fcb $08          F$Send code 200 (undisputed user-definable range)
+ bcc ok2
+ leax fail2,pcr
+ ldy #40
+ lda #1
+ swi2
+ fcb $8C
+ok2 equ *
+ clrb
+ swi2
+ fcb $06          F$Exit
+hndlr equ *
+ cmpb #50
+ beq hlo
+ cmpb #200
+ beq hhi
+ leax hunk,pcr
+ bra hprint
+hlo leax hlomsg,pcr
+ bra hprint
+hhi leax hhimsg,pcr
+hprint ldy #40
+ lda #1
+ swi2
+ fcb $8C          I$WritLn: A=path, Y=length -- note it terminates on a
+*                  literal $0D byte, NOT FCS's sign-bit convention (see
+*                  the fcb $0D after each message below -- a real gotcha
+*                  found while debugging this test's first garbled run)
+ rti
+hlomsg fcs /GOT 50/
+ fcb $0D
+hhimsg fcs /GOT 200/
+ fcb $0D
+hunk fcs /GOT UNKNOWN/
+ fcb $0D
+fail1 fcs /SEND1 FAILED/
+ fcb $0D
+fail2 fcs /SEND2 FAILED/
+ fcb $0D
+modend equ *
+ emod

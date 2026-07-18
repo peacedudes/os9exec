@@ -1,0 +1,17 @@
+Backs: os9-dev/references/6809/coco-dragon-hardware.md and
+       os9-dev/references/6809/utility-usage.md, `setime` interactive
+       prompt entries
+Tests: year-field digit count in setime's no-clock-module interactive
+       prompt (two skill sources disagreed: 4-digit vs. 2-digit)
+
+Via tools/nitros9repl.sh:
+
+  send: setime
+
+  observed:
+         yyyy/mm/dd hh:mm:ss
+
+    Time ?
+
+Result: 4-digit year confirmed correct. The `utility-usage.md` claim of
+2-digit year (with a Y2K-bug note) was the actual error, now corrected.

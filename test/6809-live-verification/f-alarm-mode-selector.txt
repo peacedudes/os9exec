@@ -1,0 +1,25 @@
+Backs: os9-dev/references/6809/syscalls-and-module-format.md, F$Alarm entry
+Tests: whether F$Alarm's D register selects a mode (0=clear, 2=query,
+       etc., per NitrOS-9's clock.asm) or is ignored (per the Tandy
+       Technical Reference's silence on this)
+
+NOTE: the original .a source for this test (compiled to CMDS as `alrmtst`
+/ `alrmtst2`) was not preserved on the guest disk before a later REPL
+restart -- reconstructing this note from the original test's own report
+rather than the source itself. Going forward, test sources are written
+directly into this directory at write time (see README.md) specifically
+so this doesn't happen again.
+
+Test design (as reported): called F$Alarm three times -- D=0 (clear),
+D=2 (query), D=99 (deliberately invalid mode) -- with X left
+unset/garbage in all three calls, so X could not be the thing explaining
+any difference in outcome.
+
+Observed output (as reported): `D=0 OK  D=2 OK  D=99 ERR`
+
+Conclusion: since X was equally invalid in every call, only D itself can
+explain D=99 failing while D=0/D=2 succeeded -- confirms NitrOS-9's
+clock.asm reading (D is a real mode selector) over the manual's silence
+on it. D=1 (arm) and the PID-targeting case were deliberately not tested,
+to avoid arming a real async signal against the shared REPL session other
+tests still depended on.
