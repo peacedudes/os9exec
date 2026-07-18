@@ -868,6 +868,16 @@ void BuildPrcDsc( ushort id, ushort cpid, ulong32 usp, procid* pd )
   pd->_scall =            os9_byte( cp->lastsyscall );
   pd->_pmodul= os9_long( TO68K(os9mod(cp->mid)) );
 
+  /* P$SigLvl ($370): real OS-9 tracks the F$SigMask nesting level here as an
+   * unsigned byte (sig_mask() -- see procstuff.c -- implements the same
+   * 0/increment/decrement-floored-at-0 semantics on cp->masklevel, a host
+   * int). Nothing previously copied that host-side counter into the
+   * guest-visible descriptor image, so F$GPrDsc/F$GPrDBT always reported
+   * P$SigLvl as whatever the zero-initialized struct held, never the
+   * process's actual signal-mask state. The cast to uint8_t also reproduces
+   * the documented wraparound-past-255 behavior for free. */
+  pd->_siglvl= os9_byte( (uint8_t)cp->masklevel );
+
   // get the list of the currently connected trap handlers (bfo)
   for (k=0; k<NUMTRAPHANDLERS; k++) {
     tp = &cp->TrapHandlers[ k ];
