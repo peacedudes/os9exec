@@ -124,14 +124,33 @@ extern void map_banks(addrbank *bank, int first, int count);
    Declared here, before the access macros that call get_real_address. */
 extern unsigned char *emul_base;
 extern unsigned char *emul_end;
+extern uae_u32        emul_arena_limit;  /* arena size; a 68k offset is valid iff < this */
 
+/* Cold out-of-arena handler for the CPU path: raises a 68k bus error (vector 2)
+   by longjmp'ing out of the running instruction back to m68k_os9go.  Declared
+   to return a pointer only so the hot path below type-checks; it never returns. */
+extern uae_u8 *os9exec_oob_fault(uaecptr addr);
+
+/* Guest-address -> host-pointer translation for the CPU (fetch and data access).
+   The arena is the guest's entire RAM, so any offset >= its size is a wild
+   pointer -- a genuine bus error, exactly as real 68k hardware would raise.
+   Hot path is a single 32-bit bound compare (independent of the base+offset add,
+   so the two issue in parallel) plus a predicted-not-taken branch; the fault
+   path is out-of-line in os9exec_oob_fault(). */
 static __inline__ uae_u8 *get_real_address(uaecptr addr)
 {
-    /* 68k addresses > arena size are invalid; clamp to avoid reading past the
-     * arena (e.g. when ShowEA dereferences a memory-indirect EA whose base
-     * was computed from garbage data beyond a RTS). */
-    uae_u8 *p = emul_base + (uae_u32)addr;
-    return (p < emul_end) ? p : emul_base;
+    if (__builtin_expect((uae_u32)addr >= emul_arena_limit, 0))
+        return os9exec_oob_fault(addr);
+    return emul_base + (uae_u32)addr;
+}
+
+/* Non-faulting variant for the debugger/disassembler, which deliberately peeks
+   at addresses computed from garbage (e.g. ShowEA dereferencing a memory-
+   indirect EA past an RTS).  Out-of-arena clamps to the arena base instead of
+   faulting -- a tool peek must never disturb guest execution. */
+static __inline__ uae_u8 *get_real_address_safe(uaecptr addr)
+{
+    return ((uae_u32)addr < emul_arena_limit) ? emul_base + (uae_u32)addr : emul_base;
 }
 
 //#ifndef NO_INLINE_MEMORY_ACCESS

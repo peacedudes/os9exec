@@ -26,6 +26,8 @@
 
 #include "luzstuff.h"
 
+#include <setjmp.h>
+
 #ifdef __GNUC__
   typedef short Boolean;
   #define true  1
@@ -1370,11 +1372,30 @@ int m68k_os9singlestep = 0; /* set to 1 to execute exactly one instruction then 
 #undef PROBLEM
 
 
+/* An out-of-arena memory access (wild guest pointer) longjmp's here, unwinding
+   the faulting instruction back to m68k_os9go, where it is turned into a 68k bus
+   error.  get_real_address() (memory.h) calls this from the hot path's cold
+   branch; it never returns.  The longjmp is safe: UAE op handlers are
+   straight-line C with nothing to unwind. */
+static jmp_buf   os9_oob_jmp;
+static int       os9_oob_armed = 0;   /* os9_oob_jmp is only valid inside m68k_os9go */
+static uaecptr   os9_oob_addr  = 0;   /* faulting 68k address, for diagnostics */
+
+uae_u8 *os9exec_oob_fault(uaecptr addr)
+{
+    os9_oob_addr = addr;
+    if (os9_oob_armed) longjmp(os9_oob_jmp, 1);
+    /* No CPU context to fault into (e.g. a stray access outside execution) --
+       fall back to the old forgiving clamp so we never crash the host. */
+    return emul_base;
+}
+
+
 // special emulator call, runs up to next os9_running=0 assignment
 unsigned long m68k_os9go(void)
 {
 	static uae_u32 lasta2;
-	
+
     if (in_m68k_go) {
 		write_log ("Bug! m68k_go is not reentrant.\n");
 		abort ();
@@ -1383,6 +1404,15 @@ unsigned long m68k_os9go(void)
     in_m68k_go++;
     // stay in 68k emu until TRAP or exception occurs
     m68_os9go_result=0;
+    if (setjmp(os9_oob_jmp)) {
+        /* arrived via an out-of-arena access: raise a bus error (vector 2).
+           handle_os9exec_exception builds the frame, dispatches to an installed
+           F$STrap handler or kills the process, and clears os9_running. */
+        os9_oob_armed = 0;
+        handle_os9exec_exception(2, m68k_getpc());
+        goto os9go_exit;
+    }
+    os9_oob_armed = 1;
     os9_running=1;
     while (os9_running) {
 		uae_u32 opcode = GET_OPCODE;
@@ -1443,6 +1473,8 @@ unsigned long m68k_os9go(void)
 			}
 		}
     }
+os9go_exit:
+    os9_oob_armed = 0;   /* os9_oob_jmp goes out of scope when we return */
     in_m68k_go--;
     // make sure PC is updated
     m68k_setpc(m68k_getpc());

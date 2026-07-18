@@ -146,6 +146,8 @@ ulong emul_arena_size = EMUL_ARENA_DEFAULT;  /* 68k arena size; can be overridde
 unsigned char* emul_base = NULL;             /* arena base (referenced by memory.h) */
 static unsigned char* emul_next = NULL;      /* bump pointer for fresh allocations */
        unsigned char* emul_end  = NULL;      /* one past the end of the arena */
+       ulong32        emul_arena_limit = 0;  /* arena size as a 32-bit offset limit;
+                                                get_real_address()'s hot-path bound */
 
 #ifdef USE_UAEMU
 os9addr_t trapstack_isp = 0; /* 68k address of top of supervisor scratch stack */
@@ -176,6 +178,7 @@ void init_all_mem(void)
         }
         emul_next= emul_base + EMUL_RESERVED; /* keep the low page out of circulation */
         emul_end = emul_base + emul_arena_size;
+        emul_arena_limit = (ulong32)emul_arena_size; /* 32-bit bound for get_real_address */
 
         #ifdef USE_UAEMU
         {   /* reserve supervisor scratch stack for UAE exception frames */

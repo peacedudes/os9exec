@@ -448,7 +448,7 @@ void debug_procdump( process_typ* cp, int cpid )
       #ifdef USE_UAEMU
       {  uaecptr aa;
          regs.pc = rp->pc;
-         regs.pc_p = regs.pc_oldp = get_real_address(rp->pc);
+         regs.pc_p = regs.pc_oldp = get_real_address_safe(rp->pc);
          upo_printf(" Executing: -->");
          m68k_disasm(rp->pc, &aa, 1, disasm_upo_out);
          upo_printf("               ");
@@ -572,7 +572,7 @@ void dumpregs(ushort pid)
     if (pid < MAXPROCESSES && !procs[pid].isIntUtil) {
         uaecptr aa;
         regs.pc = rp->pc;
-        regs.pc_p = regs.pc_oldp = get_real_address(rp->pc);
+        regs.pc_p = regs.pc_oldp = get_real_address_safe(rp->pc);
         m68k_disasm(rp->pc, &aa, 2, disasm_upe_out);
     }
     #endif
@@ -646,7 +646,7 @@ static Boolean bad_addr(uint32_t addr)
 static Boolean is_flow_terminator(uint32_t addr)
 {
     if (emul_base + (uae_u32)addr + 1 >= emul_end) return true;
-    uae_u8 *p  = get_real_address(addr);
+    uae_u8 *p  = get_real_address_safe(addr);
     uint16_t op = ((uint16_t)p[0] << 8) | p[1];
     switch (op) {
         case 0x4E73: case 0x4E74: case 0x4E75: case 0x4E77: /* RTE RTD RTS RTR */
@@ -795,7 +795,7 @@ ushort debugwait( void )
                            for (n = 0; n < 10; n++) {
                                Boolean term = is_flow_terminator(listbase);
                                regs.pc = listbase;
-                               regs.pc_p = regs.pc_oldp = get_real_address(listbase);
+                               regs.pc_p = regs.pc_oldp = get_real_address_safe(listbase);
                                m68k_disasm(listbase,(uaecptr*)&listbase,1,disasm_upe_out);
                                if (term) { hit_term = true; break; }
                                if (bad_addr(listbase)) break;
@@ -814,7 +814,7 @@ ushort debugwait( void )
                              for (n = 0; n < 10; n++) {
                                  Boolean term = is_flow_terminator(listbase);
                                  regs.pc = listbase;
-                                 regs.pc_p = regs.pc_oldp = get_real_address(listbase);
+                                 regs.pc_p = regs.pc_oldp = get_real_address_safe(listbase);
                                  m68k_disasm(listbase,(uaecptr*)&listbase,1,disasm_upe_out);
                                  if (term) { hit_term = true; break; }
                                  if (bad_addr(listbase)) break;

@@ -496,8 +496,12 @@ noError("padrom: pads file",
 // mkdatmod: shows help when run without required args
 check("mkdatmod: shows usage",   contains: "OS-9 data module",  "mkdatmod")
 
-// pwrstat: power management utility — shows help when run with no args
-check("pwrstat: shows usage",    contains: "Power Management",  "pwrstat")
+// pwrstat: NO happy-path check.  It dereferences an undefined entry register
+// (A0/A4 are poison at program start -- MOVEA.L $4C(A0),A0 with A0=$AAAAAAA4),
+// which is undefined behaviour.  It only "worked" while out-of-arena accesses
+// were silently clamped to the arena base; now that a wild access raises a real
+// 68k bus error (see the "bus error" test below) pwrstat aborts with E_BUSERR.
+// Asserting either outcome would be asserting luck, so it isn't tested.
 
 // tar: create, extract, verify round-trip
 check("tar: roundtrip", contains: "tar_test_content",
@@ -1117,6 +1121,81 @@ do {
     }
 
     for leftover in ["h0/rsmtst.a", "h0/rsmtst.r", "h0/rsmtst"] {
+        try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(leftover).path)
+    }
+}
+
+// ── Bus error: an out-of-arena access raises a catchable 68k bus error ─────────
+// The 68k RAM arena is the guest's entire address space; a wild pointer (here a
+// jump to $80000000) lands outside it.  os9exec now raises a real bus error
+// (vector 2) instead of silently clamping the address to the arena base -- so a
+// wild access is catchable via F$STrap, exactly as on real hardware, and closes
+// the last F$STrap coverage gap (vector 2 was previously unreachable from guest
+// code).  The handler installs over vector 2, the program jumps to $80000000,
+// and the handler must run.  An UNhandled wild access aborting with E_BUSERR is
+// exercised in the wild by pwrstat (see its note above).
+do {
+    let busAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$STrap  equ  $0E",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect bustst,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  lea     itab(pc),a1",
+        "  suba.l  a0,a0",
+        "  OS9     F$STrap",
+        "  move.l  #$80000000,a0",       // a wild, out-of-arena address
+        "  jmp     (a0)",                 // -> bus error (vector 2)
+        "itab:",
+        "  dc.w    $0008",                // vector 2 (bus error)
+        "  dc.w    handler-p2",
+        "p2:",
+        "  dc.w    $FFFF",
+        "handler:",
+        "  move.l  a1,a7",                // run the handler on the caller stack
+        "  lea     mok(pc),a0",
+        "  moveq   #mokl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "mok:  dc.b  \"BUS ERROR (vector 2) CAUGHT\",$0D",
+        "mokl  equ   *-mok",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = repoRoot.appendingPathComponent("h0/bustst.a").path
+    try? busAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "f$strap: an out-of-arena access raises a catchable bus error (vector 2)"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /dd/bustst.a -o=/dd/bustst.r",
+            "l68 /dd/bustst.r -o=/dd/bustst",
+            "/dd/bustst"
+        ], timeout: 30)
+        if out.contains("BUS ERROR (vector 2) CAUGHT") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [the wild jump must raise a bus error the handler catches]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["h0/bustst.a", "h0/bustst.r", "h0/bustst"] {
         try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(leftover).path)
     }
 }

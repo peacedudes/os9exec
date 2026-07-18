@@ -195,6 +195,7 @@
    offsets and are never stored as real addresses. */
 extern unsigned char *emul_base;
 extern unsigned char *emul_end;   /* one past the end of the arena (memstuff.c) */
+extern unsigned int   emul_arena_limit; /* arena size as a 32-bit offset bound (memstuff.c) */
 
 /* a 32-bit 68k word: an in-world register or address. Exactly the width of a
    real 68k register, so it also matches UAE's uae_u32 regstruct fields. */
