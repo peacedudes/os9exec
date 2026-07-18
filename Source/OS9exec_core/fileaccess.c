@@ -1854,7 +1854,13 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
     #define   FDS 16
     byte      fdbeg[FDS];                  /* buffer for preparing FD */
     byte*     att     = (byte*) &fdbeg[0]; /* the position of the attr field */
-    uint32_t* sizeP   = (uint32_t*)&fdbeg[9]; /* the position of the size field */
+    /* The FD size field lives at fdbeg[9] -- an ODD offset, so a uint32_t* aimed
+     * at it is misaligned no matter how fdbeg itself is aligned, and every store
+     * through it was undefined behaviour. Accumulate in a plain uint32_t and
+     * copy it into place once, below. (pipefiles.c already writes this same
+     * field the safe way, via SET_OS9L(fdbeg,9,...).) Surfaced by clang's
+     * -Wcast-align on the native ARM64 build. */
+    uint32_t  fdsize  = 0;                 /* -> fdbeg[9..12], stored below */
     Boolean   isFolder= false;
     ulong     u       = 0;
     struct tm tim;
@@ -2128,21 +2134,21 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
     fdbeg[15]= tim.tm_mday;
 
     /* file length */
-//  *sizeP= 0; /* by default */
+//  fdsize= 0; /* by default */
     #endif // NEW_LUZ_FD_IMPL
 
         
     #if defined MACOS9
       if (isFolder) { /* virtual size is number of items plus 2 for . and .. */
-          *sizeP= (ulong)(cipbP->dirInfo.ioDrNmFls+2)*DIRENTRYSZ;
+          fdsize= (ulong)(cipbP->dirInfo.ioDrNmFls+2)*DIRENTRYSZ;
       }
       else {          /* file size is the data fork size */
-          *sizeP= (ulong) cipbP->hFileInfo.ioFlLgLen;
+          fdsize= (ulong) cipbP->hFileInfo.ioFlLgLen;
       }
 
     #elif defined win_unix
       if (isFolder) {
-          *sizeP= 0; /* by default */
+          fdsize= 0; /* by default */
           
               ok= (pathname!=NULL && ustrcmp( pathname,"" )!=0);
           if (ok) {
@@ -2150,20 +2156,23 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
                   ok= OpenTDir( spRec.fullName, &spRec.dDsc );
               if (ok) {
                   *att  = 0x80 | 0x3F;
-                  *sizeP= os9_long( 2*DIRENTRYSZ ); /* if no entries */   
+                  fdsize= os9_long( 2*DIRENTRYSZ ); /* if no entries */   
               
                   if (spRec.dDsc!=NULL) {
-                      *sizeP= os9_long( DirSize(&spRec) );
+                      fdsize= os9_long( DirSize(&spRec) );
                       closedir( spRec.dDsc );
                   }
               }
     	  } /* if (ok) */
       }
-      else *sizeP= os9_long(info.st_size);
+      else fdsize= os9_long(info.st_size);
         
-//    printf( "%d %10d '%s'\n", isFolder, os9_long(*sizeP), pathname );
+//    printf( "%d %10d '%s'\n", isFolder, os9_long(fdsize), pathname );
     #endif
 
+
+    /* place the accumulated size into the FD's odd-offset size field */
+    memcpy( &fdbeg[9], &fdsize, sizeof(fdsize) );
 
     /* copy FD beginning to caller's buffer */
     memcpy(buffer,fdbeg,maxbyt>FDS ? FDS : maxbyt);
