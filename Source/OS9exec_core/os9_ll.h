@@ -178,11 +178,40 @@
 #endif
 
 /* Safe typed accessors for OS-9 big-endian fields embedded in byte arrays.
-   Always read/write exactly 2 or 4 bytes regardless of host word size. */
-#define GET_OS9L(buf, off)       os9_long( *(uint32_t*)&(buf)[off] )
-#define SET_OS9L(buf, off, val) (*(uint32_t*)&(buf)[off] = os9_long((uint32_t)(val)))
-#define GET_OS9W(buf, off)       os9_word( *(uint16_t*)&(buf)[off] )
-#define SET_OS9W(buf, off, val) (*(uint16_t*)&(buf)[off] = (uint16_t)os9_word((uint16_t)(val)))
+   Always read/write exactly 2 or 4 bytes regardless of host word size.
+
+   Go through memcpy() rather than casting the byte pointer to a uint32_t or
+   uint16_t pointer and dereferencing it. OS-9/68k on-disk structures -- module headers, RBF file
+   descriptors, directory entries -- are TIGHTLY PACKED big-endian, so <off> is
+   routinely odd or merely 2-aligned; the old cast therefore formed a misaligned
+   pointer and dereferenced it, which is undefined behaviour no matter how
+   forgiving the hardware is. It survived on x86_64 (unaligned loads are a
+   hardware feature there) and happens to survive on AArch64 too, since Windows
+   leaves SCTLR_EL1.A clear so ordinary LDR/STR also tolerate misalignment -- but
+   surviving is not the same as being correct: the compiler is entitled to ASSUME
+   the pointer is aligned and emit something that isn't (e.g. widening a run of
+   these into a vector or paired load), which is precisely the class of breakage
+   that only shows up under a new optimiser or target.
+
+   memcpy() with a constant size is not a function call at -O2 on either target;
+   both compile to the same single unaligned load/store the cast produced, so
+   this is free. Surfaced by clang's -Wcast-align on the native ARM64 build. */
+static inline uint32_t os9_get_l( const void* p )
+{ uint32_t v; memcpy( &v,p, sizeof(v) ); return (uint32_t)os9_long( v ); }
+
+static inline void os9_set_l( void* p, uint32_t val )
+{ uint32_t v= (uint32_t)os9_long( val ); memcpy( p,&v, sizeof(v) ); }
+
+static inline uint16_t os9_get_w( const void* p )
+{ uint16_t v; memcpy( &v,p, sizeof(v) ); return (uint16_t)os9_word( v ); }
+
+static inline void os9_set_w( void* p, uint16_t val )
+{ uint16_t v= (uint16_t)os9_word( val ); memcpy( p,&v, sizeof(v) ); }
+
+#define GET_OS9L(buf, off)       os9_get_l( &(buf)[off] )
+#define SET_OS9L(buf, off, val)  os9_set_l( &(buf)[off], (uint32_t)(val) )
+#define GET_OS9W(buf, off)       os9_get_w( &(buf)[off] )
+#define SET_OS9W(buf, off, val)  os9_set_w( &(buf)[off], (uint16_t)(val) )
 
 
 /* ---- 68k address <-> host pointer conversion ----
