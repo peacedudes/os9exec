@@ -15,6 +15,7 @@
 #   ./tools/cocoscreen.sh next            press CLEAR until the display actually changes
 #   ./tools/cocoscreen.sh cycle [n]       press CLEAR n times, capturing each screen
 #   ./tools/cocoscreen.sh place [x y]     move XRoar's window (default 0 0, upper-left)
+#   ./tools/cocoscreen.sh measure FILE      report ink bounding box / line positions in a PNG
 #   ./tools/cocoscreen.sh winid           print XRoar's window ID and geometry
 #   ./tools/cocoscreen.sh pid             print XRoar's process ID
 #
@@ -171,6 +172,8 @@ case "${1:-}" in
            focus; "$(build sendkey)" "$(need_pid)" type "$@" ;;
     clear) focus; "$(build sendkey)" "$(need_pid)" key clear ;;
     next)  cmd_next ;;
+    measure) shift; [ $# -gt 0 ] || die "cocoscreen: measure needs a PNG path"
+           "$(build measure)" "$@" ;;
     cycle) shift; cmd_cycle "${1:-4}" ;;
     place) shift; cmd_place "${1:-0}" "${2:-0}" ;;
     winid) "$(build winid)" xroar ;;

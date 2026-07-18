@@ -46,6 +46,20 @@ sitting on a 640-pixel-wide screen):
   lines redraw at **literal pixel positions** 1:1 — only x=0 and x=160 remain
   visible, and x=320/480/639 clip at the window's 320-pixel right edge.
 
+### Exact measurements
+
+Taken with `./tools/cocoscreen.sh measure <png> --color A6A521 --columns`,
+which reports ink positions in window pixels rather than by eye. The `/w4`
+window is 40 characters = 320 pixels wide, occupying window columns 40..359.
+
+| Scale switch | Coordinates drawn | Window columns | Factor |
+|---|---|---|---|
+| on (default) | 0, 160, 320, 480, 639 | 40, 120, 200, 280, 359 | exactly x/2 |
+| off | 0, 160, (320, 480, 639) | 40, 200, (absent) | 1:1, rest clipped |
+
+A 40-character text row spans columns 40..357 — the same span — independently
+confirming the 320-pixel window width and an 8-pixel character cell.
+
 **Conclusion (`Live`):** with scaling on (the default), the documented
 0-639 x 0-191 coordinate range is a *normalized* space stretched to fit the
 **device window's** dimensions — not screen pixels. On a 320-pixel-wide
@@ -91,6 +105,47 @@ the registered name `"Line"` points at the handler that loads `#$46`
 (`gfx2.asm` L060D). So `gfx-windowing.md` is right that GFX2's `LINE` always
 moves the pointer — but a raw-escape-code test of `$1b44` will appear to
 contradict it. Don't mistake a windint result for a GFX2 result.
+
+## Screen format codes — column counts confirmed
+
+`wcreate` accepts/rejects window widths exactly as the `Manual` table
+predicts, which independently confirms the column half of that table:
+
+| Attempted | Result |
+|---|---|
+| `-s=6 0 0 40 24` (40-col screen, 40 cols) | OK |
+| `-s=6 0 0 80 24` (40-col screen, 80 cols) | **Error 189 Illegal Coordinates** |
+| `-s=8 0 0 40 24` (40-col screen, 40 cols) | OK |
+| `-s=7 0 0 80 24` (80-col screen, 80 cols) | OK |
+
+This also retro-explains the error 189 that blocked an earlier session: a
+`-s=8 0 0 80 24` request is 80 columns on a 40-column screen type. The error
+was accurate and the geometry genuinely illegal — nothing to do with memory
+or screen-table exhaustion.
+
+Screen width for type 5 measured directly at **640 pixels** (the 40-column
+window covered exactly its left half), matching `5` = 640x192.
+
+## Open questions (next session)
+
+1. **Normalized-to-window vs scaled-by-window/screen-ratio.** Every
+   measurement so far was on a 320-pixel window sitting on a 640-pixel
+   screen, where both models predict the same x/2. Needs a window occupying
+   the *full* screen width, or one of reduced *height*, to discriminate.
+   Blocked by (2).
+2. **Reaching a specific window's screen.** Windows created by `wcreate`
+   with no process running on them do **not** appear in the CLEAR cycle, so
+   `/w3`, `/w5`, `/w6`, `/w8` could not be brought up for measurement. Only
+   screens belonging to live processes seem reachable. Getting a shell to
+   survive on a graphics window is still the unsolved prerequisite.
+3. **`CWAREA` parameter encoding.** `display 1b 25 00 00 14 18 >/w4`
+   produced a full-width black band and killed subsequent drawing rather
+   than the expected half-width working area — the parameter units/encoding
+   are not what was guessed (other escapes take 16-bit coordinates;
+   `CWAREA` is documented in characters). Its documented *rescaling*
+   behaviour is therefore still untested, and that test would also settle
+   (1). Note the call did confirm one thing: the working area could not be
+   restored afterwards, consistent with "shrinks (never grows)".
 
 ## Second finding — SELECT does not bring a screen forward
 
