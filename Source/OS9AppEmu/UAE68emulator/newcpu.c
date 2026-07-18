@@ -1189,7 +1189,11 @@ unsigned long REGPARAM2 op_illg (uae_u32 opcode)
 		Exception(0xA,0);
 		return 4;
     }
-    write_log ("Illegal instruction: %04x at %08lx\n", opcode, pc);
+    /* Only announce a genuinely unhandled illegal instruction.  When the process
+       has an F$STrap handler for vector 4, the exception is caught (not fatal), so
+       this line is just noise -- suppress it, as the arithmetic-trap paths do. */
+    if (!os9exec_error_handler_installed(4))
+        write_log ("Illegal instruction: %04x at %08lx\n", opcode, pc);
     Exception (4,0);
     return 4;
 }

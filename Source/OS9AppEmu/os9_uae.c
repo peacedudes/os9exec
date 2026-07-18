@@ -78,6 +78,17 @@ void UnlockMemRange   ( _bufferV_, _size_ ) { }
 /* current regs as per last call of llm_os9_go */
 static regs_type *currentrp;
 
+/* True if the current process has an F$STrap error-exception handler installed
+   for the given 68k exception vector.  op_illg() (newcpu.c) calls this to gate
+   its "Illegal instruction" console line: that line is a diagnostic for a fatal,
+   about-to-abort exception, so printing it when vector 4 will be caught by a
+   handler is spurious noise (a BASIC09-style catch shouldn't emit it). */
+int os9exec_error_handler_installed(int vect)
+{
+    if (vect<FIRSTEXCEPTION || vect>=FIRSTEXCEPTION+NUMEXCEPTIONS) return 0;
+    return procs[currentpid].ErrorTraps[vect-FIRSTEXCEPTION].handleraddr!=0;
+}
+
 /* called by newcpu.c's Exception routine */
 void handle_os9exec_exception(int nr, uaecptr oldpc)
 {

@@ -287,6 +287,7 @@ extern cpuop_func *cpufunctbl[65536] ASM_SYM_FOR_FUNC ("cpufunctbl");
 
 /* os9exec glue -- defined in os9_uae.c / luzstuff.c / debug.c */
 extern void          handle_os9exec_exception(int nr, uaecptr oldpc);
+extern int           os9exec_error_handler_installed(int vect);
 extern void          customreset(void);
 extern unsigned short debugwait(void);
 
