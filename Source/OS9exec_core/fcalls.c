@@ -667,13 +667,16 @@ os9err OS9_F_Julian( regs_type *rp, _pid_ )
  *          d1.w = error
  */
 {
-    byte   tc[4];
-    uint32_t* tcp= (uint32_t*)&tc[0];
+    /* 32-bit object with a byte view, not byte[4] cast up to uint32_t*: a byte
+     * array only has alignment 1, so the old cast formed a possibly-misaligned
+     * uint32_t* (undefined behaviour). Same fix as in alarms.c. */
+    uint32_t   tcv;
+    byte*      tc= (byte*)&tcv;
     
-    *tcp    = os9_long( rp->d[0] );         /* get time */
+    tcv     = os9_long( rp->d[0] );         /* get time */
     rp->d[0]= tc[1]*3600+tc[2]*60+tc[3]; /* seconds since midnight */
     
-    *tcp    = os9_long( rp->d[1] );         /* get date */
+    tcv     = os9_long( rp->d[1] );         /* get date */
     rp->d[1]= j_date(tc[3],tc[2], hiword( rp->d[1] ) );
     
     return 0;
@@ -689,22 +692,25 @@ os9err OS9_F_Gregor( regs_type *rp, _pid_ )
  *          d1.w = error
  */
 {
-    byte   tc[4];
-    uint32_t* tcp= (uint32_t*)&tc[0];
+    /* 32-bit object with a byte view, not byte[4] cast up to uint32_t*: a byte
+     * array only has alignment 1, so the old cast formed a possibly-misaligned
+     * uint32_t* (undefined behaviour). Same fix as in alarms.c. */
+    uint32_t   tcv;
+    byte*      tc= (byte*)&tcv;
     int  d, m, y;
       
     tc[0]= 0;
     tc[1]=   rp->d[0] / 3600;        /* hours   */
     tc[2]= ( rp->d[0] /   60 ) % 60; /* minutes */
     tc[3]=   rp->d[0]          % 60; /* seconds */
-    rp->d[0]= os9_long( *tcp );
+    rp->d[0]= os9_long( tcv );
     
     g_date( rp->d[1], &d, &m, &y );  /* convert the date */
     tc[0]= y / 256;
     tc[1]= y % 256;
     tc[2]= m;
     tc[3]= d;
-    rp->d[1]= os9_long( *tcp );
+    rp->d[1]= os9_long( tcv );
     
     return 0;
 } /* OS9_F_Gregor */
