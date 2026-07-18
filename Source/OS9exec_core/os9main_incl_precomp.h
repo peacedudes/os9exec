@@ -359,12 +359,17 @@ typedef struct dirent dirent_typ;
   #endif
 #endif
 
-#if !defined(UNIX) && !defined(windows32)
+#if !defined(UNIX) && !defined(windows32) && !defined(MINGW)
   /* Classic Mac Toolbox headers (Types.h, StdIO.h, etc.) — genuinely
    * Mac-only; not available under MPW's "modern" clang/gcc-based Windows
    * or the *nix targets. This guard used to be just "#ifndef UNIX" from
    * when Mac and Unix were the only two targets, so windows32 (also not
    * UNIX) fell into this block and failed with e.g. "Types.h not found".
+   *
+   * `!defined MINGW` is likewise explicit rather than implied: mingw-w64
+   * has no Toolbox headers either, and it is excluded today only because
+   * MINGW happens to derive UNIX (~180 lines up). Naming it here keeps
+   * this guard's correctness readable without that non-local fact.
    */
   #include <CType.h>
 
