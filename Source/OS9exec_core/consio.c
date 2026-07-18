@@ -928,7 +928,14 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                           uint32_t *maxlenP, char* buffer, Boolean wrln )
 /* output to console */
 {
-    uint32_t     cnt;
+    /* signed, and wide enough for every uint32_t it also receives: stdwrite()
+     * returns a SIGNED long and uses a negative value to report a write
+     * error, but cnt was unsigned, so the `if (cnt<0)` check below was always
+     * false -- console write errors were silently swallowed, and on error
+     * *maxlenP was handed back the huge unsigned reinterpretation of -1 as
+     * the count of bytes written. Caught by GCC's -Wtype-limits; clang does
+     * not diagnose it at any warning level. */
+    long         cnt;
     char         c;
     ulong        outputticks= GetSystemTick();
     syspath_typ* spC=  spP;          /* default: no crossed path */
