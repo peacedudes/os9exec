@@ -89,10 +89,14 @@ need_pid() {
 }
 
 # Injected keys only land when XRoar is frontmost, so every key path raises it.
+# NB: keep this on ONE line.  A backslash continuation inside single quotes is
+# passed to AppleScript literally and is a syntax error there, not a shell line
+# continuation — which fails silently and drops every keystroke.
 focus() {
-    osascript -e 'tell application "System Events" to tell process "xroar" \
-                  to set frontmost to true' >/dev/null 2>&1 || true
-    sleep 0.4
+    osascript -e 'tell application "System Events" to tell process "xroar" to set frontmost to true' >/dev/null 2>&1 \
+        || die "cocoscreen: could not focus XRoar — grant this terminal
+       System Settings > Privacy & Security > Accessibility"
+    sleep 0.5
 }
 
 cmd_shot() {
