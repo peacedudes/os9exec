@@ -1410,8 +1410,6 @@ os9err load_OS9Boot( ushort pid )
   
   byte                  sect0[ 256 ];
   uint32_t size= sizeof( sect0 );
-  ushort* sp;
-  ushort* sc;
   ulong   pos, siz, scs;
   ushort  mid;
 
@@ -1427,9 +1425,13 @@ os9err load_OS9Boot( ushort pid )
   do {
     err= usrpath_read( pid,  path, &size, &sect0,   false ); if (err) break;
     
+    /* All three via the GET_OS9* accessors: sect0 is a byte[] local (alignment
+     * 1), so the (ushort*) casts were potentially misaligned reads. The line
+     * above already used GET_OS9L for the odd offset 0x15; these two were the
+     * neighbours it missed. */
     pos= GET_OS9L(sect0, 0x15)>>BpB;
-    sp= (ushort*)&sect0[ 0x18 ]; siz= os9_word(*sp);
-    sc= (ushort*)&sect0[ 0x68 ]; scs= os9_word(*sc);
+    siz= GET_OS9W(sect0, 0x18);
+    scs= GET_OS9W(sect0, 0x68);
     
     if (pos==0) { err= E_PNNF; break; } // no sector 0 reference
     if (scs==0) scs= 256; // default
