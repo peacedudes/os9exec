@@ -2425,6 +2425,76 @@ Boolean RBF_ImgSize( long size )
    * followed a symlink out of bounds, the handle's real resolved path
    * won't match any configured device root, and the caller should refuse
    * to hand back data read through it. */
+  /* Fully resolve <path> the way the OS itself does -- following junctions,
+   * symlinks and mount points -- and normalize to this codebase's driveless,
+   * '/'-separated convention. Unlike the _fullpath()-based realpath() shim
+   * above (purely lexical), this opens the object and asks Windows where the
+   * handle actually landed. FILE_FLAG_BACKUP_SEMANTICS is what allows a
+   * DIRECTORY to be opened here; without it a device root fails outright.
+   * Returns false if the object cannot be opened at all. */
+  static Boolean FinalHostPath( const char* path, char* out, size_t outsz )
+  {
+      HANDLE h;
+      DWORD  len;
+      char*  p;
+
+      h= CreateFileA( path, 0, FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                      NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL );
+      if (h==INVALID_HANDLE_VALUE) return false;
+
+      len= GetFinalPathNameByHandleA( h, out, (DWORD)outsz, FILE_NAME_NORMALIZED );
+      CloseHandle( h );
+      if (len==0 || len>=outsz) return false;
+
+      p= out;
+      if (strncmp( p,"\\\\?\\",4 )==0) p+= 4;
+      if (p[0] && p[1]==':')           p+= 2;
+      if (p!=out) memmove( out,p, strlen(p)+1 );
+      for (p= out; *p; p++) if (*p=='\\') *p= '/';
+      return true;
+  } /* FinalHostPath */
+
+  /* Like HostPathWithinConfiguredDevice, but resolves the DEVICE ROOTS through
+   * the real filesystem too, so both sides of the comparison have been through
+   * the same resolution.
+   *
+   * Needed because a device root may itself be a junction/symlink: this
+   * project's own h0 is routinely an NTFS junction to the (proprietary,
+   * out-of-tree) SDK test disk. GetFinalPathNameByHandle resolves the junction
+   * for the open stream ("/Users/x/os9test/h0/CMDS/shell") while the lexical
+   * realpath() shim leaves the root unresolved ("/Users/x/repo/h0"), so the
+   * prefix test below could never match and EVERY ordinary file open inside the
+   * device was rejected as an escape -- os9exec could not even load `shell` and
+   * refused to boot. Confirmed live 2026-07-18 on a junctioned h0.
+   *
+   * Confinement is not weakened: a symlink planted inside a root that points
+   * outside every configured device still resolves to a path matching no root,
+   * which is exactly what this check exists to catch. */
+  static Boolean FinalPathWithinConfiguredDevice( const char* finalPath )
+  {
+      char   rootreal[PATH_MAX];
+      char   devbuf[3];
+      char   tmp[OS9PATHLEN];
+      char   ch;
+      char*  root;
+      size_t rl;
+
+      #define FINAL_DEV_MATCHES( d0,d1 ) \
+          ( devbuf[0]=(d0), devbuf[1]=(d1), devbuf[2]=NUL, \
+            root=NULL, TwoCharDev( devbuf,&root,tmp ), \
+            root!=NULL && *root!=NUL && \
+            FinalHostPath( root,rootreal,sizeof(rootreal) ) && \
+            ( rl= strlen(rootreal), ustrncmp( finalPath,rootreal,rl )==0 && \
+              (finalPath[rl]==NUL || finalPath[rl]==PATHDELIM) ) )
+
+      if (FINAL_DEV_MATCHES( 'd','d' )) return true;
+      for (ch= '0'; ch<='9'; ch++) if (FINAL_DEV_MATCHES( 'h',ch )) return true;
+      for (ch= 'a'; ch<='z'; ch++) if (FINAL_DEV_MATCHES( 'h',ch )) return true;
+
+      #undef FINAL_DEV_MATCHES
+      return false;
+  } /* FinalPathWithinConfiguredDevice */
+
   Boolean HostStreamWithinConfiguredDevice( FILE* stream )
   {
       HANDLE h;
@@ -2447,7 +2517,11 @@ Boolean RBF_ImgSize( long size )
       if (p!=finalPath) memmove( finalPath,p, strlen(p)+1 );
       for (p= finalPath; *p; p++) if (*p=='\\') *p= '/';
 
-      return HostPathWithinConfiguredDevice( finalPath );
+      /* Lexical roots first (cheap, and the usual case when no device root is
+       * itself a link); fall back to fully-resolved roots for a junctioned or
+       * symlinked device root. */
+      if (HostPathWithinConfiguredDevice( finalPath )) return true;
+      return FinalPathWithinConfiguredDevice( finalPath );
   } /* HostStreamWithinConfiguredDevice */
   #endif
 
