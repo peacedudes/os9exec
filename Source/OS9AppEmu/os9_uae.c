@@ -132,9 +132,16 @@ void handle_os9exec_exception(int nr, uaecptr oldpc)
         // prep os9_go result code
         m68_os9go_result=0xFAFA0000 + (nr * 4); // error tag and vector OFFSET
         // Build stack frame for user trap handler
-        // - Save callers PC
+        // - Save callers PC (R$pc).  Use oldpc verbatim -- NO +2.  The +2 belongs
+        //   to the OS9/TCALL path above, where the faulting instruction is a 2-byte
+        //   TRAP and the return point is trap+2.  A hardware error exception is
+        //   different: the faulting op handler already left m68k_getpc() at the
+        //   exception's own PC (post-instruction for TRAPV, at the instruction for
+        //   DIVU/CHK) -- the same per-exception PC UAE's real Exception() stacks for
+        //   vectors 5/6/7/9 (see newcpu.c).  Adding +2 landed R$pc two bytes past
+        //   that, mid-instruction, so a handler that resumed via R$pc ran garbage.
         m68k_areg(regs, 7) -= 4;      /* do not jump back into your own command */
-        put_long(m68k_areg(regs, 7), oldpc+2); /* +2: is very important (bfo)   */
+        put_long(m68k_areg(regs, 7), oldpc);
         // - save SR
         m68k_areg(regs, 7) -= 2;
         put_word(m68k_areg(regs, 7), regs.sr);

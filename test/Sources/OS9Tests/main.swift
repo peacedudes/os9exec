@@ -1020,6 +1020,107 @@ do {
     }
 }
 
+// ── F$STrap: a handler that RESUMES the interrupted program (not just diverts) ──
+// The sibling test above only exercises handlers that abandon the faulting flow.
+// This one exercises the resume-in-place path: the handler restores the saved
+// register block and returns to the interrupted code via R$pc, and the program
+// runs on to a normal exit.  Regression for the spurious `oldpc+2` that os9exec
+// added to R$pc on the UAE path (os9_uae.c): +2 landed R$pc two bytes past the
+// real per-exception PC -- mid-instruction -- so any resuming handler ran garbage.
+// Covers both PC conventions UAE hands us: TRAPV leaves R$pc at the NEXT
+// instruction (the op pre-advances), so the handler resumes directly; DIVU/CHK
+// leave R$pc AT the faulting instruction, so the handler must step R$pc past it
+// (here +4, the width of `divu #0,dn`) to skip the divide.  The register block is
+// D0-D7 / A0-A6 / callers-A7($3C) / SR($40) / PC($42), and the handler resumes in
+// USER state (RTE is privileged) by pushing R$pc onto the caller's own stack and
+// RTS'ing to it.
+do {
+    let resumeAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$STrap  equ  $0E",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect rsmtst,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  lea     itab(pc),a1",
+        "  suba.l  a0,a0",
+        "  OS9     F$STrap",
+        "  ori.b   #2,ccr",
+        "  trapv",                          // vector 7: R$pc already = next insn
+        "  lea     m7(pc),a0",
+        "  moveq   #m7l,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  moveq   #1,d0",
+        "  divu    #0,d0",                  // vector 5: R$pc = this insn; handler steps it
+        "  lea     m5(pc),a0",
+        "  moveq   #m5l,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "itab:",
+        "  dc.w    $001C",                  // vector 7 (TRAPV)
+        "  dc.w    handler-p7",
+        "p7:",
+        "  dc.w    $0014",                  // vector 5 (zero divide)
+        "  dc.w    handler-p5",
+        "p5:",
+        "  dc.w    $FFFF",
+        "handler:",
+        "  cmpi.w  #$14,d7",               // zero-divide? R$pc points AT the divu
+        "  bne     hgo",
+        "  addq.l  #4,$42(a7)",            //   step R$pc past the 4-byte divu
+        "hgo:",
+        "  move.l  $42(a7),-(a1)",         // push R$pc onto caller's own stack
+        "  move.l  a1,$3C(a7)",            // record the new caller SP in the block
+        "  movem.l (a7)+,d0-d7/a0-a6",     // restore the interrupted registers
+        "  movea.l (a7),a7",               // A7 = caller SP (points at pushed R$pc)
+        "  rts",                           // resume the interrupted program
+        "m7:  dc.b  \"RESUMED PAST TRAPV\",$0D",
+        "m7l  equ   *-m7",
+        "m5:  dc.b  \"RESUMED PAST DIVU0\",$0D",
+        "m5l  equ   *-m5",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = repoRoot.appendingPathComponent("h0/rsmtst.a").path
+    try? resumeAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "f$strap: a handler resumes the interrupted program (TRAPV next-pc + div0 step-pc)"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /dd/rsmtst.a -o=/dd/rsmtst.r",
+            "l68 /dd/rsmtst.r -o=/dd/rsmtst",
+            "/dd/rsmtst"
+        ], timeout: 30)
+        let reached = out.contains("RESUMED PAST TRAPV")
+            && out.contains("RESUMED PAST DIVU0")
+        if reached {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [both handlers must resume past the fault, not divert or crash]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["h0/rsmtst.a", "h0/rsmtst.r", "h0/rsmtst"] {
+        try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(leftover).path)
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 print("\nResults: \(passed) passed, \(failed) failed")
