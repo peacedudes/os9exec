@@ -45,8 +45,10 @@ This session reframes that as two goals at once, of equal weight:
 
 Each is installed and built **on the guest itself** (not cross-compiled
 from the Mac) — the point is to reproduce what an actual Windows
-developer's workflow looks like, source arriving via `scp` (no git on
-the guest) standing in for a real `git clone`.
+developer's workflow looks like. `arm64-uae-integration` is now pushed
+to `github:peacedudes/os9exec`, so source arrives via a real
+`git clone` (installing Git for Windows via `winget` first, since the
+guest has never had git on it before) rather than `scp`.
 
 1. **MSYS2, `clangarm64` environment.** Most common way an open-source
    C project with a plain Makefile gets built on Windows today; official
