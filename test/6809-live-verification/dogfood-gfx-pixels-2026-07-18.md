@@ -32,7 +32,48 @@ Confirmed working: a yellow box outline and a circle, drawn with windint
 `$1B` escape codes on a `wcreate`d 320x192 4-colour window, photographed
 through `cocoscreen.sh`.
 
-## First finding — the X coordinate space is not as documented
+## RESOLVED — the coordinate space is normalized to the window
+
+The "X is squashed" anomaly first noted below is fully explained. Measurements
+on a `wcreate /w4 -s=5 0 0 40 24 0 1 1` window (40 chars = 320 pixels wide,
+sitting on a 640-pixel-wide screen):
+
+- Vertical lines drawn at x = 0, 160, 320, 480, 639 land **evenly spaced**
+  across the window — a clean linear map, no clipping.
+- A 40-character text row spans **exactly the same width** as x=0..639. Since
+  40 chars x 8 px = 320 px, the whole 0-639 range maps onto 320 pixels.
+- With the scale switch turned **off** (`display 1b 35 00`), the same five
+  lines redraw at **literal pixel positions** 1:1 — only x=0 and x=160 remain
+  visible, and x=320/480/639 clip at the window's 320-pixel right edge.
+
+**Conclusion (`Live`):** with scaling on (the default), the documented
+0-639 x 0-191 coordinate range is a *normalized* space stretched to fit the
+**device window's** dimensions — not screen pixels. On a 320-pixel-wide
+window every X is effectively halved. With `WScaleSw` ($1b35) off,
+coordinates become literal window pixels and drawing clips at the window edge.
+
+This also confirms `Manual` format code `5` = 640x192: the screen measured
+640 pixels wide, with the 40-column window occupying its left half.
+
+**Correction owed to `gfx-windowing.md`.** It currently says coordinates "are
+screen-relative unless `SCALESW` is off, in which case they become relative to
+the window's own working-area origin" — describing the switch as an *origin*
+change. The switch demonstrably changes **scaling**. Note the origin half of
+that claim is *untested here*: this window sits at 0,0, so window-relative and
+screen-relative origins coincide. Retesting with a window at a non-zero
+position is the obvious follow-up.
+
+## Second finding — SELECT does not bring a screen forward
+
+`display 1b 21 >/w4` (`WSelect`) produced no display change, and neither did
+`display 1b 21 <>/w4`, which puts *all* of the writing process's std paths on
+the target window. The screen only comes forward on a CLEAR keypress.
+`gfx-windowing.md` says a SELECT from inside the target window "shows
+immediately" — not reproduced. (An earlier session's apparent confirmation of
+the deferral behavior was invalid, having used `$1b22`/`WOWSet` by mistake;
+this pass used the correct `$1b21`.)
+
+## Original observation (superseded by the above)
 
 `gfx-windowing.md` states X range 0-639 / Y range 0-191 for `SETDPTR`,
 `CIRCLE` and friends. Observed on a type-5 (320x192, 4-colour) window created

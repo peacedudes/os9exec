@@ -12,6 +12,7 @@
 #   ./tools/cocoscreen.sh key <name>...   press keys, e.g. `key clear`, `key enter`
 #   ./tools/cocoscreen.sh type <string>   type a literal string (no trailing Enter)
 #   ./tools/cocoscreen.sh clear           press CoCo CLEAR — cycles to the next screen
+#   ./tools/cocoscreen.sh next            press CLEAR until the display actually changes
 #   ./tools/cocoscreen.sh cycle [n]       press CLEAR n times, capturing each screen
 #   ./tools/cocoscreen.sh place [x y]     move XRoar's window (default 0 0, upper-left)
 #   ./tools/cocoscreen.sh winid           print XRoar's window ID and geometry
@@ -124,6 +125,30 @@ cmd_place() {
     printf 'moved to %s,%s\n' "$x" "$y"
 }
 
+# Press CLEAR until the display actually changes.  Injected keys are dropped
+# often enough (dependent on focus timing) that a single press is unreliable;
+# retrying against an observed change makes screen switching deterministic,
+# which every visual test depends on.
+cmd_next() {
+    local pid bin before after i
+    pid=$(need_pid); bin=$(build sendkey)
+    mkdir -p "$SHOTDIR"
+    before="$SHOTDIR/.next-before.png"
+    after="$SHOTDIR/.next-after.png"
+    screencapture -x -o -l "$(xroar_winid)" "$before"
+    focus
+    for (( i = 1; i <= 8; i++ )); do
+        "$bin" "$pid" key clear
+        sleep 0.7
+        screencapture -x -o -l "$(xroar_winid)" "$after"
+        if [ "$(md5 -q "$before")" != "$(md5 -q "$after")" ]; then
+            printf 'switched after %d press(es)\n' "$i"
+            return 0
+        fi
+    done
+    die "cocoscreen: display did not change after 8 CLEAR presses"
+}
+
 cmd_cycle() {
     local count="${1:-4}" pid bin i out
     pid=$(need_pid); bin=$(build sendkey)
@@ -145,6 +170,7 @@ case "${1:-}" in
     type)  shift; [ $# -gt 0 ] || die "cocoscreen: type needs a string"
            focus; "$(build sendkey)" "$(need_pid)" type "$@" ;;
     clear) focus; "$(build sendkey)" "$(need_pid)" key clear ;;
+    next)  cmd_next ;;
     cycle) shift; cmd_cycle "${1:-4}" ;;
     place) shift; cmd_place "${1:-0}" "${2:-0}" ;;
     winid) "$(build winid)" xroar ;;
