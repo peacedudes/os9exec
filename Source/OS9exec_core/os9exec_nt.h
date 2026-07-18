@@ -532,7 +532,18 @@ typedef struct {
 
 
 // omitted parameters (does not really work with gcc)
-#ifdef __GNUC__
+/* The #else branch below expands to a bare TYPE with no parameter name --
+ * a CodeWarrior-era trick for declaring parameters a function body ignores.
+ * Any body that DOES use one (OS9_F_SysDbg's `rp`, fcalls.c; pRsetatt's
+ * `pid`, file_rbf.c) then fails to compile, so the named branch is not a
+ * gcc nicety -- it is required by anything that isn't strictly "omitted".
+ *
+ * `defined _MSC_VER` is therefore not about GNU-ness: clang-cl in MSVC
+ * compatibility mode deliberately does NOT define __GNUC__, so it fell to
+ * the unnamed branch and broke on exactly those two call sites. The old
+ * gate encoded "not GNU" => "compiler that ignores parameter names", which
+ * was only ever true of CodeWarrior/classic MSVC. */
+#if defined __GNUC__ || defined _MSC_VER
   #define _modeP_   ushort*      modeP
   #define _rp_      regs_type*   rp
   #define _pid_     ushort       pid
