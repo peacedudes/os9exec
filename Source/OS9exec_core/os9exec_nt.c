@@ -708,7 +708,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    uint32_t paramsiz, argsiz, envsiz;
    int os9envc,h;
    byte *p,*pp, *hp;
-   uint32_t *alp,*elp;
+   byte     *alp,*elp;   /* byte*, not uint32_t*: only 2-aligned -- see SET_OS9L note below */
    char *modnam;
    int k;
    
@@ -751,22 +751,31 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    
    /* -- prepare parameters shell-like */
    debugprintf(dbgStartup,dbgDeep,("# prepParams: Calculated parameter size=$%X\n",paramsiz));
+   /* SET_OS9L/SET_OS9W rather than *(uint32_t*)p / *(ushort*)p: the paramsiz
+    * arithmetic above (and the "align if..." odd-byte adjustments below) keep
+    * this area only EVEN -- 2-byte alignment is all a 68k needs for word and
+    * long access -- so <p>, <elp> and <alp> are routinely 2-aligned but not
+    * 4-aligned, and the old 32-bit stores through them were misaligned host
+    * accesses. Same undefined behaviour as the GET_OS9L/SET_OS9L fix in
+    * os9_ll.h, and on the hottest possible path: this runs on every process
+    * creation. The accessors apply os9_long/os9_word themselves, so these are
+    * byte-for-byte the same stores as before. */
    p=pp+paramsiz; /* end of param area */
-   p-=4; *((uint32_t *)p)=0; /* envp[] terminator */
+   p-=4; SET_OS9L( p,0, 0 ); /* envp[] terminator */
    p-=os9envc*4; /* reserve room for envp[] pointers */
-   elp=(uint32_t *)p; /* save ptr to first envp pointer */
-   p-=4; *((uint32_t *)p)=0; /* argv[]/envp[] separator */
+   elp=p; /* save ptr to first envp pointer */
+   p-=4; SET_OS9L( p,0, 0 ); /* argv[]/envp[] separator */
    p-=argc*4; /* reserve room for argv[] pointers */
-   alp=(uint32_t *)p; /* save ptr to first argv pointer */
-   p-=4; *((uint32_t *)p)=0; /* argv[] list beginning */
-   p-=2; *((ushort *)p)=os9_word(0x000D);
+   alp=p; /* save ptr to first argv pointer */
+   p-=4; SET_OS9L( p,0, 0 ); /* argv[] list beginning */
+   p-=2; SET_OS9W( p,0, 0x000D );
    k=strlen(modnam);
    if (!(k & 1)) *(--p)=0; /* align if module name has even # of chars (=odd with NUL) */
    p-=k+1;
    strcpy( (char*)p,modnam ); /* copy module name as argv[0] */
    p-=4;
-   *((uint32_t *)p)=os9_long((uint32_t)(p+4-pp)); /* set argv[0] offset */
-   p-=2; *((ushort *)p)=os9_word(0xFC01); /* special sync code */
+   SET_OS9L( p,0, (uint32_t)(p+4-pp) ); /* set argv[0] offset */
+   p-=2; SET_OS9W( p,0, 0xFC01 ); /* special sync code */
    /* --- environment variable strings */
    if ((envsiz & 1)==0) *(--p)=0; /* align needed if even envsize */
    p-=1; *p=0; /* environment variables terminator */
@@ -777,7 +786,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    while (os9envc) {
       if (*envp[k]=='@') {
          /* --- it is an OS-9 environment variable */
-         *(elp++)=os9_long((uint32_t)((ulong)hp-(ulong)pp)); /* set offset */
+         SET_OS9L( elp,0, (uint32_t)((ulong)hp-(ulong)pp) ); elp+=4; /* set offset */
          strcpy( (char*)hp, envp[k]+1 ); /* copy the environment variable name, but without the '@' */
          h=strlen(envp[k])-1; /* size of variable name without '@' */
    		debugprintf(dbgStartup,dbgDeep,("# prepParams: envp[%d] name='%s', len=%d",k,envp[k]+1,h));
@@ -795,12 +804,12 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    }
    /* --- argument strings */
    if (argsiz & 1) *(--p)=0; /* align needed if odd argsize */
-   p-=2; *((ushort *)p)=os9_word(0x000D); /* command line parameter terminator */
+   p-=2; SET_OS9W( p,0, 0x000D ); /* command line parameter terminator */
    p-=argsiz; /* reserve space for argument strings */
    debugprintf(dbgStartup,dbgDeep,("# prepParams: Starting to write args at %p, memstart=%p\n",p,pp));
    k=0;
    while (argc) {
-      *(alp++)=os9_long((uint32_t)((ulong)p-(ulong)pp)); /* set offset */
+      SET_OS9L( alp,0, (uint32_t)((ulong)p-(ulong)pp) ); alp+=4; /* set offset */
       strcpy( (char*)p, argv[k] ); /* copy the argument */
       p+=strlen(argv[k]); /* advance pointer */
       if (k+1>=argc) break;
