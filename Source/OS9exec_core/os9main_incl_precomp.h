@@ -168,10 +168,49 @@
   #endif
 #endif
 
-/* Support only for Linux on PC */
-/* makes life easier for them moment ... */
+/* Linux: __INTEL__ here means "little-endian host, os9_word/os9_long must
+ * byte-swap", NOT x86 -- see the os9_ll.h comment on the same flag.
+ *
+ * This used to be an unconditional `#define __INTEL__` under `#ifdef linux`,
+ * carrying the comment "Support only for Linux on PC". That assumption was
+ * wrong for any big-endian Linux and failed loudly the first time one was
+ * tried: on Linux/s390x the emulator selected the SWAPPING macros on a host
+ * that is ALREADY big-endian, so every OS-9 big-endian field got reversed,
+ * module headers failed validation, and even loading `shell` died with E_FNA.
+ *
+ * Detect real byte order instead of assuming it. `__BYTE_ORDER__` /
+ * `__ORDER_BIG_ENDIAN__` are the portable spelling that both GCC and clang
+ * define on every target; the older `__BIG_ENDIAN__` this codebase tested
+ * elsewhere is an Apple/CodeWarrior-era convention that GCC does NOT define
+ * on Linux (verified on s390x: __BYTE_ORDER__ is set, __BIG_ENDIAN__ is not),
+ * which is precisely why the bug hid here. Fall back to defining __INTEL__
+ * when the compiler offers no byte-order macro at all, preserving the old
+ * behaviour for anything too old to tell us. */
 #ifdef linux
   #define __INTEL__
+#endif
+
+/* Real host byte order, kept SEPARATE from __INTEL__ above.
+ *
+ * __INTEL__ is overloaded: besides "little-endian, byte-swap needed" it also
+ * acts as the "not classic-Mac-Toolbox" platform flag that supplies basic
+ * types (see the Boolean typedef below). So it cannot simply be left undefined
+ * on a big-endian Linux -- doing that drops those typedefs and the build dies
+ * with "unknown type name 'Boolean'". Endianness therefore gets its own flag,
+ * consumed by the os9_word/os9_long/loword/hiword block in os9_ll.h.
+ *
+ * `__BYTE_ORDER__`/`__ORDER_BIG_ENDIAN__` are the portable spelling that both
+ * GCC and clang define on every target. The `__BIG_ENDIAN__` this codebase
+ * tested elsewhere is an Apple/CodeWarrior-era convention GCC does NOT define
+ * on Linux -- verified on s390x, where __BYTE_ORDER__ is set and
+ * __BIG_ENDIAN__ is not, which is exactly why "Linux implies little-endian"
+ * went unnoticed until a big-endian Linux was finally tried. */
+#if defined __BYTE_ORDER__ && defined __ORDER_BIG_ENDIAN__
+  #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    #define OS9_HOST_BIG_ENDIAN
+  #endif
+#elif defined __BIG_ENDIAN__ || defined __s390__ || defined __s390x__
+  #define OS9_HOST_BIG_ENDIAN
 #endif
 
 /* the UNIX systems */

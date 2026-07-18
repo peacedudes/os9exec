@@ -140,7 +140,19 @@
 #endif
 
 
-#ifdef __INTEL__
+/* Select on ACTUAL host byte order, not on __INTEL__ alone.
+ *
+ * Everything in this block -- the os9_word/os9_long swaps AND the
+ * loword/hiword register-half offsets -- is endianness-dependent, so the whole
+ * block switches together. __INTEL__ cannot be the discriminator by itself
+ * because it is overloaded as a platform/type flag (see the OS9_HOST_BIG_ENDIAN
+ * comment in os9main_incl_precomp.h): every Linux defines it regardless of
+ * architecture. On Linux/s390x that selected the swapping macros on a host that
+ * is already big-endian, reversing every OS-9 field so module headers failed
+ * validation and even loading `shell` returned E_FNA. Confirmed against a
+ * little-endian control build of the identical source, where the same disk and
+ * commands worked. */
+#if defined __INTEL__ && !defined OS9_HOST_BIG_ENDIAN
     /* access register parts */
     #define loword(reg) (*(((ushort*)&(reg))+0))
     #define hiword(reg) (*(((ushort*)&(reg))+1))
