@@ -218,16 +218,22 @@ static os9err Alarm_AtDate( ushort pid, uint32_t *aId, ushort aCode, uint32_t aT
 	uint32_t gt_time, gt_date;
 	int      dayOfWk, currentTick;
 	uint32_t mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
-    byte       tc[4];
-    uint32_t* tcp= (uint32_t*)&tc[0];
+    /* Declare the 32-bit object and take a BYTE view of it, rather than
+     * declaring byte[4] and casting it up to uint32_t*: a byte array only has
+     * alignment 1, so the old cast formed a possibly-misaligned uint32_t*
+     * (undefined behaviour -- same family as the GET_OS9L/SET_OS9L fix in
+     * os9_ll.h). Going this direction the alignment is guaranteed by the type,
+     * and byte* aliasing of it is explicitly allowed. */
+    uint32_t   tcv;
+    byte*      tc= (byte*)&tcv;
 
 	Get_Time( &gt_time,&gt_date, &dayOfWk,&currentTick, false,false );
 	iTime= gt_time;  iDate= gt_date;
 
-    *tcp = os9_long( aTime );         /* get time */
+    tcv  = os9_long( aTime );         /* get time */
     aTime= tc[1]*3600+tc[2]*60+tc[3]; /* seconds since midnight */
     
-    *tcp = os9_long( aDate );         /* get date */
+    tcv  = os9_long( aDate );         /* get date */
     aDate= j_date(tc[3],tc[2], hiword( aDate ) );
 
 	
