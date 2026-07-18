@@ -449,7 +449,15 @@ typedef struct dirent dirent_typ;
   typedef unsigned int os9addr_t;
 
 
-  #ifndef UNIX
+  /* `!defined MINGW` is required for CORRECTNESS, not just style: the MINGW
+   * block below deliberately typedefs `ulong` as `unsigned long long` to
+   * survive LLP64 (see the comment there). `unsigned long int` here is a
+   * DIFFERENT type, so if both branches fired this would be a conflicting
+   * typedef -- a hard compile error, not a silent 32-bit truncation.
+   * It compiles today only because MINGW happens to define UNIX as well
+   * (~17 lines up), which is a non-local fact this guard should not have
+   * to depend on. Stated explicitly so the safety is visible right here. */
+  #if !defined UNIX && !defined MINGW
     typedef unsigned     int uint;
     typedef unsigned long int ulong;
   #endif
