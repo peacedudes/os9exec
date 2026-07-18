@@ -1544,7 +1544,11 @@ os9err pFdelete( ushort pid, _spP_, ushort *modeP, char* pathname )
       
       #ifdef windows32
 //      if (!DeleteFile( adapted )) oserr= GetLastError();
-        sprintf( cmd, "del %s /A", pathname );
+        /* snprintf, not sprintf: cmd and the path are BOTH OS9PATHLEN, so any
+         * path longer than the literal prefix leaves room for overflows the
+         * stack buffer. See pDsetatt's identical pair for the full note. */
+        if (snprintf( cmd,sizeof(cmd), "del %s /A", pathname )>=(int)sizeof(cmd))
+            return E_BPNAM;
         err= call_hostcmd( cmd, pid, 0,NULL ); if (err) return err;
 
       #else
@@ -3169,11 +3173,22 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, ulong *attr )
 //      return 0; 
 //    }
 
-      sprintf( cmd, "rmdir /S /Q %s", pp );
+      /* snprintf, not sprintf: `cmd` is OS9PATHLEN and so is the syspath's
+       * fullName that `pp` points at, so a path anywhere near full length
+       * plus the literal prefix overflows this stack buffer -- GCC put it at
+       * "up to 254 bytes into a region of size 249" for the shorter of the
+       * two. Truncating silently would be worse than failing here: the
+       * result is handed straight to the host shell, and a truncated
+       * "rmdir <path>" names a DIFFERENT, shorter path that might well
+       * exist. Refuse the operation instead. (clang does not diagnose this
+       * at any warning level; found via GCC -Wformat-overflow.) */
+      if (snprintf( cmd,sizeof(cmd), "rmdir /S /Q %s", pp )>=(int)sizeof(cmd))
+          return E_BPNAM;
       err= call_hostcmd( cmd, pid, 0,NULL ); if (err) return err;
 
     #elif defined MACOSX
-      sprintf( cmd, "rmdir %s", pp );
+      if (snprintf( cmd,sizeof(cmd), "rmdir %s", pp )>=(int)sizeof(cmd))
+          return E_BPNAM;
       err= call_hostcmd( cmd, pid, 0,NULL ); if (err) return err;
 
     #elif defined MINGW
