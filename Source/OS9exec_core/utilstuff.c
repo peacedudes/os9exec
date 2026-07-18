@@ -294,7 +294,16 @@ char* nullterm( char* s1, const char* s2, ushort max )
        F$ syscall that reads a path/name argument through nullterm(). */
     if (s2==NULL) { *s1= NUL; return (char*)s2; }
 
-    regcheck( currentpid,"nullterm inptr",(uintptr_t)s2,RCHK_ARU+RCHK_MEM );
+    /* TO68K, not a raw cast: regcheck() takes a 68k ARENA OFFSET (every other
+     * caller passes a guest register or TO68K(...)), while s2 is a HOST pointer
+     * (FROM68K of a guest register, per the comment above). Casting it straight
+     * to regcheck's uint32_t truncated a 64-bit host pointer to its low 32 bits
+     * under LLP64, so the RCHK_ARU/RCHK_MEM range checks were validating a
+     * garbage value against the arena bounds -- the guard meant to catch
+     * out-of-arena guest name pointers was effectively inert. Same "host pointer
+     * stashed in something 32-bit" family as the earlier ulong/LLP64 fix;
+     * surfaced here by clang's -Wshorten-64-to-32 on the ARM64 build. */
+    regcheck( currentpid,"nullterm inptr",TO68K(s2),RCHK_ARU+RCHK_MEM );
     while(*s2>' ') {
         if (n++<max) *s1++= *s2++; /* don't use max-- structure any more */
         else                 s2++; /* don't copy more, simply increment */
