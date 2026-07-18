@@ -47,6 +47,11 @@
 #ifndef _os9_ll_h
 #define _os9_ll_h
 
+/* memcpy(), for the alignment-safe GET_OS9L/SET_OS9L/GET_OS9W/SET_OS9W
+ * accessors below. os9exec_incl.h already pulls string.h in ahead of this
+ * header, but state it here too so a direct include or a reordering can't
+ * silently break them -- same reasoning as the endianness note further down. */
+#include <string.h>
 
 /* this is required to allow the use of original */
 /* "module.h" with its ulong definition on Linux */
