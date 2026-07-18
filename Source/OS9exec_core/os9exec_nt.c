@@ -1677,33 +1677,40 @@ static void titles( void )
 
 static Boolean TCALL_or_Exception( process_typ* cp, regs_type* crp, ushort cpid )
 /* Exception or trap handler call */
-{				
-  #define          ZERO_DIVISION_TRAP 5
+{
   ushort           vect;
   traphandler_typ* tp;
   mod_exec*        mp; /* module pointer */
   short            parentid;
    
 	if 		 (cp->vector==0xFAFA) { /* error exception */
+		Boolean hasHandler;
 		vect= cp->func >> 2; /* vector number (=offset div 4 !) */
-		if (debugcheck(dbgAnomaly,dbgNorm)) {
-		  if (vect!=ZERO_DIVISION_TRAP) {
-          //uphe_printf("main loop: Exception occurred [pid=%d] ! Vector offset=$%04X (num=%d)\n",
-          //		     cpid,cp->func,vect); 
-		    // if (!cp->isIntUtil) dumpregs(cpid);
-		    debug_procdump(cp, cpid);
-		  } // if
-		} // if
-		
+		hasHandler= (vect>=FIRSTEXCEPTION) && (vect<FIRSTEXCEPTION+NUMEXCEPTIONS)
+		         && cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr!=0;
+
+		/* Dump only a genuinely unhandled (about-to-be-fatal) exception.  A handled
+		   exception is not an anomaly -- and dumping it here is actively harmful: the
+		   baud-paced dump output fills the console FIFO and parks the process in
+		   pWaitWrite, which then blocks the handler from ever running while this dump
+		   is re-entered forever (the div-by-zero "hang").  The old code only skipped
+		   the dump for the zero-divide vector; gate it on "no handler installed", which
+		   covers every arithmetic trap BASIC09 (and anything else) catches. */
+		if (!hasHandler && debugcheck(dbgAnomaly,dbgNorm)) debug_procdump(cp, cpid);
+
 		if ((vect>=FIRSTEXCEPTION) && (vect<FIRSTEXCEPTION+NUMEXCEPTIONS)) {
 			if (cp->ErrorTraps[vect-2].handleraddr!=0) {
 				/* there is an installed handler */
 				crp->pc  = cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr; /* set handler routine address */
 				crp->a[6]= cp->memstart+0x8000; /* set A6 base */
-				
-				if (cp->ErrorTraps[vect-FIRSTEXCEPTION].handlerstack!=0) {
-					crp->a[7]=cp->ErrorTraps[vect-FIRSTEXCEPTION].handlerstack;
-				}
+
+				/* Run the handler with A7 pointing at the register block the low-level
+				   code just built (A7 = A5).  An installed handler resumes with
+				   MOVEM.L (A7)+,D0-D7/A0-A6 -- it pops its saved registers straight off
+				   A7 -- so A7 has to be that block.  The old code pointed A7 at the
+				   separate install stack instead, so the MOVEM read unrelated memory and
+				   the handler re-faulted forever. */
+				crp->a[7]= crp->a[5];
 				if (debugcheck(dbgTrapHandler,dbgDetail)) {
 					upe_printf("Calling handler at $%08X, stack ptr=$%08X\n",
 								cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr,

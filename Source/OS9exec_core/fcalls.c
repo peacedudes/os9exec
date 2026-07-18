@@ -479,7 +479,7 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
  */
 {
     ushort*      itab= (ushort*)FROM68K(rp->a[1]);
-    ushort       vect;
+    ushort       vect, venc, hoff;
     process_typ* cp= &procs[cpid];
 
     /* a1 is the REQUIRED init-table pointer; a guest passing 0 would deref NULL
@@ -487,17 +487,31 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
        means "use the current stack" -- so only a1 is guarded.) */
     if (!IN_ARENA(itab)) return os9error(E_BPADDR);
 
-    while (*itab!=0xFFFF) {
-             vect = *itab >> 2; /* get vector number */
+    /* The init table lives in guest (big-endian 68k) memory, so every word read
+       must go through os9_word().  Omitting the swap was invisible on the original
+       big-endian (PPC) host but mangles every vector number on a little-endian host
+       (e.g. $0014 -> $1400 -> vect $500), pushing them all out of the installable
+       range so NO handler installs -- which is why BASIC09's zero-divide/CHK/TRAPV
+       handlers silently failed to take, turning a catchable REAL-divide-by-zero into
+       a fatal unhandled TRAPV that kills the process. */
+    while ((venc= os9_word(*itab))!=0xFFFF) {
+             vect = venc >> 2; /* get vector number (offset div 4) */
         if ((vect>=FIRSTEXCEPTION) && (vect<FIRSTEXCEPTION+NUMEXCEPTIONS)) {
             /* installable vector routine */
-            if (*(itab+1)==0) {
+            hoff= os9_word(*(itab+1)); /* handler offset word (0 = deinstall) */
+            if (hoff==0) {
                 cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr=0; /* deinstall handler */
                 debugprintf(dbgTrapHandler,dbgNorm,
                   ("De-Installed handler for vector number $%02X\n",vect));
-            }  
+            }
             else {
-                cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr=*(itab+1)+TO68K(itab); /* install routine pointer (68k addr) */
+                /* The handler offset is measured from the byte just PAST this two-word
+                   entry (itab+2), not from the entry start -- so BASIC09's three entries,
+                   whose offsets step down by 4 as the entries step up by 4, all resolve to
+                   the one shared handler.  Using itab (entry start) landed 4 bytes early,
+                   on the tail of the previous routine, so the handler RTS'd through a
+                   register-block slot into garbage. */
+                cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr=hoff+TO68K(itab+2); /* install routine pointer (68k addr) */
                 cp->ErrorTraps[vect-FIRSTEXCEPTION].handlerstack=rp->a[0]; /* stack */
                 debugprintf(dbgTrapHandler,dbgNorm,
                   ("Installed handler at $%08X for vector number $%02X\n",

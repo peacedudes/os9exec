@@ -151,11 +151,11 @@ void handle_os9exec_exception(int nr, uaecptr oldpc)
             m68k_areg(regs, 7) -= 4;
             put_long(m68k_areg(regs, 7), m68k_dreg(regs, i)); // save D7..D0 
         }
-        // now modify registers according to requirements of error trap handler 
-        m68k_areg(regs,5) = m68k_areg(regs,7); // A5 is pointer to register stack
-        m68k_areg(regs,1) = callers_stack; // A1 is caller's stack
-        m68k_dreg(regs,7) = nr * 4; // D7 is vector OFFSET
-        // now let os9exec_nt do the rest (set A6/PC according to installed error trap handler)
+        // now modify registers according to requirements of error trap handler
+        m68k_areg(regs,5) = m68k_areg(regs,7); // A5 is pointer to register block
+        m68k_areg(regs,1) = callers_stack;     // A1 is caller's stack
+        m68k_dreg(regs,7) = nr * 4;            // D7 is vector OFFSET
+        // os9exec_nt does the rest: set A6, point A7 at the register block, jump to handler
         os9_running=0; // force exit from emulator loop
     };
 }

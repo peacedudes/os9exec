@@ -880,6 +880,146 @@ if !containerized {
     try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent("hb").path)
 }
 
+// ── F$STrap: exception-handler dispatch across a run of vectors ───────────────
+// Regression for the BASIC09 REAL/0 crash family.  Installs ONE F$STrap handler
+// over vectors 4/5/6/7 and fires illegal / zero-divide / CHK / TRAPV in turn,
+// re-entering the handler each time.  Guards the whole set of fixes: the
+// init-table byte-swap (little-endian handler install), the handler-offset base
+// (itab+2), A7=A5 handler entry, and the handled-exception dump gating.  Before
+// those, a caught arithmetic trap crashed or hung the process instead of
+// reaching its handler.  Tools are preloaded (memory-resident) so they fork by
+// name without a chx into /dd/CMDS.
+do {
+    let strapAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$STrap  equ  $0E",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect strptst,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  lea     itab(pc),a1",
+        "  suba.l  a0,a0",
+        "  OS9     F$STrap",
+        "  ori.b   #2,ccr",
+        "  trapv",
+        "t6:",
+        "  moveq   #-1,d0",
+        "  chk     #0,d0",
+        "t5:",
+        "  moveq   #1,d0",
+        "  divu    #0,d0",
+        "t4:",
+        "  dc.w    $4AFC",
+        "tdone:",
+        "  lea     mdone(pc),a0",
+        "  moveq   #mdonel,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "itab:",
+        "  dc.w    $0010",
+        "  dc.w    handler-p4",
+        "p4:",
+        "  dc.w    $0014",
+        "  dc.w    handler-p5",
+        "p5:",
+        "  dc.w    $0018",
+        "  dc.w    handler-p6",
+        "p6:",
+        "  dc.w    $001C",
+        "  dc.w    handler-p7",
+        "p7:",
+        "  dc.w    $FFFF",
+        "handler:",
+        "  move.l  a1,a7",
+        "  move.w  d7,d0",
+        "  cmpi.w  #$1C,d0",
+        "  beq     h7",
+        "  cmpi.w  #$18,d0",
+        "  beq     h6",
+        "  cmpi.w  #$14,d0",
+        "  beq     h5",
+        "  cmpi.w  #$10,d0",
+        "  beq     h4",
+        "  bra     tdone",
+        "h7:",
+        "  lea     m7(pc),a0",
+        "  moveq   #m7l,d1",
+        "  bsr     wr",
+        "  bra     t6",
+        "h6:",
+        "  lea     m6(pc),a0",
+        "  moveq   #m6l,d1",
+        "  bsr     wr",
+        "  bra     t5",
+        "h5:",
+        "  lea     m5(pc),a0",
+        "  moveq   #m5l,d1",
+        "  bsr     wr",
+        "  bra     t4",
+        "h4:",
+        "  lea     m4(pc),a0",
+        "  moveq   #m4l,d1",
+        "  bsr     wr",
+        "  bra     tdone",
+        "wr:",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  rts",
+        "m7:  dc.b  \"vector 7 (TRAPV) handler reached\",$0D",
+        "m7l  equ   *-m7",
+        "m6:  dc.b  \"vector 6 (CHK) handler reached\",$0D",
+        "m6l  equ   *-m6",
+        "m5:  dc.b  \"vector 5 (zero divide) handler reached\",$0D",
+        "m5l  equ   *-m5",
+        "m4:  dc.b  \"vector 4 (illegal) handler reached\",$0D",
+        "m4l  equ   *-m4",
+        "mdone: dc.b \"ALL FOUR EXCEPTION HANDLERS REACHED\",$0D",
+        "mdonel equ  *-mdone",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = repoRoot.appendingPathComponent("h0/strptst.a").path
+    try? strapAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "f$strap: one handler catches four exceptions in a row (TRAPV/CHK/div0/illegal)"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /dd/strptst.a -o=/dd/strptst.r",
+            "l68 /dd/strptst.r -o=/dd/strptst",
+            "/dd/strptst"
+        ], timeout: 30)
+        let reached = out.contains("vector 7 (TRAPV) handler reached")
+            && out.contains("vector 6 (CHK) handler reached")
+            && out.contains("vector 5 (zero divide) handler reached")
+            && out.contains("vector 4 (illegal) handler reached")
+            && out.contains("ALL FOUR EXCEPTION HANDLERS REACHED")
+        if reached {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [each of the four vectors must reach the handler]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["h0/strptst.a", "h0/strptst.r", "h0/strptst"] {
+        try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(leftover).path)
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 print("\nResults: \(passed) passed, \(failed) failed")
