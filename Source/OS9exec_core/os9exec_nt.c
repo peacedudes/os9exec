@@ -624,8 +624,13 @@ l2_typ  l2;
 uint32_t my_inetaddr  = 0x7F000001; /* loopback by default: 127.0.0.1 */
 
 
-/* jump back environment for SEGV exceptions */
-jmp_buf main_env;
+/* jump back environment for SEGV exceptions -- see the header for why the
+ * type differs per platform (sigsetjmp needs the larger sigjmp_buf). */
+#if defined UNIX && !defined MINGW
+  sigjmp_buf main_env;
+#else
+  jmp_buf    main_env;
+#endif
 
 
 /* tickCount at start of the program */

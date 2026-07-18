@@ -1453,8 +1453,24 @@ extern short   defSCSIBusNo;
 extern l2_typ  l2;
 extern uint32_t my_inetaddr;
 
-/* jump back environment for SEGV exceptions */
-extern jmp_buf main_env;
+/* jump back environment for SEGV exceptions.
+ *
+ * MUST be sigjmp_buf, not jmp_buf, wherever setup_exception uses the
+ * sigsetjmp/siglongjmp pair: sigsetjmp(env,1) additionally saves the signal
+ * mask, so a sigjmp_buf is strictly larger than a jmp_buf (196 vs 192 bytes
+ * on macOS/arm64 -- measured, not assumed). Declaring it jmp_buf while
+ * calling sigsetjmp on it wrote 4 bytes past the end of the object on every
+ * call, on macOS and Linux both. Caught by GCC's -Wstringop-overflow;
+ * clang does not diagnose it at any warning level.
+ *
+ * The MINGW/Windows branch has no sigsetjmp at all (it falls back to plain
+ * ISO C setjmp/longjmp -- see setup_exception), so jmp_buf is correct there
+ * and sigjmp_buf may not even exist. */
+#if defined UNIX && !defined MINGW
+  extern sigjmp_buf main_env;
+#else
+  extern jmp_buf    main_env;
+#endif
 
 /* tickCount at start of the program */
 extern ulong   startTick;
