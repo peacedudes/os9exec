@@ -174,14 +174,33 @@
     #define os9_long(l) ((((l)<<24)&0xFF000000)|(((l)>>24)&0x000000FF)|(((l)<<8)&0x00FF0000)|(((l)>>8)&0x0000FF00))
     /* no longer possible with backslash notation because of DOS file format of source !!! */
 #else
-    /* access register parts */
-    #define loword(reg) (*(((ushort*)&(reg))+1))
-    #define hiword(reg) (*(((ushort*)&(reg))+0))
-    #define lobyte(reg) (*((  (byte*)&(reg))+3))
+    /* Access register parts on a BIG-ENDIAN host.
+     *
+     * Offsets are computed from sizeof(reg) rather than hardcoded, because on
+     * big-endian the low half of a value lives at the END of the object, so a
+     * fixed "+1 word / +3 bytes" silently assumes the operand is exactly 32
+     * bits. Most operands are the 68k registers (ulong32, 32-bit) where that
+     * held, but two are host `ulong` -- 64-bit under LP64 -- and there the
+     * hardcoded offsets read the wrong halves entirely:
+     *   - os9exec_nt.c's `resL`, which is where the trap vector and syscall
+     *     function number are split out of llm_os9_go()'s result. Reading bits
+     *     63..48 instead of 31..16 gives every system call a garbage vector.
+     *   - modstuff.c's `b` in Update_MDir (module directory linkcount).
+     * The little-endian branch above is immune by construction: there the low
+     * half is at offset 0 whatever the width, which is why this never showed up
+     * on any previously supported host.
+     *
+     * sizeof-relative indexing is correct for BOTH widths: for a 32-bit operand
+     * it reproduces the original +1/+0/+3, and for a 64-bit one holding a
+     * 32-bit value it lands on the same significant bits. Kept as lvalues --
+     * three call sites assign through these macros. */
+    #define loword(reg) (*(((ushort*)&(reg)) + (sizeof(reg)/sizeof(ushort) - 1)))
+    #define hiword(reg) (*(((ushort*)&(reg)) + (sizeof(reg)/sizeof(ushort) - 2)))
+    #define lobyte(reg) (*(((byte*)  &(reg)) + (sizeof(reg) - 1)))
     /* return word/byte values */
     #ifdef PARTIALRETURNREGS
-        #define retword(reg) (*(((ushort*)&(reg))+1))
-        #define retbyte(reg)  *((  (byte*)&(reg))+3))
+        #define retword(reg) (*(((ushort*)&(reg)) + (sizeof(reg)/sizeof(ushort) - 1)))
+        #define retbyte(reg) (*(((byte*)  &(reg)) + (sizeof(reg) - 1)))
     #else
         #define retword(reg) (reg)
         #define retbyte(reg) (reg)
