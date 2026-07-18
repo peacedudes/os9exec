@@ -710,7 +710,13 @@ static void go_thru_list( char* v0, char* b0, uint32_t inetAddr )
 /* adapt "localhost" at the "inetdb" module */
 {
     char      *v, *b, *blk, *bBlk;
-    uint32_t  *ipa;
+    /* byte*, not uint32_t*: the 4-byte inetaddr lives at <blk>+2 (right after the
+     * 2-byte jump field), so it is only ever 2-aligned -- dereferencing it as a
+     * uint32_t* was a misaligned access, the same undefined behaviour fixed in
+     * os9_ll.h's GET_OS9L/SET_OS9L. Read it out with memcpy into <ipaVal>
+     * instead; the byte pointer is still what the memcpy below wants as source. */
+    byte      *ipa;
+    uint32_t   ipaVal;
     short      i, jump;
     
     short   n     = os9_word( *(short*)v0 );
@@ -724,12 +730,13 @@ static void go_thru_list( char* v0, char* b0, uint32_t inetAddr )
     v= v0;
     for (i=0; i<n; i++) {
         blk= v;             v+= sizeof(short);    jump= os9_word( *(short*)blk );
-        ipa= (uint32_t*)v;  v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
+        ipa= (byte*)v;      v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
+        memcpy( &ipaVal, ipa, sizeof(ipaVal) );
 
         while (true) {
             if (ustrcmp( v,"localhost" )==0) {
                 lFound= true;
-                if (*ipa==inetAddr) return; /* everything is perfect already */
+                if (ipaVal==inetAddr) return; /* everything is perfect already */
             }
 
             v= v+strlen(v)+1;
@@ -746,15 +753,16 @@ static void go_thru_list( char* v0, char* b0, uint32_t inetAddr )
     b= b0;
     for (i=0; i<n; i++) {
         blk =             v;  v+= sizeof(short);    jump= os9_word( *(short*)blk );
-        ipa = (uint32_t*)v;   v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
+        ipa = (byte*)v;       v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
+        memcpy( &ipaVal, ipa, sizeof(ipaVal) );
 
         bBlk=         b;       b+= sizeof(short);
-        memcpy(b, (byte*)ipa, sizeof(uint32_t)); b+= sizeof(uint32_t); /* copy 4-byte inetaddr */
+        memcpy(b, ipa, sizeof(uint32_t)); b+= sizeof(uint32_t); /* copy 4-byte inetaddr */
 
-    //  printf( "%3d %3d %08X '%s'\n", i, jump, os9_long( *ipa ), v );
+    //  printf( "%3d %3d %08X '%s'\n", i, jump, os9_long( ipaVal ), v );
 
         fill_s( &b, v );
-        if (*ipa==os9_long( inetAddr )) fill_s( &b, "localhost" );
+        if (ipaVal==os9_long( inetAddr )) fill_s( &b, "localhost" );
         fill_s( &b, ""         ); /* one additional NUL char */
         
         if ((ulong)b%2==1) b++; /* make address even */
