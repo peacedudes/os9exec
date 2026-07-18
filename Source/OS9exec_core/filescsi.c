@@ -625,11 +625,12 @@ os9err ReadFromSCSI( scsi_dev* scsi, uint32_t sectorNr, uint32_t nSectors,
 {
     os9err   err;
     byte     cb[CB_Size];
-    uint32_t* l;
+    /* SET_OS9L below: cb is a byte[] local (alignment 1), so the old
+     * (uint32_t*)&cb[0] store was potentially misaligned. */
     int      ii;
 
     for (ii=0; ii<NTries; ii++) {
-        l= (uint32_t*)&cb[0]; *l= os9_long( sectorNr); /* cb0,cb1,cb2,cb3 */
+        SET_OS9L( cb,0, sectorNr ); /* cb0,cb1,cb2,cb3 */
                     cb[0]= CmdRead;    /* and overwrite cb0 field */
                     cb[1]= (cb[1] & 0x1F) | ((scsi->LUN & 0x07)<<5); // upper 3 bits are LUN
                     cb[4]= nSectors;
@@ -656,11 +657,12 @@ os9err WriteToSCSI( scsi_dev* scsi, uint32_t sectorNr, uint32_t nSectors,
 {
     os9err   err;
     byte     cb[CB_Size];
-    uint32_t* l;
+    /* SET_OS9L below: cb is a byte[] local (alignment 1), so the old
+     * (uint32_t*)&cb[0] store was potentially misaligned. */
     int      ii;
 
     for (ii=0; ii<NTries; ii++) {
-        l= (uint32_t*)&cb[0]; *l= os9_long( sectorNr ); /* cb0,cb1,cb2,cb3 */
+        SET_OS9L( cb,0, sectorNr ); /* cb0,cb1,cb2,cb3 */
                     cb[0]= CmdWrite;   /* and overwrite cb0 field */
                     cb[1]= (cb[1] & 0x1F) | ((scsi->LUN & 0x07)<<5); // upper 3 bits are LUN
                     cb[4]= nSectors;
