@@ -194,9 +194,9 @@ var failed = 0
 let filter = CommandLine.arguments.dropFirst().first ?? ""
 
 func run(_ name: String, expectation: String, commands: [String], disk: String = diskPath,
-         check: (String) -> Bool) {
+         timeout: TimeInterval = defaultTimeout, check: (String) -> Bool) {
     guard filter.isEmpty || name.localizedCaseInsensitiveContains(filter) else { return }
-    let output = os9(commands, disk: disk)
+    let output = os9(commands, timeout: timeout, disk: disk)
     if check(output) {
         print("PASS: \(name)")
         passed += 1
@@ -444,8 +444,17 @@ check("merge: two files two lines", contains: "2 lines",
     "merge /dd/t_mg1 /dd/t_mg2 ! count",
     "del /dd/t_mg1", "del /dd/t_mg2")
 
-// disk save generates a restore script
-check("dsave: generates script", contains: "copy",        "dsave /dd")
+// disk save generates a restore script.
+// Walks the WHOLE SDK disk recursively (~2100 entries), which is genuinely slow
+// through the host-file layer: measured 12.8-13.1s on native ARM64 Windows
+// against the 15s default, so it tipped over the budget whenever the host was
+// busy and looked ~50/50 flaky. Not an emulator bug -- output is byte-identical
+// every run, and the same dsave against a RAM disk finishes in 0.14s, which is
+// what isolates the cost to the host-file walk rather than to dsave itself.
+// Budgeted for the real cost instead of thinning the test: walking a real
+// host-backed tree is exactly the coverage this one contributes.
+run("dsave: generates script", expectation: "contains: copy",
+    commands: ["dsave /dd"], timeout: 60) { $0.contains("copy") }
 
 // module integrity checker
 check("fixmod: good CRC",        contains: "CRC matches", "fixmod \(sdkCmds)/echo")
