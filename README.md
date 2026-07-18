@@ -2,7 +2,7 @@
 
 Run real OS-9/68k binaries on a modern machine. OS9exec emulates the 68000 and the OS-9 kernel — a genuine OS-9 shell with pipes, redirection, job control, and a full filesystem.
 
-**Platforms:** macOS (arm64/Intel), Linux (64-bit/32-bit), Windows (native, via mingw-w64), Docker.
+**Platforms:** macOS (arm64/Intel), Linux (64-bit/32-bit), Windows (native x86_64 and ARM64, via mingw-w64/MSYS2/llvm-mingw), Docker.
 
 ---
 
@@ -367,7 +367,8 @@ container run -it -v /path/to/your/os9:/dd os9exec:apple /dd/CMDS/shell
 
 - **macOS:** `make` (requires Xcode Command Line Tools)
 - **Linux:** `make` (requires build-essential, clang/gcc)
-- **Windows:** native build via [mingw-w64](https://www.mingw-w64.org/) — `make OS=Windows_NT CC=x86_64-w64-mingw32-gcc` (cross-compile from macOS/Linux, or run the same command natively in a Windows shell with mingw-w64 installed). Produces `os9exec.exe`. Docker and WSL2 remain available too.
+- **Windows x86_64:** native build via [mingw-w64](https://www.mingw-w64.org/) — `make OS=Windows_NT CC=x86_64-w64-mingw32-gcc` (cross-compile from macOS/Linux, or run the same command natively in a Windows shell with mingw-w64 installed). Produces `os9exec.exe`. Docker and WSL2 remain available too.
+- **Windows ARM64 (native, not emulated x64):** confirmed working with two common clang-based toolchains, both requiring zero source changes — `make CC=clang` from an [MSYS2](https://www.msys2.org/) `CLANGARM64` shell (`pacman -S mingw-w64-clang-aarch64-toolchain make`), or the standalone [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) distribution (`make CC=aarch64-w64-mingw32-clang`). Visual Studio's `clang-cl`/MSVC toolchain does **not** currently work — it needs a `dirent`/`termios` compatibility layer against Win32 that doesn't exist yet (the codebase had one once, `msdir.c`/`msdir.h`, removed before this branch).
 - **Linux 32-bit:** `docker build -f Dockerfile.linux32 -t os9exec:linux32 .`
 
 For an optimised build: `make prod`.
