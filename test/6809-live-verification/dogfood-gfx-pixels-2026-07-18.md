@@ -63,6 +63,35 @@ that claim is *untested here*: this window sits at 0,0, so window-relative and
 screen-relative origins coincide. Retesting with a window at a non-zero
 position is the obvious follow-up.
 
+## Primitive and draw-pointer results
+
+All drawn on `/w4` and photographed. "Draw pointer" tests work by issuing a
+bare `Circle` (no coordinates) afterwards and seeing where it centres.
+
+| Claim in `gfx-windowing.md` | Result |
+|---|---|
+| `BAR` is a filled rectangle | **Confirmed** — renders solid |
+| `BOX` is an outline rectangle | **Confirmed** |
+| `BOX` does not move the draw pointer | **Confirmed** — box drawn (100,50)->(400,150), following bare circle centred on (100,50) |
+| Bare `CIRCLE`/`ELLIPSE` centre on the draw pointer | **Confirmed** in every test above |
+| `ELLIPSE` takes separate x/y radii | **Confirmed** |
+| `LINE` always leaves the draw pointer at the endpoint | **Confirmed** — see the LINE/LINEM note below |
+
+### LINE vs LINEM — a layer distinction worth not tripping over
+
+windint has two line opcodes and they behave differently, verified live:
+
+- `WLine` `$1b44` — draws, and does **not** move the draw pointer (a
+  following bare circle centred on the line's *start*).
+- `WLineM` `$1b46` — draws **and** moves the pointer to the endpoint (the
+  circle centred exactly on the line's end).
+
+GFX2 exposes only the moving one. Its `FuncTbl` has **no** `LineM` entry;
+the registered name `"Line"` points at the handler that loads `#$46`
+(`gfx2.asm` L060D). So `gfx-windowing.md` is right that GFX2's `LINE` always
+moves the pointer — but a raw-escape-code test of `$1b44` will appear to
+contradict it. Don't mistake a windint result for a GFX2 result.
+
 ## Second finding — SELECT does not bring a screen forward
 
 `display 1b 21 >/w4` (`WSelect`) produced no display change, and neither did
