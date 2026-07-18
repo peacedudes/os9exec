@@ -1487,7 +1487,7 @@ os9err OS9_F_Fork( regs_type *rp, ushort cpid )
 
     if   (!np->isIntUtil) {
        if (cp->pd._cid!=0 &&
-           cp->pd._cid!=newpid) np->pd._sid= cp->pd._cid;
+           cp->pd._cid!=os9_word(newpid)) np->pd._sid= cp->pd._cid;
     } // if
     
     if   (!np->isIntUtil) {
@@ -1527,7 +1527,7 @@ os9err OS9_F_Fork( regs_type *rp, ushort cpid )
   //      np->isNative) {
     if  (!np->isIntUtil) {
       if (cp->pd._cid!=0 &&
-          cp->pd._cid!=newpid) np->pd._sid= cp->pd._cid;
+          cp->pd._cid!=os9_word(newpid)) np->pd._sid= cp->pd._cid;
     } // if
     
     if   (!np->isIntUtil) {

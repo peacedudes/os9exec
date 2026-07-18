@@ -1425,7 +1425,7 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
         arguments[0]= (char*)mpath;  /* set module name */
 
         if (pp->pd._cid!=0 &&
-            pp->pd._cid!=newpid)       /* already children available */
+            pp->pd._cid!=os9_word(newpid)) /* already children available */
             cp->pd._sid= pp->pd._cid;  /* take child as sibling */
 
         svid= currentpid;
