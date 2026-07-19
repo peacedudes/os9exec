@@ -602,13 +602,17 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
     
     /* Ev_Link/Creat/Delet dereference the event-name pointer (a0) -- via evLink/
        evCreat/evDelet and strlen(p) -- so a guest passing 0 would deref NULL and
-       crash the host.  The evId-based ops (UnLnk/Wait/Signl) never touch it, so
-       guard only the name-using cases; return E_BPADDR for a null name. */
-    if ((evCode==Ev_Link || evCode==Ev_Creat || evCode==Ev_Delet) && !IN_ARENA(p))
-        return os9error(E_BPADDR);
+       crash the host.  The evId-based ops (UnLnk/Wait/Signl) never touch it.
+       The check sits INSIDE each name-using case rather than in one combined
+       `if (evCode==Ev_Link || ...)` test above the switch: that form duplicated
+       the switch's case list in a second place that nothing kept in sync, so a
+       later name-using event added below could silently miss the guard. Keeping
+       it local means a case is either guarded or visibly is not. */
+    #define EVENT_NAME_REQUIRED()  if (!IN_ARENA(p)) return os9error(E_BPADDR)
 
     switch (evCode) {
-        case Ev_Link:        err= evLink( p, &evId );
+        case Ev_Link:   EVENT_NAME_REQUIRED();
+                             err= evLink( p, &evId );
                         if (!err) rp->d[0]=   evId;
                         break;
                         
@@ -616,7 +620,8 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
                         err = evUnLnk( evId ); 
                         break;
 
-        case Ev_Creat:  evValue=        rp->d[0];
+        case Ev_Creat:  EVENT_NAME_REQUIRED();
+                        evValue=        rp->d[0];
                         wIncr  = loword(rp->d[2]);
                         sIncr  = loword(rp->d[3]);
                     
@@ -627,7 +632,8 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
                         rp->d[0]= evId;
                         break;
                         
-        case Ev_Delet:  err=      evDelet( p );
+        case Ev_Delet:  EVENT_NAME_REQUIRED();
+                        err=      evDelet( p );
                         rp->a[0]= TO68K( p + strlen( p ) );
                         break;
 
@@ -653,7 +659,9 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
         
         default:        err= E_UNKSVC;
     }
-    
+
+    #undef EVENT_NAME_REQUIRED
+
     return err;
 } /* OS9_F_Event */
 
