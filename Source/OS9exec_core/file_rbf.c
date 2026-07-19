@@ -576,9 +576,134 @@ static void GetBuffers( _rbf_, syspath_typ* spP )
 //                     spP->nr, dev->sctSize, spP->fd_sct,spP->rw_sct );
 } /* GetBuffers */
 
+static void Set_FDSize( syspath_typ* spP, ulong size ); /* defined with the other FD accessors */
+
+/* Paths open on the same file are linked into a ring, so each one can reach
+ * the others' buffers. Every path keeps its own <fd_sct>/<rw_sct> -- they are
+ * working copies at that path's own position, and <fd_sct> is scratch that
+ * CreateNewFile deliberately repurposes -- but a path on its own cannot see
+ * what the others are doing, which is how a reader following a writer came to
+ * sit at the size, segment list and sector contents the file had when it
+ * opened. The ring turns those private buffers into a shared cache: read from
+ * the ring before the device, and take the FD from whoever is writing it. */
+
+static void RingLeave( syspath_typ* spP )
+/* unlink from the ring, leaving the others linked to each other */
+{
+    syspath_typ* spK;
+    ushort       k;
+
+    for (k=1; k<MAXSYSPATHS; k++) {
+          spK= &syspaths[k];
+      if (spK!=spP && spK->type==fRBF &&
+          spK->u.rbf.sameFile==spP->nr) {
+          spK->u.rbf.sameFile= spP->u.rbf.sameFile;
+        break;
+      } // if
+    } // for
+
+    spP->u.rbf.sameFile= spP->nr;
+} /* RingLeave */
+
+static void RingJoin( syspath_typ* spP )
+/* link into the ring of paths already open on this file (a ring of one when
+ * this is the only path). Called wherever <fd_nr> is established, not only at
+ * open: CreateNewFile moves a path off the directory onto the new file, and a
+ * path left in the wrong ring would be reading strangers' buffers. */
+{
+    rbf_typ*     rbf= &spP->u.rbf;
+    syspath_typ* spK;
+    ushort       k;
+
+    RingLeave( spP );                          /* out of the previous one first */
+    if (spP->rawMode || rbf->fd_nr==0) return; /* not a file: stays alone */
+
+    for (k=1; k<MAXSYSPATHS; k++) {
+          spK= &syspaths[k];
+      if (spK!=spP && spK->type==fRBF && !spK->rawMode &&
+          spK->u.rbf.devnr==rbf->devnr &&
+          spK->u.rbf.fd_nr==rbf->fd_nr) {
+          rbf->sameFile      = spK->u.rbf.sameFile; /* splice in behind it */
+          spK->u.rbf.sameFile= spP->nr;
+        return;
+      } // if
+    } // for
+} /* RingJoin */
+
+static void RingPublish( syspath_typ* spP, ulong size )
+/* hand this path's view of the file to the others open on it: the segment
+ * list, attributes and owner exactly as they stand in this path's FD, plus
+ * <size>, which a growing file only has in <lastPos>.
+ * The FD's own size field is deliberately left alone here. This path's FD
+ * buffer is flushed to the device by the allocate/create machinery at points
+ * of its choosing, and a size written into it ahead of those reaches the disk
+ * too early -- which silently loses directory entries. The other paths never
+ * flush an FD (a read-mode path writes none), so their copies are safe to
+ * write. */
+{
+    rbfdev_typ*  dev= &rbfdev[spP->u.rbf.devnr];
+    syspath_typ* spK;
+    ushort       k  =  spP->u.rbf.sameFile;
+
+    if (spP->fd_sct==NULL) return;
+
+    while (k!=spP->nr && k!=0) {
+             spK= &syspaths[k];
+      if (   spK->fd_sct!=NULL) {
+        memcpy   ( spK->fd_sct, spP->fd_sct, dev->sctSize );
+        Set_FDSize( spK, size );                  /* after the copy: it wins */
+        if (spK->u.rbf.lastPos<size)
+            spK->u.rbf.lastPos= size;
+      } // if
+
+      k= spK->u.rbf.sameFile;
+    } // while
+} /* RingPublish */
+
+static Boolean RingSector( syspath_typ* spP, ulong sect, byte* b, ulong len )
+/* fetch a sector from another path's buffer, if one of them is holding it:
+ * a sector written but not yet flushed exists only there, and the device
+ * still has the bytes that were in it before */
+{
+    syspath_typ* spK;
+    ushort       k= spP->u.rbf.sameFile;
+
+    while (k!=spP->nr && k!=0) {
+             spK= &syspaths[k];
+      if (   spK->rw_sct!=NULL && spK->mustW!=0 && /* 0 is "nothing pending" */
+             spK->mustW==sect) {
+        memcpy( b, spK->rw_sct, len );
+        return true;
+      } // if
+
+      k= spK->u.rbf.sameFile;
+    } // while
+
+    return false;
+} /* RingSector */
+
+static void RingInvalidate( syspath_typ* spP, ulong sect )
+/* drop this sector from the other paths' buffers. Without this they keep
+ * serving themselves the copy they already hold -- DoAccess only re-reads a
+ * sector when <rw_nr> differs -- and would never notice it has been rewritten. */
+{
+    syspath_typ* spK;
+    ushort       k= spP->u.rbf.sameFile;
+
+    while (k!=spP->nr && k!=0) {
+             spK= &syspaths[k];
+      if (   spK->rw_nr==sect && spK->mustW!=sect) /* keep its own unflushed work */
+             spK->rw_nr= 0;
+
+      k= spK->u.rbf.sameFile;
+    } // while
+} /* RingInvalidate */
+
 static void ReleaseBuffers( syspath_typ* spP )
 {
 //upe_printf( "Relbuffers %d %08X %08X\n", spP->nr, spP->fd_sct,spP->rw_sct);
+  RingLeave( spP );
+
 
   /* the NULLing is unconditional -- on its own line, so it reads that way */
   if (spP->fd_sct!=NULL) release_mem( spP->fd_sct );
@@ -2578,11 +2703,14 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
           if (*mw!=0) {
           //  if (dev->multiSct) upe_printf( "Tsct slm n n0 offs d len %7d %7d %7d %7d %7d %7d %7d\n", sect,slim,n,n0,offs,d,*lenP );
               err= WriteSector( dev,  *mw,1, spP->rw_sct ); if (err) break;
+              RingInvalidate ( spP,   *mw );
                 *mw= 0; /* now it is written */
           } // if
 
           if (!mlt || !wMode) {
-            err= ReadSector( dev, sect,n, b ); if (err) break;
+            if (n!=1 || !RingSector( spP, sect, b, dev->sctSize )) {
+              err= ReadSector( dev, sect,n, b ); if (err) break;
+            } // if
         //  if (dev->multiSct) upe_printf( "Rsct slm n n0 offs d len %7d %7d %7d %7d %7d %7d %7d\n", sect,slim,n,n0,offs,d,*lenP );
             spP->rw_nr= sect + n0;
                 
@@ -2613,10 +2741,15 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
             } // for
         } // if
     
-        /* copy to/from the buffer */   
+        /* copy to/from the buffer */
         if (wMode) {
             if (!mlt) {
                 memcpy(spP->rw_sct+offs, buffer+boffs, maxc);
+                /* the moment it is dirtied, not when it is eventually flushed:
+                 * a small file may never flush before close, and a reader
+                 * holding this sector goes on serving itself the copy it took
+                 * before this write unless it is dropped now */
+                RingInvalidate( spP, sect );
             }
             
             if (*mw!=0 && *mw!=sect) { /* if sector nr has changed */
@@ -2670,9 +2803,15 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
         rbf->lastPos= sv;
     }
     
-    if (rbf->lastPos< rbf->currPos) /* adapt lastpos */
+    if (rbf->lastPos< rbf->currPos) { /* adapt lastpos */
         rbf->lastPos= rbf->currPos;
-    
+
+        /* the file just grew: hand the others the new size, and the segment
+         * list that goes with it, so a reader following this writer can both
+         * tell there is more and find the sectors it landed in */
+        if (wMode && !spP->rawMode) RingPublish( spP, rbf->lastPos );
+    } // if
+
     debugprintf( dbgFiles,dbgDetail,("# <DoAccess (%s): n=%d\n", wMode ? "write":"read", *lenP ));
     return err;
 } /* DoAccess */
@@ -2708,6 +2847,9 @@ static os9err OpenDir( rbfdev_typ* dev, ulong dfd, ushort *sp )
     GetBuffers  ( dev,spP );      /* dev must be assigned before */
 
     rbf         = &spP->u.rbf;
+    rbf->sameFile= *sp;           /* a ring of its own: a reused slot would
+                                   * otherwise carry a stale link, and the ring
+                                   * scan could follow it into this path */
     rbf->currPos= 0;              /* initialize position to 0 */
     rbf->wMode  = true;           /* by default it can be written */
     rbf->devnr  = dev->nr;
@@ -2841,6 +2983,7 @@ static os9err CreateNewFile( ushort pid, syspath_typ* spP, byte fileAtt, char* n
     err= AllocateBlocks ( spP, scs, &fd,  &ascs, 0 ); if (err) return err;
   //printf( "c) err=%d, ascs=%d\n", err, ascs );
          spP->u.rbf.fd_nr=          fd; /* access them correctly */
+         RingJoin( spP );               /* now a path on the new file, not the dir */
          spP->u.rbf.fddir=     dfd;
     err= Create_FD      ( spP,         fileAtt, owner, 0 ); if (err) return err;
     err= Access_DirEntry( dev, dfd, fd,   name, d ); if (err) return err;
@@ -2913,6 +3056,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     rbf->currPos= 0; /* initialize position to 0 */
     rbf->lastPos= 0;
     rbf->flushFDCache= false;
+    rbf->sameFile= spP->nr; /* alone until RingJoin finds this file's others */
 
         root= IsRoot( pathname ); /* root path must be a directory */
     if (root && isFile) return E_FNA;
@@ -3107,6 +3251,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     
 //  printf( "RelBuffers %08X %08X %d\n", spP->fd_sct, spP->rw_sct, err );
     if    (err) ReleaseBuffers( spP );
+    else        RingJoin      ( spP ); /* <fd_nr> is only final once open succeeds */
     return err;
 } /* pRopen */
 

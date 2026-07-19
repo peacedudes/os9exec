@@ -798,6 +798,7 @@ typedef struct {
             uint32_t  fd_nr;        // current FD logical sector number
             uint32_t  fddir;        // current FD logical sector of the dir
             uint32_t  deptr;        // dir entry ptr
+            ushort    sameFile;     // ring of the paths open on this same file
         } rbf_typ;
 
 /* variant for SCF objects */
