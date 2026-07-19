@@ -1,0 +1,28 @@
+# Build os9exec against musl libc (Alpine), a distinct libc oracle from glibc.
+#
+# Worth its own image: two real bugs were fixed only because a non-glibc libc
+# was contemplated -- a Linux branch reaching for the glibc-internal `__mode_t`
+# (8c4f2a0) and a bogus `struct __dirstream` shadowing the real DIR type
+# (28a24a0). Both were invisible to every glibc build. musl also differs from
+# glibc in ways the suite can actually exercise at runtime: no `__` reserved
+# aliases, stricter POSIX-only headers, and different stdio buffering.
+FROM alpine:3.20 AS builder
+
+RUN apk add --no-cache build-base
+
+WORKDIR /build
+COPY . .
+
+RUN make clean && make
+
+# Runtime stage
+FROM alpine:3.20
+
+COPY --from=builder /build/os9exec /usr/local/bin/os9exec
+
+# See docker/Dockerfile for why this must not be "/" -- os9exec resolves an hX
+# device relative to its working directory, so at "/" the host path and the
+# OS-9 device path collide and the device never registers.
+WORKDIR /work
+
+ENTRYPOINT ["os9exec"]
