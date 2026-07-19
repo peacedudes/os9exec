@@ -1877,7 +1877,17 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
       struct stat info;
       syspath_typ spRec;
       Boolean     ok;
-      
+
+      /* `mode_t` is the POSIX spelling and works on every libc. This used to be
+       * a three-way #if that declared the SAME variable in each branch, with
+       * the Linux branch alone spelling it `__mode_t` -- a glibc-INTERNAL name
+       * (leading double underscore is reserved to the implementation, and glibc
+       * only exposes it as an implementation detail). musl does not define it,
+       * so the Linux build failed to compile on Alpine with "unknown type name
+       * '__mode_t'". Nothing needed the split: one portable declaration
+       * replaces all three branches. */
+      mode_t      v;
+
       #ifdef windows32
         HANDLE hFile;
         SYSTEMTIME sy;
@@ -1886,14 +1896,8 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
         WIN32_FIND_DATA data;
         FILETIME cr, lastA, lastW, lastL;
         Boolean uDir= false;
-              
-          mode_t v;
-      #elif defined MACOSX || defined MINGW
-          mode_t v;
-      #else
-        __mode_t v;
       #endif
-      
+
     #else
       #pragma unused(fdl)
     #endif
