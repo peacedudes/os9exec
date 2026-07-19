@@ -543,17 +543,15 @@ static Boolean ConsId( char* name, char* family, int range, int offs, int *resul
 os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
 /* routine for opening serial devices */
 {
-    /* Initialised: the matcher block below can fall all the way through to its
-     * final unconditional `break` when the device name matches NO family --
-     * and ConsId() returns false WITHOUT writing *result, so `id` stayed
-     * uninitialised on that path and `spP->term_id = id` published stack
-     * garbage as a terminal ID, which is then used to index console state.
-     * Main_ID (0, the main console) is the benign deterministic fallback --
-     * the same id an unadorned "/term" gets. Found by clang scan-build
-     * ("Assigned value is garbage or undefined"); note GCC -fanalyzer did NOT
-     * report this one, and the same shape appeared separately in
-     * pipefiles.c's ConnectPTY_TTY, so it is a recurring pattern here. */
-    int    id= Main_ID;
+    /* `id` is left deliberately uninitialised: every path that reaches the use
+     * below now assigns it, because the no-match case returns an error instead
+     * of falling through (see the end of the matcher block). Keeping it
+     * uninitialised means the compiler/analyzers stay able to catch a FUTURE
+     * branch that forgets to set it -- initialising it to a plausible default
+     * would silence that warning forever and hide the next such bug.
+     * Found by clang scan-build ("Assigned value is garbage or undefined");
+     * GCC -fanalyzer did NOT report it. */
+    int    id;
 
     while (true) {
         #ifdef TERMINAL_CONSOLE /* decide which terminal id has to be taken */
@@ -566,7 +564,15 @@ os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
         if (ustrcmp(name,SerialLineA)==0) { id= SerialA_ID; break; } /* /ts1  */
         if (ustrcmp(name,SerialLineB)==0) { id= SerialB_ID; break; } /* /ts2  */
 
-        break;
+        /* Nothing matched -- REFUSE, rather than fall through with whatever
+         * `id` happens to hold. This path is reachable: "/t999" matches the
+         * "/t" family but fails ConsId's range check, so ConsId returns false
+         * without writing *result. Defaulting to a console id here would make
+         * an out-of-range or unknown device silently open the MAIN console and
+         * report success, which is worse than the uninitialised read it
+         * replaced -- pCopen returns os9err precisely so it can say no.
+         * E_UNIT is the OS-9 error for a bad unit number. */
+        return os9error(E_UNIT);
     } /* end exit part */
 
     spP->term_id= id;
