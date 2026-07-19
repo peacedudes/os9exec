@@ -49,18 +49,46 @@ run_scenario() {
                 --log-fd=2 \
                 /build/os9exec -r shell' \
         >"$out/$name.out" 2>"$out/$name.log" || true
-    errs=$(grep -c "^==.*== *\(Invalid\|Use of\|Conditional\|Syscall param\|Mismatched\|Source and dest\)" "$out/$name.log" || true)
+    # Valgrind prints ERROR SUMMARY only on a clean exit. If it is missing, the
+    # run was killed (timeout, signal) and the log is TRUNCATED -- counting
+    # error lines in it would report a reassuring "0 errors" for a scenario that
+    # never actually finished. Say so instead; a silent false clean is worse
+    # than a loud failure.
+    if ! grep -q "ERROR SUMMARY" "$out/$name.log"; then
+        printf '  %-14s DID NOT FINISH (timeout or crash) -- see %s\n' "$name" "$name.log"
+        return
+    fi
+    errs=$(awk '/ERROR SUMMARY/{print $4; exit}' "$out/$name.log")
     lost=$(awk '/definitely lost:/{gsub(/,/,"",$4); print $4; exit}' "$out/$name.log")
-    printf '  %-14s errors: %-4s definitely-lost: %s bytes\n' "$name" "${errs:-0}" "${lost:-0}"
+    printf '  %-14s errors: %-4s definitely-lost: %s bytes\n' "$name" "${errs:-?}" "${lost:-0}"
 }
 
 echo "=== valgrind sweep ==="
 run_scenario startup   "echo hello"
 run_scenario dir       "dir /dd" "dir /dd/CMDS"
 run_scenario modules   "mdir" "mfree" "procs"
-run_scenario ramdisk   "mount -r=200K h9" "dir /h9" "deiniz /h9"
+run_scenario ramdisk   "mount -r=200 /ram9" "dir /ram9" "unmount ram9"
 run_scenario pipes     "dir /dd ! sort ! tee /nil"
-run_scenario rbf       "mount -k=500K h8" "dir /h8" "free /h8" "deiniz /h8"
+run_scenario rbf       "mount -k=500 /h8" "dir /h8" "free /h8" "unmount h8"
+
+# Aimed by the coverage pass (ROADMAP item 1): these subsystems are among the
+# least-executed reachable code, so they are where an unexercised memory bug is
+# most likely to still be hiding.
+run_scenario move      "mount -r=200 /ram9" "makdir /ram9/D" "build /ram9/a" "x" "" \
+                       "move /ram9/a /ram9/D/a" "move -w=/ram9/D /ram9/D/a" \
+                       "dir /ram9/D" "unmount ram9"
+run_scenario copy      "mount -r=200 /ram9" "build /ram9/src" "content" "" \
+                       "copy /ram9/src /ram9/dst" "list /ram9/dst" \
+                       "del /ram9/dst" "unmount ram9"
+# dsave copies a whole directory tree, so point it at a small scratch dir, NOT
+# at /dd -- dsaving all of /dd overflows a 200-block RAM disk (E$Full) and then
+# grinds past the timeout under Valgrind without ever reporting.
+run_scenario dsave     "makdir /dd/t_vgsrc" "build /dd/t_vgsrc/f1" "content" "" \
+                       "mount -r=200 /ram9" "chd /dd/t_vgsrc" "dsave -ive /ram9" \
+                       "dir /ram9" "chd /dd" "unmount ram9" \
+                       "del /dd/t_vgsrc/f1" "deldir -q /dd/t_vgsrc"
+run_scenario errors    "dir /nonexistent" "del /dd/nosuchfile" "list /dd/nope" \
+                       "move /dd/nope /dd/nope2" "unmount nosuchdev"
 
 echo
 echo "logs in $out"
