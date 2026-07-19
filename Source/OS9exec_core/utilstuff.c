@@ -2294,12 +2294,26 @@ Boolean SCSI_Device( const char* os9path,
       char* q;
       const int L_Plen= strlen(L_P);
       
-      strncpy( name, dEnt->d_name, DIRNAMSZ );
-           
+      /* strncpy does NOT terminate when the source is at least as long as the
+       * limit, and both callers pass exactly char[DIRNAMSZ]. A host filename of
+       * >=28 characters therefore filled `name` with no NUL at all, and every
+       * C-string operation below then ran off the end -- Valgrind reported 36
+       * "conditional jump depends on uninitialised value(s)" hits inside the
+       * strstr() below, reached from CaseSens/AdjustPath, i.e. on ordinary path
+       * resolution. Copy one fewer byte and terminate explicitly. 27 chars is
+       * the real ceiling here regardless: the caller turns this back into an
+       * OS-9 high-bit-terminated name via strlen(), which needs the NUL. */
+      strncpy( name, dEnt->d_name, DIRNAMSZ-1 );
+      name[DIRNAMSZ-1]= NUL;
+
       if (ustrncmp( name,L_P, L_Plen )==0 && do_2e_conv) {
-                    name[0]=  '.';  /* convert ".xx" string */
-                    name[1]= NUL;
-            strcat( name, &name[L_Plen] );
+            /* memmove, not strcat: source and destination are the SAME buffer
+             * (appending name+L_Plen onto name+1), which strcat does not allow
+             * -- overlapping arguments are undefined behaviour. It happened to
+             * work because the copy runs from a higher index to a lower one. */
+            size_t restlen= strlen( &name[L_Plen] );
+            memmove( &name[1], &name[L_Plen], restlen+1 );
+            name[0]= '.';  /* convert ".xx" string */
       }
       
       while (true) {
