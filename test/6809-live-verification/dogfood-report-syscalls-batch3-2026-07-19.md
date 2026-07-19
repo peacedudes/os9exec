@@ -127,23 +127,55 @@ FAIL F$GProcP err=00208
   space") if this CoCo3 NitrOS-9 target is Level 1, but that's
   speculation.
 
-## Blocked — `batch3-04.a` (`I$Dup`/`I$WritLn`/`I$DeletX`) not completed
+## Group 4 — `batch3-04.a` (`I$Dup`/`I$WritLn`/`I$DeletX`), resolved after a detour
 
 After fixing the missing `CLAUDE/` path prefix, the test still failed:
 `I$Open("CLAUDE/synctest.dat", A=1)` → `Error #214 - No Permission`.
-Confirmed this isn't a test-code bug: even the interactive shell's own
+Confirmed this wasn't a test-code bug: even the interactive shell's own
 `dir -e CLAUDE/synctest.dat` (a completely different command) hit the
-identical `Error #214` in the same session, while `attr CLAUDE/synctest.dat`
-(no `-e`) succeeded and showed `----r-wr` (public read granted, public
-write not). This looks like a **session-identity issue, not a NitrOS-9 or
-os9exec bug**: this session's shell was likely never explicitly logged in
-as `claude` (unlike earlier sessions today that created/used
-`synctest.dat` successfully under that identity) — `login claude` was
-attempted but didn't complete cleanly against the REPL's gated-send
-channel this pass. Left unresolved. **For a future session**: either do
-an explicit, verified `login claude` before any file-touching test, or
-create a fresh test fixture rather than reusing `synctest.dat` across
-sessions with uncertain ownership.
+identical `Error #214`, while `attr CLAUDE/synctest.dat` (no `-e`)
+succeeded and showed `----r-wr` (public read granted, public write not).
+
+**Root cause: this NitrOS-9 disk has no `claude` account at all.**
+`list /dd/sys/password` shows only an unnamed UID-0 entry and
+`USER1`-`USER4`; `tools/nitros9repl.sh start` boots straight to a shell
+with no login step, so every session's default identity is whatever
+that blank/UID-0 entry is, not any named user. `synctest.dat` is owned
+by someone other than that default identity (probably created via
+ToolShed, which doesn't set ownership to match any of the disk's real
+accounts), and public-write isn't granted on it — a real, correctly
+enforced permission situation, not a bug.
+
+Fixed properly: `login USER1` (no password set), then had the `I$Dup`
+test create its own fresh fixture (`I$Create` instead of `I$Open`-ing
+`synctest.dat`) rather than depend on an old file's ownership — same
+technique `I$WritLn`/`I$DeletX` already used. **`login USER1` should be
+the standing first step of every 6809 test session from here forward**,
+not the unauthenticated default.
+
+**Second, unrelated finding while fixing this**: the `CLAUDE` directory
+itself refused to create any brand-new file (`I$Create`, and separately
+the shell's own `echo >CLAUDE/name`) with `Error #218 - File Already
+Exists`, even for names `dir CLAUDE/name*` confirmed were absent —
+while `free /dd` showed 170,795 free sectors and creating the identical
+file at the disk root worked immediately. Worked around by placing the
+`I$Dup`/`I$WritLn` fixtures at the root instead of inside `CLAUDE`. Not
+root-caused, but plausibly `CLAUDE`'s own directory-extension (needed
+to add a new entry once its current allocation is full) requires
+owner-level write permission `USER1` doesn't have, and NitrOS-9
+misreports that specific failure as 218 rather than 214. Worth knowing
+for any future work that creates new files inside `CLAUDE` specifically.
+
+Final live output:
+
+```
+PASS I$Dup returned=00004
+PASS I$WritLn
+PASS I$DeletX
+```
+
+All three confirmed `Live` with no errors, fixtures cleaned up
+afterward (confirmed via `dir` — both gone).
 
 ## Provenance of this report
 
@@ -163,4 +195,4 @@ either of the sub-agent's drafts.
 - `test/6809-live-verification/batch3-01.a` — Group 1
 - `test/6809-live-verification/batch3-02.a` — Group 2 (2 bugs fixed)
 - `test/6809-live-verification/batch3-03.a` — Group 3 (3 bugs fixed)
-- `test/6809-live-verification/batch3-04.a` — Group 4 (1 bug fixed, still blocked on permissions)
+- `test/6809-live-verification/batch3-04.a` — Group 4 (fixture ownership switched to root; resolved via `login USER1`)

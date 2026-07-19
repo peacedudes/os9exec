@@ -13,12 +13,13 @@ PATHNUM equ 64
 DUPPATH equ 65
 start equ *
 
-* --- First open an existing file for I$Dup test (synctest.dat) ---
+* --- Create a fresh file for the I$Dup test (owned by whoever runs this) ---
  pshs u
- leax fname,pcr
- lda #1
+ leax dfname,pcr
+ lda #3
+ ldb #$FF
  swi2
- fcb $84
+ fcb $83
  puls u
  stb ERRB,u
  bcc openok
@@ -75,6 +76,13 @@ closp1 lda PATHNUM,u
  pshs u
  swi2
  fcb $8F
+ puls u
+* Delete the dup-test fixture (best-effort, ignore result)
+ pshs u
+ leax dfname,pcr
+ lda #1
+ swi2
+ fcb $90
  puls u
 
 * --- I$WritLn(A=path, X=buffer, Y=max length) ---
@@ -199,11 +207,11 @@ prddn lda DIGIT,u
 
 dectbl fdb 10000,1000,100,10,1
 
-fname fcs /CLAUDE/synctest.dat/
-wfname fcs /CLAUDE/wrlntest.dat/
+dfname fcs /dtfix2.dat/
+wfname fcs /wrlntest.dat/
 wrbuf fcc /TEST/
  fcb $0D
-OPFAL fcc /FAIL I$Open err=/
+OPFAL fcc /FAIL I$Create-for-dup err=/
 OPFALL equ *-OPFAL
 DUPPAS fcc /PASS I$Dup returned=/
 DUPPASL equ *-DUPPAS
