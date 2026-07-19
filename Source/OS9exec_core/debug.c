@@ -550,10 +550,28 @@ void dumpregs(ushort pid)
    int k;
     regs_type *rp;
 
+    #ifdef USE_UAEMU
+      /* Staging copy, rather than casting &regs straight to regs_type*.
+       * `regs` is UAE's `struct regstruct`, which regs_type EXTENDS: the two
+       * share a layout through the last common field (pinned by the
+       * _Static_asserts in os9_uae.c) and regs_type then adds an os9exec-only
+       * ttP/membase tail that no regstruct object has. Casting the smaller
+       * object to the larger type is fine only for as long as every read stays
+       * inside the common prefix -- true today (d/a/pc/sr below), but a future
+       * line touching rp->ttP would read past the end of `regs` with nothing
+       * to warn about it. Copying exactly sizeof(struct regstruct) into a real
+       * regs_type, the same bounded-copy shape llm_os9_go already uses, makes
+       * the tail well-defined instead of out of bounds.
+       * (GCC -fanalyzer, -Wanalyzer-allocation-size.) */
+      regs_type uaeStage;
+    #endif
+
     if (pid>=MAXPROCESSES) {
         #ifdef USE_UAEMU
-          rp= (regs_type*)&regs; /* UAE */
-          uphe_printf("UAE current Register Dump:\n");      
+          memset( &uaeStage, 0, sizeof(uaeStage) );
+          memcpy( &uaeStage, &regs, sizeof(struct regstruct) );
+          rp= &uaeStage; /* UAE */
+          uphe_printf("UAE current Register Dump:\n");
         #else
           uphe_printf("No current process to show regs for\n");
           return;
