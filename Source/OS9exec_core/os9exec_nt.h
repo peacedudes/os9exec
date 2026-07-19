@@ -1282,7 +1282,11 @@ extern  ttydev_typ  ttydev[MAXTTYDEV];
 
 
 /* the processes */
-extern  process_typ procs[MAXPROCESSES];
+/* MAXPROCESSES+1: the extra slot backs the `currentpid==MAXPROCESSES`
+ * "no current process" sentinel, which ~55 sites dereference via
+ * &procs[pid] without first range-checking. See the definition in
+ * os9exec_nt.c for the full reasoning. */
+extern  process_typ procs[MAXPROCESSES+1];
 
 /* currentpid is MAXPROCESSES while no process is running (startup, shutdown,
  * between processes), so it is NOT a valid procs[] index -- the table's last

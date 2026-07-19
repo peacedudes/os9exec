@@ -436,7 +436,19 @@ scsi_typ    scsi[MAXSCSI];
 ttydev_typ  ttydev[MAXTTYDEV];		
 
 /* the processes */
-process_typ  procs[MAXPROCESSES];
+/* MAXPROCESSES+1, not MAXPROCESSES: `currentpid` is initialised to
+ * MAXPROCESSES as the "no current process" sentinel (see its definition
+ * below), and while most readers test `pid>=MAXPROCESSES` first, ~55 sites
+ * simply take `cp= &procs[pid]` and dereference it. With exactly
+ * MAXPROCESSES entries that reads one element PAST the array whenever the
+ * sentinel is live -- undefined behaviour, caught at runtime by UBSan
+ * ("load of address ... with insufficient space for an object of type
+ * 'Boolean'" in arbitrate, and the same for 'pstate_typ' in ConsoleOut).
+ * Giving the sentinel a real, zero-initialised slot makes every one of those
+ * reads well-defined without editing 55 call sites and risking a typo in one;
+ * loops still run `k<MAXPROCESSES`, so the extra entry is never treated as a
+ * live process. */
+process_typ  procs[MAXPROCESSES+1];
 uint32_t*    prDBT       = NULL; /* all three arena-resident, allocated in init_all_mem */
 procid*      prcDsc      = NULL;
 byte*        sigdat_arena= NULL;
