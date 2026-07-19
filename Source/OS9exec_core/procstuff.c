@@ -1487,7 +1487,7 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
 
     if (err) { unlink_module( mid ); return err; }
 
-    debugprintf(dbgProcess,dbgNorm,("# prepFork: Module mid=%d, address=%p\n",mid,theModule));
+    debugprintf(dbgProcess,dbgNorm,("# prepFork: Module mid=%d, address=%p\n",mid,(void*)theModule));
 
     /* -- prepare registers */
     rp->sr=0; /* everything cleared, USER state */
@@ -1515,7 +1515,7 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
 
     /* check for stdout filter and init */
     cp->stdoutfilter= initfilterfunc( Mod_Name( theModule ), (char*)paramptr, (void**)&cp->filtermem);
-    debugprintf(dbgProcess,dbgNorm,("# prepFork: stdoutfilter=%p, filtermem=%p\n",cp->stdoutfilter,cp->filtermem));
+    debugprintf(dbgProcess,dbgNorm,("# prepFork: stdoutfilter=%p, filtermem=%p\n",(void*)(uintptr_t)cp->stdoutfilter,(void*)cp->filtermem));
     debugprintf(dbgProcess,dbgNorm,("# prepFork: Everything's ready for launch!\n"));
 
     return 0; /* ok */

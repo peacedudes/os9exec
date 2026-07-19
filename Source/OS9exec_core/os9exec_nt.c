@@ -717,7 +717,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    char *modnam;
    int k;
    
-   debugprintf(dbgStartup,dbgDeep,("# prepParams: argv=%p, argc=%d, envp=%p\n",argv, argc, envp));
+   debugprintf(dbgStartup,dbgDeep,("# prepParams: argv=%p, argc=%d, envp=%p\n",(void*)argv, argc, (void*)envp));
    /* -- initial preparations */
    modnam= Mod_Name( theModule );
    /* -- calculate parameter size */

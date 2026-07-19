@@ -744,20 +744,20 @@ ushort debugwait( void )
                        else triggername[0]=0;
                        
             case 'r' : if (tolower(inp[1])=='u') temp=MAXPROCESSES;
-                       else if (sscanf(&inp[1],"%hd", &temp)<1) temp= currentpid;
+                       else if (sscanf(&inp[1],"%hu", &temp)<1) temp= currentpid;
                        dumpregs    ( temp ); break;
                        
-            case 'v' : if      (sscanf(&inp[1],"%hd", &temp)<1) temp= MAXPROCESSES;
+            case 'v' : if      (sscanf(&inp[1],"%hu", &temp)<1) temp= MAXPROCESSES;
                        show_mem    ( temp, false,false ); break;
                        
             case 'p' : show_processes();     break;
 
-            case 'f' : if      (sscanf(&inp[1],"%hd", &temp)<1) temp= MAXPROCESSES;
+            case 'f' : if      (sscanf(&inp[1],"%hu", &temp)<1) temp= MAXPROCESSES;
                        show_files  ( temp ); break;
 
             case 'm' : show_modules( NULL ); break;
 
-            case 'k' : if      (sscanf(&inp[1],"%hd", &temp)<1) temp= currentpid;
+            case 'k' : if      (sscanf(&inp[1],"%hu", &temp)<1) temp= currentpid;
                        procs[temp].exiterr=E_PRCABT;
                        kill_process(temp);
                        break;
@@ -768,7 +768,7 @@ ushort debugwait( void )
                             break;
                         }
                          
-                        if (sscanf(&inp[1],"%hd", &temp)<1) {
+                        if (sscanf(&inp[1],"%hu", &temp)<1) {
                             temp=currentpid;
                         }
                          
