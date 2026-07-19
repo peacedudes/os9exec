@@ -238,6 +238,45 @@ type-6 window lands at window columns 60..341 — offsets 20..301 from the
 window origin, i.e. **1:1 in X**; rows 120..263 are offsets 48..191, exactly
 20 and 80 scaled by the 2.385 vertical display stretch, i.e. **1:1 in Y**.
 
+## Calling-sequence validation (foreground, no screen switching needed)
+
+Validating a call in the foreground with `PRINT` markers needs no CLEAR
+presses at all, so it is the cheap way to check argument order and arity.
+All of these were accepted with their documented signatures:
+
+| Call | Form exercised |
+|---|---|
+| `DRAW(path,option_string)` | `RUN GFX2(p,"DRAW","N40E60S40W60")` |
+| `BORDER(path,color)` | `RUN GFX2(p,"BORDER",2)` |
+| `CURXY(path,column,row)` | `RUN GFX2(p,"CURXY",5,3)` |
+| `LOGIC(path,"function")` | `RUN GFX2(p,"LOGIC","XOR")` |
+| `DEFBUFF(group,buffer,size)` | `RUN GFX2(p,"DEFBUFF",1,1,2000)` |
+| `GET(path,group,buffer,x,y,xsize,ysize)` | `RUN GFX2(p,"GET",1,1,10,10,40,40)` |
+| `PUT(path,group,buffer,x,y)` | `RUN GFX2(p,"PUT",1,1,150,100)` |
+
+One nuance: `DEFBUFF` is documented as taking **no** `path` argument, but
+passing one explicitly was accepted without error. Read "no path argument" as
+"does not require one", not "rejects one". Their *visual* behaviour
+(`DRAW`'s polyline, `GET`/`PUT` block copying, `LOGIC`'s raster op) is still
+unrendered — see open questions.
+
+## Two more traps found the hard way
+
+- **A second process opening the same `/wN` gets its OWN window**, not the
+  existing one. An attempt to keep one displayed window alive and draw into
+  it from successive test processes failed this way: the calls all succeeded
+  and the drawing landed on a *different* screen. So there is no way to avoid
+  CLEAR by reusing a displayed window — batch tests instead.
+- **`find` needs a threshold above any incidental occurrence of the colour.**
+  `#A44713` (a 4-colour window's `COLOR 3`) also appears in the Term screen's
+  orange boot text at ~1076 px, so `find A44713 500` happily matched the boot
+  screen. Use a threshold comfortably above that; a filled bar gives tens of
+  thousands of pixels, so a threshold of several thousand is safe.
+- **A background job holds its window until the REPL restarts.** Because
+  there is no `kill`, a later test that opens the same `/wN` fails its
+  `DWSET` and dies silently into the debugger with no markers printed.
+  Restart between background renders.
+
 ## Harness gotchas (these cost real time)
 
 - **There is no `kill` on this disk.** `kill <pid>` returns the shell's `?`,
