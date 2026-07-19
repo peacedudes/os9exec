@@ -160,15 +160,32 @@ test-linux:
 # do not: mingw (LLP64) catches host pointers truncated through 32-bit ints,
 # gcc-on-Linux catches NULL/format issues clang ignores, clang catches its own.
 # All three must be warning-clean.
+#
+# Each leg writes its build log to a file, then tallies it. Do NOT go back to
+# piping the build straight into `grep -c "warning:"`: a build that dies with
+# compile ERRORS emits no "warning:" lines, so it scored a clean "warnings: 0"
+# and a broken toolchain was indistinguishable from a passing one. Likewise the
+# docker leg's setup used to be an `&&` chain, so a failed `apt-get` skipped the
+# build and printed nothing at all -- a leg that never ran looked like a leg
+# that passed. Every leg must now print a tally line and shout if it failed.
+TALLY = awk '/warning:/{w++} /error:/{e++} \
+  END{printf "  warnings: %d  errors: %d\n", w+0, e+0}'
+
 warnings:
 	@echo "=== host ($(CC)) ==="
-	@$(MAKE) -B --no-print-directory 2>&1 | grep -c "warning:" | sed 's/^/  warnings: /'
+	@$(MAKE) -B --no-print-directory >/tmp/os9exec-host.log 2>&1 \
+	  || echo "  BUILD FAILED -- see /tmp/os9exec-host.log"
+	@$(TALLY) /tmp/os9exec-host.log
 	@echo "=== linux (gcc, in docker) ==="
 	@docker run --rm -v "$(CURDIR)/Source:/src/Source:ro" -v "$(CURDIR)/GNUmakefile:/src/GNUmakefile:ro" \
-	  -w /src ubuntu:24.04 sh -c 'apt-get update -qq >/dev/null 2>&1 && \
-	  apt-get install -y -qq build-essential >/dev/null 2>&1 && mkdir -p /tmp/b && \
-	  make CC=gcc OBJDIR=/tmp/b EXE=/tmp/b/os9exec 2>&1 | grep -c "warning:"' | sed 's/^/  warnings: /'
+	  -w /src ubuntu:24.04 sh -c 'set -e; apt-get update -qq >/dev/null; \
+	  apt-get install -y -qq build-essential >/dev/null; mkdir -p /tmp/b; \
+	  make CC=gcc OBJDIR=/tmp/b EXE=/tmp/b/os9exec 2>&1' >/tmp/os9exec-linux.log 2>&1 \
+	  || echo "  BUILD OR SETUP FAILED -- see /tmp/os9exec-linux.log"
+	@$(TALLY) /tmp/os9exec-linux.log
 	@echo "=== windows (mingw-w64, LLP64) ==="
 	@$(MAKE) -B --no-print-directory OS=Windows_NT CC=x86_64-w64-mingw32-gcc \
-	  OBJDIR=/tmp/os9exec-win EXE=/tmp/os9exec-win/os9exec.exe 2>&1 \
-	  | grep -c "warning:" | sed 's/^/  warnings: /'
+	  OBJDIR=/tmp/os9exec-win EXE=/tmp/os9exec-win/os9exec.exe \
+	  >/tmp/os9exec-win.log 2>&1 \
+	  || echo "  BUILD FAILED -- see /tmp/os9exec-win.log"
+	@$(TALLY) /tmp/os9exec-win.log
