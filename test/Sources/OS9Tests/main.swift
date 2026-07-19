@@ -297,15 +297,23 @@ check("dump: shows hex",         contains: "4afc",     "dump \(sdkCmds)/echo")
 // interleaving of prompts/echoes vs. paced output can legitimately differ
 // between paced and unpaced runs without either one losing or corrupting
 // data. That's not what this test exists to catch.
-// This one is genuinely paced (that's the point), so it is the slowest test in the
-// suite -- ~15s even natively, which is exactly the default timeout. Inside a
-// container the extra startup pushed it over, and it "failed" with 0 lines purely
-// from timing out. Give it real headroom rather than let it flap.
+// This one is genuinely paced (that's the point), so it is the slowest test in
+// the suite. Measured 2026-07-19: dumping `date` (3172 bytes, ~12 times the
+// 256-byte FIFO, so the fill/block/resume cycle is exercised repeatedly) takes
+// ~1.2s paced against ~0.8s unpaced. It used to dump `echo` (20496 bytes) and
+// took 8.5s for no extra coverage -- the same code path, six times over.
+//
+// If this ever reports FEWER paced lines than unpaced, resist reading it as a
+// timeout: pacing is scheduled on absolute deadlines and does not slow down
+// under host load (verified with 8 CPU spinners -- total drift under 1%), and
+// a run that genuinely ran out of time would deliver MORE output, not less.
+// Short output means the process was killed. tools/baudtime.py measures the
+// pacing directly if you need to tell those apart again.
 do {
     let pacedTimeout: TimeInterval = containerized ? 90 : 45
-    let pacedOutput   = os9(["tmode baud=115200", "dump \(sdkCmds)/echo"],
+    let pacedOutput   = os9(["tmode baud=115200", "dump \(sdkCmds)/date"],
                             timeout: pacedTimeout, paced: true)
-    let unpacedOutput = os9(["tmode baud=115200", "dump \(sdkCmds)/echo"])
+    let unpacedOutput = os9(["tmode baud=115200", "dump \(sdkCmds)/date"])
 
     func hexDumpLines(_ s: String) -> [Substring] {
         // Line endings here are "\r\n"; Swift treats that pair as a single
