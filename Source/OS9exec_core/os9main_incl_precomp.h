@@ -120,7 +120,36 @@
 #define OS9MAIN_INCL_PRECOMP_H
 
 // This is OS9exec !!
-#define OS9EXEC 1 
+#define OS9EXEC 1
+
+/* Normalise the Linux platform macro before ANY platform detection runs.
+ *
+ * This codebase tests bare `linux` in ~20 places across a dozen files. That
+ * spelling is a non-standard GNU convenience: compilers define it only in
+ * their default GNU mode. Under strict ISO (`-std=c17`, `-std=c99`, ...) only
+ * the reserved `__linux__` is defined, so every `#ifdef linux` silently went
+ * false, Linux was not recognised at all, and the platform chain fell through
+ * to the classic-Mac-Toolbox branch -- the build died on `CType.h: No such
+ * file or directory`, a message that gives no hint the real problem is
+ * language mode.
+ *
+ * Defining the alias here fixes all of those sites at once, rather than
+ * editing twenty conditionals and risking a typo in one of them. `__linux__`
+ * is the macro that is actually guaranteed; `linux` becomes a local synonym
+ * for it. Found by building with `-std=c17 -pedantic`. */
+#if defined __linux__ && !defined linux
+  #define linux 1
+#endif
+
+/* NOTE for anyone building strict-ISO (-std=c17/c11/c99 rather than the
+ * -std=gnu* default): that mode hides everything non-ISO from the system
+ * headers, and this codebase needs `ushort` (a BSD typedef sys/types.h gates
+ * on _DEFAULT_SOURCE) and `sigjmp_buf`/`sigsetjmp` (POSIX, gated on
+ * _POSIX_C_SOURCE). Those must be defined on the COMMAND LINE --
+ *   -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L
+ * -- not here: several .c files reach a system header before this one, and
+ * once glibc's features.h has been processed a later #define has no effect.
+ * Strict ISO is only ever used here as a conformance oracle, never to ship. */ 
 
 
 /* XCode is MACH, but does not know about macintosh */
