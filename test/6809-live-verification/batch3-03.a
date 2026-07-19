@@ -4,7 +4,7 @@
 * buffers for descriptor/bitmap/module-dir queries.
 
  nam SysQueryTest
- mod eom,nm,$11,$81,start,$0100
+ mod eom,nm,$11,$81,start,$1000
 nm fcs /SysQueryTest/
 OUTBUF equ 0
 VALUE equ 60
@@ -13,6 +13,9 @@ ERRB equ 63
 OWNPID equ 64
 BLKSZ equ 66
 MAPEND equ 68
+PDSCBF equ 70
+BMAPBF equ 582
+MDIRBF equ 1606
 start equ *
 
 * --- F$ID to get own PID (needed for F$GPrDsc and F$GProcP) ---
@@ -23,7 +26,7 @@ start equ *
 * --- F$GPrDsc(A=PID, X=512-byte buffer) ---
  pshs u
  lda OWNPID,u
- leax pdscbf,u
+ leax PDSCBF,u
  swi2
  fcb $18
  puls u
@@ -49,7 +52,7 @@ gprok equ *
 * --- F$GBlkMp(X=1024-byte buffer) -> D=block size, Y=map size ---
 gblkm equ *
  pshs u
- leax bmapbf,u
+ leax BMAPBF,u
  swi2
  fcb $19
  puls u
@@ -70,20 +73,19 @@ gbok equ *
  leay GBPAS,pcr
  ldb #GBPASL
  lbsr copys
- tfr d,x
- clra
+ std VALUE,u
  lbsr prdec
  lda #$20
  sta ,x+
  tfr y,d
- clra
+ std VALUE,u
  lbsr prdec
  lbsr crwrite
 
 * --- F$GModDr(X=2048-byte buffer) -> Y=copy-end, U=sys mdir start ---
 gmodr equ *
  pshs u
- leax mdirbf,u
+ leax MDIRBF,u
  swi2
  fcb $1A
  puls u
@@ -105,7 +107,7 @@ gmok equ *
  ldb #GMPASL
  lbsr copys
  tfr y,d
- clra
+ std VALUE,u
  lbsr prdec
  lbsr crwrite
 
@@ -132,7 +134,7 @@ gpok2 equ *
  ldb #GPASL
  lbsr copys
  tfr y,d
- clra
+ std VALUE,u
  lbsr prdec
  lbsr crwrite
 
@@ -177,9 +179,6 @@ prddn lda DIGIT,u
 
 dectbl fdb 10000,1000,100,10,1
 
-pdscbf rmb 512
-bmapbf rmb 1024
-mdirbf rmb 2048
 GPPAS fcc /PASS F$GPrDsc/
 GPPASL equ *-GPPAS
 GPFAL fcc /FAIL F$GPrDsc err=/

@@ -199,7 +199,7 @@ prddn lda DIGIT,u
 
 dectbl fdb 10000,1000,100,10,1
 
-fname fcs /synctest.dat/
+fname fcs /CLAUDE/synctest.dat/
 wfname fcs /CLAUDE/wrlntest.dat/
 wrbuf fcc /TEST/
  fcb $0D
