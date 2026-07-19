@@ -894,7 +894,7 @@ void init_syscalltimers(void)
 /* time display */
 static char *time_disp(ulong t)
 {
-    static char tbuf[13];
+    static char tbuf[24]; /* worst case is 19 incl. NUL -- see the snprintf below */
     ulong ms, secs, mins;
     
     
@@ -907,12 +907,19 @@ static char *time_disp(ulong t)
      * on LP64 but `unsigned long long` on Windows -- so no single length modifier
      * fits both. The values are elapsed-time components, comfortably 32-bit.
      * (Only mingw ever complained; on LP64 `%lu` happens to line up.) */
+    /* snprintf, and a buffer sized for the real worst case. The minutes field
+     * has NO width limit, so "%0u'%02u.%03u\"" needs up to
+     * 10 digits + ' + 2 + . + 3 + " + NUL = 19 bytes -- the old tbuf[13]
+     * overflowed once minutes reached 5 digits, i.e. after roughly 10000
+     * minutes (~7 days) of accumulated time, which a long-running emulator
+     * session reaches for real. Caught by GCC's -Wformat-overflow on a 32-BIT
+     * build; no 64-bit target diagnosed it, the value-range analysis differs. */
     if (ms==0) tbuf[0]= NUL; /* was sprintf(tbuf,"") -- an empty format string */
     else {
-        if (mins==0) sprintf( tbuf,     "%2u.%03u\"",
-                              (uint32_t)(secs % 60), (uint32_t)(ms % 1000) );
-        else         sprintf( tbuf, "%0u'%02u.%03u\"", (uint32_t)mins,
-                              (uint32_t)(secs % 60), (uint32_t)(ms % 1000) );
+        if (mins==0) snprintf( tbuf, sizeof(tbuf),     "%2u.%03u\"",
+                               (uint32_t)(secs % 60), (uint32_t)(ms % 1000) );
+        else         snprintf( tbuf, sizeof(tbuf), "%0u'%02u.%03u\"", (uint32_t)mins,
+                               (uint32_t)(secs % 60), (uint32_t)(ms % 1000) );
     }
 
     return tbuf;
@@ -952,11 +959,15 @@ static void show_line( Boolean show, ushort mode,
     if ((mode & STIM_TICKAVAIL) && t<ticksLim) return;
     if ((mode & STIM_PERCENT  ) && f<GLim    ) return;
     
-    if (n==-1) strcpy ( nnnn,"" );
-    else       sprintf( nnnn,"%d", n );
-    if (f<Lim) strcpy ( perc,"-" );
-  //else       sprintf( perc,"%c%1.1f%%", ustrcmp( "TOTAL idle",name )==0 ? '+':' ', f );
-    else       sprintf( perc,"%1.1f%%", f );
+    /* snprintf: both fit today (an int is at most 11 chars, and `f` is a
+     * percentage of tick counts so it stays well inside 20), but that safety
+     * rests on reasoning about value ranges rather than on the call itself.
+     * Bound them structurally so a future change to `f`'s computation cannot
+     * turn this into an overflow. */
+    if (n==-1) strcpy  ( nnnn,"" );
+    else       snprintf( nnnn, sizeof(nnnn), "%d", n );
+    if (f<Lim) strcpy  ( perc,"-" );
+    else       snprintf( perc, sizeof(perc), "%1.1f%%", f );
         
     /* t is `ulong` (a tick count) -- cast, don't re-spell the format: see time_disp */
     upo_printf("  %c%-19s  %10u  %10s %7s %12s\n",

@@ -2152,7 +2152,10 @@ os9err OS9_F_PErr( regs_type *rp, _pid_ )
     err=loword(rp->d[1]);
     get_error_strings(err, &nam,&desc);
     
-    sprintf(msgbuffer,"Error #%03d:%03d (%s) %s\n",err>>8,err &0xFF,nam,desc);
+    /* snprintf: <nam>/<desc> come from the error-string table, so they fit
+     * today -- but two unbounded %s into a fixed 255-byte buffer is safe only
+     * as long as that stays true. Bound it at the call instead. */
+    snprintf(msgbuffer,sizeof(msgbuffer),"Error #%03d:%03d (%s) %s\n",err>>8,err &0xFF,nam,desc);
     upe_printf("%s",msgbuffer); /* already formatted -- a '%' in <desc> must not re-format */
     return 0;
 } /* OS9_F_PErr */
