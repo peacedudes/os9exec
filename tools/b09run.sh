@@ -44,19 +44,49 @@ mapfile -t body || die "b09run: cannot read procedure body from stdin"
 
 script="$proc.s"
 
-# Refuse to start unless the channel is really at a shell prompt.  Driving
-# `build` with raw keystrokes into a channel that is actually sitting at a
-# BASIC09 `B:` or debugger `D:` prompt feeds the whole script to the wrong
-# reader, which then wedges the REPL — recovering from that has cost more time
-# than any test here.  Cheap to check, so check.
+# Driving `build` with raw keystrokes into a channel that is actually sitting
+# at a BASIC09 `B:` or debugger `D:` prompt feeds the whole script to the wrong
+# reader and wedges the REPL.  So make sure of the prompt first — and recover
+# automatically, because unattended test runs otherwise stall on the first
+# procedure that happens to drop into the debugger.
 session="${NITROS9REPL_SESSION:-nitros9repl}"
-last=$(tmux capture-pane -t "$session:chan" -p -S -200 2>/dev/null \
-       | grep -v '^[[:space:]]*$' | tail -1 | sed 's/[[:space:]]*$//')
-if ! printf '%s' "$last" | grep -qE '^\{N1\|[0-9A-Fa-f]+\}[^ ]*:$'; then
-    die "b09run: channel is not at a shell prompt (last line: '$last').
-       Something is still running — exit it, or restart the REPL:
-       NITROS9REPL_GUI=1 NITROS9REPL_EXTRA_XROAR=-no-ratelimit ./tools/nitros9repl.sh restart"
-fi
+
+channel_tail() {
+    tmux capture-pane -t "$session:chan" -p -S -200 2>/dev/null \
+        | grep -v '^[[:space:]]*$' | tail -1 | sed 's/[[:space:]]*$//'
+}
+
+at_shell_prompt() {
+    channel_tail | grep -qE '^\{N1\|[0-9A-Fa-f]+\}[^ ]*:$'
+}
+
+# `bye` leaves BASIC09's command prompt.  Nothing reliably leaves the debugger
+# `D:` prompt — `q`, `quit`, `kill` are rejected outright, `end`/`stop` are
+# accepted but do not return to Ready — so a restart is the only dependable
+# way out, and it is what this falls back to.
+ensure_shell_prompt() {
+    local attempt
+    for attempt in 1 2 3; do
+        at_shell_prompt && return 0
+        "$REPL" key Enter >/dev/null 2>&1
+        sleep 1
+        at_shell_prompt && return 0
+        "$REPL" key bye Enter >/dev/null 2>&1
+        sleep 1.5
+    done
+    at_shell_prompt && return 0
+
+    printf 'b09run: channel wedged at "%s" — restarting the REPL\n' "$(channel_tail)" >&2
+    NITROS9REPL_GUI="${NITROS9REPL_GUI:-1}" \
+    NITROS9REPL_EXTRA_XROAR="${NITROS9REPL_EXTRA_XROAR:--no-ratelimit}" \
+        "$REPL" restart >/dev/null 2>&1
+    sleep 2
+    [ -n "${B09RUN_CHD:-}" ] && "$REPL" send "chd $B09RUN_CHD" >/dev/null 2>&1
+    at_shell_prompt || die "b09run: REPL still not at a shell prompt after restart"
+    printf 'b09run: REPL restarted; note any background job was lost\n' >&2
+}
+
+ensure_shell_prompt
 
 # `key` (raw keystrokes) rather than `send` (prompt-gated): `build` and the
 # BASIC09 editor present their own prompts, which `send` does not recognise.
@@ -95,7 +125,9 @@ if [ -n "$background" ]; then
     # A backgrounded BASIC09 inherits /N1 for output, and its prompts then
     # interleave with the REPL's own channel and wreck it (the REPL ends up
     # parked at a stray `B:` prompt).  Send both stdout and stderr to /nil.
-    # Note OS-9 spells stderr `>>`, and append `>>>` — not the Unix meanings.
+    # Note OS-9 spells stderr `>>`.  Append is `>+` (`>-` truncates); `>>>`
+    # is NOT append, despite looking like it — verified live, it silently
+    # does nothing useful.
     "$REPL" send "basic09 #32k <$script >/nil >>/nil&"
 else
     "$REPL" send "basic09 #32k <$script"

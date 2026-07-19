@@ -12,6 +12,7 @@
 #   ./tools/cocoscreen.sh key <name>...   press keys, e.g. `key clear`, `key enter`
 #   ./tools/cocoscreen.sh type <string>   type a literal string (no trailing Enter)
 #   ./tools/cocoscreen.sh clear           press CoCo CLEAR — cycles to the next screen
+#   ./tools/cocoscreen.sh find RRGGBB [minpx]  CLEAR until that colour is on screen
 #   ./tools/cocoscreen.sh next            press CLEAR until the display actually changes
 #   ./tools/cocoscreen.sh cycle [n]       press CLEAR n times, capturing each screen
 #   ./tools/cocoscreen.sh place [x y]     move XRoar's window (default 0 0, upper-left)
@@ -150,6 +151,40 @@ cmd_next() {
     die "cocoscreen: display did not change after 8 CLEAR presses"
 }
 
+# Bring up the screen carrying a known marker colour.
+#
+# CLEAR cycles screens in an order that is not knowable in advance, only
+# screens with a live process are in the cycle at all, and injected keys are
+# sometimes dropped — so "press CLEAR n times" is not a way to reach a
+# particular window.  Instead: have the test draw a distinctive colour, then
+# press CLEAR until a capture actually contains enough of it.  Self-correcting
+# and independent of cycle length or order.
+#
+#   cocoscreen.sh find <RRGGBB> [minpixels] [maxpresses]
+cmd_find() {
+    local want="$1" minimum="${2:-200}" limit="${3:-12}" pid bin shot count i
+    [ -n "$want" ] || die "cocoscreen: find needs a colour, e.g. find A6A521"
+    pid=$(need_pid); bin=$(build sendkey)
+    mkdir -p "$SHOTDIR"
+    shot="$SHOTDIR/find-probe.png"
+    focus
+    for (( i = 0; i <= limit; i++ )); do
+        screencapture -x -o -l "$(xroar_winid)" "$shot"
+        count=$("$(build measure)" "$shot" --color "$want" 2>/dev/null \
+                | awk '/^ink pixels:/ { print $3 }')
+        count=${count:-0}
+        if [ "$count" -ge "$minimum" ]; then
+            printf 'found after %d press(es): %s px of #%s\n' "$i" "$count" "$want"
+            cp "$shot" "$SHOTDIR/found.png"
+            printf '%s\n' "$SHOTDIR/found.png"
+            return 0
+        fi
+        "$bin" "$pid" key clear
+        sleep 0.8
+    done
+    die "cocoscreen: no screen with >=$minimum px of #$want after $limit presses"
+}
+
 cmd_cycle() {
     local count="${1:-4}" pid bin i out
     pid=$(need_pid); bin=$(build sendkey)
@@ -172,6 +207,7 @@ case "${1:-}" in
            focus; "$(build sendkey)" "$(need_pid)" type "$@" ;;
     clear) focus; "$(build sendkey)" "$(need_pid)" key clear ;;
     next)  cmd_next ;;
+    find)  shift; cmd_find "$@" ;;
     measure) shift; [ $# -gt 0 ] || die "cocoscreen: measure needs a PNG path"
            "$(build measure)" "$@" ;;
     cycle) shift; cmd_cycle "${1:-4}" ;;

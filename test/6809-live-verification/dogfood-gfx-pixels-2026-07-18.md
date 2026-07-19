@@ -182,6 +182,54 @@ Confirmed `Live`:
   99, colour 200 also accepted), so "GFX2 validates its arguments" should
   not be assumed anywhere in the file.
 
+## The working recipe (use this; the rest of this file is how it was found)
+
+```sh
+NITROS9REPL_GUI=1 NITROS9REPL_EXTRA_XROAR="-no-ratelimit" \
+    ./tools/nitros9repl.sh restart
+./tools/nitros9repl.sh send 'chd /dd/CLAUDE'
+export B09RUN_CHD=/dd/CLAUDE
+
+cat > body.txt <<'EOF'
+DIM p:INTEGER
+OPEN #p,"/w5":WRITE
+RUN GFX2(p,"DWSET",6,0,0,40,24,0,1,1)
+RUN GFX2(p,"SELECT")
+RUN GFX2(p,"COLOR",3)
+RUN GFX2(p,"BAR",20,20,300,80)
+LOOP
+ENDLOOP
+EOF
+./tools/b09run.sh mytest --bg < body.txt
+
+./tools/cocoscreen.sh find A44713 5000        # locate the screen by ink colour
+./tools/cocoscreen.sh measure <png> --color A44713 --columns --rows
+```
+
+Four things make this work, each of which failed the obvious way first:
+
+1. **`SELECT` after `DWSET` is mandatory.** Without it a backgrounded
+   procedure's drawing never becomes visible on any screen — it is not that
+   the screen is hard to reach, it never appears. (`SELECT` still does not
+   display the window on its own; a CLEAR is needed too.)
+2. **`--bg` plus `LOOP`/`ENDLOOP`** keeps the path open. A procedure that
+   draws and exits tears its window down before it can be photographed.
+3. **Locate the screen by ink colour, not by counting CLEAR presses.**
+   `cocoscreen.sh find <RRGGBB> <minpx>` presses CLEAR until a capture
+   actually contains that colour. Cycle order and length are not knowable in
+   advance and keypresses are sometimes dropped, so counting presses does not
+   work.
+4. **Pick a colour the screen type actually has.** Type 5 is *2-colour*, so
+   `COLOR 2` there draws something invisible — and, per GFX2's absent bounds
+   checking, reports no error. On a 4-colour type-6 window, `COLOR 3` renders
+   `#A44713` and `COLOR 2` renders `#020202` (which is a poor marker, being
+   the Term screen's background).
+
+Verified with this recipe: `BAR(20,20,300,80)` on a full-width 40-column
+type-6 window lands at window columns 60..341 — offsets 20..301 from the
+window origin, i.e. **1:1 in X**; rows 120..263 are offsets 48..191, exactly
+20 and 80 scaled by the 2.385 vertical display stretch, i.e. **1:1 in Y**.
+
 ## Harness gotchas (these cost real time)
 
 - **There is no `kill` on this disk.** `kill <pid>` returns the shell's `?`,
