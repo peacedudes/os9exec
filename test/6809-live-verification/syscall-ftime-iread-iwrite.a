@@ -1,0 +1,338 @@
+* Live-tests F$Time and the plain (non-Ln) I$Read/I$Write register
+* contracts against os9-dev/references/6809/syscalls-and-module-format.md.
+* Pre-req: a placeholder file "synctest.dat" must already exist (any
+* content, any length) -- I$Open requires an existing path, unlike
+* I$Create, so this program never creates the file itself.
+*
+* Each result is ONE self-contained "PASS ..."/"FAIL ... err=NNN" line,
+* built straight-line into OUTBUF (no cross-call register preservation
+* assumed) so a future regression runner can just grep for FAIL.
+*
+* Uses lbsr (not bsr) throughout and 8-char-safe label names -- see
+* linkforktest.a's header comment for why.
+
+ nam TimeIOTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /TimeIOTest/
+OUTBUF equ 0
+TIMEBUF equ 60
+PATHNUM equ 66
+VALUE equ 68
+DIGIT equ 70
+ERRB equ 71
+RBUF equ 72
+start equ *
+
+* --- F$Time(X=6-byte buffer) -> buffer filled ---
+ leax TIMEBUF,u
+ swi2
+ fcb $15
+ bcc timeok
+ leax OUTBUF,u
+ leay TMFAL,pcr
+ ldb #TMFALL
+ lbsr copys
+ lbsr crwrite
+ bra afttime
+timeok equ *
+ leax OUTBUF,u
+ leay TMPAS,pcr
+ ldb #TMPASL
+ lbsr copys
+ clra
+ ldb TIMEBUF,u
+ std VALUE,u
+ lbsr prdec
+ lda #$20
+ sta ,x+
+ clra
+ ldb TIMEBUF+1,u
+ std VALUE,u
+ lbsr prdec
+ lda #$20
+ sta ,x+
+ clra
+ ldb TIMEBUF+2,u
+ std VALUE,u
+ lbsr prdec
+ lda #$20
+ sta ,x+
+ clra
+ ldb TIMEBUF+3,u
+ std VALUE,u
+ lbsr prdec
+ lda #$20
+ sta ,x+
+ clra
+ ldb TIMEBUF+4,u
+ std VALUE,u
+ lbsr prdec
+ lda #$20
+ sta ,x+
+ clra
+ ldb TIMEBUF+5,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+afttime equ *
+
+* --- I$Write plain (A=path, X=buffer, Y=count) ---
+ leax wfname,pcr
+ lda #2
+ swi2
+ fcb $84
+ bcc wopenok
+ leax OUTBUF,u
+ leay WOFAL,pcr
+ ldb #WOFALL
+ lbsr copys
+ lbsr crwrite
+ bra afterwrite
+wopenok equ *
+ sta PATHNUM,u
+ leax wdata,pcr
+ ldy #wdatal
+ lda PATHNUM,u
+ swi2
+ fcb $8A
+ bcc writeok
+ stb ERRB,u
+ leax OUTBUF,u
+ leay IWFAL,pcr
+ ldb #IWFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra closew
+writeok equ *
+* capture Y (I$Write's returned count) into VALUE BEFORE any other
+* instruction touches Y -- leay below would otherwise clobber it. This
+* is the same class of register-clobber bug already hit and fixed
+* elsewhere in this test suite (see linkforktest.a's header comment):
+* the first live run of this file printed a garbage "returned Y=15616"
+* because Y was never actually captured before being overwritten.
+ tfr y,d
+ std VALUE,u
+ leax OUTBUF,u
+ leay IWPAS,pcr
+ ldb #IWPASL
+ lbsr copys
+ lbsr prdec
+ lbsr crwrite
+closew lda PATHNUM,u
+ swi2
+ fcb $8F
+afterwrite equ *
+
+* --- I$Read plain (A=path, X=buffer, Y=count) ---
+ leax wfname,pcr
+ lda #1
+ swi2
+ fcb $84
+ bcc ropenok
+ leax OUTBUF,u
+ leay ROFAL,pcr
+ ldb #ROFALL
+ lbsr copys
+ lbsr crwrite
+ lbra done
+ropenok equ *
+ sta PATHNUM,u
+ leax RBUF,u
+ ldy #wdatal
+ lda PATHNUM,u
+ swi2
+ fcb $89
+ bcc readok
+ stb ERRB,u
+ leax OUTBUF,u
+ leay IRFAL,pcr
+ ldb #IRFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra closer
+readok equ *
+ leax RBUF,u
+ leay wdata,pcr
+ ldb #wdatal
+cmploop lda ,x+
+ cmpa ,y+
+ bne cmpbad
+ decb
+ bne cmploop
+ leax OUTBUF,u
+ leay IRPAS,pcr
+ ldb #IRPASL
+ lbsr copys
+ lbsr crwrite
+ bra readeof
+cmpbad equ *
+ leax OUTBUF,u
+ leay IRBAD,pcr
+ ldb #IRBADL
+ lbsr copys
+ lbsr crwrite
+readeof equ *
+ leax RBUF,u
+ ldy #10
+ lda PATHNUM,u
+ swi2
+ fcb $89
+ bcc eofbad
+ leax OUTBUF,u
+ leay EOFOK,pcr
+ ldb #EOFOKL
+ lbsr copys
+ lbsr crwrite
+ bra closer
+eofbad equ *
+ leax OUTBUF,u
+ leay EOFBD,pcr
+ ldb #EOFBDL
+ lbsr copys
+ lbsr crwrite
+closer lda PATHNUM,u
+ swi2
+ fcb $8F
+
+* --- EDGE CASE: I$Open a file that doesn't exist -> expect failure ---
+ leax nofname,pcr
+ lda #1
+ swi2
+ fcb $84
+ stb ERRB,u
+ bcc noexistbug
+ leax OUTBUF,u
+ leay NOEOK,pcr
+ ldb #NOEOKL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra afternoexist
+noexistbug equ *
+* unexpectedly opened something -- close it so we don't leak a path
+ sta PATHNUM,u
+ leax OUTBUF,u
+ leay NOEBD,pcr
+ ldb #NOEBDL
+ lbsr copys
+ lbsr crwrite
+ lda PATHNUM,u
+ swi2
+ fcb $8F
+afternoexist equ *
+
+* --- EDGE CASE: I$Read using a path number that was never opened ->
+*     expect failure ---
+ leax RBUF,u
+ ldy #5
+ lda #77
+ swi2
+ fcb $89
+ stb ERRB,u
+ bcc badpathbug
+ leax OUTBUF,u
+ leay BPEOK,pcr
+ ldb #BPEOKL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra afterbadpath
+badpathbug equ *
+ leax OUTBUF,u
+ leay BPEBD,pcr
+ ldb #BPEBDL
+ lbsr copys
+ lbsr crwrite
+afterbadpath equ *
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+wfname fcs /synctest.dat/
+nofname fcs /nosuchfile999.dat/
+wdata fcc /HELLOWORLD/
+wdatal equ *-wdata
+TMPAS fcc /PASS F$Time /
+TMPASL equ *-TMPAS
+TMFAL fcc /FAIL F$Time/
+TMFALL equ *-TMFAL
+WOFAL fcc /FAIL I$Open(write) -- pre-req file missing?/
+WOFALL equ *-WOFAL
+IWPAS fcc /PASS I$Write returned Y=/
+IWPASL equ *-IWPAS
+IWFAL fcc /FAIL I$Write err=/
+IWFALL equ *-IWFAL
+ROFAL fcc /FAIL I$Open(read)/
+ROFALL equ *-ROFAL
+IRPAS fcc /PASS I$Read content matches what was written/
+IRPASL equ *-IRPAS
+IRFAL fcc /FAIL I$Read err=/
+IRFALL equ *-IRFAL
+IRBAD fcc /FAIL I$Read content does not match what was written/
+IRBADL equ *-IRBAD
+EOFOK fcc /PASS I$Read past end-of-file correctly errors/
+EOFOKL equ *-EOFOK
+EOFBD fcc /FAIL I$Read past end-of-file did not error/
+EOFBDL equ *-EOFBD
+NOEOK fcc /PASS I$Open nonexistent-file correctly errored err=/
+NOEOKL equ *-NOEOK
+NOEBD fcc /FAIL I$Open nonexistent-file did not error/
+NOEBDL equ *-NOEBD
+BPEOK fcc /PASS I$Read bogus-path correctly errored err=/
+BPEOKL equ *-BPEOK
+BPEBD fcc /FAIL I$Read bogus-path did not error/
+BPEBDL equ *-BPEBD
+ emod
+eom equ *

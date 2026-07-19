@@ -1,0 +1,13 @@
+* Helper module for syscall-flink-ffork-fwait.a -- not a test on its own.
+* Exits immediately with a distinctive status (77) so a parent process
+* forking/waiting on it can confirm F$Wait returns the real exit code.
+
+ nam ChildPrg
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /ChildPrg/
+start equ *
+ ldb #77
+ swi2
+ fcb $06
+ emod
+eom equ *

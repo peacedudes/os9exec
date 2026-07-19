@@ -1,0 +1,354 @@
+* Live-tests F$Link/F$UnLink/F$Fork/F$Wait register contracts against
+* os9-dev/references/6809/syscalls-and-module-format.md -- both the
+* success path AND documented/expected failure paths (a syscall test
+* that only exercises the happy path isn't a real regression test).
+* Requires ChildPrg (childprg.a) already assembled+installed in CMDS.
+*
+* F$Link/F$UnLink target THIS PROGRAM'S OWN module (`nm`), not ChildPrg:
+* F$Link only searches the resident in-memory module directory (confirmed
+* live -- E$MNF/221 "Module not found" against ChildPrg's *file*, which
+* had never been loaded into memory by anything yet at that point), it
+* does not consult the filesystem the way F$Load does. A running
+* process's own primary module is always resident, so self-linking is a
+* clean, dependency-free way to exercise the success-path register
+* contract. The bogus-name failure test below deliberately targets a
+* name that can never be resident, to confirm E$MNF specifically.
+*
+* Each result is ONE self-contained "PASS ..."/"FAIL ..." line, built
+* straight-line into OUTBUF. Real bugs found and fixed while writing
+* this (both noted at point of fix below): register-clobber across a
+* helper call (B reused as copys' loop counter after a syscall's B
+* return value was still needed) is evidently a recurring mistake in
+* this style of test -- always stash a return register you'll need
+* later into U-relative scratch *before* any print/helper call, never
+* trust it to survive.
+*
+* Gotchas already documented elsewhere, forgot to apply up front at
+* first: asm/MIA labels are 1-8 chars, silently colliding past that
+* (short unique codes below); bsr/bra's +-127 byte range is easy to
+* exceed in a program this size (lbsr/lbra throughout).
+
+ nam LinkForkTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /LinkForkTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+HDRADDR equ 64
+FORKPID equ 66
+ERRCODE equ 68
+EXITSTAT equ 69
+start equ *
+
+* --- EDGE CASE: F$Wait with no children forked yet -> docs say this
+*     should error ("error if no children") ---
+ swi2
+ fcb $04
+* save the error code IMMEDIATELY -- nothing between the call and this
+* store may touch B (see the header comment's register-clobber lesson)
+ stb ERRCODE,u
+ bcc waitnonebug
+ leax OUTBUF,u
+ leay WNOK,pcr
+ ldb #WNOKL
+ lbsr copys
+ clra
+ ldb ERRCODE,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra afterwaitnone
+waitnonebug equ *
+ leax OUTBUF,u
+ leay WNBD,pcr
+ ldb #WNBDL
+ lbsr copys
+ lbsr crwrite
+afterwaitnone equ *
+
+* --- F$Link(A=0 "any type", X=name) -> A=type/lang B=attr/rev X=past
+*     name Y=entry U=header ---
+ leax nm,pcr
+ clra
+ swi2
+ fcb $00
+ bcc linkok
+ stb ERRCODE,u
+ leax OUTBUF,u
+ leay LKFAL,pcr
+ ldb #LKFALL
+ lbsr copys
+ clra
+ ldb ERRCODE,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra afterunlink
+linkok equ *
+ stu HDRADDR,u
+ leax OUTBUF,u
+ leay LKPAS,pcr
+ ldb #LKPASL
+ lbsr copys
+ tfr y,d
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+
+* --- F$UnLink(U=header addr), only reached if F$Link succeeded ---
+ ldu HDRADDR,u
+ swi2
+ fcb $02
+ bcc unlinkok
+ stb ERRCODE,u
+ leax OUTBUF,u
+ leay ULFAL,pcr
+ ldb #ULFALL
+ lbsr copys
+ clra
+ ldb ERRCODE,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra afterunlink
+unlinkok equ *
+ leax OUTBUF,u
+ leay ULPAS,pcr
+ ldb #ULPASL
+ lbsr copys
+ lbsr crwrite
+afterunlink equ *
+
+* --- EDGE CASE: F$Link to a name that can never be resident -> expect
+*     E$MNF (221) ---
+ leax bogusnm,pcr
+ clra
+ swi2
+ fcb $00
+ bcc lkbogusbug
+ stb ERRCODE,u
+ leax OUTBUF,u
+ leay LBOK,pcr
+ ldb #LBOKL
+ lbsr copys
+ clra
+ ldb ERRCODE,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra afterlkbogus
+lkbogusbug equ *
+* if this somehow succeeded, undo it so it doesn't leak
+ stu HDRADDR,u
+ leax OUTBUF,u
+ leay LBBD,pcr
+ ldb #LBBDL
+ lbsr copys
+ lbsr crwrite
+ ldu HDRADDR,u
+ swi2
+ fcb $02
+afterlkbogus equ *
+
+* --- F$Fork(A=0, B=data pages, X=name, Y=param size, U=param start)
+*     -> A=new PID X=past name ---
+ leax childnm,pcr
+ clra
+ ldb #1
+ ldy #0
+ ldu #0
+ swi2
+ fcb $03
+ bcc forkok
+ stb ERRCODE,u
+ leax OUTBUF,u
+ leay FKFAL,pcr
+ ldb #FKFALL
+ lbsr copys
+ clra
+ ldb ERRCODE,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra afterfork
+forkok equ *
+ sta FORKPID,u
+ leax OUTBUF,u
+ leay FKPAS,pcr
+ ldb #FKPASL
+ lbsr copys
+ clra
+ ldb FORKPID,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+
+* --- F$Wait() -> A=child PID B=exit status ---
+ swi2
+ fcb $04
+ bcc waitok
+ stb ERRCODE,u
+ leax OUTBUF,u
+ leay WTFAL,pcr
+ ldb #WTFALL
+ lbsr copys
+ clra
+ ldb ERRCODE,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra afterfork
+waitok equ *
+* Save B (exit status) to memory BEFORE any print call -- copys uses B
+* as its own byte counter and will clobber it otherwise. (This is
+* exactly the bug that produced "exit status wrong, got=00000" on the
+* first live run of this test.)
+ stb EXITSTAT,u
+ cmpa FORKPID,u
+ bne waitbadpid
+ leax OUTBUF,u
+ leay WPOK,pcr
+ ldb #WPOKL
+ lbsr copys
+ lbsr crwrite
+ bra checkstatus
+waitbadpid equ *
+ leax OUTBUF,u
+ leay WPBD,pcr
+ ldb #WPBDL
+ lbsr copys
+ lbsr crwrite
+checkstatus equ *
+ ldb EXITSTAT,u
+ cmpb #77
+ beq statusok
+ leax OUTBUF,u
+ leay WSBD,pcr
+ ldb #WSBDL
+ lbsr copys
+ clra
+ ldb EXITSTAT,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra afterfork
+statusok equ *
+ leax OUTBUF,u
+ leay WSOK,pcr
+ ldb #WSOKL
+ lbsr copys
+ lbsr crwrite
+afterfork equ *
+
+* --- EDGE CASE: F$Fork a name that can never resolve -> expect failure
+*     (mirrors the F$Link bogus-name case, different code path: F$Fork
+*     does its own load, F$Link only searches what's already resident) ---
+ leax bogusnm,pcr
+ clra
+ ldb #1
+ ldy #0
+ ldu #0
+ swi2
+ fcb $03
+ bcc fkbogusbug
+ stb ERRCODE,u
+ leax OUTBUF,u
+ leay FBOK,pcr
+ ldb #FBOKL
+ lbsr copys
+ clra
+ ldb ERRCODE,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra done
+fkbogusbug equ *
+* if this somehow succeeded, clean up the unexpected child
+ leax OUTBUF,u
+ leay FBBD,pcr
+ ldb #FBBDL
+ lbsr copys
+ lbsr crwrite
+ swi2
+ fcb $04
+
+done clrb
+ swi2
+ fcb $06
+
+* --- helpers ---
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+childnm fcs /ChildPrg/
+bogusnm fcs /NoSuchModule99/
+WNOK fcc /PASS F$Wait-no-children correctly errored err=/
+WNOKL equ *-WNOK
+WNBD fcc /FAIL F$Wait-no-children did not error/
+WNBDL equ *-WNBD
+LKPAS fcc /PASS F$Link entry Y=/
+LKPASL equ *-LKPAS
+LKFAL fcc /FAIL F$Link err=/
+LKFALL equ *-LKFAL
+ULPAS fcc /PASS F$UnLink/
+ULPASL equ *-ULPAS
+ULFAL fcc /FAIL F$UnLink err=/
+ULFALL equ *-ULFAL
+LBOK fcc /PASS F$Link bogus-name correctly errored err=/
+LBOKL equ *-LBOK
+LBBD fcc /FAIL F$Link bogus-name did not error/
+LBBDL equ *-LBBD
+FKPAS fcc /PASS F$Fork new PID=/
+FKPASL equ *-FKPAS
+FKFAL fcc /FAIL F$Fork err=/
+FKFALL equ *-FKFAL
+FBOK fcc /PASS F$Fork bogus-name correctly errored err=/
+FBOKL equ *-FBOK
+FBBD fcc /FAIL F$Fork bogus-name did not error/
+FBBDL equ *-FBBD
+WTFAL fcc /FAIL F$Wait err=/
+WTFALL equ *-WTFAL
+WPOK fcc /PASS F$Wait PID matches forked PID/
+WPOKL equ *-WPOK
+WPBD fcc /FAIL F$Wait PID does not match forked PID/
+WPBDL equ *-WPBD
+WSOK fcc /PASS F$Wait exit status is 77 as expected/
+WSOKL equ *-WSOK
+WSBD fcc /FAIL F$Wait exit status wrong, got=/
+WSBDL equ *-WSBD
+ emod
+eom equ *
