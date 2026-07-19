@@ -2161,6 +2161,15 @@ static os9err FD_Segment( syspath_typ* spP, byte *attr, ulong *size, ulong *tots
   *attr= FDAtt ( spP );
   *size= FDSize( spP );
   *pref= 0; // preferred sector to allocate: none
+  /* sect and slim initialised for the same reason pref already was: they are
+   * only written inside the "found the segment holding currPos" branch below,
+   * so a file whose segment list ends immediately (scs==0 on the first entry,
+   * i.e. a zero-length file) or a currPos past every segment left them
+   * untouched -- and the caller then used *sect as a SECTOR NUMBER. Returning
+   * 0 is the same "nothing here" answer *pref gives.
+   * (clang scan-build, "Uninitialized argument value".) */
+  *sect= 0;
+  *slim= 0;
 
   v= 0;  ii= FD_Header_Size;
   while (ii+SegSize <= dev->sctSize) {
