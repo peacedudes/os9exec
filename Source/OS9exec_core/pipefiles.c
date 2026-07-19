@@ -1232,10 +1232,20 @@ os9err ConnectPTY_TTY( ushort pid, syspath_typ* spP )
     syspath_typ*   spK;
     ushort         k;
     Boolean        found= false;
-    ptype_typ      type_inv;    
+    /* Initialised, and to a type no real syspath can ever hold. The two tests
+     * below cover only fTTY and fPTY; any OTHER incoming type left this
+     * uninitialised, and it is READ further down (`spK->type==type_inv`) while
+     * scanning every syspath -- so a stack-garbage value could spuriously match
+     * an unrelated path and cross-connect it. `fNone` would be the obvious
+     * sentinel but is wrong here: it is the enum's zero value and marks UNUSED
+     * syspath slots, so it would match those. `fARRSZ` is the array-size
+     * marker, never a real path type, so it matches nothing and the scan
+     * correctly concludes there is no partner. Found by GCC -fanalyzer
+     * (-Wanalyzer-use-of-uninitialized-value); no other toolchain reported it. */
+    ptype_typ      type_inv= fARRSZ;
 
-    if (spP->type==fTTY) type_inv= fPTY;
-    if (spP->type==fPTY) type_inv= fTTY;
+    if      (spP->type==fTTY) type_inv= fPTY;
+    else if (spP->type==fPTY) type_inv= fTTY;
 
     for (k=1; k<MAXSYSPATHS; k++) {
             spK= &syspaths[k]; /* is there already a tty with the same name ? */
