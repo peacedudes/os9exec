@@ -1190,7 +1190,12 @@ os9err int_systime(ushort pid, int argc, char **argv)
     char    *p;              /* command line scanning */
     char    opt;
     ushort  h;
-    int     ticksLim;
+    /* Initialised: only set when the tick-threshold option is parsed, but
+     * show_timing() below is reached whenever ANY option set `mode`, so a
+     * combination that sets mode without the threshold passed a garbage
+     * limit into the `t<ticksLim` filter. 0 means "filter nothing", the
+     * benign default. (clang scan-build, "Uninitialized argument value".) */
+    int     ticksLim= 0;
     Boolean doDisable= false;
     
     /* get arguments and options, multiple options allowed (bfo) */
