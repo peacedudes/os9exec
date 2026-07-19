@@ -119,12 +119,50 @@ and did pass, 600/600, against code that had no locking whatsoever. To
 tell a working lock from a scheduler that never interleaves, you have to
 make a conflict happen and watch it be refused.
 
-`SS_Lock` also works now. It previously returned success while doing
-nothing, so a program that locked defensively was told it had succeeded
-and got no protection — worse than an honest error. It now takes or
-releases a record directly, reports `E$LOCK` when another process holds
-the bytes, and refuses a self-conflict with `E$DEADLK`. A zero-byte read
-or write drops everything the path holds, as documented.
+### Across two processes
+
+The case above is one process, which keeps it deterministic. The one that
+matters in practice is two:
+
+```
+before:   hold: locked at 11:27:54
+          wait: asking at 11:27:54
+          wait: got it at 11:27:54  data=RECORD01   <- the pre-update value
+
+after:    hold: locked at   11:27:55
+          wait: asking at   11:27:55
+          hold: released at 11:27:55
+          wait: got it at   11:27:55  data=RECORD02 <- waited, got the update
+```
+
+Before, the waiter was handed a record the holder was partway through
+updating, and read the stale value. After, it waits and reads what the
+holder actually wrote. That is the lost update itself, not a proxy for it.
+
+### `SS_Lock` and `SS_Ticks`
+
+`SS_Lock` previously returned success while doing nothing, so a program
+that locked defensively was told it had succeeded and got no protection —
+worse than an honest error. It now takes or releases a record directly,
+reports `E$LOCK` when another process holds the bytes, and refuses a
+self-conflict with `E$DEADLK`. A zero-byte read or write drops everything
+the path holds, as documented. `dogfood-sslock.a` walks the four steps;
+before the fix, step 2 let a second path lock bytes the first was holding.
+
+`SS_Ticks` bounds the wait, for a program that must not hang behind a peer
+that has stopped responding. It has a dependency worth knowing about: a
+timeout can only fire if the waiting process is re-run while it waits, and
+without a system tick almost nothing re-runs it. Measured against a
+two-second hold, a blocked reader got two chances to look and then none
+until the holder released — so the limit was never noticed:
+
+```
+without -q:   ssticks: FAIL blocked until the holder finished
+with    -q:   ssticks: OK   gave up as asked (E_LOCK)
+```
+
+A timeout is only as good as the scheduling underneath it, which is why
+the optional system tick and the lock work are one story rather than two.
 
 ## Reproducing
 
@@ -142,6 +180,14 @@ at all — each isolates one thing the ring has to get right:
 | `dogfood-eoflock-writerclose.bas` | a reader loses the file's contents when the writer closes |
 | `dogfood-eoflock-deadlock.bas` | a process waits for itself and hangs, instead of being refused |
 | `dogfood-recordlock.bas` | a read hands over a record another path is updating |
+| `dogfood-sslock.a` | `SS_Lock` says it locked and did not |
+
+Two need a second process, so they are a pair run as `holder & waiter`:
+
+| Test | What fails without it |
+|---|---|
+| `dogfood-recordlock-holder/-waiter.bas` | a reader gets a record mid-update |
+| `dogfood-ssticks.a` (+ holder) | a bounded wait waits forever anyway |
 
 The emulator's own regression suite is green (129/129) with these
 changes, unchanged from before them.
