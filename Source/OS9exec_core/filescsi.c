@@ -540,7 +540,12 @@ os9err Get_SSize( scsi_dev* scsi, uint32_t *sctSize )
 {
     os9err   err;
     byte     cb     [CB_Size];
-    uint32_t dat_buf[3];
+    /* Zeroed: SCSIcall only fills dat_buf on SUCCESS, but the read below runs
+     * unconditionally, so a failed call previously published whatever was on
+     * the stack as the sector size. Zero at least makes the failure
+     * deterministic and obviously-wrong rather than plausible garbage.
+     * (GCC -fanalyzer, -Wanalyzer-use-of-uninitialized-value.) */
+    uint32_t dat_buf[3]= { 0,0,0 };
 
     cb[0]= CmdSense;
     cb[1]= (scsi->LUN & 0x07)<<5;
@@ -595,9 +600,18 @@ os9err Get_DSize( scsi_dev* scsi, uint32_t *totScts )
 {
     os9err   err;
     byte     cb     [CB_Size];
-    uint32_t dat_buf[3];
+    /* Zeroed, and this one matters for behaviour, not just for UB: SCSIcall
+     * fills dat_buf only on success, yet *totScts is read from it
+     * unconditionally and then TESTED (`if (*totScts==0)`) to decide whether
+     * to fall back to ReadCapacity -- the path that exists precisely for
+     * drives which do not support mode-sense. With stack garbage that test
+     * almost never sees 0, so a failed call skipped the fallback and returned
+     * a bogus geometry. Zeroing makes a failure land on 0 and take the
+     * recovery path the code already provides.
+     * (GCC -fanalyzer, -Wanalyzer-use-of-uninitialized-value.) */
+    uint32_t dat_buf[3]= { 0,0,0 };
     uint32_t sctSize;
-    
+
     cb[0]= CmdSense;
     cb[1]= (scsi->LUN & 0x07)<<5;
     cb[2]= 0;
