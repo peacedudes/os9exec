@@ -1,4 +1,4 @@
-# Dogfood report: RBF automatic record-locking, lost-update race, real 6809 NitrOS-9 (2026-07-19)
+# Dogfood report: RBF automatic record-locking, lost-update race, NitrOS-9 (6809) (2026-07-19)
 
 Direct 6809 port of the 68k pass
 (`test/68k-live-verification/dogfood-report-lostupdate-2026-07-18.md`),
@@ -7,9 +7,10 @@ answering the question that pass's own report left explicitly open: does
 (a database-style read-modify-write cycle is race-safe under concurrent
 access with **zero** explicit `SS_Lock` calls, because `Read` in update
 mode locks the record just read and the following `Write` releases it)
-hold on **real** NitrOS-9/6809 RBF, or only on `os9exec`'s 68k
+hold on **NitrOS-9's** RBF (community-written clone of OS-9 Level 2, not
+licensed Microware source), or only on `os9exec`'s independent 68k
 reimplementation? The 68k test hit exactly 2×N=600 twice — this was
-previously untested on real 6809.
+previously untested on NitrOS-9/6809.
 
 Test shape (identical to the 68k original, only the `TYPE` field width
 differs — 6809 `INTEGER` is 2 bytes, not 4): `dogfood-lostupdate-init-6809.bas`
@@ -75,12 +76,20 @@ bug that would lose the same count every time.
 
 **Case 1 of `file-managers.md`'s Record Locking section is confirmed
 `Live` on `os9exec`/68k, and now confirmed to NOT hold the same way on
-real NitrOS-9/6809, in this exact test.** The mechanism producing the
-difference is not yet determined — candidates not distinguished by this
-pass: 6809 RBF's automatic per-record lock genuinely isn't being acquired
-or enforced for this access pattern; some layer of BASIC09-on-6809's own
-`GET`/`PUT` implementation doesn't route through the lock-acquiring path
-the way the design intent (and the 68k reimplementation) expects; or a
+NitrOS-9/6809, in this exact test.** Scope this precisely: NitrOS-9 is an
+independent community-written clone of OS-9 Level 2, not licensed
+Microware source, exactly the same relationship `os9exec` has to genuine
+68k OS-9 — this is a finding about two different reimplementations
+diverging from the same firsthand design intent in different ways, not
+"6809 gets locking wrong" or "68k gets it right." (The sibling EOF-lock
+pass found the opposite asymmetry: `os9exec` has a real bug there and
+NitrOS-9 doesn't — so neither reimplementation is "the correct one" in
+general.) The mechanism producing this divergence is not yet determined —
+candidates not distinguished by this pass: NitrOS-9's RBF automatic
+per-record lock genuinely isn't being acquired or enforced for this
+access pattern; some layer of BASIC09-on-6809's own `GET`/`PUT`
+implementation doesn't route through the lock-acquiring path the way the
+design intent (and `os9exec`'s reimplementation) expects; or a
 6809-specific buffering/caching layer serves a stale in-memory copy on
 `GET` without re-consulting the file. Settling which would need either a
 raw-syscall (`I$Read`/`I$Write`, bypassing BASIC09's own I/O layer
