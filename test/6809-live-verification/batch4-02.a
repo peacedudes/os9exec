@@ -1,0 +1,112 @@
+* Live-tests F$SSWI($0E) against
+* os9-dev/references/6809/syscalls-and-module-format.md. Installs a
+* per-process handler for vector 1 (plain SWI, never otherwise used by
+* this suite -- SWI2 is the syscall dispatch vector, so hijacking that
+* one would break every other call in this same program), triggers it
+* with a bare SWI instruction, and confirms the handler actually ran.
+
+ nam SysSwiTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysSwiTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+HANDRAN equ 64
+start equ *
+
+* --- F$SSWI(A=1 SWI, X=routine) ---
+ leax swihdlr,pcr
+ lda #1
+ swi2
+ fcb $0E
+ stb ERRB,u
+ bcc sset
+ leax OUTBUF,u
+ leay SSFAL,pcr
+ ldb #SSFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+sset equ *
+ clr HANDRAN,u
+ swi
+ nop
+ lda HANDRAN,u
+ cmpa #1
+ beq swok
+ leax OUTBUF,u
+ leay SWFAL,pcr
+ ldb #SWFALL
+ lbsr copys
+ lbsr crwrite
+ lbra done
+swok equ *
+ leax OUTBUF,u
+ leay SWPAS,pcr
+ ldb #SWPASL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+* --- Our installed SWI (vector 1) handler ---
+* Hardware SWI entry pushes CC,A,B,DP,X,Y,U,PC onto S -- U itself is
+* unchanged (only its value is saved on the stack), so U-relative
+* addressing here still reaches this process's own data area safely.
+swihdlr equ *
+ lda #1
+ sta HANDRAN,u
+ rti
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+SSFAL fcc /FAIL F$SSWI err=/
+SSFALL equ *-SSFAL
+SWPAS fcc /PASS F$SSWI handler ran/
+SWPASL equ *-SWPAS
+SWFAL fcc /FAIL F$SSWI handler did not run/
+SWFALL equ *-SWFAL
+ emod
+eom equ *

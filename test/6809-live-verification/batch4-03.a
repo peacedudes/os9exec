@@ -1,0 +1,153 @@
+* Live-tests F$SRqMem($28), F$SRtMem($29) against
+* os9-dev/references/6809/syscalls-and-module-format.md. Requests a
+* small block of process memory, writes/reads a byte through it to
+* confirm it's real usable memory, then returns it.
+
+ nam SysMemTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysMemTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+BLKADDR equ 64
+GRANTSZ equ 66
+start equ *
+
+* --- F$SRqMem(D=byte count) -> D=granted size, U=block addr ---
+ pshs u
+ ldd #16
+ swi2
+ fcb $28
+ tfr u,y
+ puls u
+ stb ERRB,u
+ bcc rqok
+ leax OUTBUF,u
+ leay RQFAL,pcr
+ ldb #RQFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+rqok equ *
+ sty BLKADDR,u
+ std GRANTSZ,u
+ leax OUTBUF,u
+ leay RQPAS,pcr
+ ldb #RQPASL
+ lbsr copys
+ std VALUE,u
+ lbsr prdec
+ lda #$20
+ sta ,x+
+ ldd BLKADDR,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+
+* --- Write/read a byte through the granted block ---
+ ldx BLKADDR,u
+ lda #$42
+ sta ,x
+ lda ,x
+ cmpa #$42
+ bne wrfail
+ leax OUTBUF,u
+ leay WRPAS,pcr
+ ldb #WRPASL
+ lbsr copys
+ lbsr crwrite
+ lbra rtmem
+wrfail equ *
+ leax OUTBUF,u
+ leay WRFAL,pcr
+ ldb #WRFALL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$SRtMem(U=block addr, D=byte count) ---
+rtmem equ *
+ pshs u
+ ldd GRANTSZ,u
+ ldu BLKADDR,u
+ swi2
+ fcb $29
+ puls u
+ stb ERRB,u
+ bcc rtok
+ leax OUTBUF,u
+ leay RTFAL,pcr
+ ldb #RTFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+rtok equ *
+ leax OUTBUF,u
+ leay RTPAS,pcr
+ ldb #RTPASL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+RQPAS fcc /PASS F$SRqMem sz=/
+RQPASL equ *-RQPAS
+RQFAL fcc /FAIL F$SRqMem err=/
+RQFALL equ *-RQFAL
+WRPAS fcc /PASS write-read through block matches/
+WRPASL equ *-WRPAS
+WRFAL fcc /FAIL write-read through block mismatch/
+WRFALL equ *-WRFAL
+RTPAS fcc /PASS F$SRtMem/
+RTPASL equ *-RTPAS
+RTFAL fcc /FAIL F$SRtMem err=/
+RTFALL equ *-RTFAL
+ emod
+eom equ *

@@ -1,0 +1,190 @@
+* Live-tests F$Move($38), F$FModul($4E), I$Attach($80)/I$Detach($81)
+* against os9-dev/references/6809/syscalls-and-module-format.md. First
+* two are documented as Level-2-dependent internally; on this Level 1
+* CoCo3 target the interesting result may well be a clean error, not
+* success -- this test's job is to find out which, not to assume.
+* I$Attach/I$Detach reattach the already-in-use terminal device, which
+* should just adjust a use count rather than doing anything disruptive.
+
+ nam SysMiscTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysMiscTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+DEVENT equ 64
+start equ *
+
+* --- F$Move(A=src task#, B=dest task#, X=src ptr, Y=count, U=dest ptr) ---
+ pshs u
+ clra
+ clrb
+ leax mvsrc,pcr
+ ldy #4
+ leau mvdst,pcr
+ swi2
+ fcb $38
+ puls u
+ stb ERRB,u
+ bcc mvok
+ leax OUTBUF,u
+ leay MVFAL,pcr
+ ldb #MVFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra fmtest
+mvok equ *
+ leax OUTBUF,u
+ leay MVPAS,pcr
+ ldb #MVPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$FModul(A=type, X=name ptr, Y=DAT image ptr) ---
+fmtest equ *
+ leax fmname,pcr
+ ldy #0
+ clra
+ swi2
+ fcb $4E
+ stb ERRB,u
+ bcc fmok
+ leax OUTBUF,u
+ leay FMFAL,pcr
+ ldb #FMFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra attest
+fmok equ *
+ leax OUTBUF,u
+ leay FMPAS,pcr
+ ldb #FMPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- I$Attach(A=access mode, X=device name) -> U=device table entry ---
+attest equ *
+ pshs u
+ leax dname,pcr
+ lda #1
+ swi2
+ fcb $80
+ tfr u,y
+ puls u
+ stb ERRB,u
+ bcc atok
+ leax OUTBUF,u
+ leay ATFAL,pcr
+ ldb #ATFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+atok equ *
+ sty DEVENT,u
+ leax OUTBUF,u
+ leay ATPAS,pcr
+ ldb #ATPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- I$Detach(U=device table entry) ---
+ pshs u
+ ldu DEVENT,u
+ swi2
+ fcb $81
+ puls u
+ stb ERRB,u
+ bcc dtok
+ leax OUTBUF,u
+ leay DTFAL,pcr
+ ldb #DTFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+dtok equ *
+ leax OUTBUF,u
+ leay DTPAS,pcr
+ ldb #DTPASL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+mvsrc fcb 1,2,3,4
+mvdst fcb 0,0,0,0
+fmname fcs /childprg/
+dname fcs /N1/
+MVPAS fcc /PASS F$Move/
+MVPASL equ *-MVPAS
+MVFAL fcc /FAIL F$Move err=/
+MVFALL equ *-MVFAL
+FMPAS fcc /PASS F$FModul/
+FMPASL equ *-FMPAS
+FMFAL fcc /FAIL F$FModul err=/
+FMFALL equ *-FMFAL
+ATPAS fcc /PASS I$Attach/
+ATPASL equ *-ATPAS
+ATFAL fcc /FAIL I$Attach err=/
+ATFALL equ *-ATFAL
+DTPAS fcc /PASS I$Detach/
+DTPASL equ *-DTPAS
+DTFAL fcc /FAIL I$Detach err=/
+DTFALL equ *-DTFAL
+ emod
+eom equ *

@@ -1,0 +1,120 @@
+* Live-tests F$Load($01), F$UnLoad($1D) against
+* os9-dev/references/6809/syscalls-and-module-format.md. Each result is
+* ONE self-contained PASS/FAIL line. Loads a pre-existing utility module
+* ("hello", not otherwise used by this test suite this session) without
+* running it, then unlinks it by name.
+
+ nam SysLoadTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysLoadTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+LTYPE equ 64
+start equ *
+
+* --- F$Load(A=0 any, X=pathlist) -> same shape as F$Link ---
+ leax lname,pcr
+ clra
+ swi2
+ fcb $01
+ stb ERRB,u
+ bcc ldok
+ leax OUTBUF,u
+ leay LDFAL,pcr
+ ldb #LDFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+ldok equ *
+ sta LTYPE,u
+ leax OUTBUF,u
+ leay LDPAS,pcr
+ ldb #LDPASL
+ lbsr copys
+ tfr y,d
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+
+* --- F$UnLoad(A=type, X=name) ---
+ lda LTYPE,u
+ leax lname,pcr
+ swi2
+ fcb $1D
+ stb ERRB,u
+ bcc ulok
+ leax OUTBUF,u
+ leay ULFAL,pcr
+ ldb #ULFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+ulok equ *
+ leax OUTBUF,u
+ leay ULPAS,pcr
+ ldb #ULPASL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+lname fcs /hello4/
+LDPAS fcc /PASS F$Load entry=/
+LDPASL equ *-LDPAS
+LDFAL fcc /FAIL F$Load err=/
+LDFALL equ *-LDFAL
+ULPAS fcc /PASS F$UnLoad/
+ULPASL equ *-ULPAS
+ULFAL fcc /FAIL F$UnLoad err=/
+ULFALL equ *-ULFAL
+ emod
+eom equ *
