@@ -1843,6 +1843,7 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
          * <d2> is the parameter register, as for SS_Size/SS_Attr above. The PTY
          * manager uses d0/d1 as outputs and ignores d2. */
         case SS_Lock   : err= ((pfunc_p3_t )s->_SS_Lock  )( pid,spP, d0,d1,d2 ); break; /* $11 */
+        case SS_Ticks  : err= ((pfunc_p1_t )s->_SS_Ticks )( pid,spP, d2       ); break; /* $10 */
 
         case SS_SSig   : spP->signal_to_send=  loword(*d2);        /* $1A: sends signal on data ready */
                          spP->signal_pid    =  pid;                /* if ready, send immediately */

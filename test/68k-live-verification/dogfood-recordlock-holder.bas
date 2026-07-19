@@ -17,7 +17,7 @@ PRINT #2, "hold: locked at ", RIGHT$(DATE$,8)
 ! without a system call nothing takes it away (see -q). Both are needed:
 ! time alone would starve the waiter, a yield alone would be instantaneous.
 FOR i = 1 TO 12
-FOR j = 1 TO 400
+FOR j = 1 TO 250000
 NEXT j
 PRINT #2, "hold: still holding ", RIGHT$(DATE$,8)
 NEXT i

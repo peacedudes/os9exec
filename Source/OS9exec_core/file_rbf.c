@@ -245,6 +245,7 @@ os9err pRnam     ( ushort pid, syspath_typ*,                  char* volname );
 os9err pRpos     ( ushort pid, syspath_typ*, uint32_t *posP  );
 os9err pReof     ( ushort pid, syspath_typ* );
 os9err pRlock    ( ushort pid, syspath_typ*, uint32_t *d0, uint32_t *d1, uint32_t *d2 );
+os9err pRticks   ( ushort pid, syspath_typ*, uint32_t *d2 );
 os9err pRready   ( ushort pid, syspath_typ*, uint32_t *n     );
 os9err pRgetFD   ( ushort pid, syspath_typ*, uint32_t *maxbytP, byte* buffer );
 os9err pRgetFDInf( ushort pid, syspath_typ*, uint32_t *maxbytP,
@@ -294,6 +295,7 @@ void init_RBF( fmgr_typ* f )
     ss->_SS_Attr = (pathopfunc_typ)pRsetatt;
     ss->_SS_FD   = (pathopfunc_typ)pRsetFD;
     ss->_SS_Lock = (pathopfunc_typ)pRlock;
+    ss->_SS_Ticks= (pathopfunc_typ)pRticks;
     ss->_SS_WTrk = (pathopfunc_typ)pRWTrk;
     
      init_RBF_devs(); /* init RBF devices */
@@ -754,6 +756,29 @@ static ushort WriterOnFile( syspath_typ* spP )
     return 0;
 } /* WriterOnFile */
 
+static Boolean WaitExpired( syspath_typ* spP )
+/* has this path waited as long as SS_Ticks said it was willing to? Only ever
+ * true if a limit was actually set: with none, waiting is unbounded, which is
+ * what a program that would rather be late than fail wants.
+ *
+ * NOTE this can only fire if the waiting process is actually re-run while it
+ * waits, and without a system tick (-q) almost nothing re-runs it: measured
+ * on a 2-second hold, a blocked reader got two chances to look and then none
+ * until the holder released, so the limit was never noticed. With -q it is
+ * checked regularly and expires when asked. A timeout is only as good as the
+ * scheduling underneath it. */
+{
+    rbf_typ* rbf= &spP->u.rbf;
+
+    if (rbf->lockTicks==0) return false;      /* no limit asked for */
+    if (rbf->waitUntil ==0) {                 /* first time round: set the deadline */
+        rbf->waitUntil= GetSystemTick() + rbf->lockTicks;
+        return false;
+    } // if
+
+    return GetSystemTick() >= rbf->waitUntil;
+} /* WaitExpired */
+
 static void SleepOnFile( syspath_typ* spP, ushort pid )
 /* wait for this file to grow, or for its writer to close */
 {
@@ -774,6 +799,12 @@ static void WokeOnFile( ushort pid )
 
     if (cp->state==pWaitRead) set_os9_state( pid, cp->saved_state, "RBF eof resume" );
 } /* WokeOnFile */
+
+static void WaitDone( syspath_typ* spP )
+/* no longer waiting: forget the deadline so the next wait starts a fresh one */
+{
+    spP->u.rbf.waitUntil= 0;
+} /* WaitDone */
 
 static void WakeOnFile( syspath_typ* spP )
 /* start every path asleep on this file -- all of them, not one: each looks
@@ -2744,10 +2775,13 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
 
         if (spH!=NULL) {
           if (spH->u.rbf.ownPid==currentpid) return os9error( E_DEADLK );
+          if (WaitExpired( spP )) { WaitDone( spP ); return os9error( E_LOCK ); }
           SleepOnFile( spP, currentpid );
           *lenP= 0;
           return 0; /* the call runs again when the holder releases */
         } // if
+
+        WaitDone( spP ); /* nothing in the way: a deadline, if any, is spent */
     } // if
 
     
@@ -2808,6 +2842,8 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
                   } // if
 
                   if (wpid!=0) {
+                      if (WaitExpired( spP )) { WaitDone( spP ); err= E_LOCK; break; }
+
                       SleepOnFile( spP, currentpid );
                       *lenP= 0;
                       return 0; /* the read runs again once we are woken */
@@ -3227,6 +3263,8 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     rbf->flushFDCache= false;
     rbf->sameFile= spP->nr; /* alone until RingJoin finds this file's others */
     rbf->waitPid = 0;
+    rbf->lockTicks= 0;
+    rbf->waitUntil= 0;
     rbf->ownPid  = currentpid;
     rbf->updMode = false;
     rbf->lockBeg = 0;
@@ -3669,6 +3707,17 @@ os9err pRlock( ushort pid, syspath_typ* spP, uint32_t* d0, uint32_t* d1, uint32_
     rbf->lockEnd= end;
     return 0;
 } /* pRlock */
+
+os9err pRticks( _pid_, syspath_typ* spP, uint32_t* d2 )
+/* SS_Ticks: how long this path is willing to wait for a record somebody else
+ * is holding, before giving up with E_LOCK instead of waiting on. Zero -- the
+ * default -- waits for as long as it takes, which is right for a program that
+ * would rather be late than fail, and wrong for one that must not hang behind
+ * a peer that has stopped responding. */
+{
+    spP->u.rbf.lockTicks= loword( *d2 );
+    return 0;
+} /* pRticks */
 
 os9err pReof( _pid_, syspath_typ* spP )
 /* get current file position <posP> */

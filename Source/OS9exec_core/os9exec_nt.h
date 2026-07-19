@@ -800,6 +800,8 @@ typedef struct {
             uint32_t  deptr;        // dir entry ptr
             ushort    sameFile;     // ring of the paths open on this same file
             ushort    waitPid;      // process asleep on this path, 0 if none
+            ushort    lockTicks;    // SS_Ticks: 0 = wait forever, else give up after n
+            uint32_t  waitUntil;    // host tick that wait expires at (0 = not waiting)
             ushort    ownPid;       // process that opened this path
             Boolean   updMode;      // opened for update: reads lock what they read
             uint32_t  lockBeg;      // record this path holds: first byte ...
@@ -997,6 +999,7 @@ typedef struct {
                            _SS_Attr,
                            _SS_FD,
                            _SS_Lock,
+                           _SS_Ticks,   /* how long to wait for someone else's lock */
                            _SS_WTrk,
 
                            _SS_Bind,    /* network spefic functions */
