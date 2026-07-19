@@ -2768,9 +2768,10 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
 
     if (!wMode) WokeOnFile( currentpid ); /* re-entered after parking at EOF */
 
-    /* Somebody else's record? Wait for them to write it back -- unless that
-     * somebody is this same process, which would be waiting for itself. */
-    if (!spP->rawMode && *lenP>0) {
+    /* A write has to be stopped BEFORE it happens -- it changes the file, and
+     * its length is exactly what was asked for, so the range is known here.
+     * A read is checked afterwards instead: see below. */
+    if (!spP->rawMode && wMode && *lenP>0) {
         syspath_typ* spH= LockHolder( spP, rbf->currPos, rbf->currPos+*lenP );
 
         if (spH!=NULL) {
@@ -2781,7 +2782,7 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
           return 0; /* the call runs again when the holder releases */
         } // if
 
-        WaitDone( spP ); /* nothing in the way: a deadline, if any, is spent */
+        WaitDone( spP );
     } // if
 
     
@@ -2999,9 +3000,31 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
           LockDrop  ( spP );
           WakeOnFile( spP ); /* whoever was waiting on it can go */
       }
-      else if (rbf->updMode && rbf->currPos>sv) {
-          rbf->lockBeg= sv;  /* exactly the bytes handed back, no more */
-          rbf->lockEnd= rbf->currPos;
+      else if (rbf->currPos>sv) {
+          /* Checked here, not before the read: how much a read really touches
+           * is not known until it happens -- a line-oriented read stops at the
+           * terminator, and a caller may offer a buffer far larger than the
+           * record (BASIC09 offers 511 bytes for an 8-byte record). Judging the
+           * conflict on the length ASKED FOR made a read of one record collide
+           * with a lock held on a later one. Reading is not destructive, so the
+           * honest thing is to see what was actually delivered and hand it back
+           * only if nobody holds those bytes. */
+          syspath_typ* spH= LockHolder( spP, sv, rbf->currPos );
+
+          if (spH!=NULL) {
+              rbf->currPos= sv; /* pretend it never happened */
+              *lenP= 0;
+              if (spH->u.rbf.ownPid==currentpid) return os9error( E_DEADLK );
+              if (WaitExpired( spP )) { WaitDone( spP ); return os9error( E_LOCK ); }
+              SleepOnFile( spP, currentpid );
+              return 0; /* runs again once the holder lets go */
+          } // if
+
+          WaitDone( spP );
+          if (rbf->updMode) {
+              rbf->lockBeg= sv;  /* exactly the bytes handed back, no more */
+              rbf->lockEnd= rbf->currPos;
+          } // if
       } // if
     } // if
 
