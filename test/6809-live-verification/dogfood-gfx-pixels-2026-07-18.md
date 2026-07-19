@@ -112,6 +112,14 @@ bare `Circle` (no coordinates) afterwards and seeing where it centres.
 | Bare `CIRCLE`/`ELLIPSE` centre on the draw pointer | **Confirmed** in every test above |
 | `ELLIPSE` takes separate x/y radii | **Confirmed** |
 | `LINE` always leaves the draw pointer at the endpoint | **Confirmed** — see the LINE/LINEM note below |
+| `FCIRCLE([path,][x,y,]radius)` filled circle | **Confirmed** — renders solid |
+| `FELLIPSE([path,][x,y,]xrad,yrad)` filled ellipse | **Confirmed** — separate radii visibly honoured |
+| `ARC([path,][mx,my],xrad,yrad,x1,y1,x2,y2)` | **Confirmed** — renders an arc; 8-argument form accepted |
+| `FILL([path,][x,y])` flood-fills the connected region | **Confirmed** — a `BOX` outline flood-filled solid from an interior point |
+
+Those four were validated in the foreground first (each call printing its own
+marker, all OK) and then rendered and inspected. Their documented argument
+counts are correct.
 
 ### LINE vs LINEM — a layer distinction worth not tripping over
 
