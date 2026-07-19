@@ -298,6 +298,108 @@ unrendered — see open questions.
   nothing. `b09run.sh` now checks, and refuses to start unless the channel is
   at a shell prompt.
 
+## Visual confirmation pass (2026-07-19)
+
+Followed the recipe above for the calls left unconfirmed from 2026-07-18:
+`DRAW`'s polyline, `GET`/`PUT`, `LOGIC`'s raster op, `PATTERN`, `FONT`, the
+`OWSET`/`OWEND` overlay family, and the two open unknowns `CWAREA` and
+Level-1 `GFX`'s origin. All screenshots below are on a type-6 (320×192,
+4-colour, 40-column) or type-7 (640×192, 4-colour, 80-column) window unless
+noted.
+
+- **`DRAW`** — `SETDPTR(50,50)` then `DRAW("N40E60S40W60")` rendered a clean
+  closed rectangle outline. Confirms the mini-language's direction codes
+  compose correctly and the path closes back to its start when the
+  N/S and E/W magnitudes cancel.
+- **`GET`/`PUT`** — `FCIRCLE(50,50,20)`, `DEFBUFF(1,1,2000)`,
+  `GET(1,1,30,30,40,40)`, `PUT(1,1,150,100)` produced two identical filled
+  circles: the original and a second copy at the `PUT` target. Confirms the
+  region capture and block-copy both work as documented.
+- **`LOGIC`** — confirmed real, with a nuance. Drawing `FCIRCLE(100,100,30)`,
+  then setting `LOGIC "XOR"` and drawing the *identical* call again, did
+  **not** cleanly erase back to background as the "draw twice to erase"
+  idiom implies — it left a mottled olive/orange residue with a red seam,
+  visibly different from a solid `LOGIC "OFF"` control circle drawn
+  alongside it. That mottling is itself the proof XOR is toggling real
+  pixels (a no-op `LOGIC` would just look like a second identical solid
+  circle); the residue means `FCIRCLE`'s own fill isn't pixel-identical
+  between two calls (likely a dithered/artifact fill for this colour), so
+  the erase-by-redraw idiom is unreliable for filled shapes specifically.
+- **`PATTERN`** — captured a hand-drawn 4-stripe 32×8 tile with
+  `GET(1,3,10,10,32,8)`, then `PATTERN(1,3)` before a `BAR`: the bar
+  rendered as a repeating tiled texture, clearly distinct from a flat
+  `PATTERN(0,0)` control bar drawn beside it. **Trap hit while building this
+  test:** the first attempt used `COLOR 1` for both bars and both came out
+  invisible — register 1 was the window's own `bg` register from `DWSET`'s
+  `fg,bg,border` triple, so foreground == background. Same-register
+  invisibility isn't unique to `PALETTE`'s unenforced ranges; it bites any
+  call that lets you pick a foreground matching whatever `DWSET` assigned
+  as background.
+- **`FONT`** — `FONT(200,3)` was accepted with no error *without* first
+  merging `SYS/Stdfonts`, but the text it rendered was garbled repeating
+  glyphs, visibly different from a normal `PRINT #p,"HELLO WORLD"` line
+  drawn with the default font just above it. This is a clean live
+  confirmation that "merge the file into the window first" (documented in
+  `gfx-windowing.md`'s Concepts section) is a real, silently-unenforced
+  prerequisite — GFX2 happily points `FONT` at an unmerged/garbage buffer
+  and draws whatever is there.
+- **`OWSET`** — `OWSET(1,5,3,20,8,2,1)` over an existing `BAR`(20,20)-(280,160)
+  punched a rectangular hole into the bar at character-grid column 5, row 3,
+  sized 20×8 — filled with the overlay's own `bg` register, immediately on
+  the `OWSET` call, with no further drawing needed. Confirms the
+  char-grid-coordinate interpretation of `xpos`/`ypos`/`xsize`/`ysize`
+  (matches `CURXY`'s units, not pixel coordinates) and that `OWSET` erases
+  its area right away rather than waiting for content to be drawn into it.
+- **`OWEND` does not appear to restore saved content — `Live`, reproduced
+  twice.** Immediately following the `OWSET` above with `RUN GFX2("OWEND")`
+  left the punched-out area still background-coloured; the original orange
+  bar underneath was not restored, contradicting "`save_switch` 1 = save it
+  and restore it when the overlay ends." Varied before concluding anything
+  (per this file's own standing discipline note): a `save_switch=0` control
+  on the same geometry left the bar **fully intact** the whole time (nothing
+  was ever erased, so nothing needed restoring — a clean, self-consistent
+  contrast, not a wash), and the same `OWSET(1,...)` + `OWEND` sequence
+  repeated on a type-7 (640×192, 80-column) window with proportionally
+  scaled parameters reproduced the identical non-restoring result. Both
+  calls' *arity* is confirmed correct (foreground `PRINT`-marker pass, no
+  errors); the restore behaviour specifically is what's suspect. No
+  `windint` source is available in this repo to check the real
+  implementation (unlike `LINE`/`LINEM`, which `gfx2.asm` itself settled) —
+  this is a black-box finding about NitrOS-9's own CoCo3 windowing driver,
+  not an `os9exec` bug, since `os9exec` only runs the 6809 code and has no
+  windowing logic of its own.
+- **`CWAREA` — resolved.** The 2026-07-18 attempt drove the raw `$1B25`
+  windint escape by hand and got a corrupted "black band," which looked like
+  wrong parameter units. Re-tested by going through the validated
+  `RUN GFX2(p,"CWAREA",...)` call path instead (letting `gfx2.asm`'s own
+  BYTE/INTEGER parameter encoder build the escape sequence, rather than
+  guessing byte widths by hand): `CWAREA(0,0,20,12)` on a 40×24-character
+  window, followed by a `BOX` drawn at the full nominal `(0,0)`-`(639,191)`
+  range, rendered compressed into roughly the top-left half of the window —
+  matching the 20/40 × 12/24 = 50%/50% character-grid shrink exactly as
+  documented ("shrinks... rescaled into that smaller region"). The
+  parameters are character-grid units, same convention as `OWSET`/`CURXY`;
+  the earlier "black band" was very likely the raw-escape test guessing the
+  wrong byte width for the four fields, not a real GFX2 defect.
+- **Level-1 `GFX`'s origin — still unverified, now for a documented reason.**
+  `RUN GFX("MODE",0,1)` plus two `LINE` calls forming an "L" anchored at
+  `(0,0)` was accepted with no error (confirmed by stray control-byte
+  fragments leaking into whatever text channel served as output), but never
+  produced a screen reachable by CLEAR-cycling. Tried three different ways
+  of routing the call's output, since `GFX` (unlike `GFX2`) takes no `path`
+  argument and so always draws to the calling process's own default output:
+  (1) backgrounded with stdout redirected to `/nil` (the standard
+  `b09run.sh --bg` pattern), (2) held open in the foreground with the
+  process's default DriveWire `/N1` stdout, and (3) `basic09`'s own stdout
+  explicitly redirected to a real `/wN` window at invocation
+  (`basic09 #32k <script >/w5&`). All three left only the pre-existing
+  `/w1`, `/w2`, and `Term` screens reachable — no new graphics screen ever
+  appeared, on the same disk where GFX2 windows work reliably. This reads as
+  a genuine incompatibility between Level-1 GFX and this NitrOS-9 build's
+  Level-2/windowed environment (or a gap in what the CLEAR-cycle can reach),
+  not evidence for or against the lower-left-origin claim — that claim
+  stays `Manual`, honestly unreachable rather than falsely confirmed.
+
 ## Open questions (next session)
 
 1. **Normalized-to-window vs scaled-by-window/screen-ratio.** Every
@@ -309,15 +411,16 @@ unrendered — see open questions.
    with no process running on them do **not** appear in the CLEAR cycle, so
    `/w3`, `/w5`, `/w6`, `/w8` could not be brought up for measurement. Only
    screens belonging to live processes seem reachable. Getting a shell to
-   survive on a graphics window is still the unsolved prerequisite.
-3. **`CWAREA` parameter encoding.** `display 1b 25 00 00 14 18 >/w4`
-   produced a full-width black band and killed subsequent drawing rather
-   than the expected half-width working area — the parameter units/encoding
-   are not what was guessed (other escapes take 16-bit coordinates;
-   `CWAREA` is documented in characters). Its documented *rescaling*
-   behaviour is therefore still untested, and that test would also settle
-   (1). Note the call did confirm one thing: the working area could not be
-   restored afterwards, consistent with "shrinks (never grows)".
+   survive on a graphics window is still the unsolved prerequisite. This is
+   also almost certainly the same reachability gap that blocked Level-1
+   `GFX`'s screen above.
+3. **`OWEND`'s restore.** Confirmed live (twice, two geometries) that it does
+   not visibly restore content saved by `OWSET(1,...)`. Worth a source-level
+   answer if `windint`'s own implementation ever becomes available to check
+   (it isn't in this repo — see the finding above), or further black-box
+   variation (a delay between `OWSET` and `OWEND`, content drawn into the
+   overlay before `OWEND`, an overlay smaller than the window) in case the
+   two geometries tried so far share some other confound.
 
 ## Second finding — SELECT does not bring a screen forward
 

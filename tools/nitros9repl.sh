@@ -201,7 +201,17 @@ cmd_start() {
     # GUI mode still wants audio off -- the window is for screenshots
     # (tools/cocoscreen.sh), not for listening to.
     local ui="-ui null -ao null"
-    [ -n "$NITROS9REPL_GUI" ] && ui="-ao null"
+    local prev_app=""
+    if [ -n "$NITROS9REPL_GUI" ]; then
+        ui="-ao null"
+        # XRoar's window steals focus the moment it opens. Remember whatever
+        # app currently has focus so it can be handed back once the window
+        # exists -- otherwise keystrokes meant for another window land on
+        # the emulator instead.
+        prev_app=$(osascript -e \
+            'tell application "System Events" to get name of first process whose frontmost is true' \
+            2>/dev/null || true)
+    fi
     tmux new-window -t "$SESSION" -n xroar -c "$DISKDIR" \
         "xroar -rompath '$NITROS9/roms' -machine coco3 -tv-input rgb -machine-cart ide \
          -cart-rom ./hdblba.rom -load-hd0 68IDE.ide -cart-becker \
@@ -210,6 +220,22 @@ cmd_start() {
 
     # Window 2 "chan": the /N1 bridge.
     open_chan_window
+
+    if [ -n "$NITROS9REPL_GUI" ]; then
+        # tmux new-window returning doesn't mean XRoar's actual window exists
+        # yet (ROM load etc. takes a beat), so retry `place` briefly rather
+        # than failing silently on the first attempt.
+        local j=0
+        while [ $j -lt 20 ]; do
+            "$REPO/tools/cocoscreen.sh" place 0 0 >/dev/null 2>&1 && break
+            sleep 0.25; j=$(( j + 1 ))
+        done
+        # Give focus straight back to whatever the user was doing -- see the
+        # prev_app comment above.
+        if [ -n "$prev_app" ]; then
+            osascript -e "tell application \"$prev_app\" to activate" >/dev/null 2>&1 || true
+        fi
+    fi
 
     if wait_prompt "$BOOT_TIMEOUT"; then
         printf '[ready — {N1|..} shell prompt below]\n'
