@@ -244,6 +244,7 @@ os9err pRopt     ( ushort pid, syspath_typ*,                  byte* buffer );
 os9err pRnam     ( ushort pid, syspath_typ*,                  char* volname );
 os9err pRpos     ( ushort pid, syspath_typ*, uint32_t *posP  );
 os9err pReof     ( ushort pid, syspath_typ* );
+os9err pRlock    ( ushort pid, syspath_typ*, uint32_t *d0, uint32_t *d1 );
 os9err pRready   ( ushort pid, syspath_typ*, uint32_t *n     );
 os9err pRgetFD   ( ushort pid, syspath_typ*, uint32_t *maxbytP, byte* buffer );
 os9err pRgetFDInf( ushort pid, syspath_typ*, uint32_t *maxbytP,
@@ -292,7 +293,7 @@ void init_RBF( fmgr_typ* f )
     ss->_SS_Opt  = (pathopfunc_typ)pNop;      /* ignored */
     ss->_SS_Attr = (pathopfunc_typ)pRsetatt;
     ss->_SS_FD   = (pathopfunc_typ)pRsetFD;
-    ss->_SS_Lock = (pathopfunc_typ)pNop;      /* ignored */
+    ss->_SS_Lock = (pathopfunc_typ)pRlock;
     ss->_SS_WTrk = (pathopfunc_typ)pRWTrk;
     
      init_RBF_devs(); /* init RBF devices */
@@ -2952,7 +2953,12 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
         rbf->lastPos= sv;
     }
     
-    if (!spP->rawMode && !err) {
+    if (!spP->rawMode && *lenP==0 && sv==rbf->currPos) {
+        LockDrop  ( spP ); /* a zero-byte read or write drops everything this
+                            * path holds, whatever it was holding it for */
+        WakeOnFile( spP );
+    }
+    else if (!spP->rawMode && !err) {
       if (wMode) {           /* the write releases what the read took */
           LockDrop  ( spP );
           WakeOnFile( spP ); /* whoever was waiting on it can go */
@@ -3628,6 +3634,39 @@ os9err pRpos( _pid_, syspath_typ* spP, uint32_t *posP )
     debugprintf(dbgFiles,dbgNorm,("# RBF pos: '%s' %d\n", dev->name, *posP ));
     return 0;
 } /* pRpos */
+
+os9err pRlock( ushort pid, syspath_typ* spP, uint32_t* d0, uint32_t* d1 )
+/* SS_Lock: take or release a record explicitly, for a program that would
+ * rather say so than rely on the automatic lock a read in update mode takes.
+ * <d1> is the size: zero releases everything this path holds, -1 covers the
+ * whole file, anything else covers that many bytes from the current position. */
+{
+    rbf_typ*     rbf= &spP->u.rbf;
+    syspath_typ* spH;
+    ulong        beg, end;
+
+    if (spP->rawMode) return 0;
+
+    if (*d1==0) { /* release */
+        LockDrop  ( spP );
+        WakeOnFile( spP );
+        return 0;
+    } // if
+
+    beg= rbf->currPos;
+    end= (*d1==0xFFFFFFFF) ? 0xFFFFFFFF : beg + *d1;
+
+        spH= LockHolder( spP, beg,end );
+    if (spH!=NULL) {
+      if (spH->u.rbf.ownPid==pid) return os9error( E_DEADLK );
+      return os9error( E_LOCK ); /* someone else's -- say so rather than block,
+                                  * the caller asked for it deliberately */
+    } // if
+
+    rbf->lockBeg= beg;
+    rbf->lockEnd= end;
+    return 0;
+} /* pRlock */
 
 os9err pReof( _pid_, syspath_typ* spP )
 /* get current file position <posP> */

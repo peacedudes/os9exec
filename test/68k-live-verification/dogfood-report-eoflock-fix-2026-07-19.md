@@ -1,4 +1,17 @@
-# RBF end-of-file lock: what was broken, and what it does now
+# RBF record and end-of-file locking: what was broken, and what it does now
+
+Two mechanisms, one design. A read on a path open for update locks the
+record it read, and the following write lets it go — so a read-modify-write
+cycle is safe against another process doing the same thing, without the
+application making any locking calls. The end-of-file case is the same
+lock placed where there is no data yet: a writer holds the position past
+the last byte, so a reader that catches up waits there instead of being
+told the file is finished.
+
+Neither worked. The record half is below under "Record locking"; the
+end-of-file half follows immediately.
+
+# End-of-file lock
 
 Two programs, one file. A writer appends a timestamped record once a
 second and closes. A reader opened while the writer is still running
@@ -78,6 +91,41 @@ why two programs logging to the same file do not shut each other out.
 4. A conflict with one's own process is refused with `E$DEADLK` rather
    than slept on — waiting for yourself is what makes the wait never end.
 
+## Record locking
+
+`dogfood-recordlock.bas`. Two paths on one file, both open for update, in
+one process. Path A reads the record — which should lock it. Path B then
+reads the same bytes.
+
+```
+before:   reclock: A read and locked RECORD01
+          reclock: FAIL B read it anyway =RECORD01
+
+after:    reclock: A read and locked RECORD01
+          reclock: OK conflicting read refused err=254
+```
+
+Before, the second read handed over a record the first path was in the
+middle of updating — the lost update the mechanism exists to prevent.
+After, it is refused with `E$DEADLK`, because the only process that could
+release that lock is the one asking for it.
+
+**Why this test and not a counter race.** The obvious test — two processes
+racing to increment a shared counter — cannot answer the question. It only
+shows whether an update was *lost*, and on a cooperatively scheduled
+emulator a read-modify-write cycle usually completes without a task switch
+landing in the middle. It therefore passes whether or not any lock exists,
+and did pass, 600/600, against code that had no locking whatsoever. To
+tell a working lock from a scheduler that never interleaves, you have to
+make a conflict happen and watch it be refused.
+
+`SS_Lock` also works now. It previously returned success while doing
+nothing, so a program that locked defensively was told it had succeeded
+and got no protection — worse than an honest error. It now takes or
+releases a record directly, reports `E$LOCK` when another process holds
+the bytes, and refuses a self-conflict with `E$DEADLK`. A zero-byte read
+or write drops everything the path holds, as documented.
+
 ## Reproducing
 
 `dogfood-eoflock-writer.bas` / `-reader-readonly.bas` are the original
@@ -93,6 +141,7 @@ at all — each isolates one thing the ring has to get right:
 | `dogfood-eoflock-invalidate.bas` | a reader that cached a sector keeps serving itself the stale copy |
 | `dogfood-eoflock-writerclose.bas` | a reader loses the file's contents when the writer closes |
 | `dogfood-eoflock-deadlock.bas` | a process waits for itself and hangs, instead of being refused |
+| `dogfood-recordlock.bas` | a read hands over a record another path is updating |
 
 The emulator's own regression suite is green (129/129) with these
 changes, unchanged from before them.
