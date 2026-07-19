@@ -543,7 +543,17 @@ static Boolean ConsId( char* name, char* family, int range, int offs, int *resul
 os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
 /* routine for opening serial devices */
 {
-    int    id;
+    /* Initialised: the matcher block below can fall all the way through to its
+     * final unconditional `break` when the device name matches NO family --
+     * and ConsId() returns false WITHOUT writing *result, so `id` stayed
+     * uninitialised on that path and `spP->term_id = id` published stack
+     * garbage as a terminal ID, which is then used to index console state.
+     * Main_ID (0, the main console) is the benign deterministic fallback --
+     * the same id an unadorned "/term" gets. Found by clang scan-build
+     * ("Assigned value is garbage or undefined"); note GCC -fanalyzer did NOT
+     * report this one, and the same shape appeared separately in
+     * pipefiles.c's ConnectPTY_TTY, so it is a recurring pattern here. */
+    int    id= Main_ID;
 
     while (true) {
         #ifdef TERMINAL_CONSOLE /* decide which terminal id has to be taken */
