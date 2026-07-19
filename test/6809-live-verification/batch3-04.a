@@ -1,0 +1,223 @@
+* Live-tests I$Dup($82), I$WritLn($8C), I$DeletX($90) against
+* os9-dev/references/6809/syscalls-and-module-format.md. Each result is
+* ONE self-contained PASS/FAIL line.
+
+ nam SysFileTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysFileTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+PATHNUM equ 64
+DUPPATH equ 65
+start equ *
+
+* --- First open an existing file for I$Dup test (synctest.dat) ---
+ pshs u
+ leax fname,pcr
+ lda #1
+ swi2
+ fcb $84
+ puls u
+ stb ERRB,u
+ bcc openok
+ leax OUTBUF,u
+ leay OPFAL,pcr
+ ldb #OPFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+openok equ *
+ sta PATHNUM,u
+
+* --- I$Dup(A=path) -> A=new path number ---
+ lda PATHNUM,u
+ pshs u
+ swi2
+ fcb $82
+ puls u
+ stb ERRB,u
+ bcc dupok
+ leax OUTBUF,u
+ leay DUPFAL,pcr
+ ldb #DUPFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra closp1
+dupok equ *
+ sta DUPPATH,u
+ leax OUTBUF,u
+ leay DUPPAS,pcr
+ ldb #DUPPASL
+ lbsr copys
+ clra
+ ldb DUPPATH,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+* Close the dup'd path
+ lda DUPPATH,u
+ pshs u
+ swi2
+ fcb $8F
+ puls u
+* Close original
+closp1 lda PATHNUM,u
+ pshs u
+ swi2
+ fcb $8F
+ puls u
+
+* --- I$WritLn(A=path, X=buffer, Y=max length) ---
+* Create a new test file first
+ pshs u
+ leax wfname,pcr
+ lda #3
+ ldb #$FF
+ swi2
+ fcb $83
+ puls u
+ stb ERRB,u
+ bcc wrok
+ leax OUTBUF,u
+ leay WRFAL,pcr
+ ldb #WRFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+wrok equ *
+ sta PATHNUM,u
+* Write a line to the file
+ pshs u
+ leax wrbuf,pcr
+ ldy #5
+ swi2
+ fcb $8C
+ puls u
+ stb ERRB,u
+ bcc wrln
+ leax OUTBUF,u
+ leay WRLFAL,pcr
+ ldb #WRLFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra closew
+wrln equ *
+ leax OUTBUF,u
+ leay WRLPAS,pcr
+ ldb #WRLPASL
+ lbsr copys
+ lbsr crwrite
+* Close the write-test file
+closew lda PATHNUM,u
+ pshs u
+ swi2
+ fcb $8F
+ puls u
+
+* --- I$DeletX(A=mode, X=pathlist) - delete wrlntest.dat ---
+ pshs u
+ leax wfname,pcr
+ lda #1
+ swi2
+ fcb $90
+ puls u
+ stb ERRB,u
+ bcc delok
+ leax OUTBUF,u
+ leay DELFAL,pcr
+ ldb #DELFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+delok equ *
+ leax OUTBUF,u
+ leay DELPAS,pcr
+ ldb #DELPASL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+fname fcs /synctest.dat/
+wfname fcs /CLAUDE/wrlntest.dat/
+wrbuf fcc /TEST/
+ fcb $0D
+OPFAL fcc /FAIL I$Open err=/
+OPFALL equ *-OPFAL
+DUPPAS fcc /PASS I$Dup returned=/
+DUPPASL equ *-DUPPAS
+DUPFAL fcc /FAIL I$Dup err=/
+DUPFALL equ *-DUPFAL
+WRFAL fcc /FAIL I$Create err=/
+WRFALL equ *-WRFAL
+WRLPAS fcc /PASS I$WritLn/
+WRLPASL equ *-WRLPAS
+WRLFAL fcc /FAIL I$WritLn err=/
+WRLFALL equ *-WRLFAL
+DELPAS fcc /PASS I$DeletX/
+DELPASL equ *-DELPAS
+DELFAL fcc /FAIL I$DeletX err=/
+DELFALL equ *-DELFAL
+ emod
+eom equ *

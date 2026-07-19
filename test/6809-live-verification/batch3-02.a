@@ -1,0 +1,174 @@
+* Live-tests F$SchBit($12), F$AllBit($13), F$DelBit($14) against
+* os9-dev/references/6809/syscalls-and-module-format.md. Each result is
+* ONE self-contained PASS/FAIL line. Uses a local 8-byte buffer as the
+* bitmap to avoid mutating real system structures.
+
+ nam SysBitTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysBitTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+MAPBUF equ 66
+start equ *
+
+* Initialize map to all zeros (all bits available/free)
+ leax MAPBUF,u
+ clr ,x+
+ clr ,x+
+ clr ,x+
+ clr ,x+
+ clr ,x+
+ clr ,x+
+ clr ,x+
+ clr ,x
+
+* --- F$SchBit(D=start bit, X=map, Y=count, U=map end) ---
+* Search for a free run in our zeroed map
+ pshs u
+ ldd #0
+ leax MAPBUF,u
+ ldy #64
+ leau MAPBUF+8,u
+ swi2
+ fcb $12
+ stb ERRB,u
+ puls u
+ bcc sbfound
+ leax OUTBUF,u
+ leay SBFAL,pcr
+ ldb #SBFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra albtest
+sbfound equ *
+ leax OUTBUF,u
+ leay SBPAS,pcr
+ ldb #SBPASL
+ lbsr copys
+ tfr d,x
+ clra
+ lbsr prdec
+ lda #$20
+ sta ,x+
+ tfr y,d
+ clra
+ lbsr prdec
+ lbsr crwrite
+
+* --- F$AllBit(D=first bit, X=map, Y=count) - allocate bits 10-14 ---
+albtest equ *
+ pshs u
+ ldd #10
+ leax MAPBUF,u
+ ldy #5
+ swi2
+ fcb $13
+ puls u
+ stb ERRB,u
+ bcc albdone
+ leax OUTBUF,u
+ leay ABFAL,pcr
+ ldb #ABFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra deltest
+albdone equ *
+ leax OUTBUF,u
+ leay ABPAS,pcr
+ ldb #ABPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$DelBit(D=first bit, X=map, Y=count) - deallocate those bits ---
+deltest equ *
+ pshs u
+ ldd #10
+ leax MAPBUF,u
+ ldy #5
+ swi2
+ fcb $14
+ puls u
+ stb ERRB,u
+ bcc deldone
+ leax OUTBUF,u
+ leay DBFAL,pcr
+ ldb #DBFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+deldone equ *
+ leax OUTBUF,u
+ leay DBPAS,pcr
+ ldb #DBPASL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+SBPAS fcc /PASS F$SchBit found=/
+SBPASL equ *-SBPAS
+SBFAL fcc /FAIL F$SchBit err=/
+SBFALL equ *-SBFAL
+ABPAS fcc /PASS F$AllBit/
+ABPASL equ *-ABPAS
+ABFAL fcc /FAIL F$AllBit err=/
+ABFALL equ *-ABFAL
+DBPAS fcc /PASS F$DelBit/
+DBPASL equ *-DBPAS
+DBFAL fcc /FAIL F$DelBit err=/
+DBFALL equ *-DBFAL
+ emod
+eom equ *

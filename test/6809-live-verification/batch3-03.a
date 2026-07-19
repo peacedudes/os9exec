@@ -1,0 +1,200 @@
+* Live-tests F$GPrDsc($18), F$GBlkMp($19), F$GModDr($1A), F$GProcP($37)
+* against os9-dev/references/6809/syscalls-and-module-format.md. Each
+* result is ONE self-contained PASS/FAIL line. Allocates large local
+* buffers for descriptor/bitmap/module-dir queries.
+
+ nam SysQueryTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysQueryTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+OWNPID equ 64
+BLKSZ equ 66
+MAPEND equ 68
+start equ *
+
+* --- F$ID to get own PID (needed for F$GPrDsc and F$GProcP) ---
+ swi2
+ fcb $0C
+ sta OWNPID,u
+
+* --- F$GPrDsc(A=PID, X=512-byte buffer) ---
+ pshs u
+ lda OWNPID,u
+ leax pdscbf,u
+ swi2
+ fcb $18
+ puls u
+ stb ERRB,u
+ bcc gprok
+ leax OUTBUF,u
+ leay GPFAL,pcr
+ ldb #GPFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra gblkm
+gprok equ *
+ leax OUTBUF,u
+ leay GPPAS,pcr
+ ldb #GPPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$GBlkMp(X=1024-byte buffer) -> D=block size, Y=map size ---
+gblkm equ *
+ pshs u
+ leax bmapbf,u
+ swi2
+ fcb $19
+ puls u
+ stb ERRB,u
+ bcc gbok
+ leax OUTBUF,u
+ leay GBFAL,pcr
+ ldb #GBFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra gmodr
+gbok equ *
+ leax OUTBUF,u
+ leay GBPAS,pcr
+ ldb #GBPASL
+ lbsr copys
+ tfr d,x
+ clra
+ lbsr prdec
+ lda #$20
+ sta ,x+
+ tfr y,d
+ clra
+ lbsr prdec
+ lbsr crwrite
+
+* --- F$GModDr(X=2048-byte buffer) -> Y=copy-end, U=sys mdir start ---
+gmodr equ *
+ pshs u
+ leax mdirbf,u
+ swi2
+ fcb $1A
+ puls u
+ stb ERRB,u
+ bcc gmok
+ leax OUTBUF,u
+ leay GMFAL,pcr
+ ldb #GMFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra gproc
+gmok equ *
+ leax OUTBUF,u
+ leay GMPAS,pcr
+ ldb #GMPASL
+ lbsr copys
+ tfr y,d
+ clra
+ lbsr prdec
+ lbsr crwrite
+
+* --- F$GProcP(A=PID) -> Y=descriptor pointer ---
+gproc equ *
+ lda OWNPID,u
+ swi2
+ fcb $37
+ stb ERRB,u
+ bcc gpok2
+ leax OUTBUF,u
+ leay GFAL,pcr
+ ldb #GFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+gpok2 equ *
+ leax OUTBUF,u
+ leay GPAS,pcr
+ ldb #GPASL
+ lbsr copys
+ tfr y,d
+ clra
+ lbsr prdec
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+pdscbf rmb 512
+bmapbf rmb 1024
+mdirbf rmb 2048
+GPPAS fcc /PASS F$GPrDsc/
+GPPASL equ *-GPPAS
+GPFAL fcc /FAIL F$GPrDsc err=/
+GPFALL equ *-GPFAL
+GBPAS fcc /PASS F$GBlkMp blksz=/
+GBPASL equ *-GBPAS
+GBFAL fcc /FAIL F$GBlkMp err=/
+GBFALL equ *-GBFAL
+GMPAS fcc /PASS F$GModDr end=/
+GMPASL equ *-GMPAS
+GMFAL fcc /FAIL F$GModDr err=/
+GMFALL equ *-GMFAL
+GPAS fcc /PASS F$GProcP ptr=/
+GPASL equ *-GPAS
+GFAL fcc /FAIL F$GProcP err=/
+GFALL equ *-GFAL
+ emod
+eom equ *

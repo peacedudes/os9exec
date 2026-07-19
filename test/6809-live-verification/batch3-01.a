@@ -1,0 +1,186 @@
+* Live-tests F$ID($0C), F$PrsNam($10), F$CmpNam($11), F$PErr($0F)
+* against os9-dev/references/6809/syscalls-and-module-format.md.
+* Each result is ONE self-contained PASS/FAIL line.
+
+ nam SysBasicTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysBasicTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+OWNPID equ 64
+USERID equ 66
+start equ *
+
+* --- F$ID() -> A=own PID (1-255), Y=user ID (0-65535) ---
+ swi2
+ fcb $0C
+ sta OWNPID,u
+ sty USERID,u
+ leax OUTBUF,u
+ leay IDPAS,pcr
+ ldb #IDPASL
+ lbsr copys
+ clra
+ ldb OWNPID,u
+ std VALUE,u
+ lbsr prdec
+ lda #$20
+ sta ,x+
+ clra
+ ldb USERID,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+
+* --- F$PrsNam(X=pathlist) -> X/Y=bounds, B=length ---
+* We define a test name string and parse it
+ pshs u
+ leax tname,pcr
+ swi2
+ fcb $10
+ stb ERRB,u
+ puls u
+ bcc parsok
+ leax OUTBUF,u
+ leay PRFAL,pcr
+ ldb #PRFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra cmptest
+parsok equ *
+ leax OUTBUF,u
+ leay PRPAS,pcr
+ ldb #PRPASL
+ lbsr copys
+ ldb ERRB,u
+ lbsr crwrite
+
+* --- F$CmpNam(B=length, X/Y=two strings) - test both match and differ ---
+cmptest equ *
+* First: identical strings
+ pshs u
+ leax str1,pcr
+ leay str1,pcr
+ ldb #4
+ swi2
+ fcb $11
+ puls u
+ bcc cmpmatch
+ leax OUTBUF,u
+ leay CMFAL,pcr
+ ldb #CMFALL
+ lbsr copys
+ clra
+ ldb #1
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra cmpnext
+cmpmatch equ *
+ leax OUTBUF,u
+ leay CMPAS,pcr
+ ldb #CMPASL
+ lbsr copys
+ lda #'1'
+ sta ,x+
+ lbsr crwrite
+cmpnext equ *
+* Second: different strings
+ pshs u
+ leax str1,pcr
+ leay str2,pcr
+ ldb #4
+ swi2
+ fcb $11
+ puls u
+ bcs cmpdiff
+ leax OUTBUF,u
+ leay CMFAL,pcr
+ ldb #CMFALL
+ lbsr copys
+ clra
+ ldb #2
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra pererr
+cmpdiff equ *
+ leax OUTBUF,u
+ leay CMPAS,pcr
+ ldb #CMPASL
+ lbsr copys
+ lda #'2'
+ sta ,x+
+ lbsr crwrite
+
+* --- F$PErr(B=error code) - write "ERROR #nn" to stderr ---
+pererr equ *
+ ldb #216
+ swi2
+ fcb $0F
+* Just proceed; the error text should appear on console
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+tname fcs /test.dat/
+str1 fcc /test/
+ fcb $A0
+str2 fcc /other/
+ fcb $A0
+IDPAS fcc /PASS F$ID PID=/
+IDPASL equ *-IDPAS
+PRPAS fcc /PASS F$PrsNam/
+PRPASL equ *-PRPAS
+PRFAL fcc /FAIL F$PrsNam err=/
+PRFALL equ *-PRFAL
+CMPAS fcc /PASS F$CmpNam case/
+CMPASL equ *-CMPAS
+CMFAL fcc /FAIL F$CmpNam err=/
+CMFALL equ *-CMFAL
+ emod
+eom equ *
