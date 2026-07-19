@@ -783,6 +783,10 @@ void os9_main( int argc, char **argv, char **envp )
                               
                         p= argv[ k ];
                                 g_ipAddr= malloc( strlen( p )+1 );
+                        if (g_ipAddr==NULL) {
+                          printf("# Error: out of memory for '%s' option!\n",p);
+                          exit( 1 );
+                        } // if
                         strcpy( g_ipAddr, p );
                       } // if
                       break;

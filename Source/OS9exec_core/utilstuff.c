@@ -1475,10 +1475,12 @@ os9err FD_ID( const char* pathname, dirent_typ* dEnt,
   //upe_printf( "m->ident=%08X\n", m->ident );
     if ((*mH)->ident==NULL) {
                 (*mH)->ident= malloc( strlen( tmp )+1 );
+      if       ((*mH)->ident==NULL) return os9error(E_NORAM); /* strcpy would deref it */
       strcpy  ( (*mH)->ident,                 tmp );
-              
+
       #ifdef MACOS9
                 (*mH)->fName= malloc( strlen( fName )+1 );
+        if     ((*mH)->fName==NULL) return os9error(E_NORAM);
         strcpy( (*mH)->fName,                 fName );
       #endif
           
@@ -1510,7 +1512,10 @@ os9err FD_ID( const char* pathname, dirent_typ* dEnt,
     else {
       #ifdef LINKED_HASH
             doit= (*mH)->next==NULL;
-        if (doit) (*mH)->next= malloc( sizeof( dirtable_entry ) );
+        if (doit) {
+                  (*mH)->next= malloc( sizeof( dirtable_entry ) );
+          if     ((*mH)->next==NULL) return os9error(E_NORAM); /* the fields below deref it */
+        } // if
         *mH=      (*mH)->next;
         
         if (doit) {

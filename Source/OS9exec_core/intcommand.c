@@ -1827,7 +1827,7 @@ static void large_pipe_connect( ushort pid, syspath_typ* spC )
     return NULL;
   } // IntCmdThread
 
-  static void PrepareParams( ushort pid, int index, int argc, char** argv, ThreadVars** t )
+  static os9err PrepareParams( ushort pid, int index, int argc, char** argv, ThreadVars** t )
   {
     int   blk = sizeof(ThreadVars) + argc*sizeof(void*);
     int   size= blk;
@@ -1840,6 +1840,7 @@ static void large_pipe_connect( ushort pid, syspath_typ* spC )
     } // for
   
      *t= malloc( size );
+    if (*t==NULL) return os9error(E_NORAM); /* every field below dereferences it */
     (*t)->pid  = pid;
     (*t)->index= index;
     (*t)->argc = argc;
@@ -1853,6 +1854,8 @@ static void large_pipe_connect( ushort pid, syspath_typ* spC )
       p+=      strlen( p )+1;
       if      (((ulong)p % 2)==1) p++;
     } // for
+
+    return 0;
   } // PrepareParams
 #endif
 
@@ -1927,9 +1930,9 @@ os9err callcommand( char* name, ushort pid, ushort parentid, int argc, char** ar
     
     #ifdef THREAD_SUPPORT
       if (*asThread) {
-        PrepareParams              ( pid, index, argc, argv, &t );
-        rslt= pthread_create( &threadID, NULL, IntCmdThread,  t );
-        err = 0;
+        err= PrepareParams         ( pid, index, argc, argv, &t );
+        if (!err)
+          rslt= pthread_create( &threadID, NULL, IntCmdThread,  t );
       } // if
     #endif
     
