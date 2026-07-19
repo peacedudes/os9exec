@@ -112,6 +112,11 @@ extern  ulong glob_callticks;
 
 ulong GetSystemTick(void);
 
+/* The system tick (os9_tick.c). Off unless -q asks for it; started when the
+ * guest first sets the time, as on a real system. */
+void  os9_tick_start(void);
+void  os9_tick_stop (void);
+
 const funcdispatch_entry *getfuncentry(ushort func);
 
 void os9_to_xxx             ( ushort pid );

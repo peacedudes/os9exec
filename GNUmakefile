@@ -58,6 +58,7 @@ SRCS = \
     $(CORE)/modstuff.c \
     $(CORE)/os9exec_nt.c \
     $(CORE)/os9main.c \
+    $(CORE)/os9_tick.c \
     $(CORE)/pipefiles.c \
     $(CORE)/printer.c \
     $(CORE)/procstuff.c \

@@ -148,6 +148,9 @@ ulong iniprior;             /* priority for first process */
 
 extern ulong emul_arena_size; /* 68k arena size (set via -M option) */
 
+extern int   os9_tick_request;  /* tick interval in microseconds, 0 = no clock */
+int          os9_tick_default_us( void );
+
 #if defined UNIX && !defined MINGW
 struct termios savedmodes;  /* saved terminal attributes     */
 #endif
@@ -492,6 +495,11 @@ static void os9_usage(char *name)
     upho_printf("   -mm n[k|M]  Give all OS-9 process extra static storage (kilo/mega)\n");
     upho_printf("   -M  n[k|M]  Set 68k arena size (default=32M)\n");
     upho_printf("   -p prio     Run  1st OS-9 process with prio (default=%d, NOIRQ>=%d)\n",MYPRIORITY,IRQBLOCKPRIOR);        
+    upho_printf("   -q[n]       Pre-empt a process every n instructions (default=10000).\n");
+    upho_printf("               Off unless given: without it a process keeps the CPU\n");
+    upho_printf("               until it traps, so a dead loop hogs the machine and a\n");
+    upho_printf("               cyclic alarm cannot reach a computing process. Only\n");
+    upho_printf("               user state is pre-empted, never a system call.\n");
     upho_printf("   -d[n] msk   set  debug info mask [of level n, default=0] (default=1)\n");
     upho_printf("   -s msk      set  debug stop mask (default=0)\n");
     upho_printf("   -dh         show debug/stop mask help\n");
@@ -782,6 +790,18 @@ void os9_main( int argc, char **argv, char **envp )
           case 'u' :  userOpt    =  true; break; // set user option
           case 'v' :  catch_ctrlC= false; break; // don not install a ctrl C handler
           case 'r' :  baud_throttle= false; break; // run full speed (no baud pacing)
+
+          case 'q' :  /* -q[ms]: run a system tick, so processes are pre-empted.
+                       * Off by default: OS9exec has always run a process
+                       * until it traps or faults, so nothing interrupts one
+                       * between two of its own instructions. Real OS-9 has a
+                       * clock that does, which is what stops a dead loop
+                       * hogging the machine. Only user state is pre-empted;
+                       * see newcpu.c. */
+                      os9_tick_request= os9_tick_default_us();
+                      if (p[1]>='0' && p[1]<='9')      /* -q<ms> */
+                          os9_tick_request= atoi( &p[1] )*1000;
+                      break;
           case 'z' :  fullScreen =  true; break; // full screen mode
  
           case 'g' :  if (g_ipAddr==NULL) {

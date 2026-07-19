@@ -62,7 +62,14 @@ cpuop_func *cpufunctbl[65536];
 
 // flag to exit out of emulator on OS9 related occasions (Traps etc.)
 #ifdef NO_AMIGA
-int os9_running=0;
+/* volatile: the tick handler (os9_tick.c) stores 0 here from a signal, and the
+ * emulation loop's own "while (os9_running)" is what notices -- which is the
+ * whole point of doing it this way, since that test is already executed for
+ * every instruction and so pre-emption costs the inner loop nothing at all. */
+volatile sig_atomic_t os9_running=0;
+
+int os9_tick_us  = 0; /* one-shot tick interval in microseconds; 0 = no clock */
+int os9_timed_out= 0; /* the tick fired; acted on once back in user state */
 unsigned long m68_os9go_result;
 #endif
 
@@ -1414,6 +1421,7 @@ unsigned long m68k_os9go(void)
     }
     os9_oob_armed = 1;
     os9_running=1;
+  os9go_resume:
     while (os9_running) {
 		uae_u32 opcode = GET_OPCODE;
 		#if defined(X86_ASSEMBLY)
@@ -1473,6 +1481,22 @@ unsigned long m68k_os9go(void)
 			}
 		}
     }
+    /* Left the loop because the clock fired rather than because anything was
+     * asked of us. Decided here rather than in the loop, so the loop pays
+     * nothing: a tick in system state must not take the CPU away mid-call, so
+     * the flag stays set and we simply carry on -- the switch then happens on
+     * the next tick after the return to user state, deferred, not lost. */
+    if (os9_timed_out && m68_os9go_result==0) {
+        if (regs.s) {                /* system state: not now */
+            os9_running= 1;
+            goto os9go_resume;
+        } // if
+
+        os9_timed_out   = 0;
+        MakeSR();                    /* flags live in a fast internal form */
+        m68_os9go_result= 0xFCFC0000; /* tick token: no trap to dispatch */
+    } // if
+
 os9go_exit:
     os9_oob_armed = 0;   /* os9_oob_jmp goes out of scope when we return */
     in_m68k_go--;

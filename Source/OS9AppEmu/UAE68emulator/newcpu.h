@@ -46,7 +46,10 @@ extern int fpp_movem_next[256];
 extern int broken_in;
 
 #ifdef NO_AMIGA
-extern int os9_running;
+#include <signal.h>
+extern volatile sig_atomic_t os9_running; /* cleared by the tick handler */
+extern int os9_tick_us;                   /* live tick interval, 0 = no clock */
+extern int os9_timed_out;                 /* tick fired, pending user state */
 extern unsigned long m68_os9go_result;
 #endif
 

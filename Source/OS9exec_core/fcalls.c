@@ -599,7 +599,13 @@ os9err OS9_F_STime( regs_type *rp, ushort cpid )
     SetDateTime( secs );
   }
   #endif
-    
+
+  /* Setting the time is where the clock starts on a real system, so it is
+   * where the tick starts here -- and a system that never sets it never has
+   * one. Does nothing unless -q asked for a tick, and is safe to reach more
+   * than once, since setime can be run again. */
+  os9_tick_start();
+
   return 0;
 } /* OS9_F_STime */
 
