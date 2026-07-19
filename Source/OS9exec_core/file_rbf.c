@@ -616,6 +616,14 @@ static void RingJoin( syspath_typ* spP )
     ushort       k;
 
     RingLeave( spP );                          /* out of the previous one first */
+
+    /* Any record it held belonged to the file it is leaving -- most often the
+     * directory it just walked through to get here, since the walk reads
+     * through the same path. Carrying those byte offsets over to a different
+     * file would lock a stretch of it at random. */
+    rbf->lockBeg= 0;
+    rbf->lockEnd= 0;
+
     if (spP->rawMode || rbf->fd_nr==0) return; /* not a file: stays alone */
 
     for (k=1; k<MAXSYSPATHS; k++) {
@@ -694,6 +702,38 @@ static Boolean RingSector( syspath_typ* spP, ulong sect, byte* b, ulong len )
  * through the way RBF's own Read could. The dispatcher has already saved the
  * registers, so the read simply runs again from the top when the process next
  * runs -- which is what <pWaitRead> arranges. */
+
+/* Record locking. A read on a path open for update locks exactly the bytes it
+ * handed back, and the next write on that path lets them go again -- so a
+ * read-modify-write cycle is safe against another process doing the same
+ * thing, with the application making no locking calls of its own. A path holds
+ * at most one record, so a later read simply replaces the earlier lock.
+ * Read-only and write-only paths take nothing: a read-only path cannot modify
+ * what it read, and a write-only path never read anything to modify. */
+
+static syspath_typ* LockHolder( syspath_typ* spP, ulong beg, ulong end )
+/* another path on this file whose locked record overlaps [beg,end) */
+{
+    syspath_typ* spK;
+    ushort       k= spP->u.rbf.sameFile;
+
+    while (k!=spP->nr && k!=0) {
+             spK= &syspaths[k];
+      if (   spK->u.rbf.lockBeg<spK->u.rbf.lockEnd && /* holds one at all */
+             spK->u.rbf.lockBeg<end && beg<spK->u.rbf.lockEnd) return spK;
+
+      k= spK->u.rbf.sameFile;
+    } // while
+
+    return NULL;
+} /* LockHolder */
+
+static void LockDrop( syspath_typ* spP )
+/* let go of whatever this path holds */
+{
+    spP->u.rbf.lockBeg= 0;
+    spP->u.rbf.lockEnd= 0;
+} /* LockDrop */
 
 static ushort WriterOnFile( syspath_typ* spP )
 /* the process writing this file through one of the other paths, 0 if none.
@@ -2695,6 +2735,20 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     sv= rbf->currPos;
 
     if (!wMode) WokeOnFile( currentpid ); /* re-entered after parking at EOF */
+
+    /* Somebody else's record? Wait for them to write it back -- unless that
+     * somebody is this same process, which would be waiting for itself. */
+    if (!spP->rawMode && *lenP>0) {
+        syspath_typ* spH= LockHolder( spP, rbf->currPos, rbf->currPos+*lenP );
+
+        if (spH!=NULL) {
+          if (spH->u.rbf.ownPid==currentpid) return os9error( E_DEADLK );
+          SleepOnFile( spP, currentpid );
+          *lenP= 0;
+          return 0; /* the call runs again when the holder releases */
+        } // if
+    } // if
+
     
     do {           // do this loop for every sector to be read into buffer
         if (spP->rawMode) {
@@ -2898,6 +2952,17 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
         rbf->lastPos= sv;
     }
     
+    if (!spP->rawMode && !err) {
+      if (wMode) {           /* the write releases what the read took */
+          LockDrop  ( spP );
+          WakeOnFile( spP ); /* whoever was waiting on it can go */
+      }
+      else if (rbf->updMode && rbf->currPos>sv) {
+          rbf->lockBeg= sv;  /* exactly the bytes handed back, no more */
+          rbf->lockEnd= rbf->currPos;
+      } // if
+    } // if
+
     if (rbf->lastPos< rbf->currPos) { /* adapt lastpos */
         rbf->lastPos= rbf->currPos;
 
@@ -3157,6 +3222,9 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     rbf->sameFile= spP->nr; /* alone until RingJoin finds this file's others */
     rbf->waitPid = 0;
     rbf->ownPid  = currentpid;
+    rbf->updMode = false;
+    rbf->lockBeg = 0;
+    rbf->lockEnd = 0;
 
         root= IsRoot( pathname ); /* root path must be a directory */
     if (root && isFile) return E_FNA;
@@ -3186,6 +3254,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     rbf->devnr = dev->nr;
     rbf->diskID= dev->last_diskID;
     rbf->wMode = IsWrite(*modeP);
+    rbf->updMode= IsRW(*modeP); /* read+write: a read here locks what it read */
 //  printf( "GetBuffers %08X %08X\n", spP->fd_sct, spP->rw_sct );
     GetBuffers ( dev,spP ); /* get the internal buffer structures now */
     spP->rw_nr = 0;         /* undefined */

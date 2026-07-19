@@ -801,6 +801,9 @@ typedef struct {
             ushort    sameFile;     // ring of the paths open on this same file
             ushort    waitPid;      // process asleep on this path, 0 if none
             ushort    ownPid;       // process that opened this path
+            Boolean   updMode;      // opened for update: reads lock what they read
+            uint32_t  lockBeg;      // record this path holds: first byte ...
+            uint32_t  lockEnd;      // ... and one past the last (equal: none)
         } rbf_typ;
 
 /* variant for SCF objects */
