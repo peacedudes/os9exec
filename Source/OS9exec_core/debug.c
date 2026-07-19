@@ -916,7 +916,12 @@ void showonereg(uint32_t value, Boolean isa, ushort regnum, ushort lenspec)
             switch (lenspec) {
                 case 1 : format="D%d.b=$%02X "; value &= 0xFF;   break;
                 case 2 : format="D%d.w=$%04X "; value &= 0xFFFF; break;
-                case 3 : format="D%d.l=$%X "  ;                  break;
+                /* lenspec is masked to 0..3 and 0 is excluded above, so this is
+                   the case-3 long form -- but spell it `default` so `format` is
+                   assigned on every path. As a bare `case 3` the compiler could
+                   not prove the switch total, and any later change to the mask
+                   or the guard above would hand printf an indeterminate char*. */
+                default: format="D%d.l=$%X "  ;                  break;
             }
             upe_printf(format,     regnum,value);
         }
