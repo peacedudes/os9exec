@@ -1,0 +1,28 @@
+# Build os9exec under Valgrind, the one oracle in the matrix that watches the
+# emulator's own heap at runtime rather than reading its source.
+#
+# ASan/UBSan already run, but they only see what the compiler instrumented and
+# they abort on the first error. Valgrind sees uninstrumented and library code
+# too, reports every error without stopping, and -- the reason it earns a slot
+# here -- reports READS OF UNINITIALISED MEMORY, which ASan by design cannot.
+# os9exec hands guest-visible buffers (file descriptors, path descriptors,
+# module headers) straight to the OS-9 program, so an unset field is an
+# information leak out of the host, not just a wrong value.
+#
+# The default CFLAGS carry -g and no -O, so this is already an unoptimised build
+# with exact line numbers -- do NOT "help" by passing CFLAGS=... on the make
+# command line, because CFLAGS also carries every -I path (see GNUmakefile) and
+# overriding it wholesale breaks the build.
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential valgrind \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+RUN make clean && make
+
+# See docker/Dockerfile for why the working directory must not be "/".
+WORKDIR /work
