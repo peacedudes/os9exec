@@ -1568,11 +1568,26 @@ extern int m68k_os9singlestep;
  *   0x42-0x45  PC     (uint32 big-endian)
  *   0x46-0x47  fmt    (68010 exception vector word, zero for 68000/020)
  */
+#define DBG_REGFRAME_SZ 0x48   /* 72 bytes -- the R$ layout documented above */
+
 void save_debug_regs( ushort pid )
 {
     byte*      base = (byte*)FROM68K(dbg_regsave_addr[pid]);
     regs_type* rp   = &procs[pid].os9regs;
     int        r;
+
+    /* The frame address comes straight from the guest: F$DFork takes it out of
+     * A2 (`regbuf = rp->a[2]`) and stores it in dbg_regsave_addr[] with no
+     * validation, and this function then writes DBG_REGFRAME_SZ bytes through
+     * it. A guest passing A2=0 therefore got FROM68K(0)==NULL and 72 NULL-
+     * pointer stores -- a host crash -- and a wild A2 got 72 bytes written
+     * outside the 68k arena. Neither is something a guest should be able to
+     * do; every comparable guest-pointer site in this file already range-checks
+     * (see the RANGE_IN_ARENA guards in F$SetSys/F$SPrior etc.), this one was
+     * simply missed. Skip the snapshot rather than corrupt the host: the
+     * debugger just sees a frame that was not updated.
+     * (GCC -fanalyzer, -Wanalyzer-null-dereference.) */
+    if (!RANGE_IN_ARENA( base, DBG_REGFRAME_SZ )) return;
 
     for (r = 0; r < 8; r++) {
         uint32_t v = rp->d[r];
