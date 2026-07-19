@@ -244,7 +244,7 @@ os9err pRopt     ( ushort pid, syspath_typ*,                  byte* buffer );
 os9err pRnam     ( ushort pid, syspath_typ*,                  char* volname );
 os9err pRpos     ( ushort pid, syspath_typ*, uint32_t *posP  );
 os9err pReof     ( ushort pid, syspath_typ* );
-os9err pRlock    ( ushort pid, syspath_typ*, uint32_t *d0, uint32_t *d1 );
+os9err pRlock    ( ushort pid, syspath_typ*, uint32_t *d0, uint32_t *d1, uint32_t *d2 );
 os9err pRready   ( ushort pid, syspath_typ*, uint32_t *n     );
 os9err pRgetFD   ( ushort pid, syspath_typ*, uint32_t *maxbytP, byte* buffer );
 os9err pRgetFDInf( ushort pid, syspath_typ*, uint32_t *maxbytP,
@@ -3635,26 +3635,28 @@ os9err pRpos( _pid_, syspath_typ* spP, uint32_t *posP )
     return 0;
 } /* pRpos */
 
-os9err pRlock( ushort pid, syspath_typ* spP, uint32_t* d0, uint32_t* d1 )
+os9err pRlock( ushort pid, syspath_typ* spP, uint32_t* d0, uint32_t* d1, uint32_t* d2 )
 /* SS_Lock: take or release a record explicitly, for a program that would
  * rather say so than rely on the automatic lock a read in update mode takes.
- * <d1> is the size: zero releases everything this path holds, -1 covers the
+ * <d2> is the size -- NOT d1, which carries the setstat code itself and is
+ * always $11 here. Zero releases everything this path holds, -1 covers the
  * whole file, anything else covers that many bytes from the current position. */
 {
     rbf_typ*     rbf= &spP->u.rbf;
     syspath_typ* spH;
     ulong        beg, end;
 
+    (void)d0; (void)d1; /* path and setstat code; the size is in d2 */
     if (spP->rawMode) return 0;
 
-    if (*d1==0) { /* release */
+    if (*d2==0) { /* release */
         LockDrop  ( spP );
         WakeOnFile( spP );
         return 0;
     } // if
 
     beg= rbf->currPos;
-    end= (*d1==0xFFFFFFFF) ? 0xFFFFFFFF : beg + *d1;
+    end= (*d2==0xFFFFFFFF) ? 0xFFFFFFFF : beg + *d2;
 
         spH= LockHolder( spP, beg,end );
     if (spH!=NULL) {

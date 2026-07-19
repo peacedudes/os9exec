@@ -1,0 +1,175 @@
+* Does SS_Lock actually lock anything?
+*
+* It used to return success and do nothing at all -- worse than an error,
+* because a program that locked defensively was told it had succeeded and got
+* no protection whatsoever. Nothing in BASIC09 can issue a SetStat, so this
+* had to be assembly; and until it existed, the implementation was code that
+* had been written but never once executed. It was wrong when first written:
+* the size was read from d1, which carries the SetStat function code itself
+* ($11) and so is never a size. Only running it showed that.
+*
+* One process, two paths on one file, both open for update:
+*   1. path A locks 8 bytes at position 0     -> expect success
+*   2. path B locks the same 8 bytes          -> expect E_DEADLK ($FE/254),
+*      refused rather than waited on, since the only process that could
+*      release it is the one asking
+*   3. path A releases (size 0)               -> expect success
+*   4. path B locks the same 8 bytes again    -> expect success now
+*
+* Prints one line per step. Any "FAIL" line means SS_Lock is not doing what
+* it says. Before the fix, step 2 returned success -- two paths both holding
+* the same bytes, which is the whole thing the call exists to prevent.
+*
+* Register convention (I$SetStt): d0.w=path, d1.w=function code, d2.l=size.
+* Codes taken from this project's own os9funcs.h.
+*
+Prgrm     set 1
+Objct     set 1
+ReEnt     set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev  set (ReEnt<<8)+1
+*
+IOpen     set $84
+IWrite    set $8A
+IClose    set $8F
+ISetStt   set $8E
+FExit     set $06
+Update_   set 3            read+write
+SSLock    set $11
+EDEADLK   set 254
+*
+ psect sslock,Type_Lang,Attr_Rev,0,800,start
+*
+start
+* --- open path A for update
+ lea     fname(pc),a0
+ move.b  #Update_,d0
+ trap    #0
+ dc.w    IOpen
+ bcs     noopen
+ move.w  d0,d6                 d6 = path A
+*
+* --- open path B for update, same file
+ lea     fname(pc),a0
+ move.b  #Update_,d0
+ trap    #0
+ dc.w    IOpen
+ bcs     noopen
+ move.w  d0,d7                 d7 = path B
+*
+* --- step 1: A locks 8 bytes -- expect success
+ move.w  d6,d0
+ move.w  #SSLock,d1
+ move.l  #8,d2
+ trap    #0
+ dc.w    ISetStt
+ bcs     s1fail
+ lea     m1ok(pc),a0
+ move.l  #m1oklen,d1
+ bsr     say
+ bra     step2
+s1fail
+ lea     m1bad(pc),a0
+ move.l  #m1badlen,d1
+ bsr     say
+*
+* --- step 2: B locks the same bytes -- expect E_DEADLK, NOT success
+step2
+ move.w  d7,d0
+ move.w  #SSLock,d1
+ move.l  #8,d2
+ trap    #0
+ dc.w    ISetStt
+ bcc     s2bad                 no error at all = it did not lock
+ cmpi.w  #EDEADLK,d1
+ bne     s2bad
+ lea     m2ok(pc),a0
+ move.l  #m2oklen,d1
+ bsr     say
+ bra     step3
+s2bad
+ lea     m2bad(pc),a0
+ move.l  #m2badlen,d1
+ bsr     say
+*
+* --- step 3: A releases (size 0)
+step3
+ move.w  d6,d0
+ move.w  #SSLock,d1
+ moveq   #0,d2
+ trap    #0
+ dc.w    ISetStt
+ bcs     s3fail
+ lea     m3ok(pc),a0
+ move.l  #m3oklen,d1
+ bsr     say
+ bra     step4
+s3fail
+ lea     m3bad(pc),a0
+ move.l  #m3badlen,d1
+ bsr     say
+*
+* --- step 4: B locks it now -- expect success
+step4
+ move.w  d7,d0
+ move.w  #SSLock,d1
+ move.l  #8,d2
+ trap    #0
+ dc.w    ISetStt
+ bcs     s4fail
+ lea     m4ok(pc),a0
+ move.l  #m4oklen,d1
+ bsr     say
+ bra     done
+s4fail
+ lea     m4bad(pc),a0
+ move.l  #m4badlen,d1
+ bsr     say
+*
+done
+ move.w  d6,d0
+ trap    #0
+ dc.w    IClose
+ move.w  d7,d0
+ trap    #0
+ dc.w    IClose
+ moveq   #0,d1
+ trap    #0
+ dc.w    FExit
+*
+noopen
+ lea     mopen(pc),a0
+ move.l  #mopenlen,d1
+ bsr     say
+ moveq   #1,d1
+ trap    #0
+ dc.w    FExit
+*
+* say: a0 = text, d1 = length -- writes to stderr (path 2)
+say
+ move.w  #2,d0
+ trap    #0
+ dc.w    IWrite
+ rts
+*
+fname   dc.b "/h1/CLAUDETEST/rec3.dat",0
+m1ok    dc.b "sslock: 1 OK   A locked 8 bytes",13
+m1oklen equ *-m1ok
+m1bad   dc.b "sslock: 1 FAIL A could not lock",13
+m1badlen equ *-m1bad
+m2ok    dc.b "sslock: 2 OK   B refused (E_DEADLK)",13
+m2oklen equ *-m2ok
+m2bad   dc.b "sslock: 2 FAIL B locked bytes A holds",13
+m2badlen equ *-m2bad
+m3ok    dc.b "sslock: 3 OK   A released",13
+m3oklen equ *-m3ok
+m3bad   dc.b "sslock: 3 FAIL A could not release",13
+m3badlen equ *-m3bad
+m4ok    dc.b "sslock: 4 OK   B locked after release",13
+m4oklen equ *-m4ok
+m4bad   dc.b "sslock: 4 FAIL B still refused",13
+m4badlen equ *-m4bad
+mopen   dc.b "sslock: cannot open /h1/CLAUDETEST/rec3.dat",13
+mopenlen equ *-mopen
+*
+ ends

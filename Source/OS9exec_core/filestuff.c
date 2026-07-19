@@ -167,6 +167,7 @@ typedef os9err (*pfunc_sk_t )(ushort, syspath_typ*, uint32_t*);               /*
 typedef os9err (*pfunc_cl_t )(ushort, syspath_typ*);                          /* close */
 typedef os9err (*pfunc_p1_t )(ushort, syspath_typ*, uint32_t*);               /* 1 data arg */
 typedef os9err (*pfunc_p2_t )(ushort, syspath_typ*, uint32_t*, uint32_t*);    /* 2 data args */
+typedef os9err (*pfunc_p3_t )(ushort, syspath_typ*, uint32_t*, uint32_t*, uint32_t*); /* 3 data args */
 typedef os9err (*pfunc_pa_t )(ushort, syspath_typ*, void*);                   /* 1 byte* arg */
 typedef os9err (*pfunc_p2a_t)(ushort, syspath_typ*, uint32_t*, void*);        /* uint32_t* + byte* */
 typedef os9err (*pfunc_p3a_t)(ushort, syspath_typ*, uint32_t*, uint32_t*, void*); /* 2 uint32_t* + byte* */
@@ -1838,7 +1839,10 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
         case SS_Opt    : err= ((pfunc_pa_t )s->_SS_Opt   )( pid,spP, *a       ); break;
         case SS_Attr   : err= ((pfunc_p1_t )s->_SS_Attr  )( pid,spP, d2       ); break;
         case SS_FD     : err= ((pfunc_pa_t )s->_SS_FD    )( pid,spP, *a       ); break;
-        case SS_Lock   : err= ((pfunc_p2_t )s->_SS_Lock  )( pid,spP, d0,d1   ); break; /* $11 */
+        /* d1 carries the setstat code itself, so a lock size cannot live there:
+         * <d2> is the parameter register, as for SS_Size/SS_Attr above. The PTY
+         * manager uses d0/d1 as outputs and ignores d2. */
+        case SS_Lock   : err= ((pfunc_p3_t )s->_SS_Lock  )( pid,spP, d0,d1,d2 ); break; /* $11 */
 
         case SS_SSig   : spP->signal_to_send=  loword(*d2);        /* $1A: sends signal on data ready */
                          spP->signal_pid    =  pid;                /* if ready, send immediately */

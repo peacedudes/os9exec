@@ -127,7 +127,7 @@ os9err pKwriteln ( ushort pid, syspath_typ*, uint32_t *n,     char* buffer   );
 os9err pKopt     ( ushort pid, syspath_typ*,                  byte* buffer   );
 os9err pKpos     ( ushort pid, syspath_typ*, uint32_t *posP );
 os9err pKready   ( ushort pid, syspath_typ*, uint32_t *n    );
-os9err pKlock    ( ushort pid, syspath_typ*, uint32_t *d0,    uint32_t *d1   );
+os9err pKlock    ( ushort pid, syspath_typ*, uint32_t *d0,    uint32_t *d1, uint32_t *d2 );
 /* ------------------------------------------------------------------------- */
 
 void init_Pipe( fmgr_typ* f )
@@ -1117,8 +1117,8 @@ os9err pKready( ushort pid, syspath_typ *spP, uint32_t *n )
 
 
 
-os9err pKlock( ushort pid, _spP_, uint32_t *d0, uint32_t *d1)
-/* creates tty/pty system paths and locks them together */
+os9err pKlock( ushort pid, _spP_, uint32_t *d0, uint32_t *d1, uint32_t *d2)
+/* creates tty/pty system paths and locks them together (<d2> unused here) */
 /* they are named tty0,tty1,... and pty0,pty1,... */
 /* the lowest free name will be taken */ 
 {
