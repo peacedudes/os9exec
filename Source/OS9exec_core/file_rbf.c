@@ -682,6 +682,80 @@ static Boolean RingSector( syspath_typ* spP, ulong sect, byte* b, ulong len )
     return false;
 } /* RingSector */
 
+/* A reader that has caught up to a file another path still has open for
+ * writing is not at the end of it, it is merely early: the writer may write
+ * more, so end-of-file is not the answer yet. It sleeps instead, and the
+ * writer starts it again on its next write, or when it closes and there
+ * really is nothing more to come. Nothing is locked to do this -- the wait
+ * sits past the last byte, where there is no data to lock.
+ *
+ * Sleeping means returning and being called again: a file manager here is a C
+ * function called from the syscall dispatcher, so it cannot suspend part-way
+ * through the way RBF's own Read could. The dispatcher has already saved the
+ * registers, so the read simply runs again from the top when the process next
+ * runs -- which is what <pWaitRead> arranges. */
+
+static ushort WriterOnFile( syspath_typ* spP )
+/* the process writing this file through one of the other paths, 0 if none.
+ * Which process it is matters: waiting for one's own process to write more is
+ * waiting for oneself, since the wait is what stops it getting there. */
+{
+    syspath_typ* spK;
+    ushort       k= spP->u.rbf.sameFile;
+
+    while (k!=spP->nr && k!=0) {
+             spK= &syspaths[k];
+      if (   spK->u.rbf.wMode) return spK->u.rbf.ownPid;
+
+      k= spK->u.rbf.sameFile;
+    } // while
+
+    return 0;
+} /* WriterOnFile */
+
+static void SleepOnFile( syspath_typ* spP, ushort pid )
+/* wait for this file to grow, or for its writer to close */
+{
+    process_typ* cp= &procs[pid];
+
+    spP->u.rbf.waitPid= pid;
+                        cp->saved_state= cp->state; /* to come back to */
+    set_os9_state( pid, pWaitRead, "RBF eof" );
+} /* SleepOnFile */
+
+static void WokeOnFile( ushort pid )
+/* put the process back as it was once its read can go ahead. Without this it
+ * stays <pWaitRead>, and the dispatcher keeps restoring the saved registers
+ * and running the same read over and over -- it succeeds every time and is
+ * re-entered every time, which looks exactly like a hang. */
+{
+    process_typ* cp= &procs[pid];
+
+    if (cp->state==pWaitRead) set_os9_state( pid, cp->saved_state, "RBF eof resume" );
+} /* WokeOnFile */
+
+static void WakeOnFile( syspath_typ* spP )
+/* start every path asleep on this file -- all of them, not one: each looks
+ * again for itself, and what it finds is its own business */
+{
+    syspath_typ* spK;
+    ushort       k= spP->u.rbf.sameFile;
+
+    while (k!=spP->nr && k!=0) {
+             spK= &syspaths[k];
+      if (   spK->u.rbf.waitPid!=0) {
+        /* eligible at the next arbitration, and NOT made active: the state has
+         * to stay <pWaitRead>, because that is what makes the dispatcher put
+         * the saved registers back and run the read again. Waking it to
+         * pActive would resume it past a read that never happened. */
+        procs[ spK->u.rbf.waitPid ].pW_age= 0;
+             spK->u.rbf.waitPid= 0;
+      } // if
+
+      k= spK->u.rbf.sameFile;
+    } // while
+} /* WakeOnFile */
+
 static void RingInvalidate( syspath_typ* spP, ulong sect )
 /* drop this sector from the other paths' buffers. Without this they keep
  * serving themselves the copy they already hold -- DoAccess only re-reads a
@@ -2619,6 +2693,8 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     
     debugprintf( dbgFiles,dbgDetail,("# >DoAccess (%s): n=%d\n", wMode ? "write":"read", *lenP ));
     sv= rbf->currPos;
+
+    if (!wMode) WokeOnFile( currentpid ); /* re-entered after parking at EOF */
     
     do {           // do this loop for every sector to be read into buffer
         if (spP->rawMode) {
@@ -2664,6 +2740,25 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
             }
             else {
               if (rOK)    break; /* reading is ok so far */
+
+              /* nothing here yet -- but if another path still has the file
+               * open for writing, this is not the end of it, so wait for the
+               * next write rather than reporting one */
+              if (!spP->rawMode) {
+                  ushort wpid= WriterOnFile( spP );
+
+                  if (wpid!=0 && wpid==currentpid) {
+                      err= E_DEADLK; break; /* the writer is us: we would be
+                                             * waiting for ourselves */
+                  } // if
+
+                  if (wpid!=0) {
+                      SleepOnFile( spP, currentpid );
+                      *lenP= 0;
+                      return 0; /* the read runs again once we are woken */
+                  } // if
+              } // if
+
               err= E_EOF; break;
             } // if
           } // if
@@ -2809,7 +2904,10 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
         /* the file just grew: hand the others the new size, and the segment
          * list that goes with it, so a reader following this writer can both
          * tell there is more and find the sectors it landed in */
-        if (wMode && !spP->rawMode) RingPublish( spP, rbf->lastPos );
+        if (wMode && !spP->rawMode) {
+            RingPublish( spP, rbf->lastPos );
+            WakeOnFile ( spP );  /* there is more to read now */
+        } // if
     } // if
 
     debugprintf( dbgFiles,dbgDetail,("# <DoAccess (%s): n=%d\n", wMode ? "write":"read", *lenP ));
@@ -3057,6 +3155,8 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     rbf->lastPos= 0;
     rbf->flushFDCache= false;
     rbf->sameFile= spP->nr; /* alone until RingJoin finds this file's others */
+    rbf->waitPid = 0;
+    rbf->ownPid  = currentpid;
 
         root= IsRoot( pathname ); /* root path must be a directory */
     if (root && isFile) return E_FNA;
@@ -3295,6 +3395,11 @@ os9err pRclose( ushort pid, syspath_typ* spP )
       if (rbf->flushFDCache) Flush_FDCache( dev->name );
     #endif
     
+    /* before leaving the ring: anyone waiting on this file must look again --
+     * if this was the writer they were waiting for, there is nothing more
+     * coming and what they will now see is a genuine end of file */
+    WakeOnFile    ( spP );
+
     ReleaseBuffers( spP );
     return err;
 } /* pRclose */

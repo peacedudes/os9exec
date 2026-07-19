@@ -1,0 +1,98 @@
+# RBF end-of-file lock: what was broken, and what it does now
+
+Two programs, one file. A writer appends a timestamped record once a
+second and closes. A reader opened while the writer is still running
+follows it. This is the case the EOF lock exists for: a reader that has
+caught up to a file someone is still writing has not reached the end of
+it, it is merely early.
+
+Both transcripts below are the same two programs, on the same disk image,
+against binaries that differ only in `Source/OS9exec_core/file_rbf.c`.
+
+`W<n>` is the writer; `R<n>` is the reader, showing the timestamp inside
+the record next to the time it actually came back from `READ`.
+
+## Before
+
+```
+W1 wrote at 07:45:25
+W2 wrote at 07:45:26
+W4 wrote at 07:45:28
+R end n=0 err=211
+W5 wrote at 07:45:29
+W6 wrote at 07:45:30
+```
+
+The reader read **nothing at all** — `n=0` — and got `E$EOF` (211)
+immediately, while the writer was demonstrably still writing around it.
+It did not block, did not wait, and did not come back. A reader that
+opens while a file is being written is told the file is finished.
+
+That was not a race or a timing artifact: it happened on every run, and
+a path that opened first stayed blind to that file for the rest of its
+life, even after the writer closed. Reopening the file afterwards read
+everything correctly, so the data was always there and always intact.
+
+## After
+
+```
+W1 wrote at 07:45:58
+W2 wrote at 07:45:59
+W4 wrote at 07:46:01
+W5 wrote at 07:46:02
+R1 line=07:45:58 seen at 07:46:02     <- reading while the writer runs
+W6 wrote at 07:46:03
+R2 line=07:45:59 seen at 07:46:03
+W done
+R3 line=07:46:00 seen at 07:46:03
+R4 line=07:46:01 seen at 07:46:03
+R5 line=07:46:02 seen at 07:46:03
+R6 line=07:46:03 seen at 07:46:03     <- caught up, zero lag
+R end n=6 err=211                     <- real end of file, after close
+```
+
+The reader now reads records as they appear, interleaved with the
+writer's own output rather than arriving in one burst afterwards. It
+catches up to zero lag by the last record, and only sees `E$EOF` once the
+writer has closed and there genuinely is nothing more coming.
+
+## What the fix is
+
+Nothing is locked. The wait sits past the last byte, where there is no
+data to lock — which is why a second writer appending is unaffected, and
+why two programs logging to the same file do not shut each other out.
+
+1. Paths open on the same file are linked in a ring. Every path keeps its
+   own buffers, but can now reach the others'. Previously two paths on
+   one file were two independent views of it: each held the file
+   descriptor it copied at open, so a reader never saw the size or the
+   segment list change underneath it, and could neither tell the file had
+   grown nor find the sectors it had grown into.
+2. A write publishes the new size and segment list to the other paths,
+   and a sector still dirty in one path's buffer is read from there
+   rather than from the device.
+3. A read that finds nothing checks whether **another process** still has
+   the file open for writing. If so it sleeps instead of reporting the
+   end of the file. The writer wakes every sleeper on each write, and
+   again on close.
+4. A conflict with one's own process is refused with `E$DEADLK` rather
+   than slept on — waiting for yourself is what makes the wait never end.
+
+## Reproducing
+
+`dogfood-eoflock-writer.bas` / `-reader-readonly.bas` are the original
+pair that first demonstrated the bug. The compact pair used above writes
+six records instead of forty so a run takes about eight seconds.
+
+Four further tests are single-process, deterministic, and need no timing
+at all — each isolates one thing the ring has to get right:
+
+| Test | What fails without it |
+|---|---|
+| `dogfood-eoflock-visibility.bas` | a reader cannot see a record written after it opened |
+| `dogfood-eoflock-invalidate.bas` | a reader that cached a sector keeps serving itself the stale copy |
+| `dogfood-eoflock-writerclose.bas` | a reader loses the file's contents when the writer closes |
+| `dogfood-eoflock-deadlock.bas` | a process waits for itself and hangs, instead of being refused |
+
+The emulator's own regression suite is green (129/129) with these
+changes, unchanged from before them.

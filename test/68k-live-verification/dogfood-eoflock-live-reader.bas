@@ -1,0 +1,1 @@
+PROCEDURE eofrd2DIM p: BYTEDIM line: STRING[24]DIM n, e: INTEGERn = 0OPEN #p, "/h1/CLAUDETEST/live.dat": READPRINT #2, "R opened at "; RIGHT$(DATE$,8)ON ERROR GOTO 800100 READ #p, linen = n + 1PRINT #2, "R"; n; " line="; line; " seen at "; RIGHT$(DATE$,8)GOTO 100800 e = ERRON ERROR GOTO 0PRINT #2, "R end n="; n; " err="; eEND

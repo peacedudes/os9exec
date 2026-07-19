@@ -799,6 +799,8 @@ typedef struct {
             uint32_t  fddir;        // current FD logical sector of the dir
             uint32_t  deptr;        // dir entry ptr
             ushort    sameFile;     // ring of the paths open on this same file
+            ushort    waitPid;      // process asleep on this path, 0 if none
+            ushort    ownPid;       // process that opened this path
         } rbf_typ;
 
 /* variant for SCF objects */

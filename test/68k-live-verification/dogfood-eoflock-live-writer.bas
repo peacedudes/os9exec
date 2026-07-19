@@ -1,0 +1,1 @@
+PROCEDURE eofwr2DIM p: BYTEDIM i: INTEGERDIM t, lastt: STRING[8]DIM line: STRING[24]CREATE #p, "/h1/CLAUDETEST/live.dat": WRITElastt = RIGHT$(DATE$,8)i = 0100 t = RIGHT$(DATE$,8)IF t = lastt THEN 100lastt = ti = i + 1line = tWRITE #p, linePRINT #2, "W"; i; " wrote at "; tIF i < 6 THEN 100CLOSE #pPRINT #2, "W done"END
