@@ -1,0 +1,153 @@
+* Live-tests I$GetStt($8D) against os9-dev/references/6809/
+* syscalls-and-module-format.md, which documents A=path, B=function
+* code but does not specify how the queried value comes back -- this
+* test's job is to find out. Tries SS.SIZ(2) and SS.EOF(6) on
+* synctest.dat (10 bytes, pre-existing). Best-guess register convention
+* tried first: result comes back in X:U (32-bit), matching I$Seek's
+* confirmed X:U position convention -- adjust based on live error
+* output if this guess is wrong.
+
+ nam SysGetSttTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysGetSttTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+PATHNUM equ 64
+start equ *
+
+ leax fname,pcr
+ lda #1
+ swi2
+ fcb $84
+ stb ERRB,u
+ bcc openok
+ leax OUTBUF,u
+ leay OPFAL,pcr
+ ldb #OPFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+openok equ *
+ sta PATHNUM,u
+
+* --- I$GetStt(A=path, B=2 SS.SIZ) ---
+ lda PATHNUM,u
+ ldb #2
+ swi2
+ fcb $8D
+ stb ERRB,u
+ bcc szok
+ leax OUTBUF,u
+ leay SZFAL,pcr
+ ldb #SZFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra afterszget
+szok equ *
+ leax OUTBUF,u
+ leay SZPAS,pcr
+ ldb #SZPASL
+ lbsr copys
+ tfr x,d
+ std VALUE,u
+ lbsr prdec
+ lda #$3A
+ sta ,x+
+ tfr u,d
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+afterszget equ *
+
+* --- I$GetStt(A=path, B=6 SS.EOF) before reading past end ---
+ lda PATHNUM,u
+ ldb #6
+ swi2
+ fcb $8D
+ stb ERRB,u
+ bcc eofnotyet
+ leax OUTBUF,u
+ leay EFFAL,pcr
+ ldb #EFFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+eofnotyet equ *
+ leax OUTBUF,u
+ leay EFPAS,pcr
+ ldb #EFPASL
+ lbsr copys
+ lbsr crwrite
+
+closer lda PATHNUM,u
+ swi2
+ fcb $8F
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+fname fcs /synctest.dat/
+OPFAL fcc /FAIL I$Open err=/
+OPFALL equ *-OPFAL
+SZPAS fcc /PASS I$GetStt SS.SIZ returned X:U=/
+SZPASL equ *-SZPAS
+SZFAL fcc /FAIL I$GetStt SS.SIZ err=/
+SZFALL equ *-SZFAL
+EFPAS fcc /PASS I$GetStt SS.EOF accepted (not yet at EOF)/
+EFPASL equ *-EFPAS
+EFFAL fcc /FAIL I$GetStt SS.EOF err=/
+EFFALL equ *-EFFAL
+ emod
+eom equ *

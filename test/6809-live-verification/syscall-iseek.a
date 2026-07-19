@@ -1,0 +1,178 @@
+* Live-tests I$Seek($88)'s register convention against
+* os9-dev/references/6809/syscalls-and-module-format.md, which flags
+* a Source-checked divergence: the manual says "A=path, D or X:D=
+* position" but NitrOS-9's real RBF Seek routine reads the 32-bit
+* position as X (high word) + U (low word), not D. This test seeks to
+* offset 5 in synctest.dat ("HELLOWORLD", 10 bytes, written by an
+* earlier syscall test) via X:U=0:5 and confirms the next read lands on
+* "WORLD" -- proof the X:U convention is what's actually consulted.
+* Pre-req: synctest.dat must already exist with content "HELLOWORLD".
+
+ nam SysSeekTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysSeekTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+PATHNUM equ 64
+RBUF equ 66
+start equ *
+
+ leax fname,pcr
+ lda #1
+ swi2
+ fcb $84
+ stb ERRB,u
+ bcc openok
+ leax OUTBUF,u
+ leay OPFAL,pcr
+ ldb #OPFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+openok equ *
+ sta PATHNUM,u
+
+* --- I$Seek(A=path, X:U=32-bit position) -- seek to offset 5 ---
+* U doubles as this program's own U-relative data-area base pointer, so
+* it MUST be saved on the hardware stack before I$Seek's own calling
+* convention overwrites it with the position's low word, and restored
+* immediately after the call returns, before any other ,u-relative
+* reference is used again. PULS does not affect CC, so the carry/B
+* result from the swi2 survives the restore untouched.
+ lda PATHNUM,u
+ pshs u
+ ldx #0
+ ldu #5
+ swi2
+ fcb $88
+ puls u
+ stb ERRB,u
+ bcc seekok
+ leax OUTBUF,u
+ leay SKFAL,pcr
+ ldb #SKFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra closer
+seekok equ *
+ leax OUTBUF,u
+ leay SKPAS,pcr
+ ldb #SKPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- I$Read 5 bytes, expect "WORLD" ---
+ leax RBUF,u
+ ldy #5
+ lda PATHNUM,u
+ swi2
+ fcb $89
+ stb ERRB,u
+ bcc readok
+ leax OUTBUF,u
+ leay RDFAL,pcr
+ ldb #RDFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ bra closer
+readok equ *
+ leax RBUF,u
+ leay expect,pcr
+ ldb #5
+cmploop lda ,x+
+ cmpa ,y+
+ bne cmpbad
+ decb
+ bne cmploop
+ leax OUTBUF,u
+ leay CMPAS,pcr
+ ldb #CMPASL
+ lbsr copys
+ lbsr crwrite
+ bra closer
+cmpbad equ *
+ leax OUTBUF,u
+ leay CMBAD,pcr
+ ldb #CMBADL
+ lbsr copys
+ leax RBUF,u
+ ldy #5
+ lda #1
+ swi2
+ fcb $8C
+
+closer lda PATHNUM,u
+ swi2
+ fcb $8F
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+fname fcs /synctest.dat/
+expect fcc /WORLD/
+OPFAL fcc /FAIL I$Open err=/
+OPFALL equ *-OPFAL
+SKPAS fcc /PASS I$Seek accepted X:U convention/
+SKPASL equ *-SKPAS
+SKFAL fcc /FAIL I$Seek err=/
+SKFALL equ *-SKFAL
+RDFAL fcc /FAIL I$Read after seek err=/
+RDFALL equ *-RDFAL
+CMPAS fcc /PASS content at offset 5 is WORLD -- X:U confirmed/
+CMPASL equ *-CMPAS
+CMBAD fcc /FAIL content at offset 5 is not WORLD, got:/
+CMBADL equ *-CMBAD
+ emod
+eom equ *

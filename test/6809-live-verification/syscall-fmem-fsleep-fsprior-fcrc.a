@@ -1,0 +1,205 @@
+* Live-tests F$Mem($07), F$Sleep($0A), F$SPrior($0D), F$CRC($17) against
+* os9-dev/references/6809/syscalls-and-module-format.md. Each result is
+* ONE self-contained PASS/FAIL line.
+
+ nam SysMiscTest
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysMiscTest/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+OWNPID equ 64
+CRCBUF equ 66
+start equ *
+
+* --- F$Mem(D=0 query) -> Y=new upper bound, D=actual size ---
+ ldd #0
+ swi2
+ fcb $07
+ stb ERRB,u
+ bcc memok
+ leax OUTBUF,u
+ leay MMFAL,pcr
+ ldb #MMFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra aftmem
+memok equ *
+ leax OUTBUF,u
+ leay MMPAS,pcr
+ ldb #MMPASL
+ lbsr copys
+ tfr y,d
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+aftmem equ *
+
+* --- F$Sleep(X=ticks) -> X=remaining ticks ---
+ ldx #50
+ swi2
+ fcb $0A
+ stb ERRB,u
+ bcc slok
+ leax OUTBUF,u
+ leay SLFAL,pcr
+ ldb #SLFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra aftsleep
+slok equ *
+ leax OUTBUF,u
+ leay SLPAS,pcr
+ ldb #SLPASL
+ lbsr copys
+ tfr x,d
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+aftsleep equ *
+
+* --- F$ID() -> A=own PID, needed for F$SPrior ---
+ swi2
+ fcb $0C
+ sta OWNPID,u
+
+* --- F$SPrior(A=PID, B=priority) ---
+ lda OWNPID,u
+ ldb #150
+ swi2
+ fcb $0D
+ stb ERRB,u
+ bcc prok
+ leax OUTBUF,u
+ leay SPFAL,pcr
+ ldb #SPFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra aftpr
+prok equ *
+ leax OUTBUF,u
+ leay SPPAS,pcr
+ ldb #SPPASL
+ lbsr copys
+ lbsr crwrite
+aftpr equ *
+
+* --- F$CRC(X=start, Y=count, U=3-byte accumulator, init $FFFFFF) ---
+ ldd #$FFFF
+ std CRCBUF,u
+ ldd #$FF00
+ stb CRCBUF+2,u
+ leax crcdata,pcr
+ ldy #crcdatal
+ leau CRCBUF,u
+ swi2
+ fcb $17
+ stb ERRB,u
+ bcc crcok
+ leax OUTBUF,u
+ leay CCFAL,pcr
+ ldb #CCFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+crcok equ *
+ leax OUTBUF,u
+ leay CCPAS,pcr
+ ldb #CCPASL
+ lbsr copys
+ clra
+ ldb CRCBUF,u
+ std VALUE,u
+ lbsr prdec
+ lda #$20
+ sta ,x+
+ clra
+ ldb CRCBUF+1,u
+ std VALUE,u
+ lbsr prdec
+ lda #$20
+ sta ,x+
+ clra
+ ldb CRCBUF+2,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+crcdata fcc /TESTDATA/
+crcdatal equ *-crcdata
+MMPAS fcc /PASS F$Mem upper bound=/
+MMPASL equ *-MMPAS
+MMFAL fcc /FAIL F$Mem err=/
+MMFALL equ *-MMFAL
+SLPAS fcc /PASS F$Sleep remaining=/
+SLPASL equ *-SLPAS
+SLFAL fcc /FAIL F$Sleep err=/
+SLFALL equ *-SLFAL
+SPPAS fcc /PASS F$SPrior/
+SPPASL equ *-SPPAS
+SPFAL fcc /FAIL F$SPrior err=/
+SPFALL equ *-SPFAL
+CCPAS fcc /PASS F$CRC result=/
+CCPASL equ *-CCPAS
+CCFAL fcc /FAIL F$CRC err=/
+CCFALL equ *-CCFAL
+ emod
+eom equ *
