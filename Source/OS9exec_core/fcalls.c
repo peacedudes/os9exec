@@ -1259,7 +1259,7 @@ os9err OS9_F_TLink( regs_type *rp, ushort cpid )
     char mpath[OS9PATHLEN], *p;
     traphandler_typ *tp;
     mod_trap *trapmodP;
-    uint32_t *sp;
+    byte     *sp8;   /* 68k stack pointer, byte-wise: A7 is only word-aligned */
     process_typ* cp= &procs[cpid];
     
         trapidx=rp->d[0]-1;
@@ -1279,12 +1279,21 @@ os9err OS9_F_TLink( regs_type *rp, ushort cpid )
             rp->a[1]= TO68K(trapmodP)+os9_long(trapmodP->progmod._mexec);
          
             /* --- now modify stack and PC to return through trapinit routine to program */
-            sp=(uint32_t*)FROM68K(rp->a[7]);        // get current stack pointer as *uint32_t
+            /* Push through a BYTE pointer + os9_set_l (memcpy-based), not a
+             * uint32_t* store: the 68000 only guarantees the stack pointer is
+             * WORD (2-byte) aligned, so A7 is routinely not 4-aligned and
+             * `*(uint32_t*)sp = ...` is a misaligned store -- undefined
+             * behaviour that x86/AArch64 happen to tolerate. UBSan on s390x
+             * reported all three of these pushes ("store to misaligned address
+             * ... which requires 4 byte alignment"). os9_set_l applies
+             * os9_long() itself, so the values go in raw here. Same push order
+             * and the same 12-byte net adjustment as before. */
+            sp8= (byte*)FROM68K(rp->a[7]);          // current stack pointer, byte-wise
             if (!cp->isIntUtil) {          // workaround for built-in utilities: not really used
-              *(--sp)= os9_long(rp->pc);   // save PC pointing to instruction after F$TLink
-              *(--sp)= 0;                  // save two dummy null words
-              *(--sp)= os9_long(rp->a[6]); // save "caller's A6"
-              rp->a[7]=TO68K(sp);          // update stack pointer
+              sp8 -= 4; os9_set_l( sp8, rp->pc );   // save PC pointing to instruction after F$TLink
+              sp8 -= 4; os9_set_l( sp8, 0 );        // save two dummy null words
+              sp8 -= 4; os9_set_l( sp8, rp->a[6] ); // save "caller's A6"
+              rp->a[7]=TO68K(sp8);         // update stack pointer
             } // if
             
             /* --- modify registers to continue execution in traphandler's init routine */

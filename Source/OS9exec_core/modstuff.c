@@ -1563,7 +1563,12 @@ void mod_crc( mod_exec* m )
     crc= calc_crc( (byte*)"\0", 1,        crc ); /* update with one additional 0 byte */
     crc=     ~crc; /* 1's complement */
 
-    *((uint32_t*)((uintptr_t)m+modsize-4))= os9_long(crc); /* assign now */
+    /* os9_set_l (memcpy-based), not a uint32_t* store: a module's base address
+     * carries no 4-byte alignment guarantee, so `m+modsize-4` is routinely
+     * misaligned and the old cast-and-store was undefined behaviour. UBSan on
+     * s390x flagged it ("store to misaligned address ... requires 4 byte
+     * alignment"). os9_set_l applies os9_long() itself, so pass crc raw. */
+    os9_set_l( (byte*)m + modsize-4, crc ); /* assign now */
 
     debugprintf(dbgModules,dbgNorm,("# mod_crc: '%s' (size=%u): new CRC=$%08X\n",
                                        Mod_Name(m), modsize, crc ));
