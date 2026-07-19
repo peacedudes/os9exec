@@ -33,10 +33,10 @@
  */
 
 #include "os9exec_incl.h"
+#include <signal.h>          /* sig_atomic_t is needed on every platform */
 
 #if defined UNIX && !defined MINGW
-  #include <signal.h>
-  #include <sys/time.h>
+  #include <sys/time.h>      /* setitimer: the tick itself is UNIX-only */
 #endif
 
 /* Lives in the emulation core (newcpu.c), which this file does not include:
