@@ -1,0 +1,248 @@
+* Live-tests F$VModul($2E), F$ELink($4D), F$SLink($34), F$NMLink($21),
+* F$NMLoad($22) against os9-dev/references/6809/syscalls-and-module-format.md.
+* Uses F$Link("childprg") first to get a known-good, already-resident
+* module header address to feed the others -- avoids constructing any
+* module data by hand.
+
+ nam SysLinkTst
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysLinkTst/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+HDRADDR equ 64
+DIRENT equ 66
+start equ *
+
+* --- F$Load("childprg") -> U=header addr, same shape as F$Link.
+* Using F$Load, not F$Link, since F$Link only searches the resident
+* in-memory module directory -- after a fresh boot nothing has loaded
+* childprg into memory yet this session, so F$Link alone would (and
+* did, live-confirmed) fail E$MNF/221 even though the file is right
+* there on disk. F$Load falls back to a filesystem search. ---
+ pshs u
+ leax cpname,pcr
+ clra
+ swi2
+ fcb $01
+ tfr u,y
+ puls u
+ stb ERRB,u
+ bcc lkok
+ leax OUTBUF,u
+ leay LKFAL,pcr
+ ldb #LKFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+lkok equ *
+ sty HDRADDR,u
+
+* --- F$VModul(LI: X=module addr) -> U=directory entry addr ---
+ pshs u
+ ldx HDRADDR,u
+ swi2
+ fcb $2E
+ tfr u,y
+ puls u
+ stb ERRB,u
+ bcc vmok
+ leax OUTBUF,u
+ leay VMFAL,pcr
+ ldb #VMFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra sltest
+vmok equ *
+ sty DIRENT,u
+ leax OUTBUF,u
+ leay VMPAS,pcr
+ ldb #VMPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$ELink(B=module type, X=ptr to directory entry) ---
+ pshs u
+ ldx DIRENT,u
+ ldb #1
+ swi2
+ fcb $4D
+ puls u
+ stb ERRB,u
+ bcc elok
+ leax OUTBUF,u
+ leay ELFAL,pcr
+ ldb #ELFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra sltest
+elok equ *
+ leax OUTBUF,u
+ leay ELPAS,pcr
+ ldb #ELPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$SLink(A=type, X=name ptr, Y=DAT image ptr) ---
+sltest equ *
+ pshs u
+ leax cpname,pcr
+ clra
+ ldy #0
+ swi2
+ fcb $34
+ puls u
+ stb ERRB,u
+ bcc slok
+ leax OUTBUF,u
+ leay SLFAL,pcr
+ ldb #SLFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra nmltest
+slok equ *
+ leax OUTBUF,u
+ leay SLPAS,pcr
+ ldb #SLPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$NMLink(A=type/lang, X=name ptr) ---
+nmltest equ *
+ pshs u
+ leax cpname,pcr
+ clra
+ swi2
+ fcb $21
+ puls u
+ stb ERRB,u
+ bcc nlok
+ leax OUTBUF,u
+ leay NLFAL,pcr
+ ldb #NLFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra nmldtest
+nlok equ *
+ leax OUTBUF,u
+ leay NLPAS,pcr
+ ldb #NLPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$NMLoad(A=type/lang, X=pathlist ptr) ---
+nmldtest equ *
+ pshs u
+ leax cpname,pcr
+ clra
+ swi2
+ fcb $22
+ puls u
+ stb ERRB,u
+ bcc ndok
+ leax OUTBUF,u
+ leay NDFAL,pcr
+ ldb #NDFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+ndok equ *
+ leax OUTBUF,u
+ leay NDPAS,pcr
+ ldb #NDPASL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+cpname fcs /childprg/
+LKPAS fcc /PASS F$Load childprg/
+LKPASL equ *-LKPAS
+LKFAL fcc /FAIL F$Load err=/
+LKFALL equ *-LKFAL
+VMPAS fcc /PASS F$VModul/
+VMPASL equ *-VMPAS
+VMFAL fcc /FAIL F$VModul err=/
+VMFALL equ *-VMFAL
+ELPAS fcc /PASS F$ELink/
+ELPASL equ *-ELPAS
+ELFAL fcc /FAIL F$ELink err=/
+ELFALL equ *-ELFAL
+SLPAS fcc /PASS F$SLink/
+SLPASL equ *-SLPAS
+SLFAL fcc /FAIL F$SLink err=/
+SLFALL equ *-SLFAL
+NLPAS fcc /PASS F$NMLink/
+NLPASL equ *-NLPAS
+NLFAL fcc /FAIL F$NMLink err=/
+NLFALL equ *-NLFAL
+NDPAS fcc /PASS F$NMLoad/
+NDPASL equ *-NDPAS
+NDFAL fcc /FAIL F$NMLoad err=/
+NDFALL equ *-NDFAL
+ emod
+eom equ *

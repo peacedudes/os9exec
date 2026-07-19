@@ -1,0 +1,339 @@
+* Live-tests F$DATLog($44), F$DATTmp($45), F$LDAXY($46), F$LDAXYP($47),
+* F$LDDDXY($48), F$LDABX($49), F$STABX($4A), F$MapBlk($4F),
+* F$ClrBlk($50) against os9-dev/references/6809/syscalls-and-module-format.md.
+* All documented Level-2-only (DAT-image cross-task memory access
+* primitives) -- expected to cleanly reject on this system, matching
+* the already-confirmed E$UnkSvc pattern (F$SRqMem/F$Move/F$FModul/
+* F$GProcP). Placeholder inputs are safe/plausible but not meaningful
+* beyond exercising dispatch, since none of this is expected to reach
+* real DAT hardware manipulation on this build.
+
+ nam Sys2DatTst
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /Sys2DatTst/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+start equ *
+
+* --- F$DATLog(B=block index, X=block offset) -> X=logical addr ---
+ pshs u
+ ldx #0
+ ldb #0
+ swi2
+ fcb $44
+ puls u
+ stb ERRB,u
+ bcc dlok
+ leax OUTBUF,u
+ leay DLFAL,pcr
+ ldb #DLFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra dttest
+dlok equ *
+ leax OUTBUF,u
+ leay DLPAS,pcr
+ ldb #DLPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$DATTmp(D=block number) -> Y=DAT image ptr ---
+dttest equ *
+ pshs u
+ ldd #1
+ swi2
+ fcb $45
+ puls u
+ stb ERRB,u
+ bcc dtok
+ leax OUTBUF,u
+ leay DTFAL,pcr
+ ldb #DTFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra laxytest
+dtok equ *
+ leax OUTBUF,u
+ leay DTPAS,pcr
+ ldb #DTPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$LDAXY(X=block offset, Y=DAT image ptr) -> A=data byte ---
+laxytest equ *
+ pshs u
+ ldx #0
+ ldy #0
+ swi2
+ fcb $46
+ puls u
+ stb ERRB,u
+ bcc laok
+ leax OUTBUF,u
+ leay LAFAL,pcr
+ ldb #LAFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra laxyptest
+laok equ *
+ leax OUTBUF,u
+ leay LAPAS,pcr
+ ldb #LAPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$LDAXYP(X=block offset, Y=DAT image ptr) -> A=data, X++ ---
+laxyptest equ *
+ pshs u
+ ldx #0
+ ldy #0
+ swi2
+ fcb $47
+ puls u
+ stb ERRB,u
+ bcc lpok
+ leax OUTBUF,u
+ leay LPFAL,pcr
+ ldb #LPFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra lddtest
+lpok equ *
+ leax OUTBUF,u
+ leay LPPAS,pcr
+ ldb #LPPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$LDDDXY(D=offset-to-offset, X=offset, Y=DAT image ptr) -> D ---
+lddtest equ *
+ pshs u
+ ldd #0
+ ldx #0
+ ldy #0
+ swi2
+ fcb $48
+ puls u
+ stb ERRB,u
+ bcc ldok
+ leax OUTBUF,u
+ leay LDFAL,pcr
+ ldb #LDFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra labxtest
+ldok equ *
+ leax OUTBUF,u
+ leay LDPAS,pcr
+ ldb #LDPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$LDABX(B=task#, X=data ptr) -> A=data byte ---
+labxtest equ *
+ pshs u
+ ldx #0
+ ldb #0
+ swi2
+ fcb $49
+ puls u
+ stb ERRB,u
+ bcc lxok
+ leax OUTBUF,u
+ leay LXFAL,pcr
+ ldb #LXFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra stabtest
+lxok equ *
+ leax OUTBUF,u
+ leay LXPAS,pcr
+ ldb #LXPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$STABX(A=data byte, B=task#, X=logical addr) ---
+stabtest equ *
+ pshs u
+ ldx #0
+ lda #0
+ ldb #0
+ swi2
+ fcb $4A
+ puls u
+ stb ERRB,u
+ bcc sxok
+ leax OUTBUF,u
+ leay SXFAL,pcr
+ ldb #SXFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra mbtest
+sxok equ *
+ leax OUTBUF,u
+ leay SXPAS,pcr
+ ldb #SXPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$MapBlk(B=block count, X=beginning block#) -> U=addr of first block ---
+mbtest equ *
+ pshs u
+ ldx #0
+ ldb #1
+ swi2
+ fcb $4F
+ puls u
+ stb ERRB,u
+ bcc mbok
+ leax OUTBUF,u
+ leay MBFAL,pcr
+ ldb #MBFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+mbok equ *
+ leax OUTBUF,u
+ leay MBPAS,pcr
+ ldb #MBPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$ClrBlk(B=block count, U=addr of first block) ---
+ pshs u
+ ldb #1
+ swi2
+ fcb $50
+ puls u
+ stb ERRB,u
+ bcc cbok
+ leax OUTBUF,u
+ leay CBFAL,pcr
+ ldb #CBFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+cbok equ *
+ leax OUTBUF,u
+ leay CBPAS,pcr
+ ldb #CBPASL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+DLPAS fcc /PASS F$DATLog/
+DLPASL equ *-DLPAS
+DLFAL fcc /FAIL F$DATLog err=/
+DLFALL equ *-DLFAL
+DTPAS fcc /PASS F$DATTmp/
+DTPASL equ *-DTPAS
+DTFAL fcc /FAIL F$DATTmp err=/
+DTFALL equ *-DTFAL
+LAPAS fcc /PASS F$LDAXY/
+LAPASL equ *-LAPAS
+LAFAL fcc /FAIL F$LDAXY err=/
+LAFALL equ *-LAFAL
+LPPAS fcc /PASS F$LDAXYP/
+LPPASL equ *-LPPAS
+LPFAL fcc /FAIL F$LDAXYP err=/
+LPFALL equ *-LPFAL
+LDPAS fcc /PASS F$LDDDXY/
+LDPASL equ *-LDPAS
+LDFAL fcc /FAIL F$LDDDXY err=/
+LDFALL equ *-LDFAL
+LXPAS fcc /PASS F$LDABX/
+LXPASL equ *-LXPAS
+LXFAL fcc /FAIL F$LDABX err=/
+LXFALL equ *-LXFAL
+SXPAS fcc /PASS F$STABX/
+SXPASL equ *-SXPAS
+SXFAL fcc /FAIL F$STABX err=/
+SXFALL equ *-SXFAL
+MBPAS fcc /PASS F$MapBlk/
+MBPASL equ *-MBPAS
+MBFAL fcc /FAIL F$MapBlk err=/
+MBFALL equ *-MBFAL
+CBPAS fcc /PASS F$ClrBlk/
+CBPASL equ *-CBPAS
+CBFAL fcc /FAIL F$ClrBlk err=/
+CBFALL equ *-CBFAL
+ emod
+eom equ *

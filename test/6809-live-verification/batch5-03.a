@@ -1,0 +1,250 @@
+* Live-tests F$Find64($2F), F$All64($30), F$Ret64($31), F$VIRQ($27),
+* F$BtMem($36) against os9-dev/references/6809/syscalls-and-module-format.md.
+
+ nam Sys64VirqTst
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /Sys64VirqTst/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+PGBASE equ 64
+BLKNUM equ 66
+start equ *
+
+* --- F$All64(X=0, allocate new base page) -> A=block#, X=page base, Y=block addr ---
+ pshs u
+ ldx #0
+ swi2
+ fcb $30
+ tfr x,y
+ puls u
+ stb ERRB,u
+ bcc a6ok
+ leax OUTBUF,u
+ leay A6FAL,pcr
+ ldb #A6FALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra virqtest
+a6ok equ *
+ sta BLKNUM,u
+ sty PGBASE,u
+ leax OUTBUF,u
+ leay A6PAS,pcr
+ ldb #A6PASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$Find64(A=block#, X=base-page addr) -> Y=block addr ---
+ pshs u
+ lda BLKNUM,u
+ ldx PGBASE,u
+ swi2
+ fcb $2F
+ puls u
+ stb ERRB,u
+ bcc f6ok
+ leax OUTBUF,u
+ leay F6FAL,pcr
+ ldb #F6FALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra r6test
+f6ok equ *
+ leax OUTBUF,u
+ leay F6PAS,pcr
+ ldb #F6PASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$Ret64(A=block#, X=base-page addr) ---
+r6test equ *
+ pshs u
+ lda BLKNUM,u
+ ldx PGBASE,u
+ swi2
+ fcb $31
+ puls u
+ stb ERRB,u
+ bcc r6ok
+ leax OUTBUF,u
+ leay R6FAL,pcr
+ ldb #R6FALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra virqtest
+r6ok equ *
+ leax OUTBUF,u
+ leay R6PAS,pcr
+ ldb #R6PASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$VIRQ install (Y=packet, X<>0, D=initial count), then delete
+* (X=0, Y=same packet -- delete-by-address-match) ---
+virqtest equ *
+ ldx #1000
+ leay virpkt,pcr
+ stx ,y
+ stx 2,y
+ clr 4,y
+ pshs u
+ leay virpkt,pcr
+ ldd #1000
+ ldx #1
+ swi2
+ fcb $27
+ puls u
+ stb ERRB,u
+ bcc viok
+ leax OUTBUF,u
+ leay VIFAL,pcr
+ ldb #VIFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra bmtest
+viok equ *
+ leax OUTBUF,u
+ leay VIPAS,pcr
+ ldb #VIPASL
+ lbsr copys
+ lbsr crwrite
+* delete it immediately
+ pshs u
+ leay virpkt,pcr
+ ldx #0
+ swi2
+ fcb $27
+ puls u
+ stb ERRB,u
+ bcc vdok
+ leax OUTBUF,u
+ leay VDFAL,pcr
+ ldb #VDFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra bmtest
+vdok equ *
+ leax OUTBUF,u
+ leay VDPAS,pcr
+ ldb #VDPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$BtMem(D=byte count) -- deprecated, equated to F$SRqMem ---
+bmtest equ *
+ pshs u
+ ldd #16
+ swi2
+ fcb $36
+ puls u
+ stb ERRB,u
+ bcc bmok
+ leax OUTBUF,u
+ leay BMFAL,pcr
+ ldb #BMFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+bmok equ *
+ leax OUTBUF,u
+ leay BMPAS,pcr
+ ldb #BMPASL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+virpkt fdb 0,0
+ fcb 0
+
+A6PAS fcc /PASS F$All64/
+A6PASL equ *-A6PAS
+A6FAL fcc /FAIL F$All64 err=/
+A6FALL equ *-A6FAL
+F6PAS fcc /PASS F$Find64/
+F6PASL equ *-F6PAS
+F6FAL fcc /FAIL F$Find64 err=/
+F6FALL equ *-F6FAL
+R6PAS fcc /PASS F$Ret64/
+R6PASL equ *-R6PAS
+R6FAL fcc /FAIL F$Ret64 err=/
+R6FALL equ *-R6FAL
+VIPAS fcc /PASS F$VIRQ install/
+VIPASL equ *-VIPAS
+VIFAL fcc /FAIL F$VIRQ install err=/
+VIFALL equ *-VIFAL
+VDPAS fcc /PASS F$VIRQ delete/
+VDPASL equ *-VDPAS
+VDFAL fcc /FAIL F$VIRQ delete err=/
+VDFALL equ *-VDFAL
+BMPAS fcc /PASS F$BtMem/
+BMPASL equ *-BMPAS
+BMFAL fcc /FAIL F$BtMem err=/
+BMFALL equ *-BMFAL
+ emod
+eom equ *

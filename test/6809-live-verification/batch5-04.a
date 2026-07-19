@@ -1,0 +1,267 @@
+* Live-tests F$AllPrc($4B), F$AllRAM($39), F$DelRam($51), F$AllImg($3A),
+* F$DelImg($3B), F$SetImg($3C), F$DelPrc($4C) against
+* os9-dev/references/6809/syscalls-and-module-format.md. All of
+* AllImg/DelImg/SetImg are documented Level-2-only and expected to
+* cleanly reject on this system (matching F$SRqMem/F$Move/F$FModul's
+* already-confirmed E$UnkSvc pattern) -- this file's job is to confirm
+* that expectation, not assume it. Uses F$AllPrc's own freshly-allocated
+* descriptor as the X input for the Img-family calls, freed at the end.
+
+ nam Sys2ImgTst
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /Sys2ImgTst/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+PDESC equ 64
+RAMBLK equ 66
+start equ *
+
+* --- F$AllPrc() -> U=descriptor ptr ---
+ pshs u
+ swi2
+ fcb $4B
+ tfr u,y
+ puls u
+ stb ERRB,u
+ bcc apok
+ leax OUTBUF,u
+ leay APFAL,pcr
+ ldb #APFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra ramtest
+apok equ *
+ sty PDESC,u
+ leax OUTBUF,u
+ leay APPAS,pcr
+ ldb #APPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$AllRAM(B=block count) -> D=beginning block# ---
+ramtest equ *
+ pshs u
+ ldb #1
+ swi2
+ fcb $39
+ puls u
+ stb ERRB,u
+ bcc arok
+ leax OUTBUF,u
+ leay ARFAL,pcr
+ ldb #ARFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra imgtest
+arok equ *
+ std RAMBLK,u
+ leax OUTBUF,u
+ leay ARPAS,pcr
+ ldb #ARPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$DelRam(B=block count, X=starting block#) ---
+ pshs u
+ ldx RAMBLK,u
+ ldb #1
+ swi2
+ fcb $51
+ puls u
+ stb ERRB,u
+ bcc drok
+ leax OUTBUF,u
+ leay DRFAL,pcr
+ ldb #DRFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra imgtest
+drok equ *
+ leax OUTBUF,u
+ leay DRPAS,pcr
+ ldb #DRPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$AllImg(A=begin block#, B=block count, X=proc desc ptr) ---
+imgtest equ *
+ pshs u
+ ldx PDESC,u
+ clra
+ ldb #1
+ swi2
+ fcb $3A
+ puls u
+ stb ERRB,u
+ bcc aiok
+ leax OUTBUF,u
+ leay AIFAL,pcr
+ ldb #AIFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra sitest
+aiok equ *
+ leax OUTBUF,u
+ leay AIPAS,pcr
+ ldb #AIPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$DelImg(A=begin block#, B=block count, X=proc desc ptr) ---
+ pshs u
+ ldx PDESC,u
+ clra
+ ldb #1
+ swi2
+ fcb $3B
+ puls u
+ stb ERRB,u
+ bcc diok
+ leax OUTBUF,u
+ leay DIFAL,pcr
+ ldb #DIFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra sitest
+diok equ *
+ leax OUTBUF,u
+ leay DIPAS,pcr
+ ldb #DIPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$SetImg(A=begin block#, B=block count, X=proc desc ptr, U=new image ptr) ---
+sitest equ *
+ ldd PDESC,u
+ pshs u
+ tfr d,x
+ clra
+ ldb #1
+ ldu #0
+ swi2
+ fcb $3C
+ puls u
+ stb ERRB,u
+ bcc siok
+ leax OUTBUF,u
+ leay SIFAL,pcr
+ ldb #SIFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra dptest
+siok equ *
+ leax OUTBUF,u
+ leay SIPAS,pcr
+ ldb #SIPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$DelPrc(A=process ID) -- DELIBERATELY NOT CALLED.
+* A raw F$AllPrc'd descriptor was never F$Fork'd, so it has no real PID
+* of its own -- the only PID available to pass would be this test's OWN
+* live one (via F$ID), and F$DelPrc deallocating the caller's own
+* running process descriptor mid-execution is a real self-termination
+* risk, not a bounded/safe experiment. Skipped; the unfreed descriptor
+* is reclaimed by the next reboot regardless. ---
+dptest equ *
+ leax OUTBUF,u
+ leay DPSKIP,pcr
+ ldb #DPSKIPL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+APPAS fcc /PASS F$AllPrc/
+APPASL equ *-APPAS
+APFAL fcc /FAIL F$AllPrc err=/
+APFALL equ *-APFAL
+ARPAS fcc /PASS F$AllRAM/
+ARPASL equ *-ARPAS
+ARFAL fcc /FAIL F$AllRAM err=/
+ARFALL equ *-ARFAL
+DRPAS fcc /PASS F$DelRam/
+DRPASL equ *-DRPAS
+DRFAL fcc /FAIL F$DelRam err=/
+DRFALL equ *-DRFAL
+AIPAS fcc /PASS F$AllImg/
+AIPASL equ *-AIPAS
+AIFAL fcc /FAIL F$AllImg err=/
+AIFALL equ *-AIFAL
+DIPAS fcc /PASS F$DelImg/
+DIPASL equ *-DIPAS
+DIFAL fcc /FAIL F$DelImg err=/
+DIFALL equ *-DIFAL
+SIPAS fcc /PASS F$SetImg/
+SIPASL equ *-SIPAS
+SIFAL fcc /FAIL F$SetImg err=/
+SIFALL equ *-SIFAL
+DPSKIP fcc /SKIP F$DelPrc (self-PID risk, not attempted)/
+DPSKIPL equ *-DPSKIP
+ emod
+eom equ *

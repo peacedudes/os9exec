@@ -1,0 +1,300 @@
+* Live-tests F$FreeLB($3D), F$FreeHB($3E), F$AllTsk($3F), F$DelTsk($40),
+* F$SetTsk($41), F$ResTsk($42), F$RelTsk($43) against
+* os9-dev/references/6809/syscalls-and-module-format.md. All documented
+* Level-2-only, expected to cleanly reject on this system (matching the
+* already-confirmed E$UnkSvc pattern). Uses its own fresh F$AllPrc
+* descriptor (never F$Fork'd, never scheduled) for the descriptor-based
+* calls -- never touches this test's own live process/task state.
+
+ nam Sys2TskTst
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /Sys2TskTst/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+PDESC equ 64
+TSKNUM equ 66
+start equ *
+
+* --- F$AllPrc() -> U=descriptor ptr (own copy, fresh for this file) ---
+ pshs u
+ swi2
+ fcb $4B
+ tfr u,y
+ puls u
+ stb ERRB,u
+ bcc apok
+ leax OUTBUF,u
+ leay APFAL,pcr
+ ldb #APFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+* F$AllPrc already confirmed E$UnkSvc/unimplemented on this system
+* (batch5-04.a) -- skip straight to F$ResTsk/F$RelTsk, which don't
+* need a process descriptor as input, rather than let the whole rest
+* of this file cascade-skip on a now-expected failure.
+ lbra rttest
+apok equ *
+ sty PDESC,u
+
+* --- F$FreeLB(B=block count, Y=DAT image ptr) -> A=beginning block# ---
+ pshs u
+ ldy PDESC,u
+ ldb #1
+ swi2
+ fcb $3D
+ puls u
+ stb ERRB,u
+ bcc lbok
+ leax OUTBUF,u
+ leay LBFAL,pcr
+ ldb #LBFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra hbtest
+lbok equ *
+ leax OUTBUF,u
+ leay LBPAS,pcr
+ ldb #LBPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$FreeHB(B=block count, Y=DAT image ptr) -> A=beginning block# ---
+hbtest equ *
+ pshs u
+ ldy PDESC,u
+ ldb #1
+ swi2
+ fcb $3E
+ puls u
+ stb ERRB,u
+ bcc hbok
+ leax OUTBUF,u
+ leay HBFAL,pcr
+ ldb #HBFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra attest
+hbok equ *
+ leax OUTBUF,u
+ leay HBPAS,pcr
+ ldb #HBPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$AllTsk(X=process descriptor ptr) ---
+attest equ *
+ pshs u
+ ldx PDESC,u
+ swi2
+ fcb $3F
+ puls u
+ stb ERRB,u
+ bcc atok
+ leax OUTBUF,u
+ leay ATFAL,pcr
+ ldb #ATFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra sttest
+atok equ *
+ leax OUTBUF,u
+ leay ATPAS,pcr
+ ldb #ATPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$SetTsk(X=process descriptor ptr) ---
+sttest equ *
+ pshs u
+ ldx PDESC,u
+ swi2
+ fcb $41
+ puls u
+ stb ERRB,u
+ bcc stok
+ leax OUTBUF,u
+ leay STFAL,pcr
+ ldb #STFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra dttest
+stok equ *
+ leax OUTBUF,u
+ leay STPAS,pcr
+ ldb #STPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$DelTsk(X=process descriptor ptr) ---
+dttest equ *
+ pshs u
+ ldx PDESC,u
+ swi2
+ fcb $40
+ puls u
+ stb ERRB,u
+ bcc dtok
+ leax OUTBUF,u
+ leay DTFAL,pcr
+ ldb #DTFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra rttest
+dtok equ *
+ leax OUTBUF,u
+ leay DTPAS,pcr
+ ldb #DTPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$ResTsk() -> B=task number ---
+rttest equ *
+ pshs u
+ swi2
+ fcb $42
+ stb TSKNUM,u
+ puls u
+ bcc rtok
+ leax OUTBUF,u
+ leay RTFAL,pcr
+ ldb #RTFALL
+ lbsr copys
+ clra
+ ldb TSKNUM,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+rtok equ *
+ leax OUTBUF,u
+ leay RTPAS,pcr
+ ldb #RTPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$RelTsk(B=task number) -- release the one F$ResTsk just gave us ---
+ pshs u
+ ldb TSKNUM,u
+ swi2
+ fcb $43
+ puls u
+ stb ERRB,u
+ bcc rlok
+ leax OUTBUF,u
+ leay RLFAL,pcr
+ ldb #RLFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+rlok equ *
+ leax OUTBUF,u
+ leay RLPAS,pcr
+ ldb #RLPASL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+APPAS fcc /PASS F$AllPrc/
+APPASL equ *-APPAS
+APFAL fcc /FAIL F$AllPrc err=/
+APFALL equ *-APFAL
+LBPAS fcc /PASS F$FreeLB/
+LBPASL equ *-LBPAS
+LBFAL fcc /FAIL F$FreeLB err=/
+LBFALL equ *-LBFAL
+HBPAS fcc /PASS F$FreeHB/
+HBPASL equ *-HBPAS
+HBFAL fcc /FAIL F$FreeHB err=/
+HBFALL equ *-HBFAL
+ATPAS fcc /PASS F$AllTsk/
+ATPASL equ *-ATPAS
+ATFAL fcc /FAIL F$AllTsk err=/
+ATFALL equ *-ATFAL
+STPAS fcc /PASS F$SetTsk/
+STPASL equ *-STPAS
+STFAL fcc /FAIL F$SetTsk err=/
+STFALL equ *-STFAL
+DTPAS fcc /PASS F$DelTsk/
+DTPASL equ *-DTPAS
+DTFAL fcc /FAIL F$DelTsk err=/
+DTFALL equ *-DTFAL
+RTPAS fcc /PASS F$ResTsk tsk=/
+RTPASL equ *-RTPAS
+RTFAL fcc /FAIL F$ResTsk err=/
+RTFALL equ *-RTFAL
+RLPAS fcc /PASS F$RelTsk/
+RLPASL equ *-RLPAS
+RLFAL fcc /FAIL F$RelTsk err=/
+RLFALL equ *-RLFAL
+ emod
+eom equ *

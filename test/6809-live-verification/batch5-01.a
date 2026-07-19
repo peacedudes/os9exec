@@ -1,0 +1,191 @@
+* Live-tests F$Chain($05, failure path only -- a successful chain
+* replaces this process's image with no return, deliberately not
+* exercised unattended), F$SUser($1C), F$STime($16), F$CpyMem($1B)
+* against os9-dev/references/6809/syscalls-and-module-format.md.
+
+ nam SysChSuTst
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysChSuTst/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+start equ *
+
+* --- F$Chain($05) -- DISABLED, live 2026-07-19.
+* First attempt (bogus target name, failure path only) produced a raw
+* "Error #216" with NONE of this program's own controlled PASS/FAIL
+* output -- unlike every other tested call's clean documented failure
+* path, this looks like it may have crashed rather than cleanly
+* rejected, possibly because F$Chain reconfigures the caller's own data
+* area before (not after) confirming the target resolves. Not safe to
+* keep probing unattended -- skipped, flagged for a supervised
+* follow-up rather than further blind experimentation. ---
+ leax OUTBUF,u
+ leay CHSKIP,pcr
+ ldb #CHSKIPL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$SUser(Y=user ID) -- set own to the same id we already have ---
+sutest equ *
+ pshs u
+ ldy #1
+ swi2
+ fcb $1C
+ puls u
+ stb ERRB,u
+ bcc suok
+ leax OUTBUF,u
+ leay SUFAL,pcr
+ ldb #SUFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra sttest
+suok equ *
+ leax OUTBUF,u
+ leay SUPAS,pcr
+ ldb #SUPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$STime(X=6-byte packet) -- read current time via F$Time, write
+* it straight back (no actual change, and the guest clock resyncs from
+* DriveWire on every boot regardless) ---
+sttest equ *
+ pshs u
+ leax tbuf,pcr
+ swi2
+ fcb $15
+ puls u
+ stb ERRB,u
+ bcc rdok
+ leax OUTBUF,u
+ leay STFAL,pcr
+ ldb #STFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra cmtest
+rdok equ *
+ pshs u
+ leax tbuf,pcr
+ swi2
+ fcb $16
+ puls u
+ stb ERRB,u
+ bcc stok
+ leax OUTBUF,u
+ leay STFAL,pcr
+ ldb #STFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra cmtest
+stok equ *
+ leax OUTBUF,u
+ leay STPAS,pcr
+ ldb #STPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- F$CpyMem(D=DAT ptr,X=offset,Y=count,U=dest) -- try a trivial
+* self-referential copy; expect either success or a clean error, not a
+* crash, since nothing here writes outside our own data area ---
+cmtest equ *
+ pshs u
+ ldd #0
+ ldx #0
+ ldy #2
+ leau cmdst,pcr
+ swi2
+ fcb $1B
+ puls u
+ stb ERRB,u
+ bcc cmok
+ leax OUTBUF,u
+ leay CMFAL,pcr
+ ldb #CMFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+cmok equ *
+ leax OUTBUF,u
+ leay CMPAS,pcr
+ ldb #CMPASL
+ lbsr copys
+ lbsr crwrite
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+tbuf rmb 6
+cmdst fcb 0,0
+CHSKIP fcc /SKIP F$Chain (crashed rather than cleanly errored, see header)/
+CHSKIPL equ *-CHSKIP
+SUPAS fcc /PASS F$SUser/
+SUPASL equ *-SUPAS
+SUFAL fcc /FAIL F$SUser err=/
+SUFALL equ *-SUFAL
+STPAS fcc /PASS F$STime/
+STPASL equ *-STPAS
+STFAL fcc /FAIL F$STime or F$Time err=/
+STFALL equ *-STFAL
+CMPAS fcc /PASS F$CpyMem/
+CMPASL equ *-CMPAS
+CMFAL fcc /FAIL F$CpyMem err=/
+CMFALL equ *-CMFAL
+ emod
+eom equ *
