@@ -365,10 +365,21 @@
   #else
   //#define  MAX_PATH 1024
     
-    #ifndef __MACH__
-      struct __dirstream {}; /* not visible */
-    #endif
-    
+    /* No `struct __dirstream {}` here on purpose.
+     *
+     * This used to pre-define that tag before <dirent.h>, which was wrong three
+     * ways: `__dirstream` lives in the implementation's RESERVED namespace (any
+     * leading double underscore does), it is the very tag both glibc and musl
+     * use for DIR, and an empty struct is not valid ISO C -- so this quietly
+     * substituted a bogus zero-size layout for the real DIR. It only ever
+     * survived because both libcs leave that type incomplete, i.e. by luck; a
+     * libc that completed it in a public header would break the build outright.
+     *
+     * Nothing needs it: DIR appears in this codebase exclusively as `DIR*`
+     * (opendir/readdir/closedir handles, see OpenTDir/ReadTDir in utilstuff.c),
+     * never dereferenced and never sized, so the incomplete type <dirent.h>
+     * declares is entirely sufficient. */
+
     #include <dirent.h>
     #include <sys/stat.h>
     
