@@ -273,17 +273,28 @@ typedef unsigned int ulong32;
 #define FROM68K(addr)   ( (addr)==0 ? NULL : (void*)( emul_base + (addr) ) )
 
 /* Validate a resolved guest pointer (a FROM68K result) as a real host pointer
-   into the 68k arena.  Because the arena is one contiguous block, a single
-   range test catches BOTH the null case (guest address 0 -> NULL, which is
-   below emul_base) AND an out-of-range address (offset >= arena size -> at or
-   past emul_end).  IN_ARENA checks a single pointer; RANGE_IN_ARENA checks that
+   into the 68k arena.  Because the arena is one contiguous block, a range test
+   catches an out-of-range address (offset >= arena size -> at or past
+   emul_end).  IN_ARENA checks a single pointer; RANGE_IN_ARENA checks that
    a whole [p, p+len) span fits, with an overflow guard on p+len.  A syscall that
    is handed a bad pointer should reject it with E_BPADDR rather than dereference
-   it and crash the host -- there is no MMU here to fault the guest instead. */
+   it and crash the host -- there is no MMU here to fault the guest instead.
+
+   The NULL test is explicit and must stay that way.  Guest address 0 resolves to
+   NULL (see FROM68K), and these macros used to lean on the range test alone to
+   reject it, reasoning that NULL sorts below emul_base.  That is true of every
+   real allocator, but it is not something the language guarantees: relationally
+   comparing a null pointer against an unrelated object is undefined, so a
+   compiler is entitled to assume it cannot happen and fold the guard away.  It
+   also blinded static analysis -- GCC's -fanalyzer reported eight NULL
+   dereferences across fcalls.c/icalls.c, every one of them a call site that DID
+   guard correctly but whose guard the analyzer could not see through. */
 #define IN_ARENA(p) \
-    ( (const unsigned char*)(p) >= emul_base && (const unsigned char*)(p) < emul_end )
+    ( (const unsigned char*)(p) != NULL && \
+      (const unsigned char*)(p) >= emul_base && (const unsigned char*)(p) < emul_end )
 #define RANGE_IN_ARENA(p,len) \
-    ( (const unsigned char*)(p) >= emul_base && \
+    ( (const unsigned char*)(p) != NULL && \
+      (const unsigned char*)(p) >= emul_base && \
       (const unsigned char*)(p) + (len) <= emul_end && \
       (const unsigned char*)(p) + (len) >= (const unsigned char*)(p) )
 
