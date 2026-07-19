@@ -306,7 +306,17 @@ char* egetenv( const char* name )
                 }
 
                 if (u_cmds) {
-                    strcpy( ocm,egetenv("OS9DISK") );
+                    /* When OS9DISK is unset, this recursive call fills and
+                       returns `ocm` ITSELF (see the u_disk branch above -- ocm
+                       is a single shared static buffer, as its own declaration
+                       comment admits). Copying that onto ocm is a
+                       self-overlapping strcpy: undefined behaviour, and
+                       Valgrind flagged it on the startup path of every run.
+                       When OS9DISK *is* set the call returns getenv's own
+                       storage and the copy is genuinely needed -- so test for
+                       the aliasing case rather than assuming either way. */
+                    char* base= egetenv("OS9DISK");
+                    if   (base!=ocm) strcpy( ocm,base );
                     strcat( ocm,PATHDELIM_STR );
                     strcat( ocm,"CMDS" );
                     rslt=   ocm;
