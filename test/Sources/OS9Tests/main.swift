@@ -15,6 +15,9 @@
 //    swift run --package-path test
 //    make test
 //
+//  Run with pre-emption (optional system tick):
+//    OS9_PREEMPT=1 swift run --package-path test
+//
 //  Run (Docker):
 //    DOCKER_IMAGE=ghcr.io/peacedudes/os9exec:latest swift run --package-path test
 //    DOCKER_IMAGE=os9exec:linux32 swift run --package-path test
@@ -103,7 +106,13 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
     let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
 
     let process = Process()
-    let speedFlag: [String] = paced ? [] : ["-r"]
+    // OS9_PREEMPT=1 runs the whole suite with the optional system tick on
+    // (-q), so pre-emption gets the same regression coverage as everything
+    // else rather than only the tests written for it. Off by default,
+    // matching the emulator: without -q a process keeps the CPU until it
+    // traps, which is how OS9exec has always behaved.
+    let preempt: [String] = ProcessInfo.processInfo.environment["OS9_PREEMPT"] != nil ? ["-q"] : []
+    let speedFlag: [String] = (paced ? [] : ["-r"]) + preempt
     // Named so a timeout can actually stop it -- see killContainer above.
     let containerName = "os9test-\(UUID().uuidString.prefix(8))"
 
