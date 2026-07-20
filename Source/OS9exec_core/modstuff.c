@@ -1764,7 +1764,20 @@ os9err install_traphandler( ushort pid, ushort trapidx,
     /* --- module found, prepare as trap handler */
       { byte* trapdata;
         err= prepData(pid,theModule,addmem,&tp->trapmemsz,&trapdata);
-        if (err) return err;
+        if (err) {
+          /* tp->mid/tp->trapmodule were already set above so trapentry could
+             be computed; on failure they must be rolled back to NULL/0, or
+             this slot looks "installed" forever (OS9_F_TLink's already-
+             installed check above would wrongly reject any future install),
+             and release_traphandler will later call os9free() on this slot's
+             still-zeroed trapmem/trapmemsz -- a spurious free of address 0 --
+             while never unlinking the module this function itself linked. */
+          unlink_module( mid );
+          tp->trapmodule= NULL;
+          tp->trapentry = 0;
+          tp->mid       = 0;
+          return err;
+        }
         tp->trapmem= TO68K(trapdata); /* 68k offset of trap handler's static storage */
       }
     

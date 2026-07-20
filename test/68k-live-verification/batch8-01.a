@@ -1,0 +1,244 @@
+* Live-tests F$TLink($21) against 68k/syscall-reference.md. This is the
+* riskiest call attempted this session: F$TLink actively sets the
+* program counter to trapmodP+_mtrapinit (confirmed by reading
+* OS9_F_TLink in fcalls.c), so a wrong/uninitialized offset there means
+* a wild jump, not just a clean error return. psect cannot generate
+* mod_trap's extra 8-byte header extension (confirmed by the earlier
+* driver dogfood session: psect always reserves exactly the standard
+* 72-byte mod_exec header before the body, regardless of type code) --
+* so this hand-builds a complete 80-byte mod_trap header plus a trivial
+* 2-instruction (rts-only) init/term routine as raw data, writes it to
+* a real file, then links it.
+*
+* STAGED, deliberately: first calls F$SetCRC on the in-memory buffer
+* (already-proven-safe, zero jump risk) to confirm the header's sync
+* word/size are accepted as valid BEFORE ever calling F$TLink itself.
+* Only proceeds to the real F$TLink call if that succeeds.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+FSetCRC set $26
+FTLink set $21
+ICreate set $83
+IWrite set $8A
+IDelete set $87
+FExit set $06
+*
+ psect batch801,Type_Lang,Attr_Rev,0,800,start
+start
+* --- Stage 1: F$SetCRC on the hand-built module, in memory, no jump risk ---
+ lea trapmod(pc),a0
+ trap #0
+ dc.w FSetCRC
+ bcc scok
+ move.l d1,d7
+ lea scfailmsg(pc),a0
+ move.l #scfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra done
+scok
+ lea scpassmsg(pc),a0
+ move.l #scpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- Stage 2: write the now-CRC-correct bytes to a real file ---
+ lea fname(pc),a0
+ moveq #3,d0
+ clr.l d1
+ clr.l d2
+ trap #0
+ dc.w ICreate
+ bcc wrcreateok
+ lea wrfailmsg(pc),a0
+ move.l #wrfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+wrcreateok
+ move.l d0,d5
+ lea trapmod(pc),a0
+ move.l #trapmodlen,d1
+ clr.l d0
+ move.w d5,d0
+ trap #0
+ dc.w IWrite
+ clr.l d0
+ move.w d5,d0
+ trap #0
+ dc.w $8F                IClose
+*
+* --- Stage 3: the real F$TLink call. If this crashes, everything
+* printed above this point already reached the console, so exactly
+* how far this got will be visible regardless. ---
+ lea fname(pc),a0
+ moveq #1,d0              trap number 1
+ clr.l d1                  no extra memory
+ trap #0
+ dc.w FTLink
+ bcc tlok
+ move.l d1,d7
+ lea tlfailmsg(pc),a0
+ move.l #tlfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra cleanup
+tlok
+ lea tlpassmsg(pc),a0
+ move.l #tlpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+* remove the trap handler immediately
+ move.l #0,a0
+ moveq #1,d0
+ trap #0
+ dc.w FTLink
+ bcc tdok
+ lea tdfailmsg(pc),a0
+ move.l #tdfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra cleanup
+tdok
+ lea tdpassmsg(pc),a0
+ move.l #tdpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+cleanup
+ lea fname(pc),a0
+ moveq #3,d0
+ trap #0
+ dc.w IDelete
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+printnum
+ sub.l #16,a7
+ movea.l a7,a1
+ adda.l #16,a1
+ move.l d1,d2
+ moveq #0,d3
+ tst.l d2
+ bne.s pn_loop
+ move.b #'0',-(a1)
+ moveq #1,d3
+ bra.s pn_output
+pn_loop
+ tst.l d2
+ beq.s pn_output
+ divu.w #10,d2
+ move.w d2,d0
+ swap d2
+ move.b d2,d1
+ add.b #'0',d1
+ move.b d1,-(a1)
+ addq.w #1,d3
+ clr.l d2
+ move.w d0,d2
+ bra.s pn_loop
+pn_output
+ movea.l a1,a0
+ move.l d3,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ add.l #16,a7
+ lea crbyte(pc),a0
+ moveq #2,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+fname dc.b "/h0/USR/CLAUDE/syscall-audit/batch801trp",0,0
+*
+* --- Hand-built mod_trap module, 80-byte header + init (unwinds
+* F$TLink's stack push, see below) + rts-only term + sign-bit-terminated
+* name string + empty idata/idref tables (required, see below). Offsets:
+* header=$50(80), init=$50-$55(6), term=$56-$57(2), name=$58-$5D(6),
+* idatatab=$5E-$65(8), idreftab=$66-$6D(8), total before CRC=$6E(110),
+* +3-byte CRC=113 total. ---
+trapmod
+ dc.w $4AFC               _msync
+ dc.w $0001               _msysrev
+ dc.l 113                 _msize (total incl. 3-byte CRC)
+ dc.l 0                   _mowner
+ dc.l $58                 _mname (offset to name string below)
+ dc.w $FF                 _maccess
+ dc.w $0B01               _mtylan (MT_TRAPLIB=$0B, Objct=1)
+ dc.w $8001               _mattrev (ReEnt, rev 1)
+ dc.w 0                   _medit
+ dc.l 0                   _musage
+ dc.l 0                   _msymbol
+ dc.w 0                   _mident
+ dc.l 0                   _mspare (12 bytes, part 1)
+ dc.l 0                   _mspare part 2
+ dc.l 0                   _mspare part 3
+ dc.w 0                   _mparity (placeholder, F$SetCRC fixes this)
+ dc.l $50                 _mexec (offset to init routine)
+ dc.l 0                   _mexcpt (no default exception handler)
+ dc.l 0                   _mdata (no static storage needed)
+ dc.l 0                   _mstack
+ dc.l $5E                 _midata (empty table: dOff=0,cnt=0)
+ dc.l $66                 _midref (empty table: two 0 terminators)
+ dc.l $50                 _mtrapinit (offset to init routine, = _mexec)
+ dc.l $56                 _mtrapterm (offset to terminate routine)
+trapinit
+* F$TLink pushes [caller's A6][dummy 0][saved PC] and sets a7 to point
+* at caller's A6 (confirmed by reading OS9_F_TLink's stack-push order in
+* fcalls.c) -- a bare rts here would pop caller's A6 as a return address
+* instead, a wild jump. Unwind properly: restore A6, skip the dummy
+* word, then rts pops the real saved PC.
+ move.l (a7)+,a6
+ addq.l #4,a7
+ rts
+traptermrtn
+ rts
+trapname dc.b "batch",$B8
+* prepData (modstuff.c) does NOT treat _midata=0/_midref=0 as "no table" --
+* it unconditionally parses a table at that offset, so 0 makes it misread
+* this module's own header as table content (confirmed live: this is what
+* actually produced err=205/E_BMID before these tables were added). An
+* empty-but-valid idata table is dOff=0,cnt=0 (nothing to copy); an
+* empty-but-valid idref table is a single 0 terminator, needed twice (one
+* per reference group prepData scans).
+idatatab dc.l 0,0
+idreftab dc.l 0,0
+crcspace dc.b 0,0,0      reserved for F$SetCRC's 3-byte trailer
+trapmodlen equ *-trapmod
+*
+scpassmsg dc.b "PASS F$SetCRC on hand-built module",13,10
+scpasslen equ *-scpassmsg
+scfailmsg dc.b "FAIL F$SetCRC on hand-built module err="
+scfaillen equ *-scfailmsg
+wrfailmsg dc.b "FAIL creating module file err="
+wrfaillen equ *-wrfailmsg
+tlpassmsg dc.b "PASS F$TLink install",13,10
+tlpasslen equ *-tlpassmsg
+tlfailmsg dc.b "FAIL F$TLink install err="
+tlfaillen equ *-tlfailmsg
+tdpassmsg dc.b "PASS F$TLink remove",13,10
+tdpasslen equ *-tdpassmsg
+tdfailmsg dc.b "FAIL F$TLink remove err=",13,10
+tdfaillen equ *-tdfailmsg
+crbyte dc.b 13,10
+ ends
