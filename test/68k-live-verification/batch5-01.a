@@ -1,0 +1,193 @@
+* Live-tests F$SigMask($57), F$DatMod($25), F$Alarm($1B... see below)
+* against 68k/syscall-reference.md. Register conventions cross-checked
+* against os9exec's own fcalls.c/alarms.c before writing this.
+* Note: F$Alarm's own dispatch code is looked up live below rather than
+* assumed, since this test file doesn't hardcode it from a possibly
+* stale memory of the table -- see the FAlarm set line.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+FSigMask set $57
+FDatMod set $25
+FAlarm set $56
+IWrite set $8A
+FExit set $06
+*
+ psect batch501,Type_Lang,Attr_Rev,0,800,start
+start
+* --- F$SigMask(d1: +1/-1/0) -- increment then decrement back ---
+ moveq #1,d1
+ trap #0
+ dc.w FSigMask
+ bcc sm1ok
+ lea smfailmsg(pc),a0
+ move.l #smfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra dmtest
+sm1ok
+ moveq #-1,d1
+ trap #0
+ dc.w FSigMask
+ bcc sm2ok
+ lea smfailmsg(pc),a0
+ move.l #smfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra dmtest
+sm2ok
+ lea smpassmsg(pc),a0
+ move.l #smpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- F$DatMod(d0.l=size,d1.w=attr,d2.w=access,d3.w=type,d4.w=color,
+* (a0)=name) -- create a small named data module ---
+dmtest
+ lea dmname(pc),a0
+ move.l #64,d0
+ clr.l d1
+ moveq #1,d1              attr/rev = 1
+ clr.l d2
+ moveq #3,d2               access = rw
+ clr.l d3
+ clr.l d4
+ trap #0
+ dc.w FDatMod
+ bcc dmok
+ move.l d1,d7
+ lea dmfailmsg(pc),a0
+ move.l #dmfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra almtest
+dmok
+ lea dmpassmsg(pc),a0
+ move.l #dmpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- F$Alarm(d0.l=id 0,d1.w=A_Set=1,d2.l=sig,d3.l=interval,d4.l=date)
+* then immediately F$Alarm(A_Delete) on the returned ID before it can
+* ever fire -- confirms the set/delete round trip without needing to
+* wait for or handle a real delivered signal. ---
+almtest
+ clr.l d0
+ clr.l d1
+ moveq #1,d1               A_Set
+ clr.l d2
+ moveq #1,d2                harmless signal code (Wakeup)
+ move.l #100000,d3           far-future interval, never expected to fire
+ clr.l d4
+ trap #0
+ dc.w FAlarm
+ bcc alsetok
+ move.l d1,d7
+ lea alsfailmsg(pc),a0
+ move.l #alsfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra done
+alsetok
+ move.l d0,d6             save alarm id (returned in d0)
+ lea alspassmsg(pc),a0
+ move.l #alspasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d6,d1
+ bsr printnum
+* delete it right away
+ move.l d6,d0
+ clr.l d1
+ trap #0
+ dc.w FAlarm
+ bcc aldelok
+ lea aldfailmsg(pc),a0
+ move.l #aldfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+aldelok
+ lea aldpassmsg(pc),a0
+ move.l #aldpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+printnum
+ sub.l #16,a7
+ movea.l a7,a1
+ adda.l #16,a1
+ move.l d1,d2
+ moveq #0,d3
+ tst.l d2
+ bne.s pn_loop
+ move.b #'0',-(a1)
+ moveq #1,d3
+ bra.s pn_output
+pn_loop
+ tst.l d2
+ beq.s pn_output
+ divu.w #10,d2
+ move.w d2,d0
+ swap d2
+ move.b d2,d1
+ add.b #'0',d1
+ move.b d1,-(a1)
+ addq.w #1,d3
+ clr.l d2
+ move.w d0,d2
+ bra.s pn_loop
+pn_output
+ movea.l a1,a0
+ move.l d3,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ add.l #16,a7
+ lea crbyte(pc),a0
+ moveq #2,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+dmname dc.b "batch501mod",0
+smpassmsg dc.b "PASS F$SigMask +1/-1",13,10
+smpasslen equ *-smpassmsg
+smfailmsg dc.b "FAIL F$SigMask err=",13,10
+smfaillen equ *-smfailmsg
+dmpassmsg dc.b "PASS F$DatMod",13,10
+dmpasslen equ *-dmpassmsg
+dmfailmsg dc.b "FAIL F$DatMod err="
+dmfaillen equ *-dmfailmsg
+alspassmsg dc.b "PASS F$Alarm A_Set id="
+alspasslen equ *-alspassmsg
+alsfailmsg dc.b "FAIL F$Alarm A_Set err="
+alsfaillen equ *-alsfailmsg
+aldpassmsg dc.b "PASS F$Alarm A_Delete",13,10
+aldpasslen equ *-aldpassmsg
+aldfailmsg dc.b "FAIL F$Alarm A_Delete err=",13,10
+aldfaillen equ *-aldfailmsg
+crbyte dc.b 13,10
+ ends
