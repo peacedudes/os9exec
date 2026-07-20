@@ -23,6 +23,15 @@ let package = Package(
             name: "RBFHammerScenarioTests",
             dependencies: ["RBFHammerCore"],
             path: "Tests/RBFHammerScenarioTests"
+        ),
+        // The 6809 scenarios are a separate target because they are far slower
+        // than the 68k ones -- a real emulated CoCo3 boots for about forty
+        // seconds per run -- and because they need XRoar, ToolShed and the
+        // NitrOS-9 image, none of which the 68k side requires.
+        .testTarget(
+            name: "RBFHammer6809Tests",
+            dependencies: ["RBFHammerCore"],
+            path: "Tests/RBFHammer6809Tests"
         )
     ]
 )

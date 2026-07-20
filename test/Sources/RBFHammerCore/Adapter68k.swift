@@ -96,51 +96,8 @@ public struct Adapter68k: Adapter {
     /// script silently does nothing useful, which presents as an empty run
     /// rather than an error.
     private func writeScript(for worker: WorkerSpec, in scratch: URL) throws {
-        let substituted = template
-            .replacingOccurrences(of: "@ID@", with: String(worker.id))
-            .replacingOccurrences(of: "@COUNT@", with: String(worker.count))
-            .replacingOccurrences(of: "@NAP@", with: String(max(0, worker.nap)))
-            .replacingOccurrences(of: "@ROLE@", with: worker.role.rawValue)
-            .replacingOccurrences(of: "@NAPMODE@", with: worker.napMode.rawValue)
-            .replacingOccurrences(of: "@FILE@", with: worker.file)
-
-        var lines: [String] = []
-        for procedure in Self.procedures(in: substituted) {
-            // `e <name>` writes the PROCEDURE header itself, so the body must
-            // not repeat it. A leading space is what makes the editor INSERT a
-            // line rather than read it as an editor command.
-            lines.append("e \(procedure.name)")
-            lines += procedure.body.map { " \($0)" }
-            lines.append("q")
-        }
-        lines += ["run hwork", "bye"]
-
-        let script = lines.joined(separator: "\r") + "\r"
+        let script = WorkerScript.render(worker, from: template)
         try Data(script.utf8).write(to: scratch.appendingPathComponent(scriptName(worker)))
-    }
-
-    /// Splits a template into its named procedures.
-    ///
-    /// The template holds more than one because BASIC09 is a structured
-    /// language: shared behaviour belongs in its own procedure called with
-    /// `RUN`, not in a `GOSUB` to a numbered line.
-    static func procedures(in template: String) -> [(name: String, body: [String])] {
-        var found: [(name: String, body: [String])] = []
-        for line in template.split(separator: "\n", omittingEmptySubsequences: false) {
-            if line.hasPrefix("PROCEDURE ") {
-                found.append((name: String(line.dropFirst("PROCEDURE ".count))
-                                     .trimmingCharacters(in: .whitespaces), body: []))
-            } else if !found.isEmpty, !(line.isEmpty && found[found.count - 1].body.isEmpty) {
-                found[found.count - 1].body.append(String(line))
-            }
-        }
-        // A trailing blank line would be inserted as an empty editor line.
-        for index in found.indices {
-            while found[index].body.last?.isEmpty == true {
-                found[index].body.removeLast()
-            }
-        }
-        return found
     }
 
     /// Filename of one worker's script, on the host and inside OS-9 alike.

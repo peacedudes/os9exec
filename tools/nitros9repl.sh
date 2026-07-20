@@ -49,7 +49,12 @@
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 NITROS9="${NITROS9_DIR:-$REPO/../os9/nitros9}"
-DISKDIR="$NITROS9/disk-images/eou_ide-v0.3-6809-xroar-dw-becker"
+# Directory holding the disk image XRoar boots. Overridable so a test harness
+# can run against a throwaway CLONE of the golden master rather than the master
+# itself: the .ide file is edited IN PLACE by the guest, so any run that writes
+# would otherwise mutate the shared boot disk permanently.
+# A clone directory needs 68IDE.ide and hdblba.rom; -rompath is absolute.
+DISKDIR="${NITROS9REPL_DISKDIR:-$NITROS9/disk-images/eou_ide-v0.3-6809-xroar-dw-becker}"
 SESSION="${NITROS9REPL_SESSION:-nitros9repl}"
 TIMEOUT=${NITROS9REPL_TIMEOUT:-20}      # seconds per command
 BOOT_TIMEOUT=${NITROS9REPL_BOOT_TIMEOUT:-120}

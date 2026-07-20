@@ -122,6 +122,83 @@ emerge only when the set runs together. Candidates: the 500K image is tight for
 deliberately rather than tripping over accidentally. Do not describe these as
 RBF defects until each one has been isolated the way the N=50 case was.
 
+## 6809 / NitrOS-9 (Adapter6809) — 2026-07-20
+
+Real NitrOS-9 on an emulated CoCo3. Every run works on a copy-on-write clone of
+the golden master; the master is never booted by the harness.
+
+### What IS established
+
+| Check | Mutation applied | Result | Date |
+|---|---|---|---|
+| `testSingleWorkerAppendsOn6809` (whole 6809 path end to end) | `@COUNT@` substituted as `worker.count - 1`, so the guest writes one fewer record | **RED, precisely**: `worker 1: wrote 8, found 7` + `missing sequences [7]`. Proves the guest really runs, the file really comes back out of the `.ide` container, and the host really compares | 2026-07-20 |
+
+`testFourWorkersShareOneFileOn6809` passes (11.5s) and shares the mutation
+above, since both go through the same render/inject/collect path.
+
+### What is NOT established — the record lock is UNMEASURED on 6809
+
+**`rmw`/`rmwfree` are skipped, not passing.** Both configurations were measured
+and neither is usable:
+
+| napMode | Roster runtime | Unlocked control tally | Verdict |
+|---|---|---|---|
+| `.nilWrites` | 11s | **100/100 — perfect** | Never interleaves. A locked pass here would be worthless — this is the 600/600 counter race exactly |
+| `.sleep` | 4x25 reached only 75/100 in 300s; 4x10 exceeded 10 min | loses updates (real window) | Genuinely interleaves, but forks a process per increment at ~0.26/s — too slow to run |
+
+The mechanism that interleaves is too slow; the mechanism that is fast enough
+does not interleave. **"NitrOS-9's record locking is unmeasured" is not
+"NitrOS-9 passes."** Next step is `PACK` + `runb` to remove the per-launch
+BASIC09 parse, then re-measure `.sleep` with a small roster.
+
+That `.nilWrites` row is the ledger doing its job: the roster was fast and green
+and would have been reported as 6809 lock coverage. The control is the only
+reason it was not.
+
+### Two harness defects that looked exactly like RBF data loss
+
+Both produced "concurrent writers lose everything" and both were the harness.
+
+**1. A procedure file cannot launch background jobs.** Driving the roster with
+`shell #32k </DD/run.s` made exactly ONE racer of four run — a *different* one
+each run — while the rest never started. The file came back correctly
+pre-extended and entirely unwritten, which reads precisely as RBF dropping every
+concurrent write.
+
+Cause: a backgrounded OS-9 child inherits the parent shell's standard input
+**and its file position**. The children consume lines out of the very file the
+parent is still reading, so the parent resumes mid-line and answers `What?` to
+the wreckage. Fixed by typing commands at the shell one at a time; there is then
+no shared stream. (The 68k adapter's combined-line trick is a workaround for its
+stdin pipe and must not be copied here.)
+
+**2. The golden master was booted instead of the clone.** An XRoar survived a
+`stop`, a later boot reused it, and a run wrote to the golden master while every
+host-side check still looked right — the injected scripts were in the clone, so
+the guest simply reported "path not found". One stray file reached the master and
+was deleted through RBF itself; free-sector count verified unchanged afterwards.
+
+`assertAttachedImage` now refuses to run unless `lsof` confirms XRoar holds
+*this run's* clone. It has been seen firing. Note the first version of that guard
+was itself wrong — it compared `/var/...` against lsof's `/private/var/...` and
+rejected the very clone it had just made — so **both sides are canonicalised**.
+
+### Environment facts verified live (all previously unconfirmed)
+
+- **`SHELL` DOES exist in 6809 BASIC09** and really forks — `SHELL "echo ..."`
+  produced its output. The handoff listed this as unconfirmed; `.nilWrites` is
+  not needed as a fallback for availability (only for speed, and it is too weak
+  to interleave).
+- **ToolShed cannot read the `.ide` container.** The OS-9 partition starts at
+  byte 323,584 (verified: RBF LSN0, volume "NitrOS-9 EOU 6809", byte-identical
+  to the separately extracted `partition.img`). `dd` out, edit, `dd` back —
+  about 1.8s round trip.
+- **`cp -c` clones the 134MB image in ~5ms** on APFS, so a per-run throwaway
+  disk is free.
+- `Rammer`/`R0` (RAM disk) and `Nil` exist in the boot module directory, but
+  provisioning the RAM disk is unverified, so `Backend6809.device` REFUSES
+  `.ramDisk` and `.hostDirectory` rather than silently using `/DD`.
+
 ## Question 2 — scenario can produce bad data
 
 ### What the `slot` scenarios do NOT test — read this before citing them
