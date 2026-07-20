@@ -78,21 +78,32 @@ investigation of this batch:
 5. Confirmed via `dump` on the linked module that the string bytes were
    byte-for-byte correct in memory (`74 65 73 74 00` = `"test\0"` in
    both places being compared).
-6. Found the real cause: `d1` was loaded with `move.w #4,d1` — a
-   16-bit move that leaves the register's **upper 16 bits** untouched,
-   and earlier code in the same program had left stale garbage there
-   via full 32-bit `move.l` operations. The dispatcher's parameter
-   marshaling reads the full `d1.l` despite the call only documenting
-   `d1.w`. Switching to `moveq #4,d1` (which clears the whole register)
-   **fixed it immediately** — genuinely identical strings now correctly
-   report a match.
+6. At the time, switching `d1`'s load from `move.w #4,d1` to
+   `moveq #4,d1` (clearing the whole register first) appeared to fix
+   it immediately, and this report originally concluded that was the
+   real cause — a register-discipline bug, the 68k analog of the 6809
+   suite's `,U`-clobber pattern.
 
-**This is a real, general register-discipline gotcha for any future
-68k test in this project**, the 68k-side analog of the 6809 suite's
-repeated `,U`-clobber bug class: never assume a bare `move.w` into a
-data register is suficient when loading a `.w`-documented parameter if
-that register held a full longword value earlier in the same program —
-clear it fully first (`moveq`/`clr.l`).
+**CORRECTED, same day, after a dedicated follow-up isolation test
+(`batch4-cmpnam-isolate.a`): that diagnosis was wrong.** `OS9_F_CmpNam`
+reads the length via `loword(rp->d[1])`, a direct 16-bit memory read
+genuinely insensitive to `d1`'s upper word — confirmed by deliberately
+dirtying `d1`'s upper word (synthetically, and via a real preceding
+`F$Time` call) immediately before a plain `move.w #4,d1`, and
+`F$CmpNam` matched correctly regardless, using the exact same
+NUL-terminated strings from step 4. **The NUL-termination fix in step 4
+was the real, sole fix all along.** The apparent "still failed" result
+at step 4 was almost certainly a false signal from the `r68 -O=`
+stale-rebuild bug (see Toolchain notes below) — this investigation is
+where that bug was first discovered, and the timing lines up: reliable
+`del`-before-rebuild discipline only started around the same point as
+the `moveq` change, not because of it. **No general 68k
+register-clearing rule is established by `F$CmpNam`.** Left in this
+report as a methodology lesson: when a fix seems to work right after
+*also* changing something toolchain-related, suspect the toolchain
+before trusting the code explanation — verify with an isolated
+follow-up test before writing the conclusion into a skill file, which
+is exactly what this correction did after the fact.
 
 ## Real toolchain gotchas found (not syscall findings)
 
