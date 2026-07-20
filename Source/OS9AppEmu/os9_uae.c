@@ -105,9 +105,6 @@ void handle_os9exec_exception(int nr, uaecptr oldpc)
         traphandler_typ *th;
      // consprintf( ">%2d %3d<", nr-32, func ); /* JustInCase (bfo) */
       
-        // Prepare OS9_go result in case no traphandler is installed
-        m68_os9go_result=(nr << 16) + func;
-        
         // Save callers PC
         m68k_areg(regs, 7) -= 4;        /* do not jump back into your own command */
         put_long (m68k_areg(regs, 7), oldpc+2 ); /* +2: is very important (bfo)   */
@@ -129,11 +126,22 @@ void handle_os9exec_exception(int nr, uaecptr oldpc)
             // ...and keep emulator running
         }           
         else {
-            // no traphandler installed...          
+            // no traphandler installed...
             // .. just let os9exec_nt do the installation of the traphandler
             //    (the stack frame is ready)
+            /* Set the result HERE, not before the handler check above.  It
+               describes an exit, and the handler branch does not exit -- it
+               jumps into the handler and keeps running.  Left set there, the
+               token stays live for the rest of the handler's execution, and
+               the tick (-q) can stop the loop at any instruction in it: the
+               loop then returns a TCALL that was already dispatched, so
+               os9exec builds its stack frame a second time on a process that
+               is already inside the handler.  That corrupted r68 mid-assembly
+               (bus error / illegal instruction).  Same shape as the F$Link
+               case: a result only means something if we are leaving. */
+            m68_os9go_result=(nr << 16) + func;
             os9_running=0; // force exit from emulator loop
-        }           
+        }
     }
     else {
         // Must be error trap
