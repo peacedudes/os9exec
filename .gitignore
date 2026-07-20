@@ -8,10 +8,12 @@ freeware
 h?
 dd
 
-# Proprietary OS-9 DEFS headers (Microware copyright)
-# EXCEPT *_from_book.h which are derived from public OS-9 Guru book — those ARE committed
-/Source/OS9exec_core/os9defs/*.h
-!/Source/OS9exec_core/os9defs/*_from_book.h
+# os9defs/ headers are OURS: reconstructed from books and documentation found
+# online, using the information rather than any Microware source. Copyrighted
+# facts, not stolen code -- so they are committed. (They are also second-hand
+# and not guaranteed Microware-compatible; each header says so at the top.)
+# The proprietary Microware headers that once lived here are gone, so there is
+# nothing left in that directory to exclude.
 
 # Adapted OS-9 headers (user-derived from originals; not redistributable pending permission)
 /Source/OS9exec_core/os9defs/orig/
