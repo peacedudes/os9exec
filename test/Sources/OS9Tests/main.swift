@@ -15,8 +15,8 @@
 //    swift run --package-path test
 //    make test
 //
-//  Run with pre-emption (optional system tick):
-//    OS9_PREEMPT=1 swift run --package-path test
+//  Run with the system tick OFF (old cooperative behaviour; tick is default-on):
+//    OS9_NOTICK=1 swift run --package-path test
 //
 //  Run (Docker):
 //    DOCKER_IMAGE=ghcr.io/peacedudes/os9exec:latest swift run --package-path test
@@ -116,22 +116,15 @@ func killContainer(_ name: String) {
 
 func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bool = false,
          disk: String = diskPath) -> String {
-    // The tick does not start until the guest sets the time (see -q), so
-    // asking for pre-emption means setting it too -- otherwise OS9_PREEMPT
-    // silently does nothing and the whole suite "passes with pre-emption"
-    // without ever having pre-empted anything.
-    let setTime = ProcessInfo.processInfo.environment["OS9_PREEMPT"] != nil
-                ? "setime 26/07/19 12:00:00\n" : ""
-    let setup  = "chx \(sdkCmds)\nload math cio\n" + setTime
+    let setup  = "chx \(sdkCmds)\nload math cio\n"
     let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
 
     let process = Process()
-    // OS9_PREEMPT=1 runs the whole suite with the optional system tick on
-    // (-q), so pre-emption gets the same regression coverage as everything
-    // else rather than only the tests written for it. Off by default,
-    // matching the emulator: without -q a process keeps the CPU until it
-    // traps, which is how OS9exec has always behaved.
-    let preempt: [String] = ProcessInfo.processInfo.environment["OS9_PREEMPT"] != nil ? ["-q"] : []
+    // The system tick is ON by default in the emulator, so the suite exercises
+    // pre-empted execution by default too -- which is the configuration users
+    // actually get. OS9_NOTICK=1 passes "-q0" to run the whole suite with the
+    // clock off, for comparing against the old cooperative behaviour.
+    let preempt: [String] = ProcessInfo.processInfo.environment["OS9_NOTICK"] != nil ? ["-q0"] : []
     let speedFlag: [String] = (paced ? [] : ["-r"]) + preempt
     // Named so a timeout can actually stop it -- see killContainer above.
     let containerName = "os9test-\(UUID().uuidString.prefix(8))"

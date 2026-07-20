@@ -495,13 +495,12 @@ static void os9_usage(char *name)
     upho_printf("   -mm n[k|M]  Give all OS-9 process extra static storage (kilo/mega)\n");
     upho_printf("   -M  n[k|M]  Set 68k arena size (default=32M)\n");
     upho_printf("   -p prio     Run  1st OS-9 process with prio (default=%d, NOIRQ>=%d)\n",MYPRIORITY,IRQBLOCKPRIOR);        
-    upho_printf("   -q[ms]      Run a system tick every ms (default=10, i.e. 100Hz), so\n");
-    upho_printf("               Off unless given: without it a process keeps the CPU until\n");
-    upho_printf("               it traps, so a dead loop hogs the machine and a cyclic\n");
+    upho_printf("   -q[ms]      System tick every ms (default=10, i.e. 100Hz), so processes\n");
+    upho_printf("               are pre-empted. ON by default; \"-q0\" switches the clock off\n");
+    upho_printf("               for the old cooperative behaviour, where a process keeps the\n");
+    upho_printf("               CPU until it traps, a dead loop hogs the machine and a cyclic\n");
     upho_printf("               alarm cannot reach a process that is computing. Only user\n");
     upho_printf("               state is pre-empted, never a system call.\n");
-    upho_printf("               KNOWN LIMITATION: F$STrap exception handlers are not\n");
-    upho_printf("               reliable while this is on -- see os9_tick.c.\n");
     upho_printf("   -d[n] msk   set  debug info mask [of level n, default=0] (default=1)\n");
     upho_printf("   -s msk      set  debug stop mask (default=0)\n");
     upho_printf("   -dh         show debug/stop mask help\n");
@@ -793,13 +792,14 @@ void os9_main( int argc, char **argv, char **envp )
           case 'v' :  catch_ctrlC= false; break; // don not install a ctrl C handler
           case 'r' :  baud_throttle= false; break; // run full speed (no baud pacing)
 
-          case 'q' :  /* -q[ms]: run a system tick, so processes are pre-empted.
-                       * Off by default: OS9exec has always run a process
-                       * until it traps or faults, so nothing interrupts one
-                       * between two of its own instructions. Real OS-9 has a
-                       * clock that does, which is what stops a dead loop
-                       * hogging the machine. Only user state is pre-empted;
-                       * see newcpu.c. */
+          case 'q' :  /* -q[ms]: set the system tick rate; "-q0" switches the
+                       * clock off. ON by default -- real OS-9 has a clock, and
+                       * it is what stops a dead loop hogging the machine and
+                       * lets a cyclic alarm reach a computing process. Without
+                       * it OS9exec runs a process until it traps or faults and
+                       * nothing interrupts one between two of its own
+                       * instructions. A system call is never cut in half
+                       * either way; see os9_tick.c. */
                       /* Only records the request. Starting the clock here
                        * would arm it during option parsing, long before the
                        * emulator is up -- and a tick landing in the middle of

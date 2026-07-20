@@ -15,12 +15,16 @@
  * read-modify-write, so a lost update is not merely unlikely here, it is
  * impossible. Real OS-9 has a clock interrupt and none of that holds.
  *
- * Enabling this (-q) puts the clock back. A one-shot host timer re-arms itself
- * on each expiry, so exactly one is ever outstanding -- never none, never two,
- * which an interval timer cannot promise if a handler is ever delayed. The
- * handler does nothing except record what happened and clear <os9_running>;
- * the emulation loop's own "while (os9_running)" is what stops, so nothing is
- * added to the innermost loop of the emulator to pay for this.
+ * This puts the clock back, and since 2026-07-20 it is ON BY DEFAULT: a machine
+ * with a clock is what OS-9 is, so that is what OS9exec should be out of the
+ * box. "-q0" restores the old cooperative behaviour, "-q<ms>" retunes the rate.
+ *
+ * A one-shot host timer re-arms itself on each expiry, so exactly one is ever
+ * outstanding -- never none, never two, which an interval timer cannot promise
+ * if a handler is ever delayed. The handler does nothing except record what
+ * happened and clear <os9_running>; the emulation loop's own
+ * "while (os9_running)" is what stops, so nothing is added to the innermost
+ * loop of the emulator to pay for this.
  *
  * A SYSTEM CALL IS NEVER CUT IN HALF -- but not for the reason the code below
  * appears to give, and the difference matters to anyone changing this.
@@ -43,12 +47,13 @@
  * case emulated supervisor code is ever run -- but do not read it as the thing
  * that protects system calls, and do not "fix" a bug by tightening it.
  *
- * Starting it is tied to -q and nothing else. An earlier version also waited
- * for the guest to set the time, on the grounds that a real clock starts at
- * <setime> -- but that made -q silently do nothing on its own, which cost a
- * whole run of the test suite reporting that it "passed with pre-emption"
- * while the tick had never once started. Faithfulness that can be mistaken
- * for a working feature is worse than a switch that means what it says.
+ * Nothing gates starting it except the requested rate being non-zero. An
+ * earlier version also waited for the guest to set the time, on the grounds
+ * that a real clock starts at <setime> -- but that made -q silently do nothing
+ * on its own, which cost a whole run of the test suite reporting that it
+ * "passed with pre-emption" while the tick had never once started.
+ * Faithfulness that can be mistaken for a working feature is worse than a
+ * switch that means what it says.
  */
 
 #include "os9exec_incl.h"
@@ -66,7 +71,11 @@ extern int os9_timed_out; /* set by the tick, cleared once acted upon */
 
 #define TICK_US_DEFAULT 10000 /* 100Hz, the OS-9/68k default tick rate */
 
-int  os9_tick_request= 0; /* microseconds asked for on the command line, 0=off */
+/* Microseconds per tick; 0 = no clock. ON BY DEFAULT since 2026-07-20 -- a
+ * machine with a clock is what OS-9 actually is, and without one a dead loop
+ * hogs the emulator and a cyclic alarm can never reach a computing process.
+ * "-q0" turns it off for anyone who needs the old cooperative behaviour. */
+int  os9_tick_request= TICK_US_DEFAULT;
 
 #if defined UNIX && !defined MINGW
 
@@ -109,7 +118,7 @@ static void os9_tick_arm( void )
 void os9_tick_start( void )
 /* Start the clock, once. Calling it again is harmless. */
 {
-    if (os9_tick_request==0) return; /* not asked for */
+    if (os9_tick_request==0) return; /* clock switched off with -q0 */
     if (os9_tick_us       !=0) return; /* already running */
 
     os9_tick_us= os9_tick_request;
