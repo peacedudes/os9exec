@@ -304,11 +304,19 @@ char* nullterm( char* s1, const char* s2, ushort max )
      * stashed in something 32-bit" family as the earlier ulong/LLP64 fix;
      * surfaced here by clang's -Wshorten-64-to-32 on the ARM64 build. */
     regcheck( currentpid,"nullterm inptr",TO68K(s2),RCHK_ARU+RCHK_MEM );
+    /* Copy at most max-1 chars so the terminating NUL at *s1 below still lands
+       inside a destination buffer of size <max>. Every caller passes buf[SIZE]
+       with max==SIZE, so the old "copy up to max chars, THEN write the NUL"
+       wrote max+1 bytes and ran one past the buffer -- live: a path longer than
+       OS9PATHLEN fed to `dir` overflowed icalls.c's 255-byte os9_path by that
+       one NUL (ASan stack-buffer-overflow). `n+1<max` keeps the compare in int
+       (no ushort underflow when max is 0). The source is still fully consumed,
+       so the returned pointer is unchanged. */
     while(*s2>' ') {
-        if (n++<max) *s1++= *s2++; /* don't use max-- structure any more */
-        else                 s2++; /* don't copy more, simply increment */
+        if (n+1<max) { *s1++= *s2++; n++; } /* reserve one byte for the NUL */
+        else           s2++;                /* don't copy more, simply consume  */
     } /* while */
-   
+
     *s1= NUL; /* terminate */
     trigcheck( "nullterm",res ); /* check for name trigger */
     return (char*)s2;
