@@ -1,94 +1,69 @@
-# Handoff: `-q` pre-emption corrupts CPU state on loop re-entry
+# `-q` pre-emption: the r68 crash, and why the first theory was wrong
 
-## The task
+Resolved 2026-07-19. Kept because the wrong answer here was expensive twice,
+and the shape of the mistake is worth more than the fix.
 
-Branch `preempt-tick`, worktree `../os9exec-rbf-eoflock`, adds an optional
-pre-emptive system tick (`-q`). It sits on top of current
-`arm64-uae-integration` and contains **only** the pre-emption work — the RBF
-record/EOF locking that was developed alongside it is already merged and is
-not your concern. (The older `rbf-eof-lock` branch holds both and is stale;
-ignore it.) It works — but with it on, **`r68` (the
-assembler) dies of a bus error part-way through a run**, which makes the two
-`F$STrap` tests fail because the program they assemble is never produced.
+## The bug
 
-    suite, tick off (default):  129/0        <- ship-able
-    suite, tick on  (-q):       127/129
+With `-q`, `r68` died of a bus error part-way through assembling, so the two
+`F$STrap` tests never got their program built. Read the failure as "the
+assembler crashed", not "the handler missed" -- exception handling was never
+involved.
 
-Find and fix the state corruption. The tick is off by default, so nothing is
-broken for anyone today; this blocks *merging* the pre-emption work.
+**Root cause.** In `handle_os9exec_exception()` (`os9_uae.c`), the TCALL branch
+set `m68_os9go_result = (nr<<16)+func` *before* checking whether a trap handler
+was installed. When one was, the emulator jumps into the handler and KEEPS
+RUNNING -- but that prepared token stayed live. A tick can stop the loop at any
+instruction inside the handler, so os9exec was handed a TCALL it had already
+dispatched and built the stack frame a second time on a process already inside
+its handler. Fix: set the result in the no-handler branch only. A result only
+means something if we are actually leaving.
 
-## What the bug is NOT
+Same shape as the earlier F$Link bug (`57bf202`), and worth remembering as a
+class: *state prepared for an exit that then does not happen is a live grenade
+once something else can end the loop.*
 
-Two things worth not re-deriving:
+## The theory that was wrong
 
-- **Not exception handling.** The failing tests are named for `F$STrap`, but
-  the handler is fine. `r68` crashes first, so the test program never exists.
-  Read the failure as "assembler crashed", not "handler missed".
-- **Not the process switch.** Bisected: making the tick leave the emulation
-  loop *without* arbitrating at all made it fail 6/6 instead of 3/6 — worse,
-  and deterministic. The damage is done by leaving and re-entering the loop,
-  not by switching to another process.
+The first handoff said the round trip through `regs_type` loses CPU state, and
+named `regs.prefetch`. It is wrong. Measured, do not re-derive it:
 
-## What it is
+- Snapshot `regs` at tick exit, byte-compare on re-entry: **zero differing
+  bytes** over 15 real comparisons (only `usp`, which `llm_os9_go` deliberately
+  reloads from `a[7]`).
+- Tick that never leaves `m68k_os9go`: still crashed (2/8).
+- Signal armed but `os9_running` never cleared: crashed 0/8.
 
-`llm_os9_go()` (`Source/OS9AppEmu/os9_uae.c`) was only ever entered at a
-syscall or exception boundary. Pre-emption re-enters it in the **middle of an
-instruction stream**, and the round trip out through `memcpy(rp,&regs,...)`
-and back in through `memcpy(&regs,rp,...)` + `m68k_setpc()` + `MakeFromSR()`
-does not fully preserve CPU state.
+So the damage needed the loop to STOP, not the round trip to lose anything.
+`fill_prefetch_0()` "taking a test from 0/6 to 6/6" was timing noise -- which is
+exactly how a confident wrong theory gets built from a real-looking number.
 
-**One component is identified.** `regs.prefetch` is not refilled on re-entry.
-Adding `fill_prefetch_0()` after `MakeFromSR()` in `llm_os9_go()` took one
-failing test from 0/6 to **6/6** and another from 0/6 to 3/6 — real, and
-partial. It was deliberately NOT left in: `llm_os9_go()` runs for every
-syscall on every path, and a partial fix to the emulation core is not worth
-the risk while `-q` is off by default.
+## System state: the guard that never fires
 
-Something else in that same round trip is still being lost.
+`m68k_os9go()`'s `if (regs.s) defer` has never once fired -- 167 of 167 ticks in
+a suite run had `s=0`, and nothing sets the supervisor bit for guest execution.
 
-## Suggested next step
+That is not a bug. OS-9's rule is that a tick cannot pre-empt a process inside a
+system request but may pre-empt a user-state process to wake a system one.
+OS9exec satisfies the first half structurally: a system request traps OUT of the
+emulator and runs as host C while the loop is not executing, so the only place a
+switch can be decided is already user state. Do not read the `regs.s` test as
+what protects system calls, and do not tighten it chasing a bug.
 
-Compare `regs` immediately before leaving the loop with `regs` immediately
-after re-entering it, having executed **zero** instructions in between.
-Anything that differs is a candidate. Likely suspects, in rough order:
+## Ground rules that earned their keep
 
-1. `regs.prefetch` / `regs.pc_p` consistency (partly confirmed above)
-2. the stack-pointer split — `llm_os9_go()` does `regs.usp = rp->a[7]`
-   unconditionally on entry, which is only right in user state
-3. flag state across `MakeSR()` / `MakeFromSR()` (note the long comment in
-   `newcpu.c`'s single-step path about `MakeSR()` and a cross-process crash)
-4. anything in `struct regstruct` past the fields the `_Static_assert`s in
-   `os9_uae.c` actually check
-
-## Reproducing
-
-    cd ../os9exec-rbf-eoflock      # branch preempt-tick
-    make
-    swift build --package-path test
-    BIN=test/.build/out/Products/Debug/OS9Tests
-    for i in 1 2 3 4 5 6; do OS9_PREEMPT=1 "$BIN" 'a handler resumes'; done
-
-Fails roughly half the time (measured 4 of 6 on this branch; 4/4 pass with
-the tick off). `OS9_PREEMPT=1` runs the whole suite with `-q`.
-`OS9_DUMPFAIL=1` is not in the committed harness — add a dump of the full
-`output` string in the FAIL branch of `run()` if you want to see the crash;
-the default preview filters out every line starting with `$` or `#`, which
-makes a perfectly normal run look like it produced nothing at all. That
-cost me an hour: **"output:" being empty does not mean there was no output.**
-
-To see the crash directly, extract the test's assembly (it is generated by
-the harness at run time and deleted afterwards) and drive it by hand — the
-crash shows as `Exception: pid=N vector=$02 ... E_BUSERR` with a wild
-address in `A3`.
-
-## Ground rules that saved time here
-
-- **Instrument before theorising.** Every real find in this work came from
-  two `printf`s; every confident theory was wrong, mine included.
-- **Never use a broad `pkill -f os9exec`** as a hang guard — it kills the
-  test suite too, and produces "failures" that look like real bugs. Match the
-  worktree path.
-- **Beware the vacuous pass.** An earlier version of `OS9_PREEMPT=1` gated
-  the tick on `setime`, which the suite never runs, so three green
-  "passes with pre-emption" runs had never pre-empted anything. If a test
-  cannot fail, it is not evidence.
+- **Instrument before theorising.** Every real find came from two printfs; every
+  confident theory, mine included, was wrong.
+- **Beware the vacuous pass.** A "0 crashes in 16 runs" verification here was
+  measuring nothing: the suite had deleted `rsmtst.a`, so r68 was assembling a
+  file that did not exist. Check the run did the work before believing the
+  result.
+- **Check for company before trusting a flaky suite.** Both worktrees' `h0`
+  symlink to the same `../os9/h0`, so a second session running tests deletes
+  your fixtures mid-run. That produced a completely convincing "second bug"
+  (failures clustered on `t_text`, ~1 run in 5) that did not exist. Tell:
+  it would not reproduce in 2000 isolated iterations. Settle it with a private
+  disk, not with more runs -- see the `shared-h0-breaks-concurrent-test-runs`
+  note.
+- **Never `pkill -f os9exec`** as a hang guard: it kills the test suite and the
+  other session too. Match the worktree path.

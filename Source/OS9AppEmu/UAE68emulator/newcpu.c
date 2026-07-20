@@ -1489,9 +1489,14 @@ unsigned long m68k_os9go(void)
     }
     /* Left the loop because the clock fired rather than because anything was
      * asked of us. Decided here rather than in the loop, so the loop pays
-     * nothing: a tick in system state must not take the CPU away mid-call, so
-     * the flag stays set and we simply carry on -- the switch then happens on
-     * the next tick after the return to user state, deferred, not lost. */
+     * nothing.
+     *
+     * The deferral below never actually fires in OS9exec -- an OS-9 system
+     * request runs as host C outside this loop, so reaching here at all means
+     * the guest was in user state (measured: 167 of 167 ticks with s=0). That
+     * is also WHY a system call cannot be cut in half here; it is not this
+     * test that guarantees it. Kept for emulated supervisor code, which today
+     * nothing runs. See the header of os9_tick.c. */
     if (os9_timed_out && m68_os9go_result==OS9GO_NOTRAP) {
         if (regs.s) {                /* system state: not now */
             os9_running= 1;

@@ -22,37 +22,26 @@
  * the emulation loop's own "while (os9_running)" is what stops, so nothing is
  * added to the innermost loop of the emulator to pay for this.
  *
- * Following what the clock does on a real machine: the timed-out flag is set
- * whether or not it can be acted on, and it is acted on only in user state.
- * A tick that lands in system state leaves the flag pending, and the switch
- * happens on the way back out to user state -- so a system call is never cut
- * in half, and the switch is deferred rather than lost.
+ * A SYSTEM CALL IS NEVER CUT IN HALF -- but not for the reason the code below
+ * appears to give, and the difference matters to anyone changing this.
  *
- * KNOWN LIMITATION, 2026-07-19 -- root cause identified, not yet fixed.
+ * The rule being honoured is OS-9's: a tick cannot pre-empt a process inside a
+ * system request (file manager, driver); it may wake a sleeping system process
+ * and pre-empt a USER-state process to run it. User state is guaranteed
+ * nothing and may be switched anywhere.
  *
- * With the tick on, 127 of 129 suite tests pass; all 129 pass with it off,
- * which is the default. What fails is not what it first looks like: the
- * F$STrap tests fail because <r68>, the assembler they build their test
- * program with, dies of a bus error part-way through -- a wild address in a
- * register -- so the program under test is never produced. It is CPU state
- * corruption, not anything to do with exception handling.
+ * OS9exec gets the first half of that for free, structurally. A system request
+ * here is not emulated 68k code at all: it traps OUT of the emulator and runs
+ * as host C, while the emulation loop is not executing. The tick handler only
+ * sets a flag, and the switch is decided at the loop boundary -- which is only
+ * ever reached with the guest in user state. So the un-interruptible window is
+ * enforced by the architecture, not by a test.
  *
- * The cause is that llm_os9_go() was only ever entered at a syscall or
- * exception boundary. Pre-emption re-enters it in the MIDDLE of an
- * instruction stream, which the round trip through regs_type does not fully
- * survive. Bisected:
- *   - switching processes is NOT the trigger: making the tick leave the loop
- *     without arbitrating at all made it fail 6/6 rather than 3/6, so it is
- *     the leave-and-re-enter itself.
- *   - regs.prefetch is one identified component. Calling fill_prefetch_0()
- *     after MakeFromSR() in llm_os9_go() took one failing test from 0/6 to
- *     6/6 and another from 0/6 to 3/6 -- so it is real, and it is partial.
- *     Not left in: llm_os9_go() runs for every syscall, and a partial fix in
- *     the emulation core is not worth the risk while -q is off by default.
- *
- * Whoever picks this up: the remaining state is somewhere else in that same
- * round trip. Compare regs before and after a leave/re-enter with no
- * instructions executed in between -- anything that differs is a candidate.
+ * m68k_os9go()'s "if (regs.s) defer" therefore NEVER FIRES: measured over a
+ * full suite run, 167 of 167 ticks had s=0, and nothing in OS9exec ever sets
+ * the supervisor bit for guest execution. It is kept as an honest guard in
+ * case emulated supervisor code is ever run -- but do not read it as the thing
+ * that protects system calls, and do not "fix" a bug by tightening it.
  *
  * Starting it is tied to -q and nothing else. An earlier version also waited
  * for the guest to set the time, on the grounds that a real clock starts at
