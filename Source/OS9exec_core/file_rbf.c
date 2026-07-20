@@ -2243,17 +2243,21 @@ static Boolean Mega( long long size, float *r )
     return m;
 } // Mega
 
-static char* Kb( char* v, long long size )
+static char* Kb( char* v, size_t vSize, long long size )
+/* <vSize> is the caller's buffer size: the formatted value is bounded by it
+ * rather than by how large a disk anyone expected. The same assumption already
+ * bit once here -- see the note on <v> at the call site, where a 20-byte buffer
+ * could not hold "(123.456MB/123.456MB)" and smashed the stack. */
 {
   float r;
   char* unit;
                        unit= "kB";
   if (Mega( size,&r )) unit= "MB";
     
-  if (r>=1000) { sprintf( v, "%.0f%s", r,unit ); return v; }
-  if (r>= 100) { sprintf( v, "%.1f%s", r,unit ); return v; }
-  if (r>=  10) { sprintf( v, "%.2f%s", r,unit ); return v; }
-                 sprintf( v, "%.3f%s", r,unit ); return v;
+  if (r>=1000) { snprintf( v,vSize, "%.0f%s", r,unit ); return v; }
+  if (r>= 100) { snprintf( v,vSize, "%.1f%s", r,unit ); return v; }
+  if (r>=  10) { snprintf( v,vSize, "%.2f%s", r,unit ); return v; }
+                 snprintf( v,vSize, "%.3f%s", r,unit ); return v;
 } // Kb
 
 static void Disp_RBF_DevsLine( rbfdev_typ* rb, char* name, Boolean statistic )
@@ -2281,13 +2285,13 @@ static void Disp_RBF_DevsLine( rbfdev_typ* rb, char* name, Boolean statistic )
     if     (rb->isRAM || *u==NUL) strcpy( u," -" );
     if     (rb->isRAM)  strcpy ( w, "ram" );
     else {
-        if (IsSCSI(rb)) sprintf( w, "SCSI: %d", rb->scsi.ID );
+        if (IsSCSI(rb)) snprintf( w,sizeof(w), "SCSI: %d", rb->scsi.ID );
         else            strcpy ( w, "image" );
     }
     
-    Kb   ( vT, sizeT );
+    Kb   ( vT,sizeof(vT), sizeT );
     if (sizeI==sizeT) snprintf( v,sizeof(v),    "(%s)",                 vT );
-    else              snprintf( v,sizeof(v), "(%s/%s)", Kb( vI, sizeI ),vT );
+    else              snprintf( v,sizeof(v), "(%s/%s)", Kb( vI,sizeof(vI), sizeI ),vT );
     
     upo_printf( "%-10s ", StrBlk_Pt( s,10 ) );
             

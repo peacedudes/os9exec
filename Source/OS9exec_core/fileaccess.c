@@ -666,7 +666,7 @@ os9err pFwriteln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
       mP->fName= fName;
       mP->dirid= dirid;
        
-      sprintf( hashV, "%d %d", -volid, objid ); 
+      snprintf( hashV,sizeof(hashV), "%d %d", -volid, objid ); 
       FD_ID  ( hashV, NULL,           &objid,  &mP );
       debugprintf( dbgAnomaly,dbgDetail,( "get_dir_entry: ID=%ld is out of range %ld..%ld: '%s'\n",
                                            objid, -IDSIGN,IDSIGN-1, deP->name ));
@@ -3023,7 +3023,7 @@ os9err pDmakdir( ushort pid, _spP_, ushort *modeP, char* pathname )
     */
     
     while (true) {
-      sprintf    ( name, "%s_%d", DelMe, n++ );
+      snprintf   ( name,sizeof(name), "%s_%d", DelMe, n++ );
       len= strlen( name );
       
       for (i= 0; i<len; i++) {

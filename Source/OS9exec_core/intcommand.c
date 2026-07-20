@@ -1011,7 +1011,7 @@ Boolean Plugin_Possible( Boolean hardCheck )
              enabled= Native_Enabled( p );
         if (!enabled)            tt= " (disabled)";
               
-        sprintf( form, "%s %s%ds %s%s\n", "%s", "%",-maxN, "V%d.%02x", tt );
+        snprintf( form,sizeof(form), "%s %s%ds %s%s\n", "%s", "%",-maxN, "V%d.%02x", tt );
       
                      tt= "";
         if (atStartup) {
@@ -1429,7 +1429,7 @@ static os9err int_hit( _pid_, _argc_, _argv_ )
   } // for
 
   if (diff==0) strcpy ( s, "" );
-  else         sprintf( s, " %5.3f", (float)n/(float)diff );
+  else         snprintf( s,sizeof(s), " %5.3f", (float)n/(float)diff );
   
   upo_printf  ( "File name hash field hit rate:%s\n", s );
   
@@ -1443,11 +1443,11 @@ static os9err int_hit( _pid_, _argc_, _argv_ )
       }
       else {
         if (hi==0) strcpy ( s, "      " );
-        else       sprintf( s, "%5.1f%%", (float)hi/(float)diff*100 );
+        else       snprintf( s,sizeof(s), "%5.1f%%", (float)hi/(float)diff*100 );
       } // if
       
-      if (hi==0) sprintf( v, "-"      );
-      else       sprintf( v, "%d", hi );
+      if (hi==0) snprintf( v,sizeof(v), "-"      );
+      else       snprintf( v,sizeof(v), "%d", hi );
       
       if (n<=iLast)
         upo_printf( "%3d:%6s %s%s", n, v, s, j<NBlk-1 ? "  " : "" );

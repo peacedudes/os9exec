@@ -1043,13 +1043,21 @@ void Console_Name( int term_id, char* consname )
         case SerialB_ID: p="ts2";  break;
         case   VModBase: p="vmod"; break;
 
-        default        : p= consname;  /* memory must exist */
+        default        :
               isTTY= (term_id>=TTY_Base);
-          if (isTTY) sprintf( p,"%s%02d","tty",term_id ); /* tty     */
-          else       sprintf( p,"%s%d"  ,"t",  term_id ); /* console */
+          /* Built directly in consname and returned. The old code set
+             p= consname here and then fell through to strcpy(consname,p) --
+             a strcpy of a buffer onto ITSELF, which is undefined for
+             overlapping ranges. Third instance of that class here, after
+             GetEntry (42da1f7) and egetenv (66c75de).
+             Bounded by OS9NAMELEN, the device-name contract every caller
+             already satisfies -- the same bound VolInfo() above relies on. */
+          if (isTTY) snprintf( consname,OS9NAMELEN, "%s%02d","tty",term_id ); /* tty     */
+          else       snprintf( consname,OS9NAMELEN, "%s%d"  ,"t",  term_id ); /* console */
+          return;
     }
 
-    strcpy(consname,p);
+    snprintf( consname,OS9NAMELEN, "%s", p );
 } /* Console_Name */
 
 char* OS9exec_Name( void )
@@ -1148,7 +1156,7 @@ Boolean VolInfo( const char* pathname, char* volname )
       ok= GetVolumeInformation( pathname,  volname, OS9NAMELEN, 
                &serno,&maxComp,&sysFlags, &sysname, OS9NAMELEN );
       if (!ok ||  *volname==NUL)
-          sprintf( volname, "%c:", toupper(pathname[0]) );  
+          snprintf( volname,OS9NAMELEN, "%c:", toupper(pathname[0]) ); /* same bound GetVolumeInformation above was given */  
     #endif
     
     return ok;

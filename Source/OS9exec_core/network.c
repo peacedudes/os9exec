@@ -1186,7 +1186,7 @@ os9err pNaccept( ushort pid, syspath_typ* spP, uint32_t *d1 )
 
      cpt= (uint32_t*)&c;
     *cpt=    net->ipRemote.fHost;                            /* get ip address as name */
-    sprintf( spN->name, "%d.%d.%d.%d", c[ 0 ], c[ 1 ], c[ 2 ], c[ 3 ] );
+    snprintf( spN->name,sizeof(spN->name), "%d.%d.%d.%d", c[ 0 ], c[ 1 ], c[ 2 ], c[ 3 ] );
 
     err= GetBuffers( net );                   /* the new path needs his own buffers !! */
     *d1= up;                                        /* here we get the new path number */

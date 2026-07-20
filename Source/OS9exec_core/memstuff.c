@@ -390,7 +390,7 @@ void show_unused(void)
       }
     } // for
 
-    sprintf( s, "(%d)", freeinfo.freeN );
+    snprintf( s,sizeof(s), "(%d)", freeinfo.freeN );
     upo_printf("\nTOTAL %6s      $%08lX  %8lu\n", s, (uint32_t)freeinfo.freeMem, freeinfo.freeMem );
   #endif
 } // show_unused

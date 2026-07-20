@@ -262,9 +262,9 @@ void show_processes(void)
                 if (mod!=NULL) mName= Mod_Name( mod );
             }
 
-            sprintf( idstr,"%c%d", k==currentpid ? '*' : ' ', k );
+            snprintf( idstr,sizeof(idstr),"%c%d", k==currentpid ? '*' : ' ', k );
             if (cp->mid==MAXMODULES) strcpy( mIDs,"-" );
-            else                    sprintf( mIDs, "%d", cp->mid );
+            else                    snprintf( mIDs,sizeof(mIDs), "%d", cp->mid );
             
             upo_printf("%3s %c %3d %3d %3d %3s $%08X %5d $%08X $%08X %-12s %s\n",
                         idstr,
