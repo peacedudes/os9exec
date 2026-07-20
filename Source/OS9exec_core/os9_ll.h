@@ -269,8 +269,26 @@ typedef unsigned int ulong32;
 /* os9addr_t — 68k virtual address (arena offset, not a host pointer).
    Defined early in os9main_incl_precomp.h so os9defs adapted headers can use it. */
 
-#define TO68K(hostptr)  ((ulong32)( (hostptr)==NULL ? 0 : (unsigned char*)(hostptr) - emul_base ))
-#define FROM68K(addr)   ( (addr)==0 ? NULL : (void*)( emul_base + (addr) ) )
+/* Convert between a host pointer and a 68k arena offset.
+ *
+ * These are FUNCTIONS, not macros, and must stay that way. As macros each
+ * mentioned its argument twice (once in the null test, once in the arithmetic),
+ * so any argument with a side effect was applied TWICE. That was not
+ * hypothetical: F$PrsNam's `rp->a[0]=TO68K(++p)` advanced p by two, so parsing
+ * "/dd/a" skipped the '/' AND the first name character. Every path whose final
+ * component was one character then parsed as the empty name and came back
+ * E$BNam, which the OS-9 shell reports as "^syntax error" -- so `echo x >/dd/a`
+ * failed while `>/dd/ab` silently "worked" by parsing only its last character.
+ * A function evaluates its argument exactly once, by construction. */
+static inline ulong32 TO68K( const void* hostptr )
+{
+    return (ulong32)( hostptr==NULL ? 0 : (const unsigned char*)hostptr - emul_base );
+}
+
+static inline void* FROM68K( ulong32 addr )
+{
+    return addr==0 ? NULL : (void*)( emul_base + addr );
+}
 
 /* Validate a resolved guest pointer (a FROM68K result) as a real host pointer
    into the 68k arena.  Because the arena is one contiguous block, a range test
