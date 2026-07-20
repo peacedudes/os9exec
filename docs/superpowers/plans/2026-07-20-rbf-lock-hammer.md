@@ -443,6 +443,32 @@ CLI: `RBFHammer --target 68k|6809 --iterations N --jobs J [--gate]
 Default is stop at first failure and preserve the scratch device, printing its
 path. `--keep-going` runs everything and reports a failure rate.
 
+- [ ] **Step 0: PACK the workers once, then loop `runb` — the soak's main
+  speed-up.**
+
+Today every worker re-enters ~100 lines through the BASIC09 editor on every
+launch. For a soak repeating one scenario N times that is N parses of the same
+source. Instead: boot os9exec once, `PACK` each worker module once, then loop
+`runb <name>` N times inside that single session.
+
+`hnap` is a reusable library procedure and should be packed and `load`ed once,
+with `hwork` reaching it through `F$Link` -- the standard packed-module
+resolution path (module directory first, then the EXECUTION directory, never
+the data directory; see `basic09/pack-and-runb.md`).
+
+Gotchas to expect, all already documented in project memory:
+- A packed module is a SUBROUTINE module and cannot be run by name from the
+  shell -- it must be `runb <name>`.
+- `PACK` writes to the EXECUTION directory, and module residency after `BYE`
+  is real (memory `basic09-pack-and-module-residency-gotchas`).
+- `runb <name> <numeric-arg>` on 6809 fails differently from 68k. Since values
+  are template-substituted rather than passed as arguments, this does not bite
+  us -- do not reintroduce argument passing to "simplify" it.
+
+Deliberately NOT done before correctness is established: debugging packed-module
+resolution and record-format defects at the same time is how a session loses a
+day.
+
 - [ ] **Step 1: Implement the pool with `withThrowingTaskGroup`, `J` concurrent
   scenarios, each fully isolated.**
 

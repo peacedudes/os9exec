@@ -32,6 +32,21 @@ Record the exact mutation so it can be reproduced.
 
 | `GuestFormatTests` (guest/host byte-format agreement) | `Record.width` 64→63 and `payloadWidth` 44→43 | **All 4 tests went red** against the real guest-produced fixture. First run of this mutation also exposed a genuine defect in the test itself — see below | 2026-07-20 |
 
+| `ScenarioTests` (all 6, end-to-end through os9exec) | Adapter substitutes `@COUNT@` as `worker.count - 1`, so the guest writes one fewer record than the scenario claims | **All 6 went red** (15 assertion failures). Proves the full path is live: the guest really runs, the file really comes back, and the host really compares | 2026-07-20 |
+
+### Harness defect found by adding a multi-worker scenario
+
+The single-worker scenarios passed while the four-worker ones failed, and the
+cause was the harness, not RBF: every file was being checked against **all**
+workers' expectations, so `w1.dat` was faulted for not containing workers 2-4.
+
+Worth keeping because the fix is asymmetric and the wrong direction is silent:
+expectations must be **per file**. Too broad, and separate-file rosters fault
+spuriously (loud, obvious). Too narrow, and a roster sharing one file would
+excuse a genuine foreign record as a phantom writer (silent, and exactly the
+kind of miss this harness exists to prevent). `Scenario.expectations(forFile:)`
+now carries that reasoning.
+
 ### Defect found BY the mutation, in the test code
 
 The first run of the width mutation **crashed with signal 5** instead of

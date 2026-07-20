@@ -18,6 +18,11 @@ let package = Package(
             dependencies: ["RBFHammerCore"],
             path: "Tests/RBFHammerCoreTests",
             resources: [.copy("Fixtures")]
+        ),
+        .testTarget(
+            name: "RBFHammerScenarioTests",
+            dependencies: ["RBFHammerCore"],
+            path: "Tests/RBFHammerScenarioTests"
         )
     ]
 )
