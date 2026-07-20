@@ -1641,7 +1641,11 @@ os9err prepData(ushort pid, mod_exec *theModule, uint32_t memplus, uint32_t *msi
    p2+= 4;
 
    debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: idata at %p, data offset start=%p, bytecount=$%X\n",(void*)p2,(void*)p,cnt));
-   while (cnt-- >0) *p++ = *p2++; /* copy initialized data */
+   /* `while (cnt-- >0)` copied the right number of bytes, but underflowed cnt to
+      0xFFFFFFFF on the final test. Harmless (cnt is reassigned before its next
+      use) yet it tripped -fsanitize=unsigned-integer-overflow on every startup,
+      which made that sanitizer unusable as a gate. Decrement inside the body. */
+   while (cnt>0) { *p++ = *p2++; cnt--; } /* copy initialized data */
    /* -- adjust initialized data and object pointers */
    p2  = (byte*)theModule+os9_long(theModule->_midref); /* initalized data references */
    offs= TO68K(theModule); /* for first table, use code start address as offset (68k) */
