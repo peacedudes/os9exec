@@ -1,0 +1,244 @@
+* Live-tests F$UnLoad($1D), F$SUser($1C), F$Sleep($0A) against
+* 68k/syscall-reference.md. Register conventions cross-checked against
+* os9exec's own fcalls.c before writing this.
+*
+* F$UnLoad's declared d0.w "type/language" input is, like F$CpyMem's
+* PID, never actually read by OS9_F_UnLoad's body -- it looks the
+* module up by name alone. Tested here with a deliberately wrong d0.w
+* to confirm live that it has no effect.
+*
+* F$SUser changes only the CALLING process' own group/user fields, no
+* permission check at all in this implementation (any process may set
+* itself to any identity) -- confirmed safe to test freely since the
+* change dies with this throwaway test process when it exits, and
+* never touches the interactive shell that launched it. Important: do
+* NOT round-trip through F$ID's own reported value here -- F$ID packs
+* group/user into a single word (group<<8|user, BpB=8), but F$SUser
+* reads a completely different layout (hiword(d1)=group as a full
+* 16-bit field, loword(d1)=user as a full 16-bit field). Feeding F$ID's
+* output straight into F$SUser would silently corrupt the identity
+* instead of restoring it. This test uses explicit, self-chosen values
+* on both sides instead, and verifies the change via F$ID's own
+* documented packing formula.
+*
+* F$Sleep: only d0.l=1 (immediate no-op) and a small positive tick
+* count are exercised -- d0.l=0 is indefinite sleep until signaled,
+* and nothing here would ever signal it, so it is deliberately never
+* tested (would hang the harness).
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+IWrite set $8A
+FLoad set $01
+FLink set $00
+FUnLoad set $1D
+FSUser set $1C
+FID set $0C
+FSleep set $0A
+FExit set $06
+NewGroup set 99
+NewUser set 42
+NewIdent set (NewGroup<<16)+NewUser
+IdentPacked set (NewGroup<<8)+NewUser
+*
+ psect batch1101,Type_Lang,Attr_Rev,0,800,start
+start
+* --- Stage 1: F$Load a real module, then F$UnLoad it by name with a
+* deliberately wrong d0.w (type/language), to confirm that input is
+* ignored -- then F$Link the same name and expect E$MNF, proving the
+* module is genuinely gone from the directory, not just link-counted
+* down. ---
+* F$Load takes a FILE name (on-disk path), which is independent of the
+* module's own internal name baked into its header -- child68kf below
+* is the file, childprg68k (used from here on) is the module's own
+* registered name for F$UnLoad/F$Link to find it by.
+ lea loadfname(pc),a0
+ clr.l d0
+ trap #0
+ dc.w FLoad
+ bcc ldok
+ lea ldfailmsg(pc),a0
+ move.l #ldfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra suser
+ldok
+ lea childname(pc),a0
+* deliberately wrong type/lang: confirms it's ignored, per header above
+ move.w #$DEAD,d0
+ trap #0
+ dc.w FUnLoad
+ bcc ulok
+ lea ulfailmsg(pc),a0
+ move.l #ulfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra suser
+ulok
+ lea ulpassmsg(pc),a0
+ move.l #ulpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ lea childname(pc),a0
+ moveq #0,d0
+ trap #0
+ dc.w FLink
+ bcs lk1ok
+ lea lk1failmsg(pc),a0
+ move.l #lk1faillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra suser
+lk1ok
+ lea lk1passmsg(pc),a0
+ move.l #lk1passlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- Stage 2: F$SUser(d1.l=(group:16)(user:16)) -- explicit values,
+* verified via F$ID's own group<<8|user packing (BpB=8), never
+* round-tripped through F$ID's output (see header comment). ---
+suser
+ trap #0
+ dc.w FID
+ moveq #0,d4              save F$ID's result before any IWrite clobbers d1
+ move.w d1,d4
+ lea suser0msg(pc),a0
+ move.l #suser0len,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d4,d1
+ bsr printhex
+ move.l #NewIdent,d1
+ trap #0
+ dc.w FSUser
+ bcc suok
+ lea sufailmsg(pc),a0
+ move.l #sufaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra fsleep
+suok
+ trap #0
+ dc.w FID
+ cmp.w #IdentPacked,d1
+ bne.s summismatch
+ lea supassmsg(pc),a0
+ move.l #supasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra fsleep
+summismatch
+ moveq #0,d4              save the mismatched value before IWrite clobbers d1
+ move.w d1,d4
+ lea sumismmsg(pc),a0
+ move.l #sumismlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d4,d1
+ bsr printhex
+*
+* --- Stage 3: F$Sleep(d0.l=ticks). d0.l=1 (no-op, immediate return),
+* then d0.l=5 (~50ms at TICKS_PER_SEC=100) -- both must return with no
+* hang. ---
+fsleep
+ moveq #1,d0
+ trap #0
+ dc.w FSleep
+ lea sl1passmsg(pc),a0
+ move.l #sl1passlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l #5,d0
+ trap #0
+ dc.w FSleep
+ lea sl2passmsg(pc),a0
+ move.l #sl2passlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+printhex
+ movem.l d0-d3,-(a7)
+ sub.l #8,a7
+ movea.l a7,a1
+ adda.l #8,a1
+ move.l d1,d2
+ moveq #7,d3
+ph_loop
+ move.l d2,d0
+ and.l #$F,d0
+ cmp.b #10,d0
+ blt.s ph_digit
+ add.b #'A'-10,d0
+ bra.s ph_store
+ph_digit
+ add.b #'0',d0
+ph_store
+ move.b d0,-(a1)
+ lsr.l #4,d2
+ dbra d3,ph_loop
+ movea.l a1,a0
+ moveq #8,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ add.l #8,a7
+ movem.l (a7)+,d0-d3
+ lea crbyte(pc),a0
+ moveq #2,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+crbyte dc.b 13,10
+* l68 -o=<name> sets the module's real internal _mname at link time,
+* confirmed live -- overriding whatever the source's psect declared.
+* This file was linked as "l68 -o=child68kf childprg68k.r", so the
+* module directory's real registered name is child68kf, not the
+* childprg68k the source's psect line names. Both strings below
+* deliberately match that, not the source name.
+loadfname dc.b "child68kf",0
+childname dc.b "child68kf",0
+ldfailmsg dc.b "FAIL F$Load",13,10
+ldfaillen equ *-ldfailmsg
+ulpassmsg dc.b "PASS F$UnLoad (wrong d0.w type/lang ignored, unloaded anyway)",13,10
+ulpasslen equ *-ulpassmsg
+ulfailmsg dc.b "FAIL F$UnLoad (carry set)",13,10
+ulfaillen equ *-ulfailmsg
+lk1passmsg dc.b "PASS module genuinely gone: F$Link now fails as expected",13,10
+lk1passlen equ *-lk1passmsg
+lk1failmsg dc.b "FAIL module still linkable after F$UnLoad",13,10
+lk1faillen equ *-lk1failmsg
+suser0msg dc.b "  F$ID identity before F$SUser (hex)="
+suser0len equ *-suser0msg
+supassmsg dc.b "PASS F$SUser (F$ID reflects group=99,user=42 via group<<8|user)",13,10
+supasslen equ *-supassmsg
+sufailmsg dc.b "FAIL F$SUser (carry set)",13,10
+sufaillen equ *-sufailmsg
+sumismmsg dc.b "FAIL F$SUser (F$ID does not reflect the change) new value(hex)="
+sumismlen equ *-sumismmsg
+sl1passmsg dc.b "PASS F$Sleep(1) no-op returned",13,10
+sl1passlen equ *-sl1passmsg
+sl2passmsg dc.b "PASS F$Sleep(5) timed sleep returned",13,10
+sl2passlen equ *-sl2passmsg
+ ends

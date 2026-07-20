@@ -1,0 +1,283 @@
+* Live-tests F$Julian($20)/F$Gregor($54) round-trip, F$PrsNam($10,
+* including the leading-'/' advance case -- the same code path that had
+* a real double-evaluated-macro bug fixed earlier this project
+* ("os9-shell-rejects-single-char-redirect-target") -- and F$PErr($0F),
+* against 68k/syscall-reference.md. Register conventions cross-checked
+* against os9exec's own fcalls.c before writing this: F$Julian/F$Gregor
+* pack date as (year:16)(month:8)(day:8) in d1.l, NOT decimal-digit
+* "yyyymmdd" despite the doc comment's naming -- j_date()'s exact epoch
+* is untested here, only the round-trip is (self-verifying regardless
+* of internal epoch). All four calls are pure-compute/print, no side
+* effects, safe to run freely.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+IWrite set $8A
+FJulian set $20
+FGregor set $54
+FPrsNam set $10
+FPErr set $0F
+FExit set $06
+*
+ psect batch901,Type_Lang,Attr_Rev,0,800,start
+start
+* --- Stage 1: F$Julian(d0.l=00hhmmss, d1.l=(year:16)(month:8)(day:8)) ---
+* noon (12:00:00) on 2026-07-20
+ move.l #$000C0000,d0
+ move.l #$07EA0714,d1
+ move.l d0,d6            save originals for the round-trip check
+ move.l d1,d7
+ trap #0
+ dc.w FJulian
+ bcc jlok
+ lea jlfailmsg(pc),a0
+ move.l #jlfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+jlok
+ move.l d0,d4             save F$Julian's real results before any IWrite
+ move.l d1,d5              call below clobbers d0 (path#) / d1 (length)
+ lea jlpassmsg(pc),a0
+ move.l #jlpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ lea jltimemsg(pc),a0
+ move.l #jltimelen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d4,d1
+ bsr printhex
+ lea jldaymsg(pc),a0
+ move.l #jldaylen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d5,d1
+ bsr printhex
+*
+* --- Stage 2: F$Gregor(d0.l=seconds-since-midnight, d1.l=julian day)
+* using Stage 1's own output as input -- true round-trip, no
+* independent epoch computation needed to judge correctness. d0/d1 were
+* clobbered by the label IWrites above, so restore from d4/d5 first. ---
+ move.l d4,d0
+ move.l d5,d1
+ trap #0
+ dc.w FGregor
+ bcc grok
+ lea grfailmsg(pc),a0
+ move.l #grfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+grok
+ cmp.l d6,d0
+ bne.s grmismatch
+ cmp.l d7,d1
+ bne.s grmismatch
+ lea grpassmsg(pc),a0
+ move.l #grpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra prsnam
+grmismatch
+ lea grmismmsg(pc),a0
+ move.l #grmismlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- Stage 3: F$PrsNam((a0)=path string) -- no leading '/', should
+* stop at the first non-name char and leave a0 unmoved ---
+prsnam
+ lea pn1str(pc),a0
+ trap #0
+ dc.w FPrsNam
+ bcc pn1ok
+ lea pn1failmsg(pc),a0
+ move.l #pn1faillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra pn2
+pn1ok
+ moveq #0,d4              save terminator byte before any IWrite clobbers d0
+ move.b d0,d4
+ moveq #0,d5              save length before any IWrite clobbers d1
+ move.w d1,d5
+ lea pn1msg(pc),a0
+ move.l #pn1len,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d4,d1
+ bsr printhex
+ lea pn1lenmsg(pc),a0
+ move.l #pn1lenlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d5,d1
+ bsr printnum
+*
+* --- Stage 4: F$PrsNam again, this time WITH a leading '/' -- the
+* code path that once had a double-evaluated ++p bug; a0 should come
+* back pointing one byte past the '/' ---
+pn2
+ lea pn2str(pc),a0
+ move.l a0,d6            save original a0 to check the advance
+ trap #0
+ dc.w FPrsNam
+ bcc pn2ok
+ lea pn2failmsg(pc),a0
+ move.l #pn2faillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra perr
+pn2ok
+ move.l a0,d5              save updated a0 before any IWrite clobbers it
+ sub.l d6,d5                d5 = advance in bytes (should be exactly 1)
+ moveq #0,d4               save length before any IWrite clobbers d1
+ move.w d1,d4
+ lea pn2advmsg(pc),a0
+ move.l #pn2advlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d5,d1
+ bsr printnum
+ lea pn2lenmsg(pc),a0
+ move.l #pn2lenlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d4,d1
+ bsr printnum
+*
+* --- Stage 5: F$PErr(d0.w=0 no path, d1.w=error code) -- writes
+* directly to the emulator's own console via upe_printf, not through
+* I$Write, so it shows up in the host capture the same way the earlier
+* uncontrolled F$Chain error message did ---
+perr
+ clr.l d0
+ move.w #216,d1           E$PNNF, a code already known from other batches
+ trap #0
+ dc.w FPErr
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+printnum
+ sub.l #16,a7
+ movea.l a7,a1
+ adda.l #16,a1
+ move.l d1,d2
+ moveq #0,d3
+ tst.l d2
+ bne.s pn_loop
+ move.b #'0',-(a1)
+ moveq #1,d3
+ bra.s pn_output
+pn_loop
+ tst.l d2
+ beq.s pn_output
+ divu.w #10,d2
+ move.w d2,d0
+ swap d2
+ move.b d2,d1
+ add.b #'0',d1
+ move.b d1,-(a1)
+ addq.w #1,d3
+ clr.l d2
+ move.w d0,d2
+ bra.s pn_loop
+pn_output
+ movea.l a1,a0
+ move.l d3,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ add.l #16,a7
+ lea crbyte(pc),a0
+ moveq #2,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+printhex
+ movem.l d0-d3,-(a7)
+ sub.l #8,a7
+ movea.l a7,a1
+ adda.l #8,a1
+ move.l d1,d2
+ moveq #7,d3
+ph_loop
+ move.l d2,d0
+ and.l #$F,d0
+ cmp.b #10,d0
+ blt.s ph_digit
+ add.b #'A'-10,d0
+ bra.s ph_store
+ph_digit
+ add.b #'0',d0
+ph_store
+ move.b d0,-(a1)
+ lsr.l #4,d2
+ dbra d3,ph_loop
+ movea.l a1,a0
+ moveq #8,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ add.l #8,a7
+ movem.l (a7)+,d0-d3
+ lea crbyte(pc),a0
+ moveq #2,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+crbyte dc.b 13,10
+*
+jlpassmsg dc.b "PASS F$Julian",13,10
+jlpasslen equ *-jlpassmsg
+jlfailmsg dc.b "FAIL F$Julian",13,10
+jlfaillen equ *-jlfailmsg
+jltimemsg dc.b "  seconds-since-midnight (hex)="
+jltimelen equ *-jltimemsg
+jldaymsg dc.b "  julian day (hex)="
+jldaylen equ *-jldaymsg
+grpassmsg dc.b "PASS F$Gregor round-trip (exact match)",13,10
+grpasslen equ *-grpassmsg
+grmismmsg dc.b "FAIL F$Gregor round-trip (mismatch)",13,10
+grmismlen equ *-grmismmsg
+grfailmsg dc.b "FAIL F$Gregor (carry set)",13,10
+grfaillen equ *-grfailmsg
+pn1str dc.b "hello/world",0
+pn1msg dc.b "PASS F$PrsNam (no leading /) terminator(hex)="
+pn1len equ *-pn1msg
+pn1lenmsg dc.b "  length="
+pn1lenlen equ *-pn1lenmsg
+pn1failmsg dc.b "FAIL F$PrsNam (no leading /)",13,10
+pn1faillen equ *-pn1failmsg
+pn2str dc.b "/etc",0
+pn2advmsg dc.b "PASS F$PrsNam (leading /) a0 advance(decimal)="
+pn2advlen equ *-pn2advmsg
+pn2lenmsg dc.b "  length="
+pn2lenlen equ *-pn2lenmsg
+pn2failmsg dc.b "FAIL F$PrsNam (leading /)",13,10
+pn2faillen equ *-pn2failmsg
+ ends

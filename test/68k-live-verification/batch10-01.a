@@ -1,0 +1,209 @@
+* Live-tests F$SRqMem($28), F$SRtMem($29), F$SRqCMem($5C), F$CpyMem($1B)
+* against 68k/syscall-reference.md. Register conventions cross-checked
+* against os9exec's own fcalls.c before writing this. F$SRqCMem shares
+* OS9_F_SRqMem's own C body (confirmed by reading funcdispatch.c's
+* table entry directly) -- its "color" parameter in d1.l is accepted
+* but the shared handler never reads d1, so it has no effect on
+* os9exec; this test passes a nonzero color to confirm that live.
+* F$CpyMem's d0.w "external process ID" is likewise declared in the
+* dispatch table's input mask but never read by OS9_F_CpyMem's body --
+* the call does a raw address-range-checked copy with no ownership
+* check of any kind, so this test's PID value is cosmetic; documenting
+* that finding is as important as the round-trip check itself.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+IWrite set $8A
+FSRqMem set $28
+FSRtMem set $29
+FSRqCMem set $5C
+FCpyMem set $1B
+FID set $0C
+FExit set $06
+*
+ psect batch1001,Type_Lang,Attr_Rev,0,800,start
+start
+* --- Stage 1: F$SRqMem(d0.l=size) -> d0.l=actual size, (a2)=block.
+* Request 256 (already 16-byte aligned), fill it with a recognizable
+* pattern through the returned pointer, read it back to confirm it's
+* real writable memory, not just a success code with no real backing. ---
+ move.l #256,d0
+ trap #0
+ dc.w FSRqMem
+ bcc rq1ok
+ lea rq1failmsg(pc),a0
+ move.l #rq1faillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra srqcmem
+rq1ok
+ move.l d0,d4              save actual size (needed later for F$SRtMem)
+* save block pointer in a3: none of the IWrite calls below touch it
+ move.l a2,a3
+ move.b #$AA,(a3)
+ move.b #$55,1(a3)
+ move.b #$AA,255(a3)
+ move.b (a3),d0
+ cmp.b #$AA,d0
+ bne.s rq1badmem
+ move.b 1(a3),d0
+ cmp.b #$55,d0
+ bne.s rq1badmem
+ move.b 255(a3),d0
+ cmp.b #$AA,d0
+ bne.s rq1badmem
+ lea rq1passmsg(pc),a0
+ move.l #rq1passlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra rt1
+rq1badmem
+ lea rq1badmemmsg(pc),a0
+ move.l #rq1badmemlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- Stage 2: F$SRtMem(d0.l=size,(a2)=block) -- must pass back exactly
+* what F$SRqMem returned, per its own documented restriction, or the
+* block silently isn't actually freed. ---
+rt1
+ move.l d4,d0
+ move.l a3,a2
+ trap #0
+ dc.w FSRtMem
+ bcc rt1ok
+ lea rt1failmsg(pc),a0
+ move.l #rt1faillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra srqcmem
+rt1ok
+ lea rt1passmsg(pc),a0
+ move.l #rt1passlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- Stage 3: F$SRqCMem(d0.l=size,d1.l=color) -- nonzero color, to
+* confirm live that it has no effect (same handler as F$SRqMem). ---
+srqcmem
+ move.l #128,d0
+ move.l #$12345678,d1
+ trap #0
+ dc.w FSRqCMem
+ bcc rq2ok
+ lea rq2failmsg(pc),a0
+ move.l #rq2faillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra cpymem
+rq2ok
+ move.l d0,d4
+ move.l a2,a3
+ lea rq2passmsg(pc),a0
+ move.l #rq2passlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d4,d0
+ move.l a3,a2
+ trap #0
+ dc.w FSRtMem
+ bcc rt2ok
+ lea rt2failmsg(pc),a0
+ move.l #rt2faillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra cpymem
+rt2ok
+ lea rt2passmsg(pc),a0
+ move.l #rt2passlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- Stage 4: F$CpyMem(d0.w=pid,d1.l=count,(a0)=src,(a1)=dst) -- own
+* PID via F$ID (cosmetic, see header comment), copy a known pattern
+* between two local buffers, verify byte-for-byte. ---
+cpymem
+ trap #0
+ dc.w FID
+ move.w d0,d6              save own PID (cosmetic input, per header note)
+ lea cpysrc(pc),a0
+ lea cpydst(pc),a1
+ move.l #cpylen,d1
+ move.w d6,d0
+ trap #0
+ dc.w FCpyMem
+ bcc cmok
+ lea cmfailmsg(pc),a0
+ move.l #cmfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+cmok
+ lea cpydst(pc),a2
+ lea cpysrc(pc),a3
+ moveq #cpylen-1,d5
+cmcmp
+ move.b (a2)+,d0
+ move.b (a3)+,d1
+ cmp.b d0,d1
+ bne.s cmmismatch
+ dbra d5,cmcmp
+ lea cmpassmsg(pc),a0
+ move.l #cmpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+cmmismatch
+ lea cmmismmsg(pc),a0
+ move.l #cmmismlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+rq1passmsg dc.b "PASS F$SRqMem (256 bytes, real read/write memory confirmed)",13,10
+rq1passlen equ *-rq1passmsg
+rq1failmsg dc.b "FAIL F$SRqMem (carry set)",13,10
+rq1faillen equ *-rq1failmsg
+rq1badmemmsg dc.b "FAIL F$SRqMem (block not actually writable)",13,10
+rq1badmemlen equ *-rq1badmemmsg
+rt1passmsg dc.b "PASS F$SRtMem",13,10
+rt1passlen equ *-rt1passmsg
+rt1failmsg dc.b "FAIL F$SRtMem (carry set)",13,10
+rt1faillen equ *-rt1failmsg
+rq2passmsg dc.b "PASS F$SRqMem (128 bytes, nonzero color ignored, same as plain)",13,10
+rq2passlen equ *-rq2passmsg
+rq2failmsg dc.b "FAIL F$SRqCMem (carry set)",13,10
+rq2faillen equ *-rq2failmsg
+rt2passmsg dc.b "PASS F$SRtMem (colored block)",13,10
+rt2passlen equ *-rt2passmsg
+rt2failmsg dc.b "FAIL F$SRtMem (colored block, carry set)",13,10
+rt2faillen equ *-rt2failmsg
+cmpassmsg dc.b "PASS F$CpyMem (byte-for-byte match)",13,10
+cmpasslen equ *-cmpassmsg
+cmmismmsg dc.b "FAIL F$CpyMem (mismatch)",13,10
+cmmismlen equ *-cmmismmsg
+cmfailmsg dc.b "FAIL F$CpyMem (carry set)",13,10
+cmfaillen equ *-cmfailmsg
+cpysrc dc.b "ABCDEFGHIJKLMNOP"
+cpylen equ 16
+cpydst dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ ends

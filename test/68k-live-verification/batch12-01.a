@@ -1,0 +1,123 @@
+* Live-tests F$SSpd($0B), F$Mem($07), F$SchBit($12), F$AllBit($13),
+* F$DelBit($14), F$Trans($60), F$UAcct($59) against
+* 68k/syscall-reference.md. All seven are routed to OS9_F_UnImp in
+* os9exec's own dispatch table (funcdispatch.c) -- confirmed by reading
+* it directly, not inferred from behavior -- so this test exists only
+* to confirm live that calling each one is a clean, safe error return
+* (E$UNKSVC/208, no crash, no hang), not to exercise any real register
+* contract, since there isn't one on this build.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+IWrite set $8A
+FSSpd set $0B
+FMem set $07
+FSchBit set $12
+FAllBit set $13
+FDelBit set $14
+FTrans set $60
+FUAcct set $59
+FExit set $06
+*
+ psect batch1201,Type_Lang,Attr_Rev,0,800,start
+start
+ clr.l d0
+ trap #0
+ dc.w FSSpd
+ lea r1(pc),a0
+ bsr check
+ clr.l d0
+ trap #0
+ dc.w FMem
+ lea r2(pc),a0
+ bsr check
+ clr.l d0
+ trap #0
+ dc.w FSchBit
+ lea r3(pc),a0
+ bsr check
+ clr.l d0
+ trap #0
+ dc.w FAllBit
+ lea r4(pc),a0
+ bsr check
+ clr.l d0
+ trap #0
+ dc.w FDelBit
+ lea r5(pc),a0
+ bsr check
+ clr.l d0
+ trap #0
+ dc.w FTrans
+ lea r6(pc),a0
+ bsr check
+ clr.l d0
+ trap #0
+ dc.w FUAcct
+ lea r7(pc),a0
+ bsr check
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+* --- check: (a0)=call-name string, entered right after a trap whose
+* result is still in the flags/d1 -- confirms carry set AND d1.w=208
+* (E$UNKSVC), matching OS9_F_UnImp's own source exactly. a0 is saved to
+* a2 immediately (move.l to an address-register destination is MOVEA,
+* which does not touch the condition codes, so the trap's carry survives)
+* since the PASS-path IWrite below would otherwise clobber a0 before the
+* call-name string ever gets printed. ---
+check
+ move.l a0,a2
+ bcc chk_shouldfail
+ cmp.w #208,d1
+ bne.s chk_wrongcode
+ lea passmsg(pc),a0
+ move.l #passlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l a2,a0
+ move.l #10,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ lea crbyte(pc),a0
+ moveq #2,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+chk_shouldfail
+ lea shouldfailmsg(pc),a0
+ move.l #shouldfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+chk_wrongcode
+ lea wrongcodemsg(pc),a0
+ move.l #wrongcodelen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+crbyte dc.b 13,10
+passmsg dc.b "PASS (E$UNKSVC) "
+passlen equ *-passmsg
+shouldfailmsg dc.b "FAIL: unexpectedly succeeded (carry clear)",13,10
+shouldfaillen equ *-shouldfailmsg
+wrongcodemsg dc.b "FAIL: failed with wrong error code",13,10
+wrongcodelen equ *-wrongcodemsg
+r1 dc.b "F$SSpd   ",0
+r2 dc.b "F$Mem    ",0
+r3 dc.b "F$SchBit ",0
+r4 dc.b "F$AllBit ",0
+r5 dc.b "F$DelBit ",0
+r6 dc.b "F$Trans  ",0
+r7 dc.b "F$UAcct  ",0
+ ends
