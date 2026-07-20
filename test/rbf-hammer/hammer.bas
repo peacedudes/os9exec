@@ -89,7 +89,7 @@ PROCEDURE hwork
 !   create  makes an empty file and exits. Used to provision a shared file
 !           before the racers start, since two workers both CREATEing one file
 !           is itself an error and would mask the results.
-DIM path: BYTE
+DIM path, wpath: BYTE
 DIM index, worker, seqnum, cksum, total, charpos: INTEGER
 DIM napcount, gotcount, failed, slotbase, slotnum, tally: INTEGER
 DIM payload: STRING[44]
@@ -212,7 +212,33 @@ ELSE
     CLOSE #path
     PRINT #2, "hammer: worker "; worker; " rmw done "; total
   ELSE
+  IF role = "rmwfree" THEN
+    ! CONTROL for the rmw role: the SAME read-modify-write, deliberately
+    ! WITHOUT the automatic record lock.
+    !
+    ! RBF auto-locks only on UPDATE-mode paths. Reading through a READ path and
+    ! writing through a separate WRITE path therefore takes no lock at all --
+    ! an unlocked RMW, with no change to the emulator whatsoever.
+    !
+    ! If `rmw` (locked) keeps a correct tally while this loses updates, the lock
+    ! is demonstrably doing the work. If BOTH stay correct, the scenario never
+    ! interleaves and neither result means anything.
+    OPEN #path, fname: READ
+    OPEN #wpath, fname: WRITE
+    FOR index = 1 TO total
+      SEEK #path, 0
+      READ #path, inline
+      tally = VAL(MID$(inline, 2, 8)) + 1
+      RUN hnap(napmode, napcount)
+      SEEK #wpath, 0
+      PRINT #wpath, "T" + RIGHT$("00000000" + STR$(tally), 8) + LEFT$(pad + pad, 54)
+    NEXT index
+    CLOSE #path
+    CLOSE #wpath
+    PRINT #2, "hammer: worker "; worker; " rmwfree done "; total
+  ELSE
     PRINT #2, "hammer: worker "; worker; " FAIL unknown role "; role
+  ENDIF
   ENDIF
   ENDIF
 ENDIF

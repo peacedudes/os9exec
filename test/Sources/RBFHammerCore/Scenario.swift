@@ -103,6 +103,11 @@ public struct WorkerSpec: Equatable, Sendable {
         /// by construction.
         case rmw
 
+        /// The same read-modify-write as `rmw` but through a READ path and a
+        /// separate WRITE path, so no automatic lock is taken. The control
+        /// that proves `rmw` can fail.
+        case rmwfree
+
         /// Writes a single record holding a decimal tally for `rmw` to
         /// increment.
         case seed

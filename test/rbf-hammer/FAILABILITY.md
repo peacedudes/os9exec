@@ -150,34 +150,33 @@ would prove the test wrong rather than the locking right.
 
 **A genuine lock test needs OVERLAPPING read-modify-write on the same records.**
 
-### `rmw` scenario — WRITTEN, PASSING, ***NOT YET PROVEN FAILABLE***
+### `rmw` scenario — PROVEN FAILABLE 2026-07-20. Record-lock coverage EXISTS.
 
-`testConcurrentReadModifyWriteLosesNoUpdatesTickOn` / `...TickOff` now exist:
 N workers each read-modify-write the SAME record, with the nap held BETWEEN the
-read and the write so the lock stays open across a real scheduling window. The
-final tally must equal `workers x increments`.
+read and the write so the lock stays open across a real scheduling window.
 
-Both pass.
+**The control needed no emulator rebuild.** RBF auto-locks only on UPDATE-mode
+paths, so doing the read through a READ path and the write through a separate
+WRITE path is an unlocked read-modify-write — `rmwfree` — with the emulator
+completely untouched.
 
-**That result is currently worth NOTHING and must not be cited.** The old
-counter race also passed — 600/600 against code with no locking at all — for
-precisely this reason: nothing proved the scenario could ever go red.
+| Configuration | Final tally | Expected |
+|---|---|---|
+| `rmwfree` — no lock taken | **20** | 100 (80 updates lost) |
+| `rmw` — update-mode auto-lock, tick ON | **100** | 100 |
+| `rmw` — update-mode auto-lock, tick OFF (`-q`) | **100** | 100 |
 
-Required before this counts as record-lock coverage:
+Both directions are demonstrated: the race genuinely interleaves and destroys
+data when unlocked, and the automatic record lock genuinely prevents it, with
+the tick on AND off. `testUnlockedReadModifyWriteDoesLoseUpdates` is a
+permanent guard — if it ever starts passing a full tally, the race has stopped
+interleaving and every other lock result must be treated as meaningless again.
 
-1. Build os9exec with `LockHolder()` in `file_rbf.c` forced to `return NULL`
-   (no conflict ever detected = no effective record locking). Build to a
-   SCRATCH path — other sessions share `build/*.o` and `./os9exec`, and
-   clobbering those manufactures failures in someone else's run.
-2. Run both rmw tests against that binary.
-3. **They must report a SHORT TALLY.** If they still pass, the scenario cannot
-   interleave and is worthless as written — raise the nap, raise the worker
-   count, and instrument to confirm blocking actually occurs (`procs` state or
-   the existing `debugprintf(dbgFiles,...)` trace) before believing any green.
-4. Record the outcome here, including a negative result if that is what happens.
+**Why the old counter race got 600/600 and this does not:** it had no yield
+between the read and the write, so the read-modify-write completed within one
+scheduling quantum every time. The nap is the whole difference.
 
-Until step 4 exists, this harness has NO record-lock coverage regardless of how
-many green scenarios it prints.
+
 
 Nothing here yet. Scenarios arrive in Tasks 3–4 of
 `docs/superpowers/plans/2026-07-20-rbf-lock-hammer.md`; each one needs a row

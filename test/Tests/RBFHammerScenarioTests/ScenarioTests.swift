@@ -189,11 +189,12 @@ final class ScenarioTests: XCTestCase {
 
     /// Runs an rmw roster and returns the final tally the workers left behind.
     private func finalTally(workers population: Int, increments: Int,
-                            tick: TickMode, nap: Int) throws -> Int {
+                            tick: TickMode, nap: Int,
+                            role: WorkerSpec.Role = .rmw) throws -> Int {
         let file = "/h9/tally.dat"
         var roster = [WorkerSpec(id: 98, role: .seed, file: file, count: 1)]
         roster += (1...population).map {
-            WorkerSpec(id: $0, role: .rmw, file: file, count: increments, nap: nap)
+            WorkerSpec(id: $0, role: role, file: file, count: increments, nap: nap)
         }
         let scenario = Scenario(name: "rmw-\(population)x\(increments)",
                                 backend: .rbfImage, workers: roster,
@@ -223,6 +224,19 @@ final class ScenarioTests: XCTestCase {
                                    tick: .disabled, nap: 2)
         XCTAssertEqual(tally, workers * increments,
                        "lost update: expected \(workers * increments), got \(tally)")
+    }
+
+    /// CONTROL: the identical race with NO lock (read path + write path rather
+    /// than one update path). This must LOSE updates, or the locked version
+    /// passing proves nothing -- it would only mean nothing ever interleaved,
+    /// which is exactly why the old counter race was worthless.
+    func testUnlockedReadModifyWriteDoesLoseUpdates() throws {
+        let workers = 4, increments = 25
+        let tally = try finalTally(workers: workers, increments: increments,
+                                   tick: .enabled, nap: 1, role: .rmwfree)
+        XCTAssertLessThan(tally, workers * increments,
+                          "unlocked RMW kept a perfect tally of \(tally) -- the race never "
+                        + "interleaved, so the locked scenario's green means nothing")
     }
 
     func testFourWorkersAppendSeparateFilesTickOff() throws {
