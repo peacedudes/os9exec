@@ -2076,17 +2076,30 @@ Boolean SamePathBegin( const char* pathname, const char* cmp )
 
 Boolean IsDesc( const char* dvn, mod_dev** mod, char** p )
 {
-    int    mid= find_mod_id( dvn );
-    ushort mty;
-    
+    int      mid= find_mod_id( dvn );
+    ushort   mty;
+    uint32_t modSize, fmgrOff, pdevOff;
+
     if (mid==MAXMODULES) return false; /* no such module found */
-    
-       *mod= (mod_dev*)os9mod( mid );      
+
+       *mod= (mod_dev*)os9mod( mid );
         mty= os9_word( (*mod)->_mh._mtylan )>>BpB;
     if (mty!=MT_DEVDESC) return false; /* not the right type */
 
-    *p= (char*)*mod + os9_word((*mod)->_mfmgr);
-    return true;    
+    /* _mfmgr/_mpdev are module-chosen 16-bit offsets that this and the callers
+       (RAM_Device, SCSI_Device, file_rbf.c) turn into raw HOST pointers and
+       ustrcmp -- the same hazard as _mname/_midata bounded in modstuff.c. A
+       descriptor whose file-manager or driver name offset falls outside the
+       module is malformed: refuse it here (the single gate for _mfmgr, and every
+       reader of _mpdev only reads it once IsDesc has returned true) rather than
+       read host memory past the module. */
+    modSize= os9_long( (*mod)->_mh._msize );
+    fmgrOff= os9_word( (*mod)->_mfmgr );
+    pdevOff= os9_word( (*mod)->_mpdev );
+    if (fmgrOff>=modSize || pdevOff>=modSize) return false; /* bad descriptor */
+
+    *p= (char*)*mod + fmgrOff;
+    return true;
 } /* IsDesc */
 
 Boolean SCSI_Device( const char* os9path,
