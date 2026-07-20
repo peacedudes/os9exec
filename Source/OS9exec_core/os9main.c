@@ -800,10 +800,15 @@ void os9_main( int argc, char **argv, char **envp )
                        * clock that does, which is what stops a dead loop
                        * hogging the machine. Only user state is pre-empted;
                        * see newcpu.c. */
+                      /* Only records the request. Starting the clock here
+                       * would arm it during option parsing, long before the
+                       * emulator is up -- and a tick landing in the middle of
+                       * start-up made os9exec die before it produced a single
+                       * line of output, intermittently. It is started once the
+                       * emulation loop is actually running: see os9exec_loop. */
                       os9_tick_request= os9_tick_default_us();
                       if (p[1]>='0' && p[1]<='9')      /* -q<ms> */
                           os9_tick_request= atoi( &p[1] )*1000;
-                      os9_tick_start();
                       break;
           case 'z' :  fullScreen =  true; break; // full screen mode
  

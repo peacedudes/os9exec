@@ -1944,6 +1944,11 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
   ulong        lastspin= GetSystemTick();
 
   ushort       spid;          // will be assigned before use
+
+  /* Start the optional system tick here rather than when -q is parsed: by now
+   * start-up is done and there is something to pre-empt. Harmless to reach
+   * more than once -- os9_tick_start() only acts the first time. */
+  if (!fromIntUtil) os9_tick_start();
   ushort       svd_intpid= 0; // by default, we are not called from intutil
   ulong        resL;          // llm_os9_go result
   alarm_typ*   aa;

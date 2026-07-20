@@ -224,6 +224,11 @@ func run(_ name: String, expectation: String, commands: [String], disk: String =
             .prefix(4)
             .joined(separator: " | ")
         print("      output: \(preview)")
+        if ProcessInfo.processInfo.environment["OS9_DUMPFAIL"] != nil {
+            print("      ---- full output (\(output.count) chars) ----")
+            print(output)
+            print("      ---- end ----")
+        }
         failed += 1
     }
 }
