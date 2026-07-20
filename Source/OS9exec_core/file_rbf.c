@@ -3752,6 +3752,13 @@ os9err pRlock( ushort pid, syspath_typ* spP, uint32_t* d0, uint32_t* d1, uint32_
     (void)d0; (void)d1; /* path and setstat code; the size is in d2 */
     if (spP->rawMode) return 0;
 
+    /* One rule, the same one the automatic lock follows: locking belongs to
+     * update-mode opens. A path that cannot modify what it reads has nothing
+     * to protect, and letting it take a lock anyway would give it a way to
+     * hold up writers -- which is exactly the lockout this design avoids.
+     * A release is always allowed: it can only ever let something go. */
+    if (*d2!=0 && !rbf->updMode) return os9error( E_FNA );
+
     if (*d2==0) { /* release */
         LockDrop  ( spP );
         WakeOnFile( spP );
