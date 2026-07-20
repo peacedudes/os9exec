@@ -636,6 +636,37 @@ check  ("ramdisk: dsave -ive populates+verifies", contains: "f1",
     "chd /dd/t_ramdir", "mount -r=200 /ram9", "dsave -ive /ram9", "dir /ram9", "unmount ram9",
     "chd /dd", "del /dd/t_ramsrc", "del /dd/t_ramdir/f1", "deldir -q /dd/t_ramdir")
 
+// ── F$PrsNam: one-character path components ───────────────────────────────────
+// Regression test for the TO68K double-evaluation bug. TO68K was a macro that
+// mentioned its argument twice, so F$PrsNam's `rp->a[0]=TO68K(++p)` advanced p
+// by two -- skipping the '/' AND the name's first character. Every path element
+// then parsed one character short, and a FINAL element of exactly one character
+// parsed as the empty name and returned E$BNam, which the shell renders as
+// "^syntax error". So `echo x >/ram9/a` failed while `>/ram9/ab` appeared to
+// work (it silently parsed only "b").
+//
+// The redirect target is what matters here: a path passed as a command ARGUMENT
+// never goes through F$PrsNam, so `list /ram9/a` stayed working throughout and
+// would NOT have caught this. Keep the assertions on `>` and `<`.
+noError("f$prsnam: redirect to a one-character file name",
+    "mount -r=200 /ram9", "echo t >/ram9/a", "list /ram9/a", "unmount ram9")
+// Asserted as noError, NOT `contains: "deep"`. The shell echoes the offending
+// command line back as part of its error report, so a `contains:` check on the
+// written text matches the ERROR message just as happily as the file content --
+// verified: that form passed against the known-buggy binary. The trailing
+// `list` failing with E$PNNF is what actually proves the file got created.
+noError("f$prsnam: one-character components at every depth",
+    "mount -r=200 /ram9", "makdir /ram9/a", "makdir /ram9/a/b",
+    "echo deep >/ram9/a/b/c", "list /ram9/a/b/c", "unmount ram9")
+// Input redirect gets its own case: `<` and `>` are parsed separately, and the
+// bug hit both. Asserted as "no syntax error" rather than "no error at all"
+// because `list <file` legitimately complains that it still needs a file-name
+// argument -- an E$BNam from F$PrsNam surfaced as the distinct text
+// "^syntax error", which is exactly what this pins down.
+check  ("f$prsnam: input redirect from a one-character file name",
+    absent: "syntax error",
+    "mount -r=200 /ram9", "echo t >/ram9/a", "list </ram9/a", "unmount ram9")
+
 // ══════════════════════════════════════════════════════════════════════════════
 // FILESYSTEM SELF-TESTS   (name prefix "fs:" — run just these with
 //   swift run --package-path test OS9Tests fs:)
