@@ -1,0 +1,90 @@
+* Dogfood task 2026-07-18: ordinary 68k assembly program exercising
+* /DOGFM2 (dogfm.a + dogfmdesc.a) with a real I$Open syscall -- open,
+* report success/failure, close. Full account:
+* dogfood-report-filemgr-2026-07-18.md.
+*
+* VERIFICATION STATUS:
+*   - Assembles clean (0 errors, only "destination in short branch
+*     range" warnings -- r68 auto-widened bcs.s/bsr.s, harmless).
+*     Links clean, genuine CRC-valid "68000 Prog Mod" module.
+*   - Run live via `./tools/os9repl.sh send` (after DOGFM/DOGFM2 were
+*     assembled, linked, and `load`ed resident -- see dogfm.a and
+*     dogfmdesc.a's verification-status notes). Literal output:
+*
+*         open /DOGFM2 failed
+*
+*     -- confirming I$Open on "/DOGFM2" genuinely fails at the real
+*     syscall level (carry set on return from `trap #0 / dc.w IOpen`),
+*     the identical result the driver session's dogfood-driver-test.a
+*     got for "/DOGFOOD".
+* ============================================================
+
+ nam dogfmtest
+ ttl exercise /DOGFM2: open, report result, close
+
+Prgrm    set $01
+Objct    set $01
+ReEnt    set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev  set (ReEnt<<8)+1
+
+IOpen    set $84
+IClose   set $8F
+IWrite   set $8A
+FExit    set $06
+
+ psect dogfmtest,Type_Lang,Attr_Rev,1,0,dogfmtest
+
+dogfmtest:
+ lea     devname(pc),a0
+ moveq   #1,d0          * mode: read+write
+ trap    #0
+ dc.w    IOpen
+ bcs     openfail
+
+ lea     msgok(pc),a0
+ bsr     puts
+
+ move.w  d0,-(a7)
+ trap    #0
+ dc.w    IClose
+ moveq   #0,d1
+ trap    #0
+ dc.w    FExit
+
+openfail:
+ lea     msgopenfail(pc),a0
+ bsr     puts
+ moveq   #1,d1
+ trap    #0
+ dc.w    FExit
+
+* puts -- (a0)=NUL-terminated string, writes to path 1 (stdout)
+puts:
+ movem.l d0-d1/a0,-(a7)
+ move.l  a0,a1
+strlen:
+ tst.b   (a1)+
+ bne.s   strlen
+ move.l  a1,d1
+ sub.l   a0,d1
+ subq.l  #1,d1
+ moveq   #1,d0
+ trap    #0
+ dc.w    IWrite
+ movem.l (a7)+,d0-d1/a0
+ rts
+
+devname:
+ dc.b  "/DOGFM2"
+ dc.b 0
+msgok:
+ dc.b  "open /DOGFM2 succeeded"
+ dc.b 13,10
+ dc.b 0
+msgopenfail:
+ dc.b  "open /DOGFM2 failed"
+ dc.b 13,10
+ dc.b 0
+
+ ends

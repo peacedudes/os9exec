@@ -1,0 +1,279 @@
+* Dogfood task 2026-07-18: a hand-written 68000 assembly OS-9 program (a
+* proper module, not BASIC09 or C) that opens a file named by the raw
+* command-line parameter area, reads it via raw I$ syscalls, counts total
+* lines and total characters (excluding the CR line terminator), prints a
+* summary via I$Write, and exits cleanly -- with a graceful error message
+* if the named file doesn't exist or no filename was given.
+*
+* Assembled with `r68`, linked with `l68`, run live on real os9exec
+* (OS-9/68000) via tools/os9repl.sh, from the `claude` account's
+* /dd/USR/CLAUDE (== host os9/h0/USR/CLAUDE, host-native, so authored on
+* the host and converted with `flip -m` per using-os9exec-repl.md).
+*
+* Test input (filename "testinput.txt", the same 4-line file used by
+* dogfood-c-line-counter.c, host-verified independently before ever
+* running this program -- CR count via Python, not just eyeballed):
+*   4 lines, 124 chars excl. terminators, 128 bytes total.
+* A second, independently-authored file (testinput2.txt, 3 lines, 73
+* chars excl. terminators, 76 bytes total) was also run through it as a
+* cross-check, with matching output.
+*
+* Literal verified program output (via `/h0/CMDS/linecount testinput.txt`):
+*   Lines:      4
+*   Characters: 124
+* Second file (`/h0/CMDS/linecount testinput2.txt`):
+*   Lines:      3
+*   Characters: 73
+* Missing-file case (`/h0/CMDS/linecount nosuchfile.txt`):
+*   cannot open file: nosuchfile.txt
+* No-argument case (`/h0/CMDS/linecount`):
+*   usage: linecount filename
+*
+* Real findings from live-testing this, none of which came from any
+* skill file (68k/os9-68k-assembly.md explicitly flags exact psect/
+* assembler syntax as an unverified gap -- see the dogfood report for
+* how each of these was actually pinned down):
+*   - psect syntax confirmed 6-operand, same shape as the 6809 RMA's
+*     PSECT (name,typelang,attrrev,edition,stacksize,entry) -- taken from
+*     a *different*, already-live-tested skill example
+*     (basic09/basic09-vs-68k-differences.md's BASIC09-callable-subroutine
+*     shim), not from os9-68k-assembly.md itself.
+*   - `dc.b` string literals must use double quotes on this r68; a
+*     multi-character *single*-quoted string ('hi') fails to assemble
+*     with "*** error - value out of range ***" (single quotes are for a
+*     single character constant only, e.g. #'0'). Not documented anywhere
+*     in the skill.
+*   - `OS9 <callname>` and a bare `dc.w <callname>` after `trap #0` both
+*     assemble cleanly (r68 treats an undefined call name as an ordinary
+*     external symbol needing no error at assembly time) but fail to
+*     *link* ("Symbol 'I$Write' unresolved") because no `use`-able defs
+*     file with the I$/F$ numeric call-code equates exists anywhere on
+*     this disk image (searched all of /h0/DEFS). Worked around by
+*     hand-defining the needed codes as `set` constants sourced from this
+*     project's own os9funcs.h (Source/OS9exec_core/os9funcs.h) --
+*     IOpen=$84, IRead=$89, IWrite=$8A, IClose=$8F, FExit=$06 -- which
+*     matches the standard published OS-9/68000 call-code table.
+*   - The command-line parameter area (A5 at program entry) is a
+*     NUL-terminated string of the exact argument text, safe to pass
+*     directly as I$Open's pathname pointer with no copying. This does
+*     NOT match a naive reading of os9-68k-assembly.md's register table,
+*     which pairs A5 with D5 as "param-area size" -- D5 did not behave as
+*     a simple byte count in live testing (a raw dump using D5 as the
+*     I$Write count read hundreds of bytes past the real string into the
+*     process's environment-variable block). The reliable technique that
+*     worked: bound reads to a small fixed count, sanitize non-printable
+*     bytes to '.' before writing raw dumps to the terminal (a bare CR
+*     mid-buffer otherwise resets the terminal cursor to column 0 and
+*     visually erases what came before it -- this bit twice during
+*     probing), then hex-dump the exact bytes. With one argument
+*     ("hello"), the bytes were: 68 65 6C 6C 6F 00 0D 00 50 4F 52 54 ...
+*     i.e. "hello"+NUL, then a CR/NUL pair, then "PORT=..." (environment).
+*     With zero arguments, the very first byte is a bare CR (0x0D), NOT a
+*     NUL -- so an empty-argument check must test for both to be safe.
+*   - Raw I$Write does exactly what its own doc says ("No editing") and
+*     nothing more: a bare CR (13) with no LF does not advance the
+*     terminal to a new line under os9repl.sh's tmux pane -- it just
+*     returns the cursor to column 0, so the next write overwrites what's
+*     already on that row. Switching to CR+LF (13,10) fixed all the
+*     visually-garbled/interleaved-with-the-shell-prompt output this
+*     caused. (I$WritLn would apparently handle this automatically per
+*     its own doc entry -- "LF append on output" -- untested here since
+*     the task called for raw I$ calls.)
+*   - `l68 -o=<name>` writes its output relative to the current *chx*
+*     (execution directory), not `chd` (data directory) -- confirmed by
+*     watching the linked binary land in /h0/CMDS (the chx at the time)
+*     while `chd` was /dd/USR/CLAUDE. Not documented anywhere for `l68`
+*     specifically (the skill's chx/chd split is documented for `cc`/gcc
+*     conventions, not stated for the bare linker).
+*
+* See dogfood-report-asm-2026-07-18.md for the full account (assemble/run
+* cycle count, exact error text hit, what was and wasn't in the skill).
+*
+* Module header fields (hand-defined; oskdefs.d on this disk has the
+* Type/Language/Attr constants but not the I$/F$ call-code equates --
+* those are hand-defined below from os9exec's own os9funcs.h, matching
+* the standard published OS-9/68000 call-code table).
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+*
+* Raw I$/F$ call codes (word form for the trap+dc.w dispatch pattern)
+IOpen  set $84
+IRead  set $89
+IWrite set $8A
+IClose set $8F
+FExit  set $06
+Read_  set 1
+*
+ psect linecount,Type_Lang,Attr_Rev,0,800,start
+*
+* Entry: A5 = pointer to a NUL-terminated parameter string (the command
+* tail exactly as typed, e.g. "testinput.txt"); confirmed live via a
+* hex-dump probe on os9exec -- NOT CR-terminated as some 6809-derived
+* docs might suggest, and NOT reliably sized by D5 (D5's exact role
+* here did not match a simple byte count in live testing).
+start
+ movea.l a5,a4            a4 = saved filename pointer
+ move.b  (a4),d0           check for "no argument" sentinel
+ cmp.b   #13,d0             live-tested: a bare CR here means no command-tail text was typed (NOT a leading NUL as first assumed -- confirmed via a hex-dump probe with zero args)
+ beq.s   nofilearg
+ tst.b   d0                   defensive: also treat a leading NUL as "no argument"
+ bne.s   haveargs
+nofilearg
+ lea     usagemsg(pc),a0
+ move.l  #usagelen,d1
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ moveq   #1,d1
+ trap    #0
+ dc.w    FExit
+*
+haveargs
+ movea.l a4,a0
+ move.b  #Read_,d0
+ trap    #0
+ dc.w    IOpen
+ bcs.s   noopen
+ move.w  d0,d6             d6 = path number
+*
+* --- read loop: 128-byte chunks, count CR (lines) and non-CR (chars) ---
+ sub.l   #128,a7           scratch read buffer
+ movea.l a7,a3               a3 = buffer base (kept live through the loop)
+ suba.l  a2,a2                 char count = 0
+ moveq   #0,d7                  line count = 0
+readloop
+ movea.l a3,a0
+ move.l  #128,d1
+ move.w  d6,d0
+ trap    #0
+ dc.w    IRead
+ bcs.s   readdone            carry set -> error (normally E$EOF)
+ move.l  d1,d3                 d3 = bytes actually transferred
+ tst.l   d3
+ beq.s   readdone              zero-byte non-error read: treat as done (defensive; avoids a hang if a driver ever does this instead of signalling EOF)
+ movea.l a3,a1
+scanloop
+ move.b  (a1)+,d0
+ cmp.b   #13,d0                CR = OS-9 line terminator
+ bne.s   notcr
+ addq.l  #1,d7
+ bra.s   scannext
+notcr
+ addq.l  #1,a2
+scannext
+ subq.l  #1,d3
+ bne.s   scanloop
+ bra.s   readloop
+readdone
+ add.l   #128,a7             free the read-buffer scratch
+*
+ move.w  d6,d0
+ trap    #0
+ dc.w    IClose
+*
+ lea     lmsg(pc),a0
+ move.l  #lmsglen,d1
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ move.l  d7,d1
+ bsr     printnum
+ lea     cmsg(pc),a0
+ move.l  #cmsglen,d1
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ move.l  a2,d1
+ bsr     printnum
+ moveq   #0,d1
+ trap    #0
+ dc.w    FExit
+*
+noopen
+ lea     nofilemsg(pc),a0
+ move.l  #nofilelen,d1
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ movea.l a4,a0
+ bsr     strlen               d1 = filename length
+ movea.l a4,a0                 reset a0 (strlen advances it past the NUL)
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ lea     crbyte(pc),a0
+ moveq   #2,d1
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ moveq   #1,d1
+ trap    #0
+ dc.w    FExit
+*
+* strlen: a0 = NUL-terminated string in.  Out: d1.l = length (excl. NUL).
+* Clobbers a0 (left one past the NUL).
+strlen
+ moveq   #0,d1
+sl_loop
+ tst.b   (a0)+
+ beq.s   sl_done
+ addq.l  #1,d1
+ bra.s   sl_loop
+sl_done
+ rts
+*
+* printnum: d1.l = unsigned value to print as decimal, followed by CR+LF,
+* to stdout (path 1).  Self-contained 16-byte stack scratch buffer.
+* Clobbers d0-d3,a0,a1.
+printnum
+ sub.l   #16,a7
+ movea.l a7,a1
+ adda.l  #16,a1              a1 = one past end of the 16-byte buffer
+ move.l  d1,d2
+ moveq   #0,d3                digit count
+ tst.l   d2
+ bne.s   pn_loop
+ move.b  #'0',-(a1)
+ moveq   #1,d3
+ bra.s   pn_output
+pn_loop
+ tst.l   d2
+ beq.s   pn_output
+ divu.w  #10,d2                d2: hi=remainder, lo=quotient
+ move.w  d2,d0                  d0.w = quotient
+ swap    d2
+ move.b  d2,d1                    d1.b = remainder digit (0-9)
+ add.b   #'0',d1
+ move.b  d1,-(a1)
+ addq.w  #1,d3
+ clr.l   d2
+ move.w  d0,d2
+ bra.s   pn_loop
+pn_output
+ movea.l a1,a0
+ move.l  d3,d1
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ add.l   #16,a7
+ lea     crbyte(pc),a0
+ moveq   #2,d1
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ rts
+*
+usagemsg dc.b "usage: linecount filename",13,10
+usagelen equ *-usagemsg
+nofilemsg dc.b "cannot open file: "
+nofilelen equ *-nofilemsg
+lmsg dc.b "Lines:      "
+lmsglen equ *-lmsg
+cmsg dc.b "Characters: "
+cmsglen equ *-cmsg
+crbyte dc.b 13,10
+*
+ ends

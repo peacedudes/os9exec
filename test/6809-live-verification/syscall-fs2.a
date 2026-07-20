@@ -1,0 +1,186 @@
+* Live-tests I$MakDir($85), I$ChgDir($86), I$Create($83), I$Delete($87)
+* against os9-dev/references/6809/syscalls-and-module-format.md.
+* Each result is ONE self-contained PASS/FAIL line. Uses lbsr/lbra and
+* 8-char-safe labels throughout -- see syscall-flink-ffork-fwait.a's
+* header for why.
+
+ nam SysFS2Test
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /SysFS2Test/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+ERRB equ 63
+PATHNUM equ 64
+start equ *
+
+* --- I$MakDir(B=attributes, X=pathlist) ---
+ leax dirname,pcr
+ ldb #$FF
+ swi2
+ fcb $85
+ stb ERRB,u
+ bcc mdok
+ leax OUTBUF,u
+ leay MDFAL,pcr
+ ldb #MDFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+mdok equ *
+ leax OUTBUF,u
+ leay MDPAS,pcr
+ ldb #MDPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- I$ChgDir(A=mode 1=data, X=pathlist) ---
+ leax dirname,pcr
+ lda #1
+ swi2
+ fcb $86
+ stb ERRB,u
+ bcc cdok
+ leax OUTBUF,u
+ leay CDFAL,pcr
+ ldb #CDFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra done
+cdok equ *
+ leax OUTBUF,u
+ leay CDPAS,pcr
+ ldb #CDPASL
+ lbsr copys
+ lbsr crwrite
+
+* --- I$Create(A=mode, B=attributes, X=pathlist -- bare name, now
+*     resolves relative to the data dir we just changed into) ---
+ leax fname,pcr
+ lda #3
+ ldb #$FF
+ swi2
+ fcb $83
+ stb ERRB,u
+ bcc crok
+ leax OUTBUF,u
+ leay CRFAL,pcr
+ ldb #CRFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra restoredir
+crok equ *
+ sta PATHNUM,u
+ leax OUTBUF,u
+ leay CRPAS,pcr
+ ldb #CRPASL
+ lbsr copys
+ lbsr crwrite
+ lda PATHNUM,u
+ swi2
+ fcb $8F
+
+* --- I$Delete(X=pathlist) ---
+ leax fname,pcr
+ swi2
+ fcb $87
+ stb ERRB,u
+ bcc dlok
+ leax OUTBUF,u
+ leay DLFAL,pcr
+ ldb #DLFALL
+ lbsr copys
+ clra
+ ldb ERRB,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+ lbra restoredir
+dlok equ *
+ leax OUTBUF,u
+ leay DLPAS,pcr
+ ldb #DLPASL
+ lbsr copys
+ lbsr crwrite
+
+restoredir equ *
+* --- restore the original data dir so later tests aren't affected ---
+ leax orig,pcr
+ lda #1
+ swi2
+ fcb $86
+
+done clrb
+ swi2
+ fcb $06
+
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+
+dectbl fdb 10000,1000,100,10,1
+
+dirname fcs /SYSTEST2/
+fname fcs /newfile.dat/
+orig fcs /DD/CLAUDE/
+MDPAS fcc /PASS I$MakDir/
+MDPASL equ *-MDPAS
+MDFAL fcc /FAIL I$MakDir err=/
+MDFALL equ *-MDFAL
+CDPAS fcc /PASS I$ChgDir/
+CDPASL equ *-CDPAS
+CDFAL fcc /FAIL I$ChgDir err=/
+CDFALL equ *-CDFAL
+CRPAS fcc /PASS I$Create/
+CRPASL equ *-CRPAS
+CRFAL fcc /FAIL I$Create err=/
+CRFALL equ *-CRFAL
+DLPAS fcc /PASS I$Delete/
+DLPASL equ *-DLPAS
+DLFAL fcc /FAIL I$Delete err=/
+DLFALL equ *-DLFAL
+ emod
+eom equ *

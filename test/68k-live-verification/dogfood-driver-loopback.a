@@ -1,0 +1,226 @@
+* Dogfood task 2026-07-18: write a minimal SCF-class OS-9/68000 device
+* driver module (Init/Read/Write/GetStat/SetStat/Term) implementing an
+* in-memory loopback FIFO, per os9-systems-dev's device-drivers.md --
+* backing that skill's own flagged "Known gap": "no custom driver ...
+* has actually been written and loaded to confirm the documented calling
+* conventions." Full account: dogfood-report-driver-2026-07-18.md.
+*
+* VERIFICATION STATUS (see report for full detail):
+*   - Assembles clean on r68 (0 errors), links clean on l68 (0 errors),
+*     produces a genuine, CRC-valid, correctly-typed OS-9/68k module:
+*     `ident` reports "68000 Dev Drv, Object Code, Sharable, System
+*     State Process", Ty/La=$E01 (Drivr/Objct), Attr/Rev=$A001
+*     (Sharable+SuperState/rev1) -- exactly as intended.
+*   - Jump-table entries verified byte-correct by dumping the linked
+*     module and cross-checking each dc.w value against the real
+*     disassembled position of its routine (Init's word landed at
+*     $004A, and Init's own first opcode -- `48e7 8080`, i.e.
+*     `movem.l d0/a0,-(a7)` -- was confirmed sitting at that exact file
+*     offset). This is genuinely `Live`-confirmed, not just "assembles."
+*   - NEVER CONFIRMED, and per a from-source investigation this session
+*     ran, NOT CONFIRMABLE on current os9exec: whether Init/Read/Write/
+*     GetStat/SetStat/Term are ever actually invoked by the kernel.
+*     os9exec's I$Attach (Source/OS9exec_core/icalls.c) is an explicit
+*     dummy that always returns a fake device-table handle without
+*     allocating driver static storage or calling Init; os9exec's own
+*     `iniz` command doesn't exist in the C source at all; device path
+*     resolution (IO_Type()/utilstuff.c) matches a fixed, hardcoded
+*     13-entry enum of path types by string prefix, never by loading
+*     and executing an installed driver module's own machine code. Live
+*     testing (this session) confirms the practical consequence: even
+*     after `load`ing this driver's paired descriptor as a resident
+*     module literally named "DOGFOOD" (see dogfood-driver-loopback-desc.a),
+*     `dir /DOGFOOD` and a real test program's `I$Open("/DOGFOOD")` both
+*     still fail with "Module Not Found" (E$MNF), and `iniz DOGFOOD`
+*     silently no-ops (no error, no device-table entry -- `devs` stays
+*     empty throughout). Init's known-byte-pattern write (V_MAGIC =
+*     'DOGF', below) was written specifically to let a debugger/dump
+*     session prove whether Init ran; it was never reachable to test,
+*     because no static storage for this driver is ever allocated by
+*     os9exec in the first place.
+*   - Register conventions below (a2=static storage; d1.b for
+*     Read/Write's single-byte transfer) are this file's own
+*     best-effort GUESS, following the one convention actually
+*     documented anywhere in the skill (RBF's (a1)/(a2)/(a4)/(a5)/(a6)
+*     pattern) -- device-drivers.md explicitly says SCF's own register
+*     convention for these entries is undocumented. Never live-checked
+*     against a real kernel call, because no real kernel call to these
+*     entry points was reachable this session.
+* ============================================================
+
+ nam dogloop
+ ttl DOGFOOD in-memory loopback SCF-class device driver
+
+* ============================================================
+* Module-type/attribute constants, hand-defined (not `use`d from
+* /h0/DEFS/oskdefs.d -- earlier dogfood sessions found no I$/F$
+* numeric-code header on this SDK disk either; hand-defining is
+* the established working pattern, confirmed against
+* module-format.md's documented type-code table).
+* ============================================================
+Drivr    set $0E
+Objct    set $01
+ReEnt    set $80
+SuperSt  set $20
+Type_Lang set (Drivr<<8)+Objct
+Attr_Rev  set ((ReEnt+SuperSt)<<8)+1
+
+* ============================================================
+* Static-storage offsets (from a2 at every entry point).
+* SCF's own static-storage layout is NOT documented anywhere in
+* the os9-systems-dev skill (device-drivers.md explicitly flags
+* this as a "Known gap" -- only field NAMES V_BUSY/V_WAKE/V_PAUS/
+* V_XON are mentioned in prose, no offsets). This layout is this
+* driver's OWN invention, not a claimed real-OS-9 SCF layout.
+* ============================================================
+V_PORT   set $00   * kernel pre-loads from descriptor's M$Port (4 bytes)
+V_MAGIC  set $0A   * Init writes 'DOGF' here -- live proof Init ran (4 bytes)
+V_HEAD   set $04   * FIFO read index (2 bytes)
+V_TAIL   set $06   * FIFO write index (2 bytes)
+V_COUNT  set $08   * bytes currently buffered (2 bytes)
+V_BUF    set $0E   * FIFO byte buffer
+BUFSIZE  set 64
+STORESZ  set V_BUF+BUFSIZE
+
+* ============================================================
+* Driver module header + 7-entry jump table (device-drivers.md's
+* documented Entry Point Table -- offsets 0/2/4/6/8/10/12 words,
+* INIT/READ/WRITE/GETSTAT/SETSTAT/TERM/TRAP). M$Exec (psect's
+* "entry" operand) points at this table's first word.
+*
+* Each jump-table dc.w entry below is a BARE label reference
+* (`dc.w Init`, not `dc.w Init-dogloop`). Live-verified (dumping
+* the linked module and matching each word against the real
+* disassembled position of the corresponding routine): the
+* linker resolves a bare dc.w symbol reference to that symbol's
+* true module-start-relative offset directly, regardless of
+* where the psect body itself lands (which, also confirmed live,
+* is NOT immediately at file offset $30 the way the addone
+* worked example's single M$Exec field made it look -- this
+* module's body actually starts at $3C; the assembler
+* unconditionally reserves 12 bytes, matching mod_exec's
+* M$Exec/M$Excpt/M$Data slots, before the psect body regardless
+* of module type). An earlier version of this file used manual
+* "label-label+$30" arithmetic guessing at that $30 offset; it
+* was wrong by exactly the 12-byte gap. Bare references sidestep
+* the whole guess and are provably correct instead.
+* ============================================================
+ psect dogloop,Type_Lang,Attr_Rev,1,0,dogloop
+
+dogloop:
+ dc.w Init
+ dc.w Read
+ dc.w Write
+ dc.w GetStat
+ dc.w SetStat
+ dc.w Term
+ dc.w 0                 * TRAP entry -- unused per skill
+
+* ------------------------------------------------------------
+* Init -- kernel gives static storage zeroed except V_PORT.
+* Register convention here is UNATTESTED anywhere in the skill
+* (device-drivers.md's own "Known gap" note); (a2)=static storage
+* is the one constant every documented driver/file-manager entry
+* point shares, so that is the only register this code trusts.
+* Writes a known byte pattern ('DOGF') into V_MAGIC so a live
+* debugger/dump session can tell whether Init actually ran --
+* never reachable to test this session, see the top-of-file
+* verification status note.
+* ------------------------------------------------------------
+Init:
+ movem.l d0/a0,-(a7)
+ clr.w   V_HEAD(a2)
+ clr.w   V_TAIL(a2)
+ clr.w   V_COUNT(a2)
+ move.l  #$444F4746,V_MAGIC(a2)   * 'DOGF'
+ movem.l (a7)+,d0/a0
+ andi    #$FFFE,ccr               * clear carry: success
+ rts
+
+* ------------------------------------------------------------
+* Read -- pop one byte from the FIFO into d1.b (best-effort
+* guess; no documented SCF register convention exists to copy).
+* Empty FIFO -> carry set, d1.w = E$NotRdy ($0217, from
+* os9-dev's error-codes.md).
+* ------------------------------------------------------------
+E_NOTRDY set $0217
+
+Read:
+ tst.w   V_COUNT(a2)
+ beq.s   Read_Empty
+ movem.l d0/a0,-(a7)
+ move.w  V_HEAD(a2),d0
+ lea     V_BUF(a2),a0
+ move.b  0(a0,d0.w),d1
+ addq.w  #1,d0
+ cmpi.w  #BUFSIZE,d0
+ blt.s   Read_NoWrap
+ clr.w   d0
+Read_NoWrap:
+ move.w  d0,V_HEAD(a2)
+ subq.w  #1,V_COUNT(a2)
+ movem.l (a7)+,d0/a0
+ andi    #$FFFE,ccr
+ rts
+Read_Empty:
+ move.w  #E_NOTRDY,d1
+ ori     #1,ccr
+ rts
+
+* ------------------------------------------------------------
+* Write -- push one byte (from d1.b, same unverified guess as
+* Read) onto the FIFO. Full FIFO -> carry set, E$NotRdy.
+* ------------------------------------------------------------
+Write:
+ move.w  V_COUNT(a2),d0
+ cmpi.w  #BUFSIZE,d0
+ bge.s   Write_Full
+ movem.l d0/a0,-(a7)
+ move.w  V_TAIL(a2),d0
+ lea     V_BUF(a2),a0
+ move.b  d1,0(a0,d0.w)
+ addq.w  #1,d0
+ cmpi.w  #BUFSIZE,d0
+ blt.s   Write_NoWrap
+ clr.w   d0
+Write_NoWrap:
+ move.w  d0,V_TAIL(a2)
+ addq.w  #1,V_COUNT(a2)
+ movem.l (a7)+,d0/a0
+ andi    #$FFFE,ccr
+ rts
+Write_Full:
+ move.w  #E_NOTRDY,d1
+ ori     #1,ccr
+ rts
+
+* ------------------------------------------------------------
+* GetStat / SetStat -- no codes implemented; every request comes
+* back E$UnkSvc ($0216) so an unrecognized status code is
+* reported cleanly instead of silently doing nothing.
+* ------------------------------------------------------------
+E_UNKSVC set $0216
+
+GetStat:
+ move.w  #E_UNKSVC,d1
+ ori     #1,ccr
+ rts
+
+SetStat:
+ move.w  #E_UNKSVC,d1
+ ori     #1,ccr
+ rts
+
+* ------------------------------------------------------------
+* Term -- per device-drivers.md, called even if Init failed
+* partway; nothing dynamically allocated here, so there is
+* nothing for Term to release. Clears V_MAGIC so a live dump
+* can distinguish "never inited" / "inited" / "reused after
+* term" states.
+* ------------------------------------------------------------
+Term:
+ clr.l   V_MAGIC(a2)
+ andi    #$FFFE,ccr
+ rts
+
+ ends

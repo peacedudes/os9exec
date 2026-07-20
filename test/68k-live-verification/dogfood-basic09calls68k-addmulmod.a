@@ -1,0 +1,61 @@
+* Dogfood task 2026-07-18: hand-written 68000 assembly Sbrtn module called
+* from BASIC09 via `RUN <name>(<params>)`, testing whether
+* basic09-vs-68k-differences.md's "Calling 68000 machine-language
+* procedures from BASIC09" section -- whose only worked example is the
+* trivial single-param `addone` (n = n+1, by reference) -- generalizes to
+* something a bit more substantial: multiple parameters, a mix of
+* by-reference and by-value arguments, and reading params off the stack
+* beyond the D1-held first-parameter address.
+*
+* RUN addmulmod(a,b,sum,prod) computes sum=a+b and prod=a*b. `a` is
+* passed by reference (a bare variable), `b` by value (a literal), `sum`
+* and `prod` by reference (outputs). Per the documented calling
+* convention: D1 holds the address of the first parameter (`a`); each
+* later parameter is a 4-byte length + 4-byte address pushed above the
+* return address, in call order -- so at entry, 8(a7)=address of `b`,
+* 16(a7)=address of `sum`, 24(a7)=address of `prod` (each preceded by its
+* 4-byte length field at -4 from that offset). 68k BASIC09 INTEGER is a
+* 32-bit signed long, matching `move.l`/`muls.w` below (muls.w's 16x16->32
+* result is exact for the small test values used here).
+*
+* Assembled with `r68`, linked with `l68`, run live on real os9exec
+* (OS-9/68000) via tools/os9repl.sh, from the `dog` account's
+* /dd/CMDS/DOG (== host os9/h0/CMDS/DOG). `l68 -o=addmulmod addmulmod.r`
+* wrote the module to `chx` (/dd/CMDS/DOG), not `chd` -- confirms the
+* already-documented "hand-invoking l68 directly writes to chx, not chd"
+* gotcha in using-os9exec-repl.md. `ident` confirmed the header fields:
+* Ty/La $201 (Sbrtn<<8 + Objct), At/Rev $8001 (ReEnt<<8 + 1), "68000 Sub
+* Mod, Object Code, Sharable" -- exactly the psect line below asked for.
+*
+* Literal verified output, via dogfood-basic09calls68k-calctest.bas
+* (a=6, b=7 by value): sum=13, prod=42.
+* Cross-check with a negative operand, via
+* dogfood-basic09calls68k-calctest-negative.bas (a=-3, b=10 by value):
+* sum=7, prod=-30 -- confirms sign handling through muls.w is correct for
+* this value range.
+*
+* Both runs succeeded first-try, with zero assemble/link/logic
+* iterations -- see dogfood-report-basic09calls68k-2026-07-18.md.
+
+ nam addmulmod
+ ttl RUN addmulmod(a,b,sum,prod) - sum=a+b, prod=a*b
+Sbrtn set 2
+Objct set 1
+ReEnt set $80
+Type_Lang set (Sbrtn<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+ psect addmulmod,Type_Lang,Attr_Rev,0,0,addmulmod
+addmulmod move.l d1,a0
+ movea.l 8(a7),a1
+ movea.l 16(a7),a2
+ movea.l 24(a7),a3
+ move.l (a0),d0
+ move.l (a1),d1
+ move.l d0,d2
+ add.l d1,d2
+ move.l d2,(a2)
+ muls.w d1,d0
+ move.l d0,(a3)
+ moveq #0,d0
+ rts
+ ends

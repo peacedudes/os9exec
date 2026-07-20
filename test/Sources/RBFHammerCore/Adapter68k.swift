@@ -158,7 +158,7 @@ public struct Adapter68k: Adapter {
         // Provisioning workers run FIRST and in the foreground. A shared file
         // must exist before the racers open it, and two workers both CREATEing
         // it is itself an error that would mask whatever the race did.
-        let (provision, racers) = scenario.workers.partitioned { $0.role == .create }
+        let (provision, racers) = scenario.workers.partitioned { $0.role == .create || $0.role == .seed }
         lines += provision.map { "basic #32k </h5/\(scriptName($0))" }
 
         // One combined line, not one per worker: sending each launch separately

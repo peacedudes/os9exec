@@ -1,0 +1,160 @@
+* Dogfood task 2026-07-18: ordinary 68k assembly program exercising
+* /DOGFOOD (dogfood-driver-loopback.a + -desc.a) with real I$Open/
+* I$Write/I$Read syscalls -- write 3 bytes, read them back, print the
+* result. Full account: dogfood-report-driver-2026-07-18.md.
+*
+* VERIFICATION STATUS:
+*   - Assembles clean (0 errors, only "destination in short branch
+*     range" warnings -- r68 auto-widened several bcs.s/bsr.s to long
+*     form, harmless). Links clean, produces a genuine CRC-valid
+*     "68000 Prog Mod, Object Code, Sharable" module.
+*   - Run live (after DOGFOOD's descriptor was assembled, linked, and
+*     `load`ed resident under the exact name "DOGFOOD" -- see
+*     dogfood-driver-loopback-desc.a's verification-status note) via
+*     `./tools/os9repl.sh send dogtestprog` (rebuilt in this repo as
+*     `dogtestprog` for the live run; source unchanged). Literal
+*     output:
+*
+*         open /DOGFOOD failed
+*
+*     -- confirming I$Open on "/DOGFOOD" genuinely fails at the real
+*     syscall level (carry set on return from `trap #0 / dc.w IOpen`),
+*     not a compile/link problem: the program's own control flow,
+*     string-length loop, and I$Write-based `puts` helper all executed
+*     correctly to produce that exact line. The write/read/readback
+*     paths below were never reached, consistent with
+*     dogfood-driver-loopback.a's top-of-file finding that os9exec
+*     never dispatches to a custom driver's code at all.
+* ============================================================
+
+ nam dogtest
+ ttl exercise /DOGFOOD: write 3 bytes, read them back, print result
+
+* ============================================================
+* I$/F$ numeric call codes hand-defined from this project's own
+* Source/OS9exec_core/os9funcs.h (not proprietary Microware
+* material) -- confirmed by an earlier dogfood session
+* (dogfood-asm-line-counter.a) to match the standard published
+* table, and confirmed again here that no assemblable I$/F$
+* symbol table exists anywhere on this SDK disk.
+* ============================================================
+Prgrm    set $01
+Objct    set $01
+ReEnt    set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev  set (ReEnt<<8)+1
+
+IOpen    set $84
+IClose   set $8F
+IRead    set $89
+IWrite   set $8A
+FExit    set $06
+FWritLn  set $89   * placeholder, unused
+
+ psect dogtest,Type_Lang,Attr_Rev,1,0,dogtest
+
+dogtest:
+ lea     devname(pc),a0
+ moveq   #1,d0          * mode: read+write
+ trap    #0
+ dc.w    IOpen
+ bcs     openfail
+ move.w  d0,-(a7)        * save path number on stack
+
+* write 3 bytes: 'D','O','G'
+ move.w  (a7),d0
+ lea     wbuf(pc),a0
+ move.l  #3,d1
+ trap    #0
+ dc.w    IWrite
+ bcs     writefail
+
+* read 3 bytes back
+ move.w  (a7),d0
+ lea     rbuf(pc),a0
+ move.l  #3,d1
+ trap    #0
+ dc.w    IRead
+ bcs     readfail
+
+* print what came back
+ lea     msgok(pc),a0
+ bsr     puts
+ lea     rbuf(pc),a0
+ bsr     puts
+ lea     crlf(pc),a0
+ bsr     puts
+
+ move.w  (a7)+,d0
+ trap    #0
+ dc.w    IClose
+ moveq   #0,d1
+ trap    #0
+ dc.w    FExit
+
+openfail:
+ lea     msgopenfail(pc),a0
+ bsr     puts
+ moveq   #1,d1
+ trap    #0
+ dc.w    FExit
+
+writefail:
+ lea     msgwritefail(pc),a0
+ bsr     puts
+ addq.w  #2,a7
+ moveq   #1,d1
+ trap    #0
+ dc.w    FExit
+
+readfail:
+ lea     msgreadfail(pc),a0
+ bsr     puts
+ addq.w  #2,a7
+ moveq   #1,d1
+ trap    #0
+ dc.w    FExit
+
+* puts -- (a0)=NUL-terminated string, writes to path 1 (stdout)
+puts:
+ movem.l d0-d1/a0,-(a7)
+ move.l  a0,a1
+strlen:
+ tst.b   (a1)+
+ bne.s   strlen
+ move.l  a1,d1
+ sub.l   a0,d1
+ subq.l  #1,d1
+ moveq   #1,d0
+ trap    #0
+ dc.w    IWrite
+ movem.l (a7)+,d0-d1/a0
+ rts
+
+devname:
+ dc.b  "/DOGFOOD"
+ dc.b 0
+wbuf:
+ dc.b  "DOG"
+rbuf:
+ dc.b  "???"
+msgok:
+ dc.b  "readback: "
+ dc.b 0
+msgopenfail:
+ dc.b  "open /DOGFOOD failed"
+ dc.b 13,10
+ dc.b 0
+msgwritefail:
+ dc.b  "write /DOGFOOD failed"
+ dc.b 13,10
+ dc.b 0
+msgreadfail:
+ dc.b  "read /DOGFOOD failed"
+ dc.b 13,10
+ dc.b 0
+crlf:
+ dc.b 13,10
+ dc.b 0
+
+ ends

@@ -148,10 +148,36 @@ The disjointness is deliberate and still correct: BASIC09 has no seek-to-end, so
 racing appenders would all write at offset 0 and overwrite each other, which
 would prove the test wrong rather than the locking right.
 
-**A genuine lock test needs OVERLAPPING read-modify-write on the same records**
-— that is the missing scenario, and it is the next thing to build. Until it
-exists and has its own row here, this harness has NO record-lock coverage,
-regardless of how many green scenarios it reports.
+**A genuine lock test needs OVERLAPPING read-modify-write on the same records.**
+
+### `rmw` scenario — WRITTEN, PASSING, ***NOT YET PROVEN FAILABLE***
+
+`testConcurrentReadModifyWriteLosesNoUpdatesTickOn` / `...TickOff` now exist:
+N workers each read-modify-write the SAME record, with the nap held BETWEEN the
+read and the write so the lock stays open across a real scheduling window. The
+final tally must equal `workers x increments`.
+
+Both pass.
+
+**That result is currently worth NOTHING and must not be cited.** The old
+counter race also passed — 600/600 against code with no locking at all — for
+precisely this reason: nothing proved the scenario could ever go red.
+
+Required before this counts as record-lock coverage:
+
+1. Build os9exec with `LockHolder()` in `file_rbf.c` forced to `return NULL`
+   (no conflict ever detected = no effective record locking). Build to a
+   SCRATCH path — other sessions share `build/*.o` and `./os9exec`, and
+   clobbering those manufactures failures in someone else's run.
+2. Run both rmw tests against that binary.
+3. **They must report a SHORT TALLY.** If they still pass, the scenario cannot
+   interleave and is worthless as written — raise the nap, raise the worker
+   count, and instrument to confirm blocking actually occurs (`procs` state or
+   the existing `debugprintf(dbgFiles,...)` trace) before believing any green.
+4. Record the outcome here, including a negative result if that is what happens.
+
+Until step 4 exists, this harness has NO record-lock coverage regardless of how
+many green scenarios it prints.
 
 Nothing here yet. Scenarios arrive in Tasks 3–4 of
 `docs/superpowers/plans/2026-07-20-rbf-lock-hammer.md`; each one needs a row

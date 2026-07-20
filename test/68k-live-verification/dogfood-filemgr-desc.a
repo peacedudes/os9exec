@@ -1,0 +1,67 @@
+* Dogfood task 2026-07-18: device descriptor pairing dogfm.a's "dogfm"
+* custom file manager with a driver name, per os9-systems-dev's
+* device-drivers.md Device Descriptor Fields table -- same working
+* pattern as the earlier dogfood-driver-loopback-desc.a (Devic=$0F
+* module type, 6-operand psect, 12-byte psect-header-padding gap that
+* shifts every field below $30 to landing 12 bytes later in the file,
+* double-quoted string literals only). Full account:
+* dogfood-report-filemgr-2026-07-18.md.
+*
+* M$FMgr points at "dogfm" (this session's custom file manager,
+* dogfm.a) instead of "SCF". M$PDev points at "dogloop" (the earlier
+* session's driver name) purely to have a plausible driver name in the
+* field -- since driver dispatch was already found broken, and this
+* session is testing file-manager dispatch specifically, no actual
+* working driver is required for the experiment to be meaningful:
+* IO_Type()'s path classification (see dogfm.a's header) happens
+* before any device-descriptor field is ever consulted, driver or
+* file-manager alike.
+*
+* VERIFICATION STATUS (see report for full detail):
+*   - Assembles clean (0 errors) with double-quoted string literals
+*     (same r68 gotcha found in the driver session -- single-quoted
+*     strings fail with "*** error - value out of range ***").
+*   - Links clean; `ident` confirms "68000 Dev Descr, Object Code,
+*     Sharable, System State Process", Ty/La=$F01, Attr/Rev=$A001.
+*   - Live: `load`ed resident as "DOGFM2" (confirmed via `mdir`).
+*     `iniz DOGFM2` silently no-ops (no error, `devs` stays an empty
+*     table). `dir /DOGFM2` and dogfmtest.a's real `I$Open("/DOGFM2")`
+*     both fail with the identical error the driver session's
+*     `/DOGFOOD` hit: Error #000:221 (E$MNF) Module Not Found -- see
+*     dogfm.a's header for the source-level reason this is provably
+*     the same underlying wall, not just an empirically similar one.
+* ============================================================
+
+ nam dogfmdesc
+ ttl DOGFM2 device descriptor -- pairs dogfm file manager with a driver name
+
+Devic    set $0F
+Objct    set $01
+ReEnt    set $80
+SuperSt  set $20
+Type_Lang set (Devic<<8)+Objct
+Attr_Rev  set ((ReEnt+SuperSt)<<8)+1
+
+ psect dogfmdesc,Type_Lang,Attr_Rev,1,0,0
+
+dogfmdesc:
+ dc.l  0            * M$Port    -- no real hardware, 0
+ dc.b  0            * M$Vector  -- no IRQ
+ dc.b  0            * M$IRQLvl
+ dc.b  0            * M$Prior
+ dc.b  $03          * M$Mode: bit0 read + bit1 write
+ dc.w  fmgrname     * M$FMgr -- offset to "dogfm" string
+ dc.w  drvname      * M$PDev -- offset to "dogloop" string
+ dc.w  0            * M$DevCon -- no config table
+ dc.l  0            * reserved (first 4 of 8)
+ dc.l  0            * reserved (second 4 of 8)
+ dc.w  0            * M$Opt -- 0-byte options table
+
+fmgrname:
+ dc.b  "dogfm"
+ dc.b  0
+drvname:
+ dc.b  "dogloop"
+ dc.b  0
+
+ ends

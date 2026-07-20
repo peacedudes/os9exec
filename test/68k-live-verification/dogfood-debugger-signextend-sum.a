@@ -1,0 +1,215 @@
+* Dogfood debugger task 2026-07-18: hand-written 68000 assembly OS-9
+* module carrying a deliberate, non-obvious logic bug, found and fixed
+* using the real OS-9 `debug` command live on os9exec (via
+* tools/os9repl.sh) -- not by re-reading the source. This exercises
+* `common/using-os9exec-repl.md`'s "Symbolic debugging (the OS-9 `debug`
+* command)" section, mirroring an earlier same-day 6809 dogfood pass
+* that found a real register-clobbering bug purely through breakpoints
+* and register inspection (see 6809-live-verification/'s equivalent
+* report) -- this is the 68k side of that exercise.
+*
+* THE PROGRAM: sums ten signed-byte "delta" values (deltas below) into a
+* 32-bit accumulator (d1), and separately counts how many of them are
+* negative (d6), then prints both totals via I$Write. Correct answer for
+* the fixed data set {5,-3,8,-12,20,-1,15,-7,3,-20}: Sum=8, Negatives=5.
+*
+* THE BUG (now fixed -- see the `notneg:` block below for the corrected
+* code, and the comment there for exactly what was wrong): each byte was
+* meant to be sign-extended to a long before being added to the running
+* sum (`ext.w d0` then `ext.l d0`). The buggy version instead read
+* `and.w #$00FF,d0` in place of `ext.w d0` -- a very natural-looking
+* "isolate/widen the byte" idiom that is simply wrong for *signed* data:
+* it zero-extends instead of sign-extends, and the following `ext.l d0`
+* becomes a no-op once `and.w` has already forced bit 15 to 0. Every
+* negative byte (top bit set) is silently reinterpreted as a large
+* *positive* value (e.g. -3 -> +253) instead of staying negative. The
+* separate negative-count logic (`tst.b d0` / `bpl.s notneg`, which runs
+* *before* the widening) is unaffected, so `Negatives:` prints correctly
+* (5) while `Sum:` is wrong (1288 instead of 8) -- a real "one stat right,
+* one wrong" signal, not an obviously-broken program.
+*
+* Buggy output (verified live, `/dd/USR/CLAUDE/sumstats` before the fix):
+*   Sum:        1288
+*   Negatives:  5
+* Fixed output (verified live, after the one-line fix below):
+*   Sum:        8
+*   Negatives:  5
+*
+* THE DEBUG SESSION (all live on os9exec via tools/os9repl.sh, full
+* speed with `-r`, logged in as the `claude` account):
+*   1. `r68 -O=<name>.r <name>.a` to assemble, `l68 -g -O=<name> <name>.r`
+*      to link with debugger symbol data, then `debug <name>` to enter.
+*   2. First attempt used plain (colon-less) labels -- `debug`'s `sc`
+*      command then showed only three symbols (`btext`/`bname`/`etext`,
+*      the module's own boundary markers) with none of this program's
+*      own labels (`start`/`sumloop`/`notneg`/`printnum`/...) visible at
+*      all, and `l68 -s`'s linkage-map listing confirmed the same three
+*      names -- the assembler had not retained the plain labels as
+*      exported symbols the linker/debugger could see.
+*      `68k/os9-68k-assembly.md`'s "Known gaps" section flags exactly
+*      this, unresolved: *"The external-symbol 'trailing colon = public'
+*      visibility convention"* (untested). Adding a trailing colon to
+*      `start`, `sumloop`, `notneg`, and `printnum` (`start:` etc.) and
+*      reassembling/relinking made all four appear correctly in both
+*      `l68 -s`'s map and `debug`'s `sc` listing, at their real code
+*      addresses -- **this resolves that skill gap: colon-suffixed
+*      labels are exported/public on this `r68`/`l68`, colon-less labels
+*      are not linker/debugger-visible.** (Not fixed in the skill file
+*      by this task per instructions -- diagnostic pass only, flagged
+*      for the skill maintainer in the dogfood report.)
+*   3. `b sumloop` and `b notneg` (the latter is reached every loop
+*      iteration regardless of sign, right before the buggy widening
+*      code -- a natural per-iteration checkpoint), then `g` to run to
+*      each hit. `debug` auto-prints all registers (`dn:`/`an:`/`pc:`/
+*      `cc:`) on every stop, so the documented bare `.` command (also
+*      exercised once explicitly) is largely redundant with that.
+*   4. `gs` (documented as "run to fall-through", not true single-step)
+*      used only for genuinely straight-line runs between breakpoints
+*      (stepping over `move.b`/`tst.b`/`and.w`/`ext.l`/`add.l` one at a
+*      time) -- never across the loop's own conditional branches, per
+*      the skill's explicit warning that `gs` on a taken branch can run
+*      an entire extra loop iteration before landing back on the
+*      fall-through address by accident. Using `b`+`g` to bracket each
+*      branch and `gs` only inside the straight-line stretches worked
+*      cleanly and never needed a Ctrl-C recovery.
+*   5. Concretely: at the `notneg` breakpoint for the delta -3 (second
+*      array element), the register dump showed d0=$000000FD (253) and
+*      d1=$00000005 (5, the correct running sum after processing +5).
+*      Stepping `gs` through `and.w #$00FF,d0` left d0 unchanged at
+*      $000000FD; stepping through `ext.l d0` *also* left it unchanged
+*      (already proof the extend was a no-op, since a real sign-extend
+*      of a byte whose top bit is set must produce a value with 1s
+*      filling the upper bytes, i.e. $FFFFFFFD, not $000000FD); the
+*      following `add.l d0,d1` then produced d1=$00000102 (258 = 5+253)
+*      instead of the correct d1=$00000002 (5-3=2) -- the exact moment
+*      and exact instruction the bug lives in, pinned down by watching
+*      the register transcript rather than by reasoning about the code.
+*   6. `di sumloop 6` (disassemble without executing) cross-checked the
+*      six-instruction loop head against source and confirmed the fix
+*      target precisely; `sc` (bare, no argument -- an argument form is
+*      separately documented as broken) listed all real code symbols
+*      cleanly once the colon fix above was applied.
+*
+* Assembled with `r68`, linked with `l68 -g`, run/debugged live on real
+* os9exec (OS-9/68000) via tools/os9repl.sh, from the `claude` account's
+* /dd/USR/CLAUDE (== host os9/h0/USR/CLAUDE, host-native, so authored on
+* the host and converted with `flip -m` per using-os9exec-repl.md).
+* Module header fields hand-defined as in dogfood-asm-line-counter.a
+* (no usable `use`-able I$/F$ call-code defs file found anywhere on this
+* disk image -- same finding as that file, not re-derived here).
+*
+* See dogfood-report-debugger-2026-07-18.md for the full account of
+* which debugger commands were used, what matched the skill and what
+* didn't.
+*
+Prgrm  set 1
+Objct  set 1
+ReEnt  set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev  set (ReEnt<<8)+1
+IWrite set $8A
+FExit  set $06
+*
+ psect sumstats,Type_Lang,Attr_Rev,0,400,start
+*
+* Entry: no command-line arguments used -- this program always operates
+* on the fixed `deltas` array below.
+start:
+ lea     deltas(pc),a0
+ moveq   #10,d7           d7 = loop counter (10 values)
+ moveq   #0,d1              d1 = running sum (long)
+ moveq   #0,d6                d6 = count of negative values
+sumloop:
+ move.b  (a0)+,d0            d0.b = next delta byte
+ tst.b   d0
+ bpl.s   notneg
+ addq.l  #1,d6
+notneg:
+ ext.w   d0                    sign-extend byte to word (FIXED: was
+*                               `and.w #$00FF,d0`, which zero-extends
+*                               instead of sign-extending -- see header
+*                               comment for the live debug session that
+*                               found this. That version left every
+*                               negative byte reinterpreted as a large
+*                               positive value, e.g. -3 read back as
+*                               +253, because AND cannot restore a sign
+*                               bit that it just masked away, and the
+*                               following `ext.l` becomes a no-op once
+*                               bit 15 is already forced to 0.)
+ ext.l   d0                    sign-extend word to long
+ add.l   d0,d1
+ subq.l  #1,d7
+ bne.s   sumloop
+*
+ move.l  d1,d5              d5 = final sum (save before d1 gets reused for I/O)
+*
+ lea     summsg(pc),a0
+ move.l  #summsglen,d1
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ move.l  d5,d1
+ bsr     printnum
+*
+ lea     negmsg(pc),a0
+ move.l  #negmsglen,d1
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ move.l  d6,d1
+ bsr     printnum
+*
+ moveq   #0,d1
+ trap    #0
+ dc.w    FExit
+*
+* printnum: d1.l = unsigned value to print as decimal, followed by CR+LF,
+* to stdout (path 1).  Self-contained 16-byte stack scratch buffer.
+* Clobbers d0-d3,a0,a1.  (Copied verbatim from
+* dogfood-asm-line-counter.a's already-live-verified routine.)
+printnum:
+ sub.l   #16,a7
+ movea.l a7,a1
+ adda.l  #16,a1
+ move.l  d1,d2
+ moveq   #0,d3
+ tst.l   d2
+ bne.s   pn_loop
+ move.b  #'0',-(a1)
+ moveq   #1,d3
+ bra.s   pn_output
+pn_loop:
+ tst.l   d2
+ beq.s   pn_output
+ divu.w  #10,d2
+ move.w  d2,d0
+ swap    d2
+ move.b  d2,d1
+ add.b   #'0',d1
+ move.b  d1,-(a1)
+ addq.w  #1,d3
+ clr.l   d2
+ move.w  d0,d2
+ bra.s   pn_loop
+pn_output
+ movea.l a1,a0
+ move.l  d3,d1
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ add.l   #16,a7
+ lea     crbyte(pc),a0
+ moveq   #2,d1
+ move.w  #1,d0
+ trap    #0
+ dc.w    IWrite
+ rts
+*
+deltas   dc.b 5,-3,8,-12,20,-1,15,-7,3,-20
+summsg   dc.b "Sum:        "
+summsglen equ *-summsg
+negmsg   dc.b "Negatives:  "
+negmsglen equ *-negmsg
+crbyte   dc.b 13,10
+*
+ ends

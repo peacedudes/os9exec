@@ -1,0 +1,216 @@
+* Dogfood task 2026-07-18 (file-manager follow-up to the earlier device-
+* driver dogfood session): minimal custom OS-9/68000 file manager module
+* (module type FlMgr=$0D) implementing the 13-entry Create/Open/MakDir/
+* ChgDir/Delete/Seek/Read/Write/ReadLn/WriteLn/GetStat/SetStat/Close
+* dispatch table documented in os9-systems-dev's file-managers.md.
+* Full account: dogfood-report-filemgr-2026-07-18.md.
+*
+* Purpose: settle whether os9exec's file-manager dispatch (I$ calls go
+* to the file manager module first, per file-managers.md) is handled
+* differently from device-driver dispatch, which an earlier session
+* (dogfood-driver-loopback.a) found os9exec never actually invokes at
+* all -- I$Attach is a dummy, and I/O dispatch runs through a hardcoded
+* C table (fmgr_op[]) keyed by IO_Type()'s string-prefix path
+* classification, never by loading and executing an installed module.
+*
+* Open (below) writes a known 4-byte magic pattern ('DOFM') into the
+* path descriptor's PD_FST working area (offset $2A, per
+* file-managers.md's "first 42 bytes are the fmgr/driver-agnostic
+* header, PD_FST starts right after") -- if this module is ever really
+* invoked, a debugger/dump of a live path descriptor would show it.
+*
+* VERIFICATION STATUS (see report for full detail):
+*   - Assembles clean on r68 (0 errors), links clean on l68 (0 errors);
+*     `ident` confirms a genuine, CRC-valid "68000 File Mngr, Object
+*     Code, Sharable, System State Process" module (Ty/La=$D01,
+*     Attr/Rev=$A001) -- FlMgr=13=$0D was the right module-type code.
+*   - CONFIRMED, at both the source and live level, that file-manager
+*     dispatch hits the EXACT SAME WALL as driver dispatch, and for
+*     the provably SAME underlying reason (not just "similarly
+*     broken"): Source/OS9exec_core/icalls.c's OS9_I_OpenCreate (the
+*     common body behind I$Open/I$Create) calls IO_Type() exactly
+*     once to classify the path into a fixed ptype_typ enum via
+*     hardcoded string-prefix matching, then passes that type straight
+*     into usrpath_open() -> fmgr_op[type] (filestuff.c's fixed C
+*     dispatch table) -- there is no code path anywhere in
+*     OS9_I_OpenCreate, IO_Type, or OS9_Device that ever loads a
+*     device-descriptor module or reads its M$FMgr field to pick a
+*     file manager. Drivers and file managers are dispatched through
+*     the literal same function and the literal same table.
+*   - Live: loaded this module resident under the name "DOGFM"
+*     (confirmed via `mdir`) and paired it with dogfmdesc.a loaded as
+*     "DOGFM2" (M$FMgr correctly points at the "dogfm" string). Both
+*     `iniz DOGFM2` (silent no-op, `devs` stays empty) and a real test
+*     program's `I$Open("/DOGFM2")` (dogfmtest.a; printed
+*     "open /DOGFM2 failed") reproduce driver-session's exact failure
+*     mode; `dir /DOGFM2` reports the identical error code, Error
+*     #000:221 (E$MNF) Module Not Found, that `dir /DOGFOOD` reported
+*     in the driver session. No entry point below was ever reached;
+*     the PD_FST magic-write in Open was never reachable to test.
+* ============================================================
+
+ nam dogfm
+ ttl DOGFM custom file manager -- 13-entry Create..Close dispatch table
+
+* ============================================================
+* Module-type/attribute constants, hand-defined (module-format.md's
+* documented type-code table: FlMgr=13=$0D). A file manager must be
+* owned by super-user with the system-state attribute bit set, per
+* file-managers.md -- same ReEnt+SuperSt attribute pattern used for
+* the earlier Drivr-type module.
+* ============================================================
+FlMgr    set $0D
+Objct    set $01
+ReEnt    set $80
+SuperSt  set $20
+Type_Lang set (FlMgr<<8)+Objct
+Attr_Rev  set ((ReEnt+SuperSt)<<8)+1
+
+* PD_FST ($2A): file-manager working area starts right after the
+* 42-byte (=$2A) fmgr/driver-agnostic path-descriptor header.
+PD_FST   set $2A
+
+* ============================================================
+* 13-entry jump table, per file-managers.md's Entry Point Table.
+* Bare label references (dc.w Create, not Create-dogfm) -- live-
+* verified in the earlier driver session that the linker resolves
+* these to true module-start-relative offsets regardless of where
+* the psect body itself lands (which is NOT file offset $30 the way
+* a single-M$Exec worked example suggests; the assembler
+* unconditionally reserves the mod_exec-shaped 12-byte M$Exec/
+* M$Excpt/M$Data header before the psect body for every module type).
+* ============================================================
+ psect dogfm,Type_Lang,Attr_Rev,1,0,dogfm
+
+dogfm:
+ dc.w Create
+ dc.w Open
+ dc.w MakDir
+ dc.w ChgDir
+ dc.w Delete
+ dc.w Seek
+ dc.w Read
+ dc.w Write
+ dc.w ReadLn
+ dc.w WriteLn
+ dc.w GetStat
+ dc.w SetStat
+ dc.w Close
+
+* ------------------------------------------------------------
+* Create -- no multi-file/directory support in this minimal file
+* manager, so per file-managers.md ("where a file manager has no
+* multi-file support, Create is treated as synonymous with Open")
+* this just falls through to Open.
+* ------------------------------------------------------------
+Create:
+ bra Open
+
+* ------------------------------------------------------------
+* Open -- (a1)=path descriptor, (a4)=process descriptor,
+* (a5)=caller's register stack, (a6)=system globals, per
+* file-managers.md's Entry Point Table header. Writes the 'DOFM'
+* magic pattern into PD_FST so a live dump can prove this code ran.
+* Always succeeds (carry clear).
+* ------------------------------------------------------------
+Open:
+ movem.l d0/a0,-(a7)
+ move.l  #$444F464D,PD_FST(a1)   * 'DOFM'
+ movem.l (a7)+,d0/a0
+ andi    #$FFFE,ccr
+ rts
+
+E_UNKSVC set $0216
+E_NOTRDY set $0217
+
+* ------------------------------------------------------------
+* MakDir -- per file-managers.md, a file manager without directory
+* support "simply returns carry set / unknown-service."
+* ------------------------------------------------------------
+MakDir:
+ move.w #E_UNKSVC,d1
+ ori    #1,ccr
+ rts
+
+* ------------------------------------------------------------
+* ChgDir -- no directory structure to search; report unknown-service
+* rather than silently pretending to succeed.
+* ------------------------------------------------------------
+ChgDir:
+ move.w #E_UNKSVC,d1
+ ori    #1,ccr
+ rts
+
+* ------------------------------------------------------------
+* Delete -- nothing to delete in this in-memory-only manager.
+* ------------------------------------------------------------
+Delete:
+ move.w #E_UNKSVC,d1
+ ori    #1,ccr
+ rts
+
+* ------------------------------------------------------------
+* Seek -- per file-managers.md, "purely logical... no error if the
+* new position is past EOF." This minimal manager has no real file
+* pointer to reposition, so it just succeeds unconditionally.
+* ------------------------------------------------------------
+Seek:
+ andi #$FFFE,ccr
+ rts
+
+* ------------------------------------------------------------
+* Read -- returns E$NotRdy (no data ever available from this
+* in-memory stub) rather than silently returning zero bytes.
+* ------------------------------------------------------------
+Read:
+ move.w #E_NOTRDY,d1
+ ori    #1,ccr
+ rts
+
+* ------------------------------------------------------------
+* Write -- accepts and discards the caller's bytes (in-memory-only
+* pass-through with nowhere real to put them), reports success.
+* ------------------------------------------------------------
+Write:
+ andi #$FFFE,ccr
+ rts
+
+* ------------------------------------------------------------
+* ReadLn / WriteLn -- same behavior as Read/Write above; this
+* minimal manager applies no line editing.
+* ------------------------------------------------------------
+ReadLn:
+ move.w #E_NOTRDY,d1
+ ori    #1,ccr
+ rts
+
+WriteLn:
+ andi #$FFFE,ccr
+ rts
+
+* ------------------------------------------------------------
+* GetStat / SetStat -- per file-managers.md's dispatch model this
+* should pass unrecognized codes to the driver; this minimal
+* manager recognizes nothing and reports E$UnkSvc directly instead
+* (no driver dispatch implemented -- out of scope for a dispatch-
+* existence probe).
+* ------------------------------------------------------------
+GetStat:
+ move.w #E_UNKSVC,d1
+ ori    #1,ccr
+ rts
+
+SetStat:
+ move.w #E_UNKSVC,d1
+ ori    #1,ccr
+ rts
+
+* ------------------------------------------------------------
+* Close -- nothing dynamically allocated by Open, so nothing to
+* release.
+* ------------------------------------------------------------
+Close:
+ andi #$FFFE,ccr
+ rts
+
+ ends

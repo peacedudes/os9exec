@@ -95,6 +95,18 @@ public struct WorkerSpec: Equatable, Sendable {
         /// computed slots, any cross-talk is unambiguously corruption.
         case slot
 
+        /// Read-modify-writes ONE shared record that every other `rmw`
+        /// worker also touches, so the locked extents OVERLAP.
+        ///
+        /// The only role that can detect a missing record lock: `LockHolder`
+        /// reports a conflict only on overlap, and `slot` ranges are disjoint
+        /// by construction.
+        case rmw
+
+        /// Writes a single record holding a decimal tally for `rmw` to
+        /// increment.
+        case seed
+
         /// Creates an empty file and exits, provisioning a shared file before
         /// racers start. Two workers both CREATEing one file is itself an
         /// error and would mask the result.

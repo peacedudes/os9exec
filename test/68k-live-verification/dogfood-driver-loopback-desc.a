@@ -1,0 +1,118 @@
+* Dogfood task 2026-07-18: device descriptor pairing dogfood-driver-
+* loopback.a's "dogloop" driver with the SCF file manager, per
+* os9-systems-dev's device-drivers.md Device Descriptor Fields table.
+* Full account: dogfood-report-driver-2026-07-18.md.
+*
+* VERIFICATION STATUS:
+*   - Assembles clean (0 errors) once string literals use double
+*     quotes -- r68 rejects single-quoted `dc.b 'SCF'` outright with
+*     "*** error - value out of range ***" on EVERY single-quoted
+*     string tried (2/3-char and even/odd length), while `dc.b "SCF"`
+*     (double quotes) assembles with no complaint. Not documented
+*     anywhere surveyed; found by a minimal isolated probe this
+*     session after the same error showed up on both string fields
+*     below. Worth folding into the skill's toolchain notes.
+*   - Links clean (0 errors), produces a genuine CRC-valid module:
+*     `ident` reports "68000 Dev Descr, Object Code, Sharable, System
+*     State Process", ty/la=$F01 (Devic/Objct), attr/rev=$A001.
+*   - CONFIRMED LIVE, GENUINE TOOLCHAIN GAP (not just "unattested"):
+*     the 6-operand psect form is the *only* form r68 accepts for a
+*     module header (a 4-operand form omitting stacksize/entry fails
+*     "*** error - comma expected ***"), and it unconditionally
+*     reserves 12 bytes matching mod_exec's M$Exec/M$Excpt/M$Data
+*     slots before the psect body -- regardless of module type and
+*     regardless of what literal values are passed for those operands.
+*     Confirmed by dumping this file's own linked module: every field
+*     below (M$Port through M$Opt) is internally self-consistent
+*     (M$FMgr/M$PDev correctly point at "SCF"/"dogloop" wherever the
+*     linker actually put them) but landed 12 bytes LATER than
+*     module_from_book.h's documented mod_dev offsets ($30 is not
+*     really M$Port; add $0C for the true file offset). No shorter
+*     psect form, and no separate directive for non-mod_exec-shaped
+*     module types (Devic/Data), was found in the skill tree or by
+*     direct experiment. This means device-drivers.md's Device
+*     Descriptor Fields table (M$Port @ $30, M$Mode @ $37, etc.) is
+*     NOT currently hand-authorable byte-accurately with the one
+*     working psect form this session could find.
+*   - The module's registered name (M$Name, what F$Link/F$Load use to
+*     find it by device name) comes from l68's `-o=<name>` OUTPUT
+*     FILE argument, NOT from this source's `nam`/`psect` name
+*     operands -- confirmed by linking this file first as
+*     `l68 -o=dogfoodmod dogfood.r` (module registered under the name
+*     "dogfoodmod", per `mdir` and a `dump` of its M$Name string) and
+*     then relinking as `l68 -o=DOGFOOD dogfood.r` (module then
+*     registered as "DOGFOOD", exactly matching what `/DOGFOOD` path
+*     resolution would need to find it by name). Not documented
+*     anywhere surveyed; a real, actionable toolchain finding.
+*   - Even loaded resident under the exact matching name "DOGFOOD",
+*     `dir /DOGFOOD` and a real program's `I$Open("/DOGFOOD")` both
+*     still fail with "Module Not Found" (E$MNF) -- os9exec's path
+*     resolution for a `/NAME` device path never consults the module
+*     directory or F$Link for an arbitrary custom name at all; only a
+*     small fixed set of hardcoded path-type names/prefixes is
+*     recognized (confirmed against Source/OS9exec_core/utilstuff.c's
+*     IO_Type()). `iniz DOGFOOD` also silently no-ops (no error, no
+*     `devs` entry ever appears) -- consistent with I$Attach being an
+*     explicit dummy in os9exec (icalls.c). Full source citations in
+*     the report.
+* ============================================================
+
+ nam dogfood
+ ttl DOGFOOD device descriptor -- pairs dogloop driver with SCF
+
+* ============================================================
+* Device descriptor (module type Devic=15). Its extended header
+* ($030 on) is a COMPLETELY different shape from a program's
+* (mod_dev vs mod_exec in os9exec's own module_from_book.h) --
+* M$Port/M$Vector/M$IRQLvl/M$Prior/M$Mode/M$FMgr/M$PDev/M$DevCon/
+* reserved/M$Opt, not M$Exec/M$Excpt/M$Data/M$Stack/M$IData/
+* M$IRefs. See the top-of-file verification-status note for the
+* confirmed 12-byte psect-header-padding gap this runs into.
+* ============================================================
+Devic    set $0F
+Objct    set $01
+ReEnt    set $80
+SuperSt  set $20
+Type_Lang set (Devic<<8)+Objct
+Attr_Rev  set ((ReEnt+SuperSt)<<8)+1
+
+ psect dogfood,Type_Lang,Attr_Rev,1,0,0
+
+* Bytes from here on are emitted starting wherever the psect body
+* actually lands (measured $3C this session, NOT the canonical
+* $30 -- see top-of-file note). Field order/sizes below match
+* mod_dev's documented layout; only the true FILE offset each
+* field lands at is shifted from the canonical numbers in the
+* comments.
+dogfood:
+ dc.l  0            * $030 M$Port    -- no real hardware, 0
+ dc.b  0            * $034 M$Vector  -- no IRQ
+ dc.b  0            * $035 M$IRQLvl
+ dc.b  0            * $036 M$Prior
+ dc.b  $03          * $037 M$Mode: bit0 read + bit1 write
+
+* Bare label references (not label-minus-label arithmetic) --
+* live-verified against dogloop.a's own jump table (see that
+* file's header comment): the linker resolves a bare dc.w symbol
+* reference to that symbol's true module-relative offset
+* directly, sidestepping any guess about where the psect body
+* landed.
+ dc.w  fmgrname   * $038 M$FMgr -- offset to "SCF" string
+ dc.w  drvname    * $03A M$PDev -- offset to "dogloop" string
+ dc.w  0                  * $03C M$DevCon -- no config table
+ dc.l  0                  * $03E..$041 reserved (first 4 of 8)
+ dc.l  0                  * $042..$045 reserved (second 4 of 8)
+ dc.w  0                  * $046 M$Opt -- 0-byte options table
+
+* NOTE: single-quoted string literals ('SCF', 'dogloop') failed to
+* assemble on this toolchain ("*** error - value out of range
+* ***") -- double-quoted strings are what actually works, see the
+* top-of-file verification-status note.
+fmgrname:
+ dc.b  "SCF"
+ dc.b  0
+drvname:
+ dc.b  "dogloop"
+ dc.b  0
+
+ ends

@@ -84,12 +84,14 @@ PROCEDURE hwork
 !           collision, and the FD ring, sector buffers and segment list are all
 !           exercised concurrently on ONE file.
 !   read    walks a file back and counts whole records.
+!   rmw     read-modify-writes ONE shared record, overlapping every other
+!           rmw worker. The only role that can detect a missing record lock.
 !   create  makes an empty file and exits. Used to provision a shared file
 !           before the racers start, since two workers both CREATEing one file
 !           is itself an error and would mask the results.
 DIM path: BYTE
 DIM index, worker, seqnum, cksum, total, charpos: INTEGER
-DIM napcount, gotcount, failed, slotbase, slotnum: INTEGER
+DIM napcount, gotcount, failed, slotbase, slotnum, tally: INTEGER
 DIM payload: STRING[44]
 DIM line: STRING[64]
 DIM inline: STRING[64]
@@ -105,6 +107,13 @@ fname = "@FILE@"
 pad = "                                            "
 gotcount = 0
 failed = 0
+IF role = "seed" THEN
+  ! One record holding a decimal tally, for the rmw role to increment.
+  CREATE #path, fname: UPDATE
+  PRINT #path, "T00000000" + LEFT$(pad + pad, 54)
+  CLOSE #path
+  PRINT #2, "hammer: seeded "; fname
+ELSE
 IF role = "create" THEN
   ! PRE-EXTEND the file to its full final size. This is not tidiness, it is
   ! required: OS-9 does NOT support writing into a hole. SEEKing past the
@@ -176,8 +185,37 @@ ELSE
       PRINT #2, "hammer: worker "; worker; " FAIL error "; failed
     ENDIF
   ELSE
+  IF role = "rmw" THEN
+    ! THE RECORD-LOCK TEST. Every worker read-modify-writes the SAME record,
+    ! so the extents OVERLAP -- which is the only way LockHolder ever reports a
+    ! conflict. The `slot` roles cannot detect a missing lock at all, because
+    ! disjoint ranges never overlap.
+    !
+    ! UPDATE mode is essential: RBF auto-locks the record a read returns, and
+    ! the following write on that same path releases it. No SS_Lock call is
+    ! made anywhere here -- BASIC09 cannot issue a SetStat, and the automatic
+    ! lock is what is under test.
+    !
+    ! The nap sits BETWEEN the read and the write, holding the lock open. That
+    ! is the window a competing worker must be kept out of; without it the
+    ! read-modify-write completes too fast to ever interleave, which is exactly
+    ! why the old counter race passed 600/600 against code with no locking.
+    OPEN #path, fname: UPDATE
+    FOR index = 1 TO total
+      SEEK #path, 0
+      READ #path, inline
+      tally = VAL(MID$(inline, 2, 8)) + 1
+      RUN hnap(napmode, napcount)
+      SEEK #path, 0
+      PRINT #path, "T" + RIGHT$("00000000" + STR$(tally), 8) + LEFT$(pad + pad, 54)
+    NEXT index
+    CLOSE #path
+    PRINT #2, "hammer: worker "; worker; " rmw done "; total
+  ELSE
     PRINT #2, "hammer: worker "; worker; " FAIL unknown role "; role
   ENDIF
+  ENDIF
+ENDIF
 ENDIF
 ENDIF
 END

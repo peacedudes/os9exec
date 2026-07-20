@@ -177,6 +177,54 @@ final class ScenarioTests: XCTestCase {
                             tick: .disabled))
     }
 
+    // ── THE RECORD-LOCK TEST ──────────────────────────────────────────────────
+    // Every worker read-modify-writes the SAME record, so extents overlap and
+    // RBF's automatic update-mode lock is genuinely exercised. The final tally
+    // must equal workers x increments; a short tally is a lost update.
+    //
+    // NOT YET PROVEN FAILABLE. Until this scenario is run against an os9exec
+    // built with LockHolder forced to return NULL and observed going RED, a
+    // green result here means nothing -- exactly the trap the old counter race
+    // fell into. See FAILABILITY.md.
+
+    /// Runs an rmw roster and returns the final tally the workers left behind.
+    private func finalTally(workers population: Int, increments: Int,
+                            tick: TickMode, nap: Int) throws -> Int {
+        let file = "/h9/tally.dat"
+        var roster = [WorkerSpec(id: 98, role: .seed, file: file, count: 1)]
+        roster += (1...population).map {
+            WorkerSpec(id: $0, role: .rmw, file: file, count: increments, nap: nap)
+        }
+        let scenario = Scenario(name: "rmw-\(population)x\(increments)",
+                                backend: .rbfImage, workers: roster,
+                                tick: tick, timeout: 180)
+        let result = try Adapter68k(repoRoot: Self.repoRoot).run(scenario)
+        XCTAssertFalse(result.timedOut, "rmw roster hung; scratch \(result.scratchPath)")
+        guard let data = result.produced[file],
+              let text = String(bytes: data.prefix(9), encoding: .ascii),
+              text.hasPrefix("T"), let tally = Int(text.dropFirst()) else {
+            XCTFail("no readable tally. Transcript:\n\(result.transcript)")
+            return -1
+        }
+        return tally
+    }
+
+    func testConcurrentReadModifyWriteLosesNoUpdatesTickOn() throws {
+        let workers = 4, increments = 25
+        let tally = try finalTally(workers: workers, increments: increments,
+                                   tick: .enabled, nap: 1)
+        XCTAssertEqual(tally, workers * increments,
+                       "lost update: expected \(workers * increments), got \(tally)")
+    }
+
+    func testConcurrentReadModifyWriteLosesNoUpdatesTickOff() throws {
+        let workers = 4, increments = 25
+        let tally = try finalTally(workers: workers, increments: increments,
+                                   tick: .disabled, nap: 2)
+        XCTAssertEqual(tally, workers * increments,
+                       "lost update: expected \(workers * increments), got \(tally)")
+    }
+
     func testFourWorkersAppendSeparateFilesTickOff() throws {
         let workers = (1...4).map {
             WorkerSpec(id: $0, role: .append, file: "/h9/w\($0).dat",
