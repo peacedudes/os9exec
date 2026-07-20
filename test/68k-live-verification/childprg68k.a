@@ -1,0 +1,20 @@
+* Trivial helper module for 68k syscall live-verification (F$Fork/F$Load/
+* F$Link targets) -- mirrors the 6809 test suite's childprg.a. Exits
+* immediately with a known status (77) so a parent's F$Wait can confirm
+* it actually ran this code, not something else.
+*
+* Call-code/module-header constants and psect shape match
+* dogfood-asm-line-counter.a (already Live-confirmed this project).
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+FExit set $06
+*
+ psect childprg68k,Type_Lang,Attr_Rev,0,400,start
+start
+ moveq #77,d1
+ trap #0
+ dc.w FExit
+ ends
