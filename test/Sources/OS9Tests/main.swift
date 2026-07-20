@@ -456,11 +456,17 @@ check("build: creates script file", contains: "t_bscript",
     "del /h5/t_bscript", "del /h5/t_bld_in")
 
 // module save/restore
+// `save` writes the module to the CURRENT DATA directory (verified directly:
+// with "chd /h5" the file lands in /h5 and /dd/CMDS/echo is untouched), so a
+// chd is all it takes to keep the system disk read-only. The old listing
+// checked "dir /dd/CMDS ! grep echo", which passes whether save worked or not
+// -- echo is always in CMDS. List the directory saved INTO instead.
 check("save: writes module file", contains: "echo",
     "load \(sdkCmds)/echo",
+    "chd \(scratch)",
     "save echo",
-    "dir /dd/CMDS ! grep echo",
-    "del /dd/echo",
+    "dir \(scratch) ! grep echo",
+    "del \(scratch)/echo",
     "unlink echo")
 
 // commands requiring args (usage / graceful failure)
@@ -469,22 +475,20 @@ check("os9gen: no device",       contains: "os9gen",      "os9gen")
 noError("cfp: shows help",       "cfp")
 
 // attr: show file attribute string
-// `save echo` overwrites /dd/CMDS/echo's content in place (the file already
-// exists there, so this opens it for update, not a fresh create) -- its
-// real host write permission is therefore whatever it happened to inherit
-// from however this platform's h0 disk was created/transferred (e.g. can
-// come out world-writable on a Windows checkout, unlike a typical Unix
-// checkout's rwxr-xr-x), an accident of provenance this test doesn't mean
-// to depend on. So both write bits are passed explicitly (-nw -npw) rather
-// than left to that ambient state. Both, not just -npw: Windows has no
+// `save echo` creates a fresh file in the current data directory -- here the
+// per-run scratch, so the system disk is never written to. Its host write
+// permission is therefore whatever the platform's create leaves behind (a
+// Windows host can come out world-writable where a typical Unix one gives
+// rwxr-xr-x), ambient state this test does not mean to depend on. So both
+// write bits are passed explicitly (-nw -npw) rather than left to it. Both, not just -npw: Windows has no
 // per-owner/public write distinction at the host level (a single
 // FILE_ATTRIBUTE_READONLY flag covers both, see Set_FileAttr's own
 // comment), so leaving owner-write untouched there would keep the merged
 // flag "writable" and defeat the point of clearing -npw at all.
 check("attr: module attrs",      contains: "--e-r",
-    "load \(sdkCmds)/echo", "save echo", "unlink echo",
-    "attr -re -nw -npw /dd/echo",
-    "del /dd/echo")
+    "load \(sdkCmds)/echo", "chd \(scratch)", "save echo", "unlink echo",
+    "attr -re -nw -npw \(scratch)/echo",
+    "del \(scratch)/echo")
 noError("attr: data file attrs",                     "attr -re /h5/t_text")
 noError("text fixture: cleanup",                     "del /h5/t_text")
 
