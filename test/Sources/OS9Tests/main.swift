@@ -45,6 +45,26 @@ let execURL  = repoRoot.appendingPathComponent("os9exec")
 // Same h0 the emulator itself already uses -- no test/-local symlink needed.
 let diskPath = repoRoot.appendingPathComponent("h0").path
 
+// Per-run scratch device, mounted as /h5: every fixture this suite creates
+// lives here, never on the system disk. h0 IS the OS-9 system image -- the SDK
+// toolchain, DEFS, LIB, startup -- and it used to double as scratch, so two
+// sessions running the suite at once deleted each other's fixed-name fixtures
+// (t_text and friends) out of it mid-run. The failures that produced were
+// indistinguishable from real regressions and cost a full debugging session
+// before the shared symlink was spotted. A directory private to this process
+// removes the collision by construction, and keeps the system disk read-only
+// in practice. Devices map to host dirs via OS9Hx -- see filestuff.c.
+let scratchDev  = "h5"
+let scratchDisk = URL(fileURLWithPath: NSTemporaryDirectory())
+    .appendingPathComponent("os9test-scratch-\(ProcessInfo.processInfo.processIdentifier)").path
+let scratch     = "/\(scratchDev)"
+
+// Created before the first os9exec starts; a stale one from a killed run is
+// cleared first so fixtures never survive into a later run.
+try? FileManager.default.removeItem(atPath: scratchDisk)
+try? FileManager.default.createDirectory(atPath: scratchDisk,
+                                         withIntermediateDirectories: true)
+
 // Optional container image for testing
 // Docker: DOCKER_IMAGE=os9exec:latest swift run
 // Apple Container: CONTAINER_IMAGE=os9exec:apple swift run
@@ -134,6 +154,8 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
             "-i",
             "--name", containerName,
             "-v", disk + ":/dd",
+            "-v", scratchDisk + ":" + scratch,
+            "-e", "OS9H\(scratchDev.dropFirst())=" + scratch,
             image
         ] + speedFlag + ["shell"]
     } else if let image = containerImage {
@@ -146,13 +168,15 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
             "-i",
             "--name", containerName,
             "-v", disk + ":/dd",
+            "-v", scratchDisk + ":" + scratch,
+            "-e", "OS9H\(scratchDev.dropFirst())=" + scratch,
             image
         ] + speedFlag + ["shell"]
     } else {
         // Run locally: OS9DISK points straight at the repo-root h0 dir.
         process.executableURL = execURL
         process.arguments    = speedFlag + [shellArg]
-        process.environment  = ["OS9DISK": disk]
+        process.environment  = ["OS9DISK": disk, "OS9H\(scratchDev.dropFirst())": scratchDisk]
     }
 
     let stdinPipe  = Pipe()
@@ -278,28 +302,28 @@ check("pd: shows current dir",   contains: "/dd",      "pd")
 // dir listing uses fixed-width columns: "testdir " (trailing space) appears only in the listing,
 // not in the command echo ("makdir /dd/testdir" has no trailing space after "testdir")
 check("makdir: creates dir",     contains: "testdir ",
-    "makdir /dd/testdir", "dir /dd")
+    "makdir /h5/testdir", "dir /h5")
 check("deldir: removes dir",     absent:   "testdir ",
-    "deldir -q /dd/testdir", "dir /dd")
+    "deldir -q /h5/testdir", "dir /h5")
 
 // file ops
 check("copy: creates file",      contains: "t_echo",
-    "copy \(sdkCmds)/echo /dd/t_echo", "dir /dd")
+    "copy \(sdkCmds)/echo /h5/t_echo", "dir /dd")
 check("rename: new name present", contains: "t_echo2",
-    "rename /dd/t_echo t_echo2", "dir /dd")
+    "rename /h5/t_echo t_echo2", "dir /dd")
 check("rename: old name gone",   absent:   "t_echo ",  "dir /dd")
-noError("attr: shows attrs",     "attr /dd/t_echo2")
-check("ident: identifies mod",   contains: "echo",     "ident /dd/t_echo2")
-noError("del: file cleanup",     "del /dd/t_echo2")
+noError("attr: shows attrs",     "attr /h5/t_echo2")
+check("ident: identifies mod",   contains: "echo",     "ident /h5/t_echo2")
+noError("del: file cleanup",     "del /h5/t_echo2")
 
 // text commands — create a one-line fixture; each check runs in its own os9exec process
 // so the echo that creates the file is never in the same output as the check
-noError("text fixture: create",                            "echo OS-9 test line >/dd/t_text")
-check("list: shows content",   contains: "OS-9 test line", "list /dd/t_text")
-noError("count: counts lines",                             "count /dd/t_text")
-check("grep: finds pattern",   contains: "OS-9 test line", "grep OS-9 /dd/t_text")
-check("grep: no match silent", absent:   "OS-9 test line", "grep ZZZNOTFOUND /dd/t_text")
-check("merge: combines files", contains: "OS-9 test line", "merge /dd/t_text /dd/t_text")
+noError("text fixture: create",                            "echo OS-9 test line >/h5/t_text")
+check("list: shows content",   contains: "OS-9 test line", "list /h5/t_text")
+noError("count: counts lines",                             "count /h5/t_text")
+check("grep: finds pattern",   contains: "OS-9 test line", "grep OS-9 /h5/t_text")
+check("grep: no match silent", absent:   "OS-9 test line", "grep ZZZNOTFOUND /h5/t_text")
+check("merge: combines files", contains: "OS-9 test line", "merge /h5/t_text /h5/t_text")
 
 // dump
 check("dump: shows hex",         contains: "4afc",     "dump \(sdkCmds)/echo")
@@ -359,38 +383,38 @@ do {
 
 // touch
 check("touch: creates file",     contains: "t_touch",
-    "touch /dd/t_touch", "dir /dd")
-noError("del: touch cleanup",    "del /dd/t_touch")
+    "touch /h5/t_touch", "dir /dd")
+noError("del: touch cleanup",    "del /h5/t_touch")
 
 // cmp
 noError("cmp: identical files",
-    "copy \(sdkCmds)/echo /dd/t_cmp1",
-    "copy \(sdkCmds)/echo /dd/t_cmp2",
-    "cmp /dd/t_cmp1 /dd/t_cmp2",
-    "del /dd/t_cmp1", "del /dd/t_cmp2")
+    "copy \(sdkCmds)/echo /h5/t_cmp1",
+    "copy \(sdkCmds)/echo /h5/t_cmp2",
+    "cmp /h5/t_cmp1 /h5/t_cmp2",
+    "del /h5/t_cmp1", "del /h5/t_cmp2")
 
 // tee
 check("tee: copies to file",     contains: "teetest",
-    "echo teetest ! tee /dd/t_tee", "list /dd/t_tee")
-noError("del: tee cleanup",      "del /dd/t_tee")
+    "echo teetest ! tee /h5/t_tee", "list /h5/t_tee")
+noError("del: tee cleanup",      "del /h5/t_tee")
 
 // compress / expand
 check("compress+expand: roundtrip", contains: "OS-9 test line",
-    "copy /dd/t_text /dd/t_comp",
-    "compress /dd/t_comp",
-    "expand /dd/t_comp",
-    "list /dd/t_comp")
-noError("del: compress cleanup", "del /dd/t_comp")
+    "copy /h5/t_text /h5/t_comp",
+    "compress /h5/t_comp",
+    "expand /h5/t_comp",
+    "list /h5/t_comp")
+noError("del: compress cleanup", "del /h5/t_comp")
 
 // qsort — use two single-line files merged into qsort (>> is stderr redirect in OS-9, not append)
 check("qsort: sorts lines",      contains: "apple",
-    "echo banana >/dd/t_qs1",
-    "echo apple >/dd/t_qs2",
-    "merge /dd/t_qs1 /dd/t_qs2 ! qsort",
-    "del /dd/t_qs1", "del /dd/t_qs2")
+    "echo banana >/h5/t_qs1",
+    "echo apple >/h5/t_qs2",
+    "merge /h5/t_qs1 /h5/t_qs2 ! qsort",
+    "del /h5/t_qs1", "del /h5/t_qs2")
 
 // pr
-check("pr: formats output",      contains: "OS-9 test line", "pr /dd/t_text")
+check("pr: formats output",      contains: "OS-9 test line", "pr /h5/t_text")
 
 // system info
 noError("date: runs",            "date")
@@ -418,17 +442,17 @@ check("tmode: shows settings",   contains: "baud",    "tmode")
 
 // binary exchange roundtrip
 check("binex+exbin: roundtrip",  contains: "Good CRC",
-    "binex \(sdkCmds)/echo /dd/t_echo.x",
-    "exbin /dd/t_echo.x /dd/t_echo2",
-    "ident /dd/t_echo2",
-    "del /dd/t_echo.x", "del /dd/t_echo2")
+    "binex \(sdkCmds)/echo /h5/t_echo.x",
+    "exbin /h5/t_echo.x /h5/t_echo2",
+    "ident /h5/t_echo2",
+    "del /h5/t_echo.x", "del /h5/t_echo2")
 
 // build a shell script from a file (stdin redirect avoids interactive stdin conflict)
 check("build: creates script file", contains: "t_bscript",
-    "echo echo built >/dd/t_bld_in",
-    "build /dd/t_bscript </dd/t_bld_in",
+    "echo echo built >/h5/t_bld_in",
+    "build /h5/t_bscript </h5/t_bld_in",
     "dir /dd ! grep t_bscript",
-    "del /dd/t_bscript", "del /dd/t_bld_in")
+    "del /h5/t_bscript", "del /h5/t_bld_in")
 
 // module save/restore
 check("save: writes module file", contains: "echo",
@@ -460,17 +484,17 @@ check("attr: module attrs",      contains: "--e-r",
     "load \(sdkCmds)/echo", "save echo", "unlink echo",
     "attr -re -nw -npw /dd/echo",
     "del /dd/echo")
-noError("attr: data file attrs",                     "attr -re /dd/t_text")
-noError("text fixture: cleanup",                     "del /dd/t_text")
+noError("attr: data file attrs",                     "attr -re /h5/t_text")
+noError("text fixture: cleanup",                     "del /h5/t_text")
 
 // per-command usage: OS-9 has no "help <cmd>"; the convention is "<cmd> -?"
 check("dir -?: options listed",   contains: "recursive",  "dir -?")
 
 // merge: line count confirms newlines preserved
 check("merge: two files two lines", contains: "2 lines",
-    "echo x >/dd/t_mg1", "echo y >/dd/t_mg2",
-    "merge /dd/t_mg1 /dd/t_mg2 ! count",
-    "del /dd/t_mg1", "del /dd/t_mg2")
+    "echo x >/h5/t_mg1", "echo y >/h5/t_mg2",
+    "merge /h5/t_mg1 /h5/t_mg2 ! count",
+    "del /h5/t_mg1", "del /h5/t_mg2")
 
 // disk save generates a restore script.
 // Walks the WHOLE SDK disk recursively (~2100 entries), which is genuinely slow
@@ -503,9 +527,9 @@ check("chd: changes working dir",     contains: "/dd/CMDS",
 
 // stderr redirect (>> in OS-9 is stderr, not append)
 check("stderr: redirect to file",     contains: "Error",
-    "list /dd/no_such_file_xyz >> /dd/t_stderr",
-    "list /dd/t_stderr",
-    "del /dd/t_stderr")
+    "list /dd/no_such_file_xyz >> /h5/t_stderr",
+    "list /h5/t_stderr",
+    "del /h5/t_stderr")
 
 // paths: list open paths
 noError("paths: runs",                "paths")
@@ -515,18 +539,18 @@ noError("what: runs on module",       "what \(sdkCmds)/echo")
 
 // cudo: convert OS-9/68k module to OS-9000 format (test on a copy — cudo modifies in place)
 check("cudo: converts module format", contains: "converting",
-    "copy \(sdkCmds)/echo /dd/t_cudo",
-    "cudo /dd/t_cudo",
-    "del /dd/t_cudo")
+    "copy \(sdkCmds)/echo /h5/t_cudo",
+    "cudo /h5/t_cudo",
+    "del /h5/t_cudo")
 
 // editmod: module field editor — shows version when run with no args
 check("editmod: shows version",  contains: "module editor",  "editmod")
 
 // chown: change file owner (0.0 is a no-op without super-user, but still prints confirmation)
 check("chown: changes ownership", contains: "Changed owner",
-    "touch /dd/t_own",
-    "chown 0.0 /dd/t_own",
-    "del /dd/t_own")
+    "touch /h5/t_own",
+    "chown 0.0 /h5/t_own",
+    "del /h5/t_own")
 
 // deiniz / iniz: detach and reattach a device
 noError("deiniz: detaches device",  "deiniz /dd")
@@ -534,9 +558,9 @@ noError("iniz: reattaches device",  "iniz /dd")
 
 // padrom: pad a file with 0xFF to a target size
 noError("padrom: pads file",
-    "touch /dd/t_padrom",
-    "padrom 512 /dd/t_padrom",
-    "del /dd/t_padrom")
+    "touch /h5/t_padrom",
+    "padrom 512 /h5/t_padrom",
+    "del /h5/t_padrom")
 
 // mkdatmod: shows help when run without required args
 check("mkdatmod: shows usage",   contains: "OS-9 data module",  "mkdatmod")
@@ -550,12 +574,12 @@ check("mkdatmod: shows usage",   contains: "OS-9 data module",  "mkdatmod")
 
 // tar: create, extract, verify round-trip
 check("tar: roundtrip", contains: "tar_test_content",
-    "echo tar_test_content >/dd/t_tar_src",
-    "tar -cf /dd/t_tar /dd/t_tar_src",
-    "del /dd/t_tar_src",
-    "tar -xf /dd/t_tar",
-    "list /dd/t_tar_src",
-    "del /dd/t_tar_src", "del /dd/t_tar")
+    "echo tar_test_content >/h5/t_tar_src",
+    "tar -cf /h5/t_tar /h5/t_tar_src",
+    "del /h5/t_tar_src",
+    "tar -xf /h5/t_tar",
+    "list /h5/t_tar_src",
+    "del /h5/t_tar_src", "del /h5/t_tar")
 
 // ── Path normalization ────────────────────────────────────────────────────────
 
@@ -590,7 +614,7 @@ if dockerImage == nil, containerImage == nil {
     // even while the file open was failing.
     check("dotted OS9DISK: ordinary file open works", contains: "6162 630d",
           disk: dottedDisk,
-          "echo abc >/dd/t_dotdisk", "dump /dd/t_dotdisk", "del /dd/t_dotdisk")
+          "echo abc >/h5/t_dotdisk", "dump /h5/t_dotdisk", "del /h5/t_dotdisk")
 }
 
 // ── Shell variables and environment ──────────────────────────────────────────
@@ -641,12 +665,12 @@ try? FileManager.default.removeItem(atPath: scratchHostPath)
 // if dsave had written nothing at all.
 check  ("rbf: dsave -ive populates+verifies", contains: "6473 6176",
     "mount -k=500K \(scratchDevice)",
-    "echo dsave test content >/dd/t_dsavesrc",
-    "makdir /dd/t_dsavedir",
-    "copy /dd/t_dsavesrc /dd/t_dsavedir/f1",
-    "chd /dd/t_dsavedir", "dsave -ive /h9",
+    "echo dsave test content >/h5/t_dsavesrc",
+    "makdir /h5/t_dsavedir",
+    "copy /h5/t_dsavesrc /h5/t_dsavedir/f1",
+    "chd /h5/t_dsavedir", "dsave -ive /h9",
     "chd /dd", "dump /h9/f1",
-    "del /dd/t_dsavesrc", "del /dd/t_dsavedir/f1", "deldir -q /dd/t_dsavedir")
+    "del /h5/t_dsavesrc", "del /h5/t_dsavedir/f1", "deldir -q /h5/t_dsavedir")
 
 try? FileManager.default.removeItem(atPath: scratchHostPath)
 
@@ -658,11 +682,11 @@ try? FileManager.default.removeItem(atPath: scratchHostPath)
 // (unrelated to this feature; see the plan's Global Constraints note).
 noError("ramdisk: mount -r creates disk", "mount -r=200 /ram9", "dir /ram9", "unmount ram9")
 check  ("ramdisk: dsave -ive populates+verifies", contains: "f1",
-    "echo ramdisk test content >/dd/t_ramsrc",
-    "makdir /dd/t_ramdir",
-    "copy /dd/t_ramsrc /dd/t_ramdir/f1",
-    "chd /dd/t_ramdir", "mount -r=200 /ram9", "dsave -ive /ram9", "dir /ram9", "unmount ram9",
-    "chd /dd", "del /dd/t_ramsrc", "del /dd/t_ramdir/f1", "deldir -q /dd/t_ramdir")
+    "echo ramdisk test content >/h5/t_ramsrc",
+    "makdir /h5/t_ramdir",
+    "copy /h5/t_ramsrc /h5/t_ramdir/f1",
+    "chd /h5/t_ramdir", "mount -r=200 /ram9", "dsave -ive /ram9", "dir /ram9", "unmount ram9",
+    "chd /dd", "del /h5/t_ramsrc", "del /h5/t_ramdir/f1", "deldir -q /h5/t_ramdir")
 
 // ── F$PrsNam: one-character path components ───────────────────────────────────
 // Regression test for the TO68K double-evaluation bug. TO68K was a macro that
@@ -714,7 +738,14 @@ check  ("f$prsnam: input redirect from a one-character file name",
 // honored on an RBF image. Local-only: they plant fixtures and a canary on the
 // host beside the device root, which a container's mounted /dd can't express.
 if !containerized {
-    let fsHostDir    = diskPath + "/USR/CLAUDE/fsselftest"   // under /dd, host-visible
+    // Per-run name, for the same reason the fixtures moved to /h5: this dir
+    // lives inside the SHARED system disk (it must -- these tests assert on the
+    // /dd and /h0 spellings themselves, so they cannot move to a scratch
+    // device), and the suite DELETES it when done. Two sessions with the same
+    // name deleted it out from under each other. The suffix is digits so both
+    // the lower- and UPPER-case spellings below stay valid.
+    let fsRun        = String(ProcessInfo.processInfo.processIdentifier)
+    let fsHostDir    = diskPath + "/USR/CLAUDE/fsselftest\(fsRun)"   // under /dd, host-visible
     let fsSubHost    = fsHostDir + "/SUB"
     let marker       = "FSMARK_\(UUID().uuidString.prefix(8))"
     // the canary lives in the device root's HOST PARENT — it must NEVER be
@@ -738,7 +769,7 @@ if !containerized {
         print("FAIL: fs: setup — canary file not planted"); failed += 1
     }
 
-    let sub = "/dd/USR/CLAUDE/fsselftest/SUB"   // OS-9 working dir for these
+    let sub = "/dd/USR/CLAUDE/fsselftest\(fsRun)/SUB"   // OS-9 working dir for these
 
     // ---- resolution: every legal spelling must read the SAME marker file ----
     // (the marker tests double as the positive control for the confinement
@@ -749,15 +780,15 @@ if !containerized {
     }
     resolves("relative",              "deep")
     resolves("dot-relative",          "./deep")
-    resolves("absolute /dd",          "/dd/USR/CLAUDE/fsselftest/SUB/deep")
-    resolves("/h0 device alias",      "/h0/USR/CLAUDE/fsselftest/SUB/deep")
-    resolves("double slash",          "/dd//USR/CLAUDE/fsselftest/SUB/deep")
-    resolves("embedded /./",          "/dd/./USR/CLAUDE/fsselftest/SUB/deep")
+    resolves("absolute /dd",          "/dd/USR/CLAUDE/fsselftest\(fsRun)/SUB/deep")
+    resolves("/h0 device alias",      "/h0/USR/CLAUDE/fsselftest\(fsRun)/SUB/deep")
+    resolves("double slash",          "/dd//USR/CLAUDE/fsselftest\(fsRun)/SUB/deep")
+    resolves("embedded /./",          "/dd/./USR/CLAUDE/fsselftest\(fsRun)/SUB/deep")
     resolves("parent round-trip",     "../SUB/deep")
-    resolves("through SYS and back",  "/dd/SYS/../USR/CLAUDE/fsselftest/SUB/deep")
-    resolves("case-insensitive",      "/dd/usr/claude/FSSELFTEST/sub/DEEP")
-    resolves("multi-dot to root",     "...../USR/CLAUDE/fsselftest/SUB/deep")       // up-4 == /dd, then descend
-    resolves("over-walk clamps+keeps","............/USR/CLAUDE/fsselftest/SUB/deep") // '..' past root: clamp, keep tail (regression guard)
+    resolves("through SYS and back",  "/dd/SYS/../USR/CLAUDE/fsselftest\(fsRun)/SUB/deep")
+    resolves("case-insensitive",      "/dd/usr/claude/FSSELFTEST\(fsRun)/sub/DEEP")
+    resolves("multi-dot to root",     "...../USR/CLAUDE/fsselftest\(fsRun)/SUB/deep")       // up-4 == /dd, then descend
+    resolves("over-walk clamps+keeps","............/USR/CLAUDE/fsselftest\(fsRun)/SUB/deep") // '..' past root: clamp, keep tail (regression guard)
 
     // ---- confinement: the host canary outside the root must be UNREACHABLE ----
     func blocked(_ label: String, _ spelling: String) {
@@ -1065,16 +1096,16 @@ do {
         ""
     ].joined(separator: "\r")
 
-    let asmPath = repoRoot.appendingPathComponent("h0/strptst.a").path
+    let asmPath = scratchDisk + "/strptst.a"
     try? strapAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
 
     let name = "f$strap: one handler catches four exceptions in a row (TRAPV/CHK/div0/illegal)"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         let out = os9([
             "load /dd/CMDS/r68 /dd/CMDS/l68",
-            "r68 /dd/strptst.a -o=/dd/strptst.r",
-            "l68 /dd/strptst.r -o=/dd/strptst",
-            "/dd/strptst"
+            "r68 /h5/strptst.a -o=/h5/strptst.r",
+            "l68 /h5/strptst.r -o=/h5/strptst",
+            "/h5/strptst"
         ], timeout: 30)
         let reached = out.contains("vector 7 (TRAPV) handler reached")
             && out.contains("vector 6 (CHK) handler reached")
@@ -1095,8 +1126,8 @@ do {
         }
     }
 
-    for leftover in ["h0/strptst.a", "h0/strptst.r", "h0/strptst"] {
-        try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(leftover).path)
+    for leftover in ["strptst.a", "strptst.r", "strptst"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
     }
 }
 
@@ -1169,16 +1200,16 @@ do {
         ""
     ].joined(separator: "\r")
 
-    let asmPath = repoRoot.appendingPathComponent("h0/rsmtst.a").path
+    let asmPath = scratchDisk + "/rsmtst.a"
     try? resumeAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
 
     let name = "f$strap: a handler resumes the interrupted program (TRAPV next-pc + div0 step-pc)"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         let out = os9([
             "load /dd/CMDS/r68 /dd/CMDS/l68",
-            "r68 /dd/rsmtst.a -o=/dd/rsmtst.r",
-            "l68 /dd/rsmtst.r -o=/dd/rsmtst",
-            "/dd/rsmtst"
+            "r68 /h5/rsmtst.a -o=/h5/rsmtst.r",
+            "l68 /h5/rsmtst.r -o=/h5/rsmtst",
+            "/h5/rsmtst"
         ], timeout: 30)
         let reached = out.contains("RESUMED PAST TRAPV")
             && out.contains("RESUMED PAST DIVU0")
@@ -1196,8 +1227,8 @@ do {
         }
     }
 
-    for leftover in ["h0/rsmtst.a", "h0/rsmtst.r", "h0/rsmtst"] {
-        try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(leftover).path)
+    for leftover in ["rsmtst.a", "rsmtst.r", "rsmtst"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
     }
 }
 
@@ -1246,16 +1277,16 @@ do {
         ""
     ].joined(separator: "\r")
 
-    let asmPath = repoRoot.appendingPathComponent("h0/bustst.a").path
+    let asmPath = scratchDisk + "/bustst.a"
     try? busAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
 
     let name = "f$strap: an out-of-arena access raises a catchable bus error (vector 2)"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         let out = os9([
             "load /dd/CMDS/r68 /dd/CMDS/l68",
-            "r68 /dd/bustst.a -o=/dd/bustst.r",
-            "l68 /dd/bustst.r -o=/dd/bustst",
-            "/dd/bustst"
+            "r68 /h5/bustst.a -o=/h5/bustst.r",
+            "l68 /h5/bustst.r -o=/h5/bustst",
+            "/h5/bustst"
         ], timeout: 30)
         if out.contains("BUS ERROR (vector 2) CAUGHT") {
             print("PASS: \(name)")
@@ -1271,12 +1302,14 @@ do {
         }
     }
 
-    for leftover in ["h0/bustst.a", "h0/bustst.r", "h0/bustst"] {
-        try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(leftover).path)
+    for leftover in ["bustst.a", "bustst.r", "bustst"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
     }
 }
 
 // ── Results ───────────────────────────────────────────────────────────────────
+
+try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us
 
 print("\nResults: \(passed) passed, \(failed) failed")
 exit(failed > 0 ? 1 : 0)
