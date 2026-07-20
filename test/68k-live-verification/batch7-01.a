@@ -1,0 +1,224 @@
+* Live-tests I$ReadLn($8B), F$STime($16), F$Chain($05, failure path
+* only) against 68k/syscall-reference.md. Register conventions
+* cross-checked against os9exec's own icalls.c/fcalls.c before writing
+* this. F$STime is safe to call on this build specifically: its only
+* real host-clock side effect is gated behind #ifdef MACOS9 (classic
+* Mac OS 9 target), not compiled into this modern macOS/Linux/Windows
+* build -- confirmed by reading OS9_F_STime before running this.
+* F$Chain's os9exec implementation mirrors F$Fork's already-proven-safe
+* logic (no early destructive side effects before name resolution), but
+* only the failure path is tested here regardless, since a successful
+* chain replaces this whole process with no return.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+IReadLn set $8B
+IOpen set $84
+ICreate set $83
+ISeek set $88
+IDelete set $87
+IClose set $8F
+IWrite set $8A
+FSTime set $16
+FTime set $15
+FChain set $05
+FExit set $06
+*
+ psect batch701,Type_Lang,Attr_Rev,0,800,start
+start
+* --- I$ReadLn(d0.w=path,d1.l=max,(a0)=buffer) -- create a fresh file
+* with a real CR-terminated line, then read it straight back ---
+ lea fname(pc),a0
+ moveq #3,d0
+ clr.l d1
+ clr.l d2
+ trap #0
+ dc.w ICreate
+ bcc rlcreateok
+ lea rlskipmsg(pc),a0
+ move.l #rlskiplen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra sttest
+rlcreateok
+ move.l d0,d5
+ lea rlline(pc),a0
+ move.l #rllinelen,d1
+ clr.l d0
+ move.w d5,d0
+ trap #0
+ dc.w IWrite
+* seek back to the start before reading it back
+ clr.l d0
+ move.w d5,d0
+ clr.l d1
+ trap #0
+ dc.w ISeek
+rlopenok
+ lea rlbuf(pc),a0
+ move.l #60,d1
+ clr.l d0
+ move.w d5,d0
+ trap #0
+ dc.w IReadLn
+ bcc rlok
+ move.l d1,d7
+ lea rlfailmsg(pc),a0
+ move.l #rlfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra rlclose
+rlok
+ move.l d1,d6            save bytes-read count (returned in d1)
+ lea rlpassmsg(pc),a0
+ move.l #rlpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d6,d1
+ bsr printnum
+rlclose
+ clr.l d0
+ move.w d5,d0
+ trap #0
+ dc.w IClose
+ lea fname(pc),a0
+ moveq #3,d0
+ trap #0
+ dc.w IDelete
+*
+* --- F$STime(d0.l=time,d1.l=date) -- read current via F$Time first,
+* write the SAME values straight back (a genuine no-op on this build,
+* since the real host-clock side effect isn't compiled in here) ---
+sttest
+ clr.l d0
+ trap #0
+ dc.w FTime
+ bcc ftok
+ lea stfailmsg(pc),a0
+ move.l #stfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra chtest
+ftok
+ move.l d0,d4
+ move.l d1,d3
+ trap #0
+ dc.w FSTime
+ bcc stok
+ lea stfailmsg(pc),a0
+ move.l #stfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra chtest
+stok
+ lea stpassmsg(pc),a0
+ move.l #stpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- F$Chain(same as F$Fork) -- deliberately bogus name, failure path only ---
+chtest
+ lea badname(pc),a0
+ clr.w d0
+ clr.l d1
+ clr.l d2
+ clr.w d3
+ move.w #128,d4
+ movea.l a0,a1
+ trap #0
+ dc.w FChain
+ bcs chexpected
+ lea chunexpmsg(pc),a0
+ move.l #chunexplen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+chexpected
+ move.l d1,d7
+ lea chpassmsg(pc),a0
+ move.l #chpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+printnum
+ sub.l #16,a7
+ movea.l a7,a1
+ adda.l #16,a1
+ move.l d1,d2
+ moveq #0,d3
+ tst.l d2
+ bne.s pn_loop
+ move.b #'0',-(a1)
+ moveq #1,d3
+ bra.s pn_output
+pn_loop
+ tst.l d2
+ beq.s pn_output
+ divu.w #10,d2
+ move.w d2,d0
+ swap d2
+ move.b d2,d1
+ add.b #'0',d1
+ move.b d1,-(a1)
+ addq.w #1,d3
+ clr.l d2
+ move.w d0,d2
+ bra.s pn_loop
+pn_output
+ movea.l a1,a0
+ move.l d3,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ add.l #16,a7
+ lea crbyte(pc),a0
+ moveq #2,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+fname dc.b "batch701test.dat",0
+rlline dc.b "HELLO",13
+rllinelen equ *-rlline
+badname dc.b "nosuchmoduleatall",0
+rlbuf dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ dc.b 0,0,0,0,0,0,0,0,0,0,0,0
+rlpassmsg dc.b "PASS I$ReadLn bytes="
+rlpasslen equ *-rlpassmsg
+rlfailmsg dc.b "FAIL I$ReadLn err="
+rlfaillen equ *-rlfailmsg
+rlskipmsg dc.b "SKIP I$ReadLn (no test file present)",13,10
+rlskiplen equ *-rlskipmsg
+stpassmsg dc.b "PASS F$STime",13,10
+stpasslen equ *-stpassmsg
+stfailmsg dc.b "FAIL F$STime/F$Time",13,10
+stfaillen equ *-stfailmsg
+chpassmsg dc.b "PASS F$Chain bogus-name correctly errored err="
+chpasslen equ *-chpassmsg
+chunexpmsg dc.b "F$Chain UNEXPECTED SUCCESS on bogus name",13,10
+chunexplen equ *-chunexpmsg
+crbyte dc.b 13,10
+ ends
