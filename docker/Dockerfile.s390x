@@ -1,0 +1,41 @@
+# Build os9exec for BIG-ENDIAN s390x -- the endianness oracle.
+#
+# os9exec spends its life byte-swapping between host order and the 68k's
+# big-endian world, so a big-endian host is the only thing that can catch a
+# swap that was wrong in both directions (it cancels out on little-endian and
+# is invisible everywhere else). Two real bugs came from this axis: every Linux
+# being assumed little-endian (`#ifdef linux #define __INTEL__`, so s390x
+# swapped on a host that already matched OS-9), and the big-endian
+# loword/hiword/lobyte macros hardcoding 32-bit offsets, which corrupted the
+# syscall trap vector read out of a 64-bit ulong.
+#
+# Build and run:
+#   docker build --platform linux/s390x -f docker/Dockerfile.s390x -t os9exec:s390x .
+#   DOCKER_IMAGE=os9exec:s390x swift run --package-path test
+#
+# Pair every run with an identical little-endian control (docker/Dockerfile)
+# so endianness is the only variable. Under emulation this is slow -- minutes
+# to build, a few seconds per test -- which is expected, not a hang.
+#
+# NOTE: the UTM/qemu Debian s390x *VM* route is a documented dead end (its
+# installer initrd has no virtio_blk, so the guest never sees a disk). Use this
+# container instead.
+FROM --platform=linux/s390x s390x/debian:stable AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+RUN make clean && make
+
+FROM --platform=linux/s390x s390x/debian:stable
+
+COPY --from=builder /build/os9exec /usr/local/bin/os9exec
+
+# See docker/Dockerfile for why this must not be "/".
+WORKDIR /work
+
+ENTRYPOINT ["os9exec"]
