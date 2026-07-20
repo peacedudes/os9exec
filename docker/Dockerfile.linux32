@@ -36,4 +36,14 @@ COPY --from=builder /build/os9exec /usr/local/bin/os9exec
 # User mounts their OS-9 binaries at runtime:
 #   docker run -v /path/to/your/os9:/dd -it os9exec
 
+# Run from a real directory, NOT from "/" -- the same reason spelled out in
+# docker/Dockerfile, and this image was the one that had it missing. os9exec
+# resolves an hX device by looking for a file of that name next to its working
+# directory, so at "/" the image's host path ("/h9") is textually identical to
+# the OS-9 device path ("/h9"); the namespaces collide and the device never
+# registers. `mount -k=500K /h9` then reports success and the very next
+# `dir /h9` fails with E_MNF -- which is exactly how the two `rbf:` suite tests
+# failed here, and only here, for as long as this image has existed.
+WORKDIR /work
+
 ENTRYPOINT ["os9exec"]
