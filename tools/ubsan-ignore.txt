@@ -17,6 +17,11 @@
 #             -fsanitize-ignorelist=tools/ubsan-ignore.txt -g"
 #   swift run --package-path test
 #
+# CLANG ONLY. GCC has no -fsanitize-ignorelist and rejects the flag outright, so
+# a GCC UBSan build cannot use this and will abort on the UAE core instead. GCC
+# ASan alone is fine and needs no ignorelist -- the UAE findings are all UBSan
+# ones -- which is how the big-endian sanitizer run is done.
+#
 # If the UAE UB is ever addressed (ROADMAP has the upstream-friendly fix), drop
 # this file rather than letting it hide new problems.
 src:*/UAE68emulator/*
