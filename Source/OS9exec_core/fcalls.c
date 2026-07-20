@@ -484,8 +484,14 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
 
     /* a1 is the REQUIRED init-table pointer; a guest passing 0 would deref NULL
        and crash the host.  Return E_BPADDR instead.  (a0=0 is legal here -- it
-       means "use the current stack" -- so only a1 is guarded.) */
-    if (!IN_ARENA(itab)) return os9error(E_BPADDR);
+       means "use the current stack" -- so only a1 is guarded.)
+       The bound is re-checked on EVERY entry inside the loop below, not just
+       here: the guest supplies both the pointer and the $FFFF terminator, so a
+       table without one is walked until $FFFF happens to turn up in guest
+       memory.  The arena is calloc'd, so zeros never stop it -- confirmed live,
+       an unterminated table read clean off the end of the arena
+       (AddressSanitizer: heap-buffer-overflow in os9_get_w), after installing
+       whatever handlers the intervening bytes happened to spell. */
 
     /* The init table lives in guest (big-endian 68k) memory, so every word read
        must go through os9_word().  Omitting the swap was invisible on the original
@@ -497,7 +503,14 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
     /* Read through os9_get_w, not *itab: a1 is the guest's and may be ODD, so a
        ushort load through it is undefined and faults on a strict-alignment
        host. os9_get_w copies the bytes and applies the same swap os9_word did. */
-    while ((venc= os9_get_w(itab))!=0xFFFF) {
+    while (true) {
+        /* one word to read the vector, two more bytes if it turns out to be a
+           real entry rather than the terminator */
+        if (!RANGE_IN_ARENA(itab,sizeof(ushort))) return os9error(E_BPADDR);
+             venc= os9_get_w(itab);
+        if  (venc==0xFFFF) break; /* end of table */
+        if (!RANGE_IN_ARENA(itab,2*sizeof(ushort))) return os9error(E_BPADDR);
+
              vect = venc >> 2; /* get vector number (offset div 4) */
         if ((vect>=FIRSTEXCEPTION) && (vect<FIRSTEXCEPTION+NUMEXCEPTIONS)) {
             /* installable vector routine */

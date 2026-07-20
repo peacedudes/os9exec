@@ -1,0 +1,70 @@
+* What does F$STrap do with an init table that has no terminator?
+*
+* OS9_F_STrap walks the table with
+*     while ((venc = os9_get_w(itab)) != $FFFF) { ... itab += 2; }
+* and validates the pointer with IN_ARENA exactly ONCE, before the loop. Nothing
+* re-checks it as itab advances, so the only thing that stops the walk is
+* finding $FFFF somewhere in guest memory. The 68k arena is calloc'd, so an
+* unterminated table reads zeros -- never $FFFF -- and the walk runs to the end
+* of the arena and straight off it, reading host heap past emul_end.
+*
+* A guest is allowed to pass a bad table; it must get an error, not walk the
+* emulator off its own arena.
+*
+* This program points a1 at four zero words with no $FFFF after them. Nothing
+* else in the program supplies one, and everything beyond is zeroed arena.
+*   - fixed:  F$STrap returns an error (carry set) -> "OK refused"
+*   - broken: os9exec walks ~32MB and reads past the arena. Under ASan that is
+*     a heap-buffer-overflow abort; without it, a silent out-of-bounds read.
+*
+* a0 = 0 is legal (means "use the current stack"), so only a1 is under test.
+*
+Prgrm     set 1
+Objct     set 1
+ReEnt     set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev  set (ReEnt<<8)+1
+*
+IWrite    set $8A
+FSTrap    set $0E
+FExit     set $06
+*
+ psect strapun,Type_Lang,Attr_Rev,0,800,start
+*
+start
+ lea     table(pc),a1          a1 = table with NO $FFFF terminator
+ moveq   #0,d0
+ move.l  #0,a0                 a0 = 0: use the current stack (legal)
+ trap    #0
+ dc.w    FSTrap
+ bcs     refused               carry set = error returned, which is correct
+*
+ lea     mbad(pc),a0
+ move.l  #mbadlen,d1
+ bsr     say
+ bra     done
+refused
+ lea     mok(pc),a0
+ move.l  #moklen,d1
+ bsr     say
+done
+ moveq   #0,d1
+ trap    #0
+ dc.w    FExit
+*
+* say: a0 = text, d1 = length -- writes to stderr (path 2)
+say
+ move.w  #2,d0
+ trap    #0
+ dc.w    IWrite
+ rts
+*
+* Four zero words and no terminator. Zero is a valid-looking vector offset, so
+* the loop keeps going rather than stopping on something malformed.
+table   dc.w 0,0,0,0
+mok     dc.b "strapun: OK   refused an unterminated table",13
+moklen  equ *-mok
+mbad    dc.b "strapun: HUH  accepted an unterminated table",13
+mbadlen equ *-mbad
+*
+ ends
