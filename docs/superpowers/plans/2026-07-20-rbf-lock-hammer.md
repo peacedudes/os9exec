@@ -36,6 +36,26 @@ Design doc: `docs/superpowers/specs/2026-07-20-rbf-lock-hammer-design.md`
 - **Every oracle must be demonstrated failing at least once** before its green
   result is trusted. Four checks in this codebase have been found unable to
   fail. An oracle that has never gone red is not evidence.
+- **FAILABILITY LEDGER — no scenario ships without an entry.** There are two
+  separate questions and the old counter race passed the first while failing
+  the second:
+  1. *Can the oracle detect bad data?* Proved by unit test against a synthetic
+     corrupted stream (Task 1).
+  2. *Can the scenario ever PRODUCE bad data?* Proved only by running it
+     against a deliberately broken emulator and watching it go red. This is
+     the one that matters. A scenario that cannot be made to fail is an
+     exercise, not a test.
+  Maintain `test/rbf-hammer/FAILABILITY.md`: one row per scenario, recording
+  how it was made to fail, what the injected defect was, and the date. A
+  scenario with no row is not counted as coverage and must not be described
+  as passing.
+- **Injected-defect builds are scratch binaries, never committed.** Build to
+  `/tmp`, record the exact diff in the ledger so it can be reproduced.
+- **A scenario that never contends is a silent failure.** Where practical,
+  instrument contention directly (`procs` state, or the existing
+  `debugprintf(dbgFiles,...)` trace) and assert that blocking actually
+  happened. "The workers ran and nothing broke" is indistinguishable from
+  "the workers never overlapped."
 - **Parallel 6809 instances need unique `NITROS9REPL_SESSION`,
   `NITROS9REPL_BECKER_PORT`, `NITROS9REPL_CHAN_PORT`,** and their own cloned
   image directory. Run them headless (`-ui null -ao null`); cap at 3 (host
@@ -353,7 +373,31 @@ into.
 
 - [ ] **Step 4: Add scenarios with 8 and 16 workers across all three backends**
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Make every new scenario go red at least once, and record it**
+
+For each scenario added, inject a defect that it should catch and confirm the
+red. Suggested injections, one per defect class:
+
+| Injection | Scenario class it must break |
+|---|---|
+| record lock acquisition removed | `update` lost-update scenarios |
+| EOF wait replaced by immediate `E$EOF` | `follow` scenarios |
+| ring invalidation on dirty sector skipped | multi-path visibility scenarios |
+| cluster free-list update skipped on delete | allocation round-trip |
+
+Write each into `test/rbf-hammer/FAILABILITY.md`. **Any scenario that stays
+green under its matching injection is broken — fix the scenario before
+moving on.** Do not rationalise it as "the injection was not severe enough"
+without first proving the workers actually contended.
+
+- [ ] **Step 6: Assert contention actually happened**
+
+Add a check that the run observed real blocking (parked reader, refused lock,
+or wait/wake trace). A scenario that completes without ever contending must
+report that as a violation, not a pass — otherwise increasing the iteration
+count silently buys nothing.
+
+- [ ] **Step 7: Commit**
 
 ---
 
