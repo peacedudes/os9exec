@@ -130,7 +130,12 @@ final class ScenarioTests: XCTestCase {
 
     /// Builds a roster of `count` slot-writers plus the provisioning worker.
     private func sharedRoster(_ population: Int, file: String, nap: Int) -> [WorkerSpec] {
-        var roster = [WorkerSpec(id: 99, role: .create, file: file, count: 0)]
+        // The provisioning worker's count is the file's FULL final slot count,
+        // because it pre-extends the file. OS-9 cannot write into a hole: a
+        // slot worker seeking past the current end of file dies with E$EOF,
+        // which reads back as that worker's whole range missing.
+        var roster = [WorkerSpec(id: 99, role: .create, file: file,
+                                 count: population * Self.records)]
         roster += (1...population).map {
             WorkerSpec(id: $0, role: .slot, file: file, count: Self.records, nap: nap)
         }

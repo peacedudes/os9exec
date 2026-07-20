@@ -74,6 +74,54 @@ been quietly miscredited.
 
 ---
 
+## Volume findings — and a false accusation caught
+
+**The 3-second run was a smoke test, not a hammer.** Defaults were 8 records per
+worker. Raising the volume immediately produced failures:
+
+| Records/worker | Result |
+|---|---|
+| 8 | 11/11 pass, ~3s |
+| 50 | 3 scenarios failed |
+| 200 | 1 scenario failed |
+| 500 | 17 assertion failures across the set |
+
+### The N=50 failures were MY BUG, and they looked exactly like an RBF defect
+
+Presentation: one worker's entire 50-record range read back as zeros, while that
+worker reported success. Intermittent. Only on shared files. Only on RBF images.
+That is a textbook "RBF loses data under concurrent writers" report.
+
+It was none of those things. Running the worker ALONE failed too, with
+`E$EOF (211)`:
+
+**OS-9 cannot write into a hole.** `SEEK`ing past the current end of file and
+writing fails; it does not extend sparsely. A `slot` worker whose range starts
+beyond the current end dies immediately. Workers 1 and 2 survived only because
+their ranges begin at or before the existing end, which is why it looked
+worker-specific and intermittent rather than systematic.
+
+The skill documents this ("EOF errors from `SEEK`ing past the current end of a
+sparse file") and I did not read it before designing the slot layout.
+
+Fixed by making the provisioning worker PRE-EXTEND the file to its full size.
+The filler is deliberately not a valid record, so a slot that never gets written
+still reads back as a torn record and is DETECTED rather than excused.
+After the fix: 5/5 clean runs of all 11 scenarios at N=50.
+
+**Lesson for this harness: a green oracle proves nothing, and so does a red one
+until the harness itself is exonerated.** This would have been filed as an RBF
+data-loss bug against freshly merged code.
+
+### Open, NOT yet classified
+
+The N=200 and N=500 failures are **unclassified**. `testTwelveWorkersShareOneFile`
+passes at N=500 in isolation, so the failures are either in other scenarios or
+emerge only when the set runs together. Candidates: the 500K image is tight for
+12x500x64 = 384000 bytes, and disk-full is a real condition worth testing
+deliberately rather than tripping over accidentally. Do not describe these as
+RBF defects until each one has been isolated the way the N=50 case was.
+
 ## Question 2 — scenario can produce bad data
 
 ### What the `slot` scenarios do NOT test — read this before citing them

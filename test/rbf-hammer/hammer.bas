@@ -106,9 +106,25 @@ pad = "                                            "
 gotcount = 0
 failed = 0
 IF role = "create" THEN
+  ! PRE-EXTEND the file to its full final size. This is not tidiness, it is
+  ! required: OS-9 does NOT support writing into a hole. SEEKing past the
+  ! current end of file and writing fails with E$EOF (211) -- a slot worker
+  ! whose range starts beyond the current end simply dies, silently as far as
+  ! the shell is concerned.
+  !
+  ! That defect cost real time and looked exactly like an RBF data-loss bug:
+  ! one worker's entire range read back as zeros while the worker reported
+  ! success, intermittently, only on shared files. It was this, every time.
+  !
+  ! The filler is deliberately NOT a valid record. An unwritten slot must read
+  ! back as a torn record so a worker that failed to write is DETECTED, rather
+  ! than being papered over by plausible-looking filler.
   CREATE #path, fname: UPDATE
+  FOR index = 0 TO total - 1
+    PRINT #path, LEFT$("---------- unwritten slot " + pad + pad, 63)
+  NEXT index
   CLOSE #path
-  PRINT #2, "hammer: created "; fname
+  PRINT #2, "hammer: pre-extended "; fname; " to "; total; " slots"
 ELSE
 IF role = "append" OR role = "slot" THEN
   IF role = "slot" THEN
