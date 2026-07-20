@@ -67,14 +67,24 @@ static void os9_tick_handler( int sig )
 static void os9_tick_arm( void )
 {
     struct itimerval it;
+    struct sigaction sa;
+
+    /* SA_RESTART asked for explicitly rather than inherited: a signal 100
+     * times a second interrupts blocking host calls, and nothing in OS9exec
+     * checks for EINTR anywhere. Today that is harmless -- the only blocking
+     * calls on the hot paths are idle nanosleeps, which simply return early --
+     * but relying on signal()'s implementation-defined behaviour to keep it
+     * that way is luck, not design. Let the kernel restart them. */
+    sa.sa_handler= os9_tick_handler;
+    sigemptyset( &sa.sa_mask );
+    sa.sa_flags  = SA_RESTART;
+    sigaction   ( SIGALRM, &sa, NULL );
 
     it.it_interval.tv_sec = 0; /* deliberately NOT an interval timer */
     it.it_interval.tv_usec= 0;
     it.it_value.tv_sec    = 0;
     it.it_value.tv_usec   = os9_tick_us;
-
-    signal    ( SIGALRM, os9_tick_handler );
-    setitimer ( ITIMER_REAL, &it, NULL );
+    setitimer   ( ITIMER_REAL, &it, NULL );
 } /* os9_tick_arm */
 
 void os9_tick_start( void )
@@ -90,8 +100,20 @@ void os9_tick_start( void )
 } /* os9_tick_start */
 
 void os9_tick_stop( void )
-/* Take the clock away again -- for anything that must not be interrupted at an
- * arbitrary instruction, and so a host debugger session is not walked on. */
+/* Take the clock away again. Nothing calls this, deliberately.
+ *
+ * A host debugger does not need it: because the timer is a one-shot re-armed
+ * inside its own handler, stopping the process stops the clock by itself --
+ * nothing re-arms while nothing runs, and standard signals do not queue, so
+ * however long you sit at a breakpoint there is at most ONE pending SIGALRM
+ * waiting. Resuming costs a single spurious task switch and the cadence picks
+ * up again. Nor is there anything guest-visible to go stale meanwhile: no
+ * interrupt is faked, nothing is stacked, no vector taken -- the tick only
+ * tells OS9exec's own dispatcher to arbitrate.
+ *
+ * So this exists for something that genuinely must not be interrupted at an
+ * arbitrary instruction, and is left uncalled because a stop that is never
+ * paired with a start is a real bug, while not calling it cannot be. */
 {
     struct itimerval it;
 
