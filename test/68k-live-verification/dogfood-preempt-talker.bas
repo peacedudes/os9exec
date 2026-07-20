@@ -1,0 +1,1 @@
+PROCEDURE talkDIM k: INTEGERFOR k = 1 TO 6PRINT #2, "talk: alive ", k, " at ", RIGHT$(DATE$,8)NEXT kEND
