@@ -50,6 +50,10 @@ extern int broken_in;
 extern volatile sig_atomic_t os9_running; /* cleared by the tick handler */
 extern int os9_tick_us;                   /* live tick interval, 0 = no clock */
 extern int os9_timed_out;                 /* tick fired, pending user state */
+
+/* "the emulation loop stopped for no reason of its own" -- distinct from every
+ * syscall/TCALL/exception value, and in particular from 0, which is F$Link. */
+#define OS9GO_NOTRAP 0xFFFFFFFFu
 extern unsigned long m68_os9go_result;
 #endif
 

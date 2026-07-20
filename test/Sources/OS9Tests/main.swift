@@ -93,7 +93,13 @@ func killContainer(_ name: String) {
 
 func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bool = false,
          disk: String = diskPath) -> String {
-    let setup  = "chx \(sdkCmds)\nload math cio\n"
+    // The tick does not start until the guest sets the time (see -q), so
+    // asking for pre-emption means setting it too -- otherwise OS9_PREEMPT
+    // silently does nothing and the whole suite "passes with pre-emption"
+    // without ever having pre-empted anything.
+    let setTime = ProcessInfo.processInfo.environment["OS9_PREEMPT"] != nil
+                ? "setime 26/07/19 12:00:00\n" : ""
+    let setup  = "chx \(sdkCmds)\nload math cio\n" + setTime
     let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
 
     let process = Process()

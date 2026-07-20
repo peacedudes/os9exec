@@ -28,8 +28,22 @@
  * happens on the way back out to user state -- so a system call is never cut
  * in half, and the switch is deferred rather than lost.
  *
- * The clock does not run until the guest sets the time, matching a real
- * system where the clock starts at <setime>: see os9_tick_start().
+ * KNOWN LIMITATION, 2026-07-19: with the tick running, the F$STrap
+ * exception-handler tests fail (reproducibly, though not on every run) --
+ * an installed handler does not reliably catch TRAPV/CHK/div0/illegal or a
+ * bus error while pre-emption is on. Everything else in the suite passes
+ * (127/129), and all 129 pass with the tick off, which is the default. The
+ * cause is not yet found; the suspicion is that leaving and re-entering the
+ * emulation loop disturbs exception dispatch, which manipulates the same
+ * exit path. Do not treat -q as safe for anything that relies on F$STrap
+ * until this is understood.
+ *
+ * Starting it is tied to -q and nothing else. An earlier version also waited
+ * for the guest to set the time, on the grounds that a real clock starts at
+ * <setime> -- but that made -q silently do nothing on its own, which cost a
+ * whole run of the test suite reporting that it "passed with pre-emption"
+ * while the tick had never once started. Faithfulness that can be mistaken
+ * for a working feature is worse than a switch that means what it says.
  */
 
 #include "os9exec_incl.h"
@@ -88,9 +102,7 @@ static void os9_tick_arm( void )
 } /* os9_tick_arm */
 
 void os9_tick_start( void )
-/* Start the clock, once. Called when the guest first sets the time, so a
- * system that never does simply never has one -- and calling it again is
- * harmless, which matters because <setime> can be run more than once. */
+/* Start the clock, once. Calling it again is harmless. */
 {
     if (os9_tick_request==0) return; /* not asked for */
     if (os9_tick_us       !=0) return; /* already running */

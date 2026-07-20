@@ -1410,7 +1410,13 @@ unsigned long m68k_os9go(void)
     // prevent recursion
     in_m68k_go++;
     // stay in 68k emu until TRAP or exception occurs
-    m68_os9go_result=0;
+    /* NOT 0: function code 0 is F$Link, a real and very common call, so a
+     * result of 0 means "F$Link happened", never "nothing happened". Using 0
+     * as the no-trap marker made a pending tick swallow every F$Link that
+     * raced it -- the call was discarded and replaced by the tick token, so
+     * copies silently produced no file. This sentinel cannot collide with any
+     * syscall, TCALL or exception value. */
+    m68_os9go_result=OS9GO_NOTRAP;
     if (setjmp(os9_oob_jmp)) {
         /* arrived via an out-of-arena access: raise a bus error (vector 2).
            handle_os9exec_exception builds the frame, dispatches to an installed
@@ -1486,7 +1492,7 @@ unsigned long m68k_os9go(void)
      * nothing: a tick in system state must not take the CPU away mid-call, so
      * the flag stays set and we simply carry on -- the switch then happens on
      * the next tick after the return to user state, deferred, not lost. */
-    if (os9_timed_out && m68_os9go_result==0) {
+    if (os9_timed_out && m68_os9go_result==OS9GO_NOTRAP) {
         if (regs.s) {                /* system state: not now */
             os9_running= 1;
             goto os9go_resume;
@@ -1498,6 +1504,9 @@ unsigned long m68k_os9go(void)
     } // if
 
 os9go_exit:
+    /* anything that left without setting a reason keeps the old meaning */
+    if (m68_os9go_result==OS9GO_NOTRAP) m68_os9go_result= 0;
+
     os9_oob_armed = 0;   /* os9_oob_jmp goes out of scope when we return */
     in_m68k_go--;
     // make sure PC is updated
