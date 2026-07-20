@@ -2,7 +2,10 @@
 # h5 is a symlink -> freeware (repo-root convention post h0/h1 reorg).
 # freeware/ content is gitignored until proprietary items are fully removed.
 freeware
-h*
+# h? not h*: the disk mounts are all two characters (h0 h1 h4 he, test/h8..hd).
+# h* also matched any FILE starting with h -- and on a case-insensitive
+# filesystem, with H too, so e.g. a HANDOFF.md silently refused to be added.
+h?
 dd
 
 # Proprietary OS-9 DEFS headers (Microware copyright)
