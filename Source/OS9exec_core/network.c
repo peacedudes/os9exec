@@ -882,7 +882,11 @@ os9err pNbind( _pid_, syspath_typ* spP, _d2_, byte *ispP )
 
 os9err pNlisten( ushort pid, syspath_typ* spP )
 {
-    OSStatus err;
+    /* Initialised: the #if/#elif chain below only assigns <err> on the MacOS
+       and win_unix branches, so on any platform that is neither it reached the
+       `if (err)` test holding stack garbage and could fail a listen that had
+       actually succeeded. Costs nothing to make that impossible. */
+    OSStatus err= 0;
     net_typ* net= &spP->u.net;
     process_typ*  cp= &procs[pid];
 

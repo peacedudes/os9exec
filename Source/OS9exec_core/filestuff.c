@@ -759,7 +759,8 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
                         /* Fetch FTP replaces periods at filename beginnings with a slash */
                         if (*p == '.') {
                             *op++='/';
-                            *p++;
+                            p++; /* was `*p++`, whose dereference was discarded --
+                                    it reads as though `(*p)++` were meant */
                             continue; /* next char, please */
                         }
                     }
