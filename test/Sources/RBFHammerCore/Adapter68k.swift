@@ -151,18 +151,25 @@ public struct Adapter68k: Adapter {
     // ── Running ───────────────────────────────────────────────────────────────
 
     /// Builds the shell command sequence for a scenario.
-    ///
-    /// `w` waits for exactly ONE child, so the roster needs one `w` per worker.
-    /// Waiting for fewer would read the files while workers were still writing
-    /// and manufacture torn-record violations that are the harness's own fault.
     private func commands(for scenario: Scenario) -> [String] {
         var lines = ["chx /dd/CMDS", "load math cio"]
         lines += Backend68k.setup(scenario.backend)
-        let launches = scenario.workers
-            .map { "basic #32k </h5/\(scriptName($0))&" }
-            .joined()
-        lines.append(launches)
-        lines += Array(repeating: "w", count: scenario.workers.count)
+
+        // Provisioning workers run FIRST and in the foreground. A shared file
+        // must exist before the racers open it, and two workers both CREATEing
+        // it is itself an error that would mask whatever the race did.
+        let (provision, racers) = scenario.workers.partitioned { $0.role == .create }
+        lines += provision.map { "basic #32k </h5/\(scriptName($0))" }
+
+        // One combined line, not one per worker: sending each launch separately
+        // has been found unreliable in this project's history -- dropped,
+        // delayed, or interleaved with the previous process's output.
+        lines.append(racers.map { "basic #32k </h5/\(scriptName($0))&" }.joined())
+
+        // `w` waits for exactly ONE child, so the roster needs one per racer.
+        // Waiting for fewer reads the files while workers are still writing and
+        // manufactures torn-record violations that are the harness's own fault.
+        lines += Array(repeating: "w", count: racers.count)
         lines += Backend68k.retrieve(scenario)
         lines += Backend68k.inspect(scenario.backend)
         return lines
@@ -223,5 +230,14 @@ public struct Adapter68k: Adapter {
             }
         }
         return produced
+    }
+}
+
+private extension Array {
+
+    /// Splits into the elements matching `predicate` and those that do not,
+    /// preserving order in both.
+    func partitioned(_ predicate: (Element) -> Bool) -> ([Element], [Element]) {
+        (filter(predicate), filter { !predicate($0) })
     }
 }

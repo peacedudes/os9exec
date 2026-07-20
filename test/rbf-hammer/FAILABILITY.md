@@ -76,6 +76,35 @@ been quietly miscredited.
 
 ## Question 2 — scenario can produce bad data
 
+### What the `slot` scenarios do NOT test — read this before citing them
+
+The eleven `ScenarioTests` all pass, and none of them can detect a missing
+**record lock**. Stated plainly so nobody cites them as lock coverage:
+
+`slot` workers write **disjoint** byte ranges (worker *i* owns records
+`[(i-1)*count, i*count)`). `LockHolder` in `file_rbf.c` only reports a conflict
+when two paths' locked extents **overlap**. Disjoint ranges never overlap, so
+removing record locking altogether would leave every one of these scenarios
+green.
+
+That is not a defect in the scenarios — it is a limit on what they cover:
+
+| These scenarios DO exercise | They do NOT exercise |
+|---|---|
+| the FD-sharing ring across many paths on one file | record lock acquisition |
+| shared sector buffers and their invalidation | lock conflict / sleep / wake |
+| segment list and published size under concurrent extends | `E_DEADLK` refusal |
+| the device allocator with many concurrent writers | the EOF wait |
+
+The disjointness is deliberate and still correct: BASIC09 has no seek-to-end, so
+racing appenders would all write at offset 0 and overwrite each other, which
+would prove the test wrong rather than the locking right.
+
+**A genuine lock test needs OVERLAPPING read-modify-write on the same records**
+— that is the missing scenario, and it is the next thing to build. Until it
+exists and has its own row here, this harness has NO record-lock coverage,
+regardless of how many green scenarios it reports.
+
 Nothing here yet. Scenarios arrive in Tasks 3–4 of
 `docs/superpowers/plans/2026-07-20-rbf-lock-hammer.md`; each one needs a row
 before it counts.

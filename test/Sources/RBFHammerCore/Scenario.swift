@@ -85,6 +85,20 @@ public struct WorkerSpec: Equatable, Sendable {
 
         /// Walks the file back, counting whole records.
         case read
+
+        /// Writes only the byte range this worker owns in a SHARED file:
+        /// records `[base ..< base+count)` where `base = (id-1)*count`.
+        ///
+        /// Disjoint by construction. BASIC09 has no seek-to-end, so racing
+        /// appenders would all write at offset 0 and overwrite each other --
+        /// which would prove the test wrong, not the locking right. With
+        /// computed slots, any cross-talk is unambiguously corruption.
+        case slot
+
+        /// Creates an empty file and exits, provisioning a shared file before
+        /// racers start. Two workers both CREATEing one file is itself an
+        /// error and would mask the result.
+        case create
     }
 
     /// Creates a worker specification.
@@ -98,9 +112,19 @@ public struct WorkerSpec: Equatable, Sendable {
         self.napMode = napMode
     }
 
+    /// The first sequence number this worker writes.
+    ///
+    /// Zero for a worker that owns its whole file; its slot base when several
+    /// workers share one.
+    public var sequenceBase: Int {
+        role == .slot ? (id - 1) * count : 0
+    }
+
     /// What this worker claims it wrote, for the content oracle to check.
     public var expectation: WorkerExpectation {
-        WorkerExpectation(worker: id, count: role == .append ? count : 0)
+        WorkerExpectation(worker: id,
+                          count: (role == .append || role == .slot) ? count : 0,
+                          firstSequence: sequenceBase)
     }
 }
 

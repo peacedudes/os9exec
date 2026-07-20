@@ -67,10 +67,29 @@ PROCEDURE hwork
 ! SIGNED 16-bit -- the constant 65536 is not representable there at all, so a
 ! literal MOD 65536 would not even compile on half our targets.
 !
-! Roles: append, read
+! Roles:
+!   append  CREATEs its own file and extends it. One worker per file.
+!   slot    OPENs a file SEVERAL workers share, and writes only the byte range
+!           it owns: records [slotbase .. slotbase+total), where
+!           slotbase = (id-1)*total.
+!           NOTE `slotbase`, not `base`: BASE is a RESERVED WORD in BASIC09
+!           (the BASE 0 / BASE 1 array-origin statement), and using it as a
+!           variable is rejected at entry with Error #000:012 -- the same trap
+!           that `sq` fell into. Short names collide here surprisingly often.
+!           Disjoint ranges are deliberate. BASIC09 has no seek-to-end, so
+!           racing appenders would all write at offset 0 and simply overwrite
+!           each other -- proving nothing about locking and everything about
+!           the test being wrong. With computed slots every worker's bytes are
+!           its own, so ANY cross-talk is corruption rather than an expected
+!           collision, and the FD ring, sector buffers and segment list are all
+!           exercised concurrently on ONE file.
+!   read    walks a file back and counts whole records.
+!   create  makes an empty file and exits. Used to provision a shared file
+!           before the racers start, since two workers both CREATEing one file
+!           is itself an error and would mask the results.
 DIM path: BYTE
 DIM index, worker, seqnum, cksum, total, charpos: INTEGER
-DIM napcount, gotcount, failed: INTEGER
+DIM napcount, gotcount, failed, slotbase, slotnum: INTEGER
 DIM payload: STRING[44]
 DIM line: STRING[64]
 DIM inline: STRING[64]
@@ -86,10 +105,22 @@ fname = "@FILE@"
 pad = "                                            "
 gotcount = 0
 failed = 0
-IF role = "append" THEN
+IF role = "create" THEN
   CREATE #path, fname: UPDATE
+  CLOSE #path
+  PRINT #2, "hammer: created "; fname
+ELSE
+IF role = "append" OR role = "slot" THEN
+  IF role = "slot" THEN
+    OPEN #path, fname: UPDATE
+    slotbase = (worker - 1) * total
+  ELSE
+    CREATE #path, fname: UPDATE
+    slotbase = 0
+  ENDIF
   FOR index = 0 TO total - 1
-    seqnum = index
+    slotnum = slotbase + index
+    seqnum = slotnum
     payload = "w" + STR$(worker) + "-r" + STR$(seqnum)
     cksum = 0
     FOR charpos = 1 TO LEN(payload)
@@ -99,11 +130,14 @@ IF role = "append" THEN
     line = line + " S" + RIGHT$("00000" + STR$(seqnum), 5)
     line = line + " C" + RIGHT$("00000" + STR$(cksum), 5)
     line = line + " P" + LEFT$(payload + pad, 44)
+    IF role = "slot" THEN
+      SEEK #path, slotnum * 64
+    ENDIF
     PRINT #path, line
     RUN hnap(napmode, napcount)
   NEXT index
   CLOSE #path
-  PRINT #2, "hammer: worker "; worker; " append done "; total
+  PRINT #2, "hammer: worker "; worker; " wrote "; total
 ELSE
   IF role = "read" THEN
     ! The one numbered line in this program. BASIC09's EOF() is sticky like
@@ -128,5 +162,6 @@ ELSE
   ELSE
     PRINT #2, "hammer: worker "; worker; " FAIL unknown role "; role
   ENDIF
+ENDIF
 ENDIF
 END

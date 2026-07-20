@@ -122,6 +122,56 @@ final class ScenarioTests: XCTestCase {
     // Running the identical roster both ways is what makes the tick the only
     // variable.
 
+    // ── Many workers, ONE file ────────────────────────────────────────────────
+    // The main event. Every worker holds its own path onto the same file, so
+    // this is where the FD-sharing ring, the shared sector buffers, the segment
+    // list and the published size are all exercised at once. Separate-file
+    // scenarios cannot reach any of that.
+
+    /// Builds a roster of `count` slot-writers plus the provisioning worker.
+    private func sharedRoster(_ population: Int, file: String, nap: Int) -> [WorkerSpec] {
+        var roster = [WorkerSpec(id: 99, role: .create, file: file, count: 0)]
+        roster += (1...population).map {
+            WorkerSpec(id: $0, role: .slot, file: file, count: Self.records, nap: nap)
+        }
+        return roster
+    }
+
+    func testFourWorkersShareOneFileOnRBFImage() throws {
+        try hammer(Scenario(name: "four-workers-shared-rbfimage",
+                            backend: .rbfImage,
+                            workers: sharedRoster(4, file: "/h9/shared.dat", nap: 1)))
+    }
+
+    func testFourWorkersShareOneFileOnRAMDisk() throws {
+        try hammer(Scenario(name: "four-workers-shared-ramdisk",
+                            backend: .ramDisk,
+                            workers: sharedRoster(4, file: "/ram9/shared.dat", nap: 1)))
+    }
+
+    func testFourWorkersShareOneFileOnHostDirectory() throws {
+        try hammer(Scenario(name: "four-workers-shared-host",
+                            backend: .hostDirectory,
+                            workers: sharedRoster(4, file: "/h5/shared.dat", nap: 1)))
+    }
+
+    /// Twelve workers on one file. "Some can go crazy" -- the population is the
+    /// variable most likely to expose an allocator or ring defect that four
+    /// workers never reach.
+    func testTwelveWorkersShareOneFileOnRBFImage() throws {
+        try hammer(Scenario(name: "twelve-workers-shared-rbfimage",
+                            backend: .rbfImage,
+                            workers: sharedRoster(12, file: "/h9/shared.dat", nap: 1),
+                            timeout: 120))
+    }
+
+    func testFourWorkersShareOneFileTickOff() throws {
+        try hammer(Scenario(name: "four-workers-shared-tickoff",
+                            backend: .rbfImage,
+                            workers: sharedRoster(4, file: "/h9/shared.dat", nap: 2),
+                            tick: .disabled))
+    }
+
     func testFourWorkersAppendSeparateFilesTickOff() throws {
         let workers = (1...4).map {
             WorkerSpec(id: $0, role: .append, file: "/h9/w\($0).dat",

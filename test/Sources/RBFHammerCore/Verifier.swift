@@ -26,10 +26,18 @@ public struct WorkerExpectation: Equatable, Sendable {
     /// How many records that worker says it wrote.
     public let count: Int
 
+    /// The first sequence number it used.
+    ///
+    /// Non-zero when several workers share one file and each owns a slot
+    /// range, so "missing sequence" means missing from THAT worker's range
+    /// rather than from zero.
+    public let firstSequence: Int
+
     /// Creates an expectation for one worker.
-    public init(worker: Int, count: Int) {
+    public init(worker: Int, count: Int, firstSequence: Int = 0) {
         self.worker = worker
         self.count = count
+        self.firstSequence = firstSequence
     }
 }
 
@@ -141,7 +149,8 @@ public enum Verifier {
                 detail: "worker \(worker): repeated sequences \(repeated)"))
         }
 
-        let missing = (0..<expectation.count).filter { !seen.contains($0) }
+        let range = expectation.firstSequence..<(expectation.firstSequence + expectation.count)
+        let missing = range.filter { !seen.contains($0) }
         if !missing.isEmpty {
             violations.append(Violation(
                 kind: .sequenceGap,
