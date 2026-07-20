@@ -27,7 +27,7 @@ This directory contains four header files:
     module_from_book.h
     procid_from_book.h
     sgstat_from_book.h
-    errno_from_book.h
+    os9errno.h
 
 These are NOT the original Microware OS-9 headers, and they are NOT
 derived from any Microware source material.  They were written from
@@ -86,7 +86,7 @@ BACKGROUND: What the original files were
 The original project required four files from a real OS-9/68000
 installation (V2.4, V2.9, or V3.0) adapted and renamed:
 
-    errno.h     →  errno_adapted.h   (now: errno_from_book.h)
+    errno.h     →  errno_adapted.h   (now: os9errno.h)
     module.h    →  module_adapted.h  (now: module_from_book.h)
     procid.h    →  procid_adapted.h  (now: procid_from_book.h)
     sgstat.h    →  sgstat_adapted.h  (now: sgstat_from_book.h)

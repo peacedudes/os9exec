@@ -125,7 +125,7 @@
   #include "module_from_book.h"
   #include "procid_from_book.h"
   #include "sgstat_from_book.h"
-  /* undef POSIX names that errno_from_book.h redefines with OS-9 values */
+  /* undef POSIX names that os9errno.h redefines with OS-9 values */
   #undef EWOULDBLOCK
   #undef EINPROGRESS
   #undef EALREADY
@@ -155,7 +155,7 @@
   #undef EBUFTOOSMALL
   #undef ESMODEXISTS
   #undef ENOTSOCK
-  #include "errno_from_book.h"
+  #include "os9errno.h"
 #endif
 
 #undef E_ABORT

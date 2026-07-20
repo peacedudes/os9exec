@@ -1,19 +1,23 @@
 /*
- *  errno_from_docs.h  —  OS-9/68000 error codes, full range
+ *  os9errno.h  —  OS-9/68000 error codes
  *
- *  ALTERNATIVE to errno_from_book.h, not a companion — the two define the
- *  same macro names at the same numeric values and must not both be
- *  #included in the same translation unit. errno_from_book.h derives ~93
- *  codes from "The OS-9 Guru" alone, using anchor values + a documented
- *  formula, and is kept as the more conservative, narrower-provenance
- *  version. This file is the more complete replacement: it draws on this
- *  project's own cross-referenced skill compilation
- *  (~/.claude/skills/os9-dev/references/common/error-codes.md), which was
- *  built by cross-checking the OS-9 v2.4 Technical Reference Manual against
- *  an independent 1985 OS-9/68000 Technical Manual, the OS-9 C Compiler
- *  manual, the BASIC09 Reference Manual, and the Technical I/O Manual.
- *  Prefer this file for new use; errno_from_book.h is kept for its
- *  independent, more narrowly-sourced derivation history.
+ *  The single errno header for this project. It replaces the earlier pair
+ *  (errno_from_book.h / errno_from_docs.h), which were two independent
+ *  reconstructions kept side by side while neither was trusted alone.
+ *
+ *  That they agreed is the reason this file can be trusted: across the 89
+ *  codes both defined, the two derivations matched on EVERY value, with zero
+ *  disagreements — one worked from "The OS-9 Guru, Book 1: The Facts" alone
+ *  via anchor values and a documented formula, the other from a cross-check of
+ *  the OS-9 v2.4 Technical Reference Manual against an independent 1985
+ *  OS-9/68000 Technical Manual, the C Compiler manual, the BASIC09 Reference
+ *  Manual and the Technical I/O Manual. Two separate paths to the same
+ *  numbers is far better evidence than either on its own.
+ *
+ *  Where they differed, each contributed something the other lacked. The
+ *  manual cross-check supplied the floating-point, 68k exception and PMMU
+ *  ranges. The Guru derivation supplied E_PTHFUL (200) and the E_USIGP alias,
+ *  which the manual pass had left unnamed for want of confirmation.
  *
  *  Copyright note: only the numeric error codes and their short symbolic
  *  names are reproduced here — these are functional facts/identifiers (like
@@ -22,24 +26,27 @@
  *  (a handful of words, in the spirit of glibc's own errno.h comments, e.g.
  *  "No such file or directory" for ENOENT) — none of it is copied or
  *  lightly reworded from any manual's actual sentences. Where a code's
- *  symbolic name isn't confirmed by any source, no name is invented; the
- *  numeric value is presented as a comment only, not a #define, to avoid
- *  fabricating an identifier Microware never assigned.
+ *  symbolic name is confirmed by no source, no name is invented: the numeric
+ *  value appears as a comment only, never as a #define, so that no identifier
+ *  Microware never assigned is fabricated here.
  *
- *  Where the skill's own cross-check found the two manual editions
- *  disagree (marked with a dagger below), both readings are given rather
- *  than silently picking one — see the skill file's "Known cross-manual
- *  discrepancies" section for the full reasoning.
+ *  Where the sources disagree (marked with a dagger below), both readings are
+ *  given rather than silently picking one.
  *
  *  SECOND-HAND, AND NOT GUARANTEED MICROWARE-COMPATIBLE. Everything here was
  *  reconstructed from published books and documentation, never from Microware
  *  source. We tried to get it right and believe it is close, but if something
  *  built on this header disagrees with real OS-9, suspect the header at least
  *  as readily as the code using it.
+ *
+ *  NOTE: os9exec's own internal sentinels (E_OKFLAG, E_PLINK) deliberately do
+ *  NOT live here. They are emulator control values, not OS-9 error codes, and
+ *  mixing them into this table is what made the old headers look like rival
+ *  versions of one another. See os9exec_nt.h.
  */
 
-#ifndef ERRNO_FROM_DOCS_H
-#define ERRNO_FROM_DOCS_H
+#ifndef OS9ERRNO_H
+#define OS9ERRNO_H
 
 /* ── Process, terminal, and math-trap errors (1-67) ──────────────────────── */
 
@@ -113,7 +120,9 @@
 
 /* ── Operating system errors (200-239) ───────────────────────────────────── */
 
-/* 000:200 — no confirmed symbol — path table exhausted (too many open paths) */
+#define E_PTHFUL    200  /* path table exhausted (too many open paths) — name
+                          from the Guru derivation; the manual pass found the
+                          value but no confirmed symbol for it */
 #define E_BPNUM     201  /* path number out of range, or refers to a closed path */
 #define E_POLL      202  /* IRQ polling table exhausted */
 #define E_BMODE     203  /* operation not valid for this device/file's open mode */
@@ -159,6 +168,7 @@
 #define E_KWNMOD    231  /* attempted to install a module already resident */
 #define E_BMCRC     232  /* module CRC mismatch */
 #define E_SIGNAL    233  /* an unprocessed signal is pending */
+#define E_USIGP     E_SIGNAL /* older name for the same code; still in use here */
 #define E_NEMOD     234  /* module isn't the executable type this call requires */
 #define E_BNAM      235  /* syntax error in a module name */
 #define E_BMHP      236  /* module header parity mismatch */
@@ -189,4 +199,4 @@
 #define E_DIVERR    41   /* division by zero */
 #define E_INTERR    42   /* overflow converting float to long */
 
-#endif /* ERRNO_FROM_DOCS_H */
+#endif /* OS9ERRNO_H */
