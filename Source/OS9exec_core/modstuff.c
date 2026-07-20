@@ -1301,6 +1301,33 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
             err= E_BMCRC; break;
         } /* if */
          
+        /* --- module SYNC/parity/size/CRC are ok, but the NAME OFFSET is not yet
+           trusted.  _mname is a 32-bit offset the module file chose; sync,
+           parity and CRC can all be forged (see tools/fuzz-module.sh), so a
+           corrupt or hostile module can point it anywhere.  Mod_Name() turns it
+           into a raw HOST pointer that nullterm() then walks byte-by-byte until
+           a terminator, so an out-of-range offset -- or an in-range name with no
+           terminator before the module ends -- is an out-of-bounds host read.
+           show_modules() already guards its display with the range half of this
+           test; guard the loader too, so a bad-name module never enters the
+           module directory and every later Mod_Name() caller stays safe. */
+        {   uint32_t nameoff= os9_long(theModuleP->_mh._mname);
+            uint32_t scan;
+            Boolean  terminated= false;
+            /* nullterm() stops on the first char <= ' ' (its s2 is signed, so
+               high-bit OS-9 name terminators count as negative <= ' ' too);
+               require such a byte within the loaded image. */
+            for (scan= nameoff; nameoff!=0 && nameoff<modSize && scan<modSize; scan++) {
+                if (((signed char*)theModuleP)[scan] <= ' ') { terminated= true; break; }
+            }
+            if (!terminated) {
+                debugprintf(dbgModules,dbgNorm,
+                  ("# load_module: bad name offset $%X (module size $%X), E_BMID\n",
+                      nameoff, modSize));
+                err= E_BMID; break;
+            }
+        }
+
         /* --- module loaded is ok */
         /* now check if we already have something like this in our module dir */
         nullterm(realmodname,Mod_Name( theModuleP ),MODNLEN);
