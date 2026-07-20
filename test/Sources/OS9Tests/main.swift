@@ -132,11 +132,15 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
 
     let process = Process()
     // The system tick is on by default in the emulator, so the suite runs
-    // pre-empted -- the configuration users actually get, and the only one
-    // tested. "-q" turns the clock off for anyone who needs it, but that is a
-    // fallback, not a supported mode, and gets no more suite coverage than any
-    // other runtime flag. To compare the two by hand: ./os9exec -q shell.
-    let speedFlag: [String] = paced ? [] : ["-r"]
+    // pre-empted -- the configuration users actually get.
+    //
+    // OS9_FLAGS passes arbitrary emulator flags through, rather than growing a
+    // bespoke env var per flag (there used to be one just for the tick, which
+    // nobody but its author knew existed). `make test-notick` uses it to run
+    // the whole suite with the clock off, guarding the "-q" fallback.
+    let extraFlags = (ProcessInfo.processInfo.environment["OS9_FLAGS"] ?? "")
+        .split(separator: " ").map(String.init)
+    let speedFlag: [String] = (paced ? [] : ["-r"]) + extraFlags
     // Named so a timeout can actually stop it -- see killContainer above.
     let containerName = "os9test-\(UUID().uuidString.prefix(8))"
 

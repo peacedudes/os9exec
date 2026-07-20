@@ -146,6 +146,14 @@ clean:
 test: $(EXE)
 	swift run --package-path test
 
+# The same suite with the system tick OFF ("-q"). The tick is on by default, so
+# this is the one configuration users can select that `make test` never covers,
+# and it is the fallback if pre-emption ever breaks a workload -- a safety net
+# nobody exercises is one that frays quietly. Not part of `test`: it doubles the
+# runtime (~1 min each) for a mode that is deliberately not the supported one.
+test-notick: $(EXE)
+	OS9_FLAGS=-q swift run --package-path test
+
 # Run the same integration suite against a real Linux build, in Docker.
 #
 # Worth doing even from macOS -- the platforms disagree in ways that hide bugs:
