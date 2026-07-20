@@ -1642,7 +1642,8 @@ void mod_crc( mod_exec* m )
 os9err prepData(ushort pid, mod_exec *theModule, uint32_t memplus, uint32_t *msiz, byte **mp)
 {
    uint32_t memsz, offs, cnt;
-   byte    *p, *p2, *bp;
+   uint32_t modSize, idOff, irOff, dOff;
+   byte    *p, *p2, *bp, *modEnd, *bpEnd;
    int k;
    
    /* -- allocate memory for data */
@@ -1661,11 +1662,30 @@ os9err prepData(ushort pid, mod_exec *theModule, uint32_t memplus, uint32_t *msi
        bp=os9malloc( pid,memsz ); /* allocate OS-9 memory block */
    if (bp==NULL) return os9error(E_NORAM);    /* not enough RAM */
    
+   /* _midata/_midref are module-chosen offsets that os9exec turns into raw HOST
+      pointers, exactly like _mname (guarded in load_module_local): an
+      out-of-range one is an out-of-bounds host read, and the copy/relocation
+      TARGETS computed from the tables are host writes.  A module reaches here
+      only after F$Load, but nothing has yet checked these two offsets or the
+      table contents against the module or the freshly allocated data block, so
+      bound every host access below.  On any violation the module is malformed
+      (E_BMID); free the data block first, as the E_NORAM path above does. */
+   modSize= os9_long(theModule->_mh._msize);
+   modEnd = (byte*)theModule + modSize;
+   bpEnd  = bp + memsz;
+
    /* -- prepare initialized data */
-   p2 = (byte *)theModule+os9_long(theModule->_midata); /* idata */
-   p  =    bp + GET_OS9L(p2, 0); /* offset into data space */
+   idOff= os9_long(theModule->_midata); /* idata */
+   if ((uint64_t)idOff + 8 > modSize) { os9free(pid,bp,memsz); return os9error(E_BMID); }
+   p2 = (byte *)theModule + idOff;
+   dOff= GET_OS9L(p2, 0); /* offset into data space */
    p2+= 4; cnt= GET_OS9L(p2, 0); /* number of bytes to copy */
    p2+= 4;
+   if ((uint64_t)idOff + 8 + cnt > modSize ||   /* source runs past module end */
+       (uint64_t)dOff  + cnt     > memsz) {      /* dest runs past data block   */
+      os9free(pid,bp,memsz); return os9error(E_BMID);
+   }
+   p= bp + dOff;
 
    debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: idata at %p, data offset start=%p, bytecount=$%X\n",(void*)p2,(void*)p,cnt));
    /* `while (cnt-- >0)` copied the right number of bytes, but underflowed cnt to
@@ -1674,20 +1694,27 @@ os9err prepData(ushort pid, mod_exec *theModule, uint32_t memplus, uint32_t *msi
       which made that sanitizer unusable as a gate. Decrement inside the body. */
    while (cnt>0) { *p++ = *p2++; cnt--; } /* copy initialized data */
    /* -- adjust initialized data and object pointers */
-   p2  = (byte*)theModule+os9_long(theModule->_midref); /* initalized data references */
+   irOff= os9_long(theModule->_midref); /* initalized data references */
+   if (irOff > modSize) { os9free(pid,bp,memsz); return os9error(E_BMID); }
+   p2  = (byte*)theModule + irOff;
    offs= TO68K(theModule); /* for first table, use code start address as offset (68k) */
 
    for (k=0;k<2;k++) {
       debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: irefs correction to base address $%08X\n",offs));
-      while (GET_OS9L(p2, 0) != 0) {
+      while (true) {
+         if (p2+4>modEnd) { os9free(pid,bp,memsz); return os9error(E_BMID); } /* unterminated table */
+         if (GET_OS9L(p2, 0)==0) break;
          p=bp + ((ulong)os9_word(*((ushort *)p2))<<16); /* calc group's base address */
          p2+=2; /* step over base address word */
+         if (p2+2>modEnd) { os9free(pid,bp,memsz); return os9error(E_BMID); }
          debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: irefs group at %p, count=%d\n",
             (void*) p,os9_word(*((ushort *)p2))));
 
          for (cnt= os9_word(*((ushort *)p2));cnt>0;cnt--) {
             p2+= 2; /* step to next offset word */
+            if (p2+2>modEnd) { os9free(pid,bp,memsz); return os9error(E_BMID); }
             {  byte *fp= p+os9_word(*((ushort *)p2));
+               if (fp<bp || fp+4>bpEnd) { os9free(pid,bp,memsz); return os9error(E_BMID); } /* wild write target */
                debugprintf(dbgModules+dbgProcess,dbgDetail,("# prepData: original value at %p = $%08X; offset=$%08X\n",
                    (void*)fp, GET_OS9L(fp, 0), offs));
                /* now correct: read 4-byte big-endian field, add offset, write back */
