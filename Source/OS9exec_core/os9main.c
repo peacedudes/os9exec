@@ -149,7 +149,6 @@ ulong iniprior;             /* priority for first process */
 extern ulong emul_arena_size; /* 68k arena size (set via -M option) */
 
 extern int   os9_tick_request;  /* tick interval in microseconds, 0 = no clock */
-int          os9_tick_default_us( void );
 
 #if defined UNIX && !defined MINGW
 struct termios savedmodes;  /* saved terminal attributes     */
@@ -495,10 +494,10 @@ static void os9_usage(char *name)
     upho_printf("   -mm n[k|M]  Give all OS-9 process extra static storage (kilo/mega)\n");
     upho_printf("   -M  n[k|M]  Set 68k arena size (default=32M)\n");
     upho_printf("   -p prio     Run  1st OS-9 process with prio (default=%d, NOIRQ>=%d)\n",MYPRIORITY,IRQBLOCKPRIOR);        
-    upho_printf("   -q[ms]      System tick every ms (default=10, i.e. 100Hz), so processes\n");
-    upho_printf("               are pre-empted. ON by default; \"-q0\" switches the clock off\n");
-    upho_printf("               for the old cooperative behaviour, where a process keeps the\n");
-    upho_printf("               CPU until it traps, a dead loop hogs the machine and a cyclic\n");
+    upho_printf("   -q[ms]      Switch the system tick OFF (\"-q\" or \"-q0\"), or retune it\n");
+    upho_printf("               (\"-q<ms>\"). The tick is ON by default at 10ms (100Hz), so\n");
+    upho_printf("               processes are pre-empted. With it off a process keeps the CPU\n");
+    upho_printf("               until it traps, so a dead loop hogs the machine and a cyclic\n");
     upho_printf("               alarm cannot reach a process that is computing. Only user\n");
     upho_printf("               state is pre-empted, never a system call.\n");
     upho_printf("   -d[n] msk   set  debug info mask [of level n, default=0] (default=1)\n");
@@ -792,21 +791,27 @@ void os9_main( int argc, char **argv, char **envp )
           case 'v' :  catch_ctrlC= false; break; // don not install a ctrl C handler
           case 'r' :  baud_throttle= false; break; // run full speed (no baud pacing)
 
-          case 'q' :  /* -q[ms]: set the system tick rate; "-q0" switches the
-                       * clock off. ON by default -- real OS-9 has a clock, and
-                       * it is what stops a dead loop hogging the machine and
-                       * lets a cyclic alarm reach a computing process. Without
-                       * it OS9exec runs a process until it traps or faults and
-                       * nothing interrupts one between two of its own
-                       * instructions. A system call is never cut in half
-                       * either way; see os9_tick.c. */
+          case 'q' :  /* -q[ms]: the system tick, ON by default. Bare "-q"
+                       * SWITCHES IT OFF -- the flag exists to turn the clock
+                       * off, so that is what naming it alone does; "-q<ms>"
+                       * retunes the rate instead ("-q0" is the same as "-q").
+                       *
+                       * The default is on because real OS-9 has a clock: it is
+                       * what stops a dead loop hogging the machine and lets a
+                       * cyclic alarm reach a process that is computing.
+                       * Without it OS9exec runs a process until it traps or
+                       * faults and nothing interrupts one between two of its
+                       * own instructions. This flag is the fallback if
+                       * pre-emption ever turns out to break a workload; a
+                       * system call is never cut in half either way, see
+                       * os9_tick.c. */
                       /* Only records the request. Starting the clock here
                        * would arm it during option parsing, long before the
                        * emulator is up -- and a tick landing in the middle of
                        * start-up made os9exec die before it produced a single
                        * line of output, intermittently. It is started once the
                        * emulation loop is actually running: see os9exec_loop. */
-                      os9_tick_request= os9_tick_default_us();
+                      os9_tick_request= 0;             /* -q alone: clock off */
                       if (p[1]>='0' && p[1]<='9')      /* -q<ms> */
                           os9_tick_request= atoi( &p[1] )*1000;
                       break;

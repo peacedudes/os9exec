@@ -1,7 +1,9 @@
 # `-q` pre-emption: the r68 crash, and why the first theory was wrong
 
-Resolved 2026-07-19. Kept because the wrong answer here was expensive twice,
-and the shape of the mistake is worth more than the fix.
+Resolved 2026-07-19; the tick became the DEFAULT on 2026-07-20 ("-q" switches
+it off). Kept because the wrong answer here was expensive twice, and the shape
+of the mistake is worth more than the fix. Below, "with -q" describes the
+period when the tick was opt-in.
 
 ## The bug
 

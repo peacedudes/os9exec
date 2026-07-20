@@ -7,17 +7,21 @@
 //
 //  Setup: none needed beyond the repo-root h0 (SDK toolchain) dir/symlink
 //  that os9exec itself already uses. OS9DISK is pointed straight at
-//  <repo root>/h0 -- no symlinks inside test/ required. RBF-specific tests
-//  provision their own scratch RBF image at runtime via `mount -k=<size>`
-//  and delete it afterward -- no pre-existing disk image needed.
+//  <repo root>/h0 -- no symlinks inside test/ required.
+//
+//  NOTHING IS WRITTEN TO THAT DISK. Every fixture goes to a per-run scratch
+//  device (/h5 -> a private temp dir, see scratchDisk), and the emulator runs
+//  FROM that scratch so the RBF images the disk tests provision with
+//  `mount -k=<size>` land there too. So h0 stays the read-only system image,
+//  and two sessions -- or two suites -- can run at once without deleting each
+//  other's fixtures. That collision used to produce failures indistinguishable
+//  from real regressions.
 //
 //  Run (local):
 //    swift run --package-path test
 //    make test
 //
-//  Run with the system tick OFF (old cooperative behaviour; tick is default-on):
-//    OS9_NOTICK=1 swift run --package-path test
-//
+
 //  Run (Docker):
 //    DOCKER_IMAGE=ghcr.io/peacedudes/os9exec:latest swift run --package-path test
 //    DOCKER_IMAGE=os9exec:linux32 swift run --package-path test
@@ -127,12 +131,12 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
     let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
 
     let process = Process()
-    // The system tick is ON by default in the emulator, so the suite exercises
-    // pre-empted execution by default too -- which is the configuration users
-    // actually get. OS9_NOTICK=1 passes "-q0" to run the whole suite with the
-    // clock off, for comparing against the old cooperative behaviour.
-    let preempt: [String] = ProcessInfo.processInfo.environment["OS9_NOTICK"] != nil ? ["-q0"] : []
-    let speedFlag: [String] = (paced ? [] : ["-r"]) + preempt
+    // The system tick is on by default in the emulator, so the suite runs
+    // pre-empted -- the configuration users actually get, and the only one
+    // tested. "-q" turns the clock off for anyone who needs it, but that is a
+    // fallback, not a supported mode, and gets no more suite coverage than any
+    // other runtime flag. To compare the two by hand: ./os9exec -q shell.
+    let speedFlag: [String] = paced ? [] : ["-r"]
     // Named so a timeout can actually stop it -- see killContainer above.
     let containerName = "os9test-\(UUID().uuidString.prefix(8))"
 
