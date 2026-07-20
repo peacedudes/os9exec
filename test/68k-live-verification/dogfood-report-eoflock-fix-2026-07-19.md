@@ -69,6 +69,33 @@ writer's own output rather than arriving in one burst afterwards. It
 catches up to zero lag by the last record, and only sees `E$EOF` once the
 writer has closed and there genuinely is nothing more coming.
 
+## How far behind the follower runs
+
+The point of this is a follower that sits right behind the producer, a line
+at a time, the way it would behind a pipe. Every write wakes every waiter, so
+the mechanism does that -- but on the default build the follower still trails,
+because nothing takes the CPU away from a busy producer:
+
+```
+default:   R1 line=19:02:49 seen at 19:02:53     <- 4 records behind
+           R2 line=19:02:50 seen at 19:02:54        and staying there
+           ...                                       then a burst at close
+
+with -q:   R1 line=19:03:33 seen at 19:03:33     <- same second, every line
+           R2 line=19:03:34 seen at 19:03:34
+           ...
+```
+
+Same binary, same programs; the only difference is the optional system tick.
+Without it the reader is scheduled about as often as the writer yields, so
+whatever gap it starts with it keeps until the producer closes. With it the
+lag is zero on every line.
+
+So: **the lock is correct on the default build, but the design goal it exists
+for -- a follower right behind the producer -- needs pre-emption.** Worth
+knowing before concluding from a default-build run that following "works but
+lags"; the lag is not in the locking.
+
 ## What the fix is
 
 Nothing is locked. The wait sits past the last byte, where there is no
