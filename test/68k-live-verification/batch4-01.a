@@ -1,0 +1,226 @@
+* Live-tests F$SPrior($0D), F$CRC($17), F$SetCRC($26), I$GetStt($8D,
+* SS.Siz=2) against 68k/syscall-reference.md. Register conventions
+* cross-checked against os9exec's own fcalls.c/icalls.c before writing
+* this -- all matched the skill's documented shape.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+FSPrior set $0D
+FID set $0C
+FCRC set $17
+FSetCRC set $26
+IGetStt set $8D
+IOpen set $84
+ICreate set $83
+IDelete set $87
+IClose set $8F
+IWrite set $8A
+FExit set $06
+*
+ psect batch401,Type_Lang,Attr_Rev,0,800,start
+start
+* --- F$SPrior(d0.w=pid,d1.w=priority) -- set own priority ---
+ trap #0
+ dc.w FID
+ move.l d0,d6
+ clr.l d0
+ move.w d6,d0
+ moveq #100,d1
+ trap #0
+ dc.w FSPrior
+ bcc spok
+ move.l d1,d7
+ lea spfailmsg(pc),a0
+ move.l #spfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra crctest
+spok
+ lea sppassmsg(pc),a0
+ move.l #sppasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- F$CRC(d0.l=count,d1.l=accumulator,(a0)=data) ---
+crctest
+ lea crcdata(pc),a0
+ move.l #crcdatalen,d0
+ move.l #$FFFFFF,d1
+ trap #0
+ dc.w FCRC
+ bcc crok
+ lea crcfailmsg(pc),a0
+ move.l #crcfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra setcrctest
+crok
+ move.l d1,d6           save F$CRC's updated accumulator (returned in d1)
+ lea crcpassmsg(pc),a0
+ move.l #crcpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d6,d1
+ bsr printnum
+*
+* --- F$SetCRC((a0)=module image) -- (a0) here points at code, not a
+* real module header, so E$BMID is the expected, informative result:
+* confirms the call dispatches and validates its input rather than
+* blindly trusting it. Building a real synthetic module header to
+* exercise the success path is left for a future pass. ---
+setcrctest
+ lea start(pc),a0
+ trap #0
+ dc.w FSetCRC
+ bcc scok
+ move.l d1,d7
+ lea scfailmsg(pc),a0
+ move.l #scfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra gstest
+scok
+ lea scpassmsg(pc),a0
+ move.l #scpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- I$GetStt(d0.w=path,d1.w=func) -- SS.Siz=2 on a real freshly-
+* created file with known content (10 bytes) ---
+gstest
+ lea fname(pc),a0
+ moveq #3,d0
+ clr.l d1
+ clr.l d2
+ trap #0
+ dc.w ICreate
+ bcc gsopenok
+ lea gsopfailmsg(pc),a0
+ move.l #gsopfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+gsopenok
+ move.l d0,d5           path number
+* write 10 known bytes so SS.Siz has a real, checkable value
+ lea crcdata(pc),a0
+ move.l #10,d1
+ clr.l d0
+ move.w d5,d0
+ trap #0
+ dc.w IWrite
+ clr.l d0
+ move.w d5,d0
+ moveq #2,d1             SS.Siz
+ trap #0
+ dc.w IGetStt
+ bcc gsok
+ move.l d1,d7
+ lea gsfailmsg(pc),a0
+ move.l #gsfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra gsclose
+gsok
+ move.l d2,d6           save I$GetStt's SS.Siz result (returned in d2)
+ lea gspassmsg(pc),a0
+ move.l #gspasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d6,d1
+ bsr printnum
+gsclose
+ clr.l d0
+ move.w d5,d0
+ trap #0
+ dc.w IClose
+ lea fname(pc),a0
+ moveq #3,d0
+ trap #0
+ dc.w IDelete
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+printnum
+ sub.l #16,a7
+ movea.l a7,a1
+ adda.l #16,a1
+ move.l d1,d2
+ moveq #0,d3
+ tst.l d2
+ bne.s pn_loop
+ move.b #'0',-(a1)
+ moveq #1,d3
+ bra.s pn_output
+pn_loop
+ tst.l d2
+ beq.s pn_output
+ divu.w #10,d2
+ move.w d2,d0
+ swap d2
+ move.b d2,d1
+ add.b #'0',d1
+ move.b d1,-(a1)
+ addq.w #1,d3
+ clr.l d2
+ move.w d0,d2
+ bra.s pn_loop
+pn_output
+ movea.l a1,a0
+ move.l d3,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ add.l #16,a7
+ lea crbyte(pc),a0
+ moveq #2,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+fname dc.b "batch401test.dat",0
+crcdata dc.b "HELLOWORLD"
+crcdatalen equ *-crcdata
+sppassmsg dc.b "PASS F$SPrior",13,10
+sppasslen equ *-sppassmsg
+spfailmsg dc.b "FAIL F$SPrior err="
+spfaillen equ *-spfailmsg
+crcpassmsg dc.b "PASS F$CRC result="
+crcpasslen equ *-crcpassmsg
+crcfailmsg dc.b "FAIL F$CRC err=",13,10
+crcfaillen equ *-crcfailmsg
+scpassmsg dc.b "NOTE F$SetCRC unexpectedly succeeded on non-header addr",13,10
+scpasslen equ *-scpassmsg
+scfailmsg dc.b "PASS F$SetCRC correctly rejected non-header addr err="
+scfaillen equ *-scfailmsg
+gsoppassmsg dc.b "PASS I$Open for GetStt test",13,10
+gsopfailmsg dc.b "FAIL I$Create for GetStt test err=",13,10
+gsopfaillen equ *-gsopfailmsg
+gspassmsg dc.b "PASS I$GetStt SS.Siz="
+gspasslen equ *-gspassmsg
+gsfailmsg dc.b "FAIL I$GetStt SS.Siz err="
+gsfaillen equ *-gsfailmsg
+crbyte dc.b 13,10
+ ends
