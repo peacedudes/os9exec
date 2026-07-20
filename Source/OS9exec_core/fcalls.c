@@ -999,6 +999,7 @@ os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
     Update_PrcDBT( rp, currentpid );
 
     if (cnt > rp->d[1]) cnt= rp->d[1]; /* clip to the caller's buffer */
+    if (!RANGE_IN_ARENA( dst, cnt )) return os9error(E_BPADDR); /* dst is the guest's */
     memcpy( dst, (byte*)prDBT, cnt );
 
     rp->d[1]= cnt; /* bytes copied */
@@ -1018,16 +1019,27 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
  */
 {
   procid           pd; // this is a local construction buffer for the Process descriptor
+  uint32_t         cnt;
   ushort           id= (ushort)loword( rp->d[ 0 ] );
   process_typ*     cp= &procs[ id ];
   byte*            dst= (byte*)FROM68K( rp->a[ 0 ] );
 
   if (cp->state==pUnused) return E_IPRCID; // this is not a valid process
-  if (dst==NULL)          return E_BPADDR; // guest passed a null buffer -- see F$GPrDBT
 
   BuildPrcDsc( id, cpid, rp->a[ 7 ], &pd );
 
-  memcpy( dst, &pd, loword( rp->d[ 1 ] ) );
+  /* Clip to what actually exists, then range-check the destination.
+   * d1 is the GUEST's byte count and <pd> is a LOCAL: copying d1 bytes
+   * unclipped read straight off this function's stack frame -- verified live,
+   * AddressSanitizer stack-buffer-overflow, from a guest asking for $FF00
+   * bytes. dst is the guest's pointer and was only ever tested for NULL, so
+   * the same call could also write up to 64K into the arena.
+   * (F$GPrDBT below already clips its count; it needed the range check too.) */
+  cnt= loword( rp->d[ 1 ] );
+  if (cnt > sizeof(pd)) cnt= sizeof(pd);
+  if (!RANGE_IN_ARENA( dst, cnt )) return os9error(E_BPADDR); /* also rejects NULL */
+
+  memcpy( dst, &pd, cnt );
   /* P$DbgReg ($2A8) = address of register frame buffer in debugger's static storage.
    * P$DbgPar ($2AC) = non-zero when process is being debugged (prevents debug from
    * treating the process as undebugger).  Both injected here since procid doesn't

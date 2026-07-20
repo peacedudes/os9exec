@@ -1,0 +1,110 @@
+* Does F$GPrDsc bound the copy it makes for the caller?
+*
+* OS9_F_GPrDsc builds the descriptor into a LOCAL and then did:
+*     memcpy( dst, &pd, loword( rp->d[1] ) );
+* d1 is the guest's byte count, never clipped to sizeof(pd), and dst is the
+* guest's buffer pointer, checked only for NULL -- never RANGE_IN_ARENA'd. So a
+* guest asking for more than a descriptor holds made the emulator read past its
+* OWN stack frame, and could write up to 64K into the arena. Verified before
+* the fix: AddressSanitizer stack-buffer-overflow in OS9_F_GPrDsc, from step 2.
+*
+* Compare F$GPrDBT just above it, which clips its count but was also missing
+* the range check on dst.
+*
+* The buffer lives in this program's static storage: 256 bytes at BUFOFF(a6),
+* followed by 256 guard bytes painted $EE.
+*
+*   1. ask for exactly 256 -- an honest request must stay inside the buffer,
+*      so every guard byte must still be $EE afterwards.
+*   2. ask for $FF00 -- the HOST must survive. What gets copied is bounded by
+*      the descriptor, and a guest that asks for more than it owns corrupts
+*      only itself, which is its own business. The point is that os9exec must
+*      not read off its own stack serving the request.
+*
+* "1 OK" plus reaching "2 done" is the pass. Step 2 only means something under
+* AddressSanitizer.
+*
+Prgrm     set 1
+Objct     set 1
+ReEnt     set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev  set (ReEnt<<8)+1
+*
+IWrite    set $8A
+FGPrDsc   set $18
+FID       set $0C
+FExit     set $06
+BUFOFF    set 256          buffer inside static storage (a6)
+GUARD     set BUFOFF+256   guard starts here
+GEND      set BUFOFF+512   and ends here
+*
+ psect gprdsc,Type_Lang,Attr_Rev,0,900,start
+*
+start
+ trap    #0
+ dc.w    FID
+ move.w  d0,d5                 d5 = my pid
+*
+* --- paint the guard area with $EE
+ lea     GUARD(a6),a3
+ lea     GEND(a6),a2
+paint
+ move.b  #$EE,(a3)+
+ cmpa.l  a2,a3
+ blt     paint
+*
+* --- step 1: honest request, exactly the buffer size
+ move.w  d5,d0
+ move.l  #256,d1
+ lea     BUFOFF(a6),a0
+ trap    #0
+ dc.w    FGPrDsc
+*
+ lea     GUARD(a6),a3
+ lea     GEND(a6),a2
+check
+ cmpi.b  #$EE,(a3)+
+ bne     clobbered
+ cmpa.l  a2,a3
+ blt     check
+*
+ lea     m1ok(pc),a0
+ move.l  #m1oklen,d1
+ bsr     say
+ bra     step2
+clobbered
+ lea     m1bad(pc),a0
+ move.l  #m1badlen,d1
+ bsr     say
+*
+* --- step 2: dishonest request. the host must live through it.
+step2
+ move.w  d5,d0
+ move.l  #$0000FF00,d1
+ lea     BUFOFF(a6),a0
+ trap    #0
+ dc.w    FGPrDsc
+*
+ lea     m2ok(pc),a0
+ move.l  #m2oklen,d1
+ bsr     say
+*
+ moveq   #0,d1
+ trap    #0
+ dc.w    FExit
+*
+* say: a0 = text, d1 = length -- writes to stderr (path 2)
+say
+ move.w  #2,d0
+ trap    #0
+ dc.w    IWrite
+ rts
+*
+m1ok    dc.b "gprdsc: 1 OK   honest request stayed in the buffer",13
+m1oklen equ *-m1ok
+m1bad   dc.b "gprdsc: 1 FAIL honest request wrote past the buffer",13
+m1badlen equ *-m1bad
+m2ok    dc.b "gprdsc: 2 done host survived an oversized request",13
+m2oklen equ *-m2ok
+*
+ ends
