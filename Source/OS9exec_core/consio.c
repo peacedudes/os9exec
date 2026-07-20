@@ -612,13 +612,16 @@ os9err pSBlink( _pid_, _spP_, uint32_t *d2 )
 /* specific "/L2" blink command, as defined in "led_Drv" */
 {
      byte*   bb= (byte  *)FROM68K(*d2);
-     ushort* ww= (ushort*)FROM68K(*d2);
 
      if (!RANGE_IN_ARENA(bb,8)) return os9error(E_BPADDR); /* the /L2 struct spans bb+0..bb+6 */
+     /* The 16-bit fields go through GET_OS9W, not a ushort* aimed into the
+        struct: d2 is the guest's pointer and may be ODD, so the wide load was
+        undefined and faults on a strict-alignment host. GET_OS9W copies the
+        bytes and byte-swaps, which is what os9_word() was doing separately. */
      l2.col1  =           *(bb+0); /* assign values as done in the "led_drv" */
-     l2.ratio1= os9_word( *(ww+1) );
+     l2.ratio1= GET_OS9W(  bb,2 );
      l2.col2  =           *(bb+4);
-     l2.ratio2= os9_word( *(ww+3) );
+     l2.ratio2= GET_OS9W(  bb,6 );
      return 0;
 } /* pSBlink */
 
@@ -626,13 +629,14 @@ os9err pGBlink( _pid_, _spP_, uint32_t *d2 )
 /* specific "/L2" blink command, as defined in "led_Drv" */
 {
      byte*   bb= (byte  *)FROM68K(*d2);
-     ushort* ww= (ushort*)FROM68K(*d2);
 
      if (!RANGE_IN_ARENA(bb,8)) return os9error(E_BPADDR); /* the /L2 struct spans bb+0..bb+6 */
+     /* See pSBlink: SET_OS9W rather than a store through a ushort* into a
+        guest-supplied (possibly odd) address. */
      *(bb+0)=          l2.col1; /* assign values as done in the "led_drv" */
-     *(ww+1)= os9_word(l2.ratio1);
+     SET_OS9W( bb,2,   l2.ratio1 );
      *(bb+4)=          l2.col2;
-     *(ww+3)= os9_word(l2.ratio2);
+     SET_OS9W( bb,6,   l2.ratio2 );
      return 0;
 } /* pGBlink */
 

@@ -494,11 +494,14 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
        range so NO handler installs -- which is why BASIC09's zero-divide/CHK/TRAPV
        handlers silently failed to take, turning a catchable REAL-divide-by-zero into
        a fatal unhandled TRAPV that kills the process. */
-    while ((venc= os9_word(*itab))!=0xFFFF) {
+    /* Read through os9_get_w, not *itab: a1 is the guest's and may be ODD, so a
+       ushort load through it is undefined and faults on a strict-alignment
+       host. os9_get_w copies the bytes and applies the same swap os9_word did. */
+    while ((venc= os9_get_w(itab))!=0xFFFF) {
              vect = venc >> 2; /* get vector number (offset div 4) */
         if ((vect>=FIRSTEXCEPTION) && (vect<FIRSTEXCEPTION+NUMEXCEPTIONS)) {
             /* installable vector routine */
-            hoff= os9_word(*(itab+1)); /* handler offset word (0 = deinstall) */
+            hoff= os9_get_w(itab+1); /* handler offset word (0 = deinstall) */
             if (hoff==0) {
                 cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr=0; /* deinstall handler */
                 debugprintf(dbgTrapHandler,dbgNorm,
@@ -1062,7 +1065,13 @@ os9err OS9_F_GBlkMp( regs_type *rp, _pid_ )
 
     b= (uint32_t*)FROM68K(rp->a[0]);
     if (!RANGE_IN_ARENA(b,sizeof(uint32_t))) return os9error(E_BPADDR); /* a0 = required result buffer; out of arena = bad address */
-    *b= 0; /* no segments available */
+    /* a0 is the guest's, so it can be an ODD address -- storing through a
+       uint32_t* was undefined and faults outright on a strict-alignment host.
+       os9_set_l goes via memcpy, and also writes the value in OS-9 byte order,
+       which a plain store would get wrong the moment this stops writing 0.
+       Same class as the misaligned 68k-stack/module-CRC stores in b11d5e0;
+       UBSan caught this one. */
+    os9_set_l( b, 0 ); /* no segments available */
     return 0;
 } /* OS9_F_GBlkMp */
 
@@ -1709,7 +1718,8 @@ os9err OS9_F_DExec( regs_type *rp, ushort cpid )
     if (bkptcnt > 0) {
         bkptlist = (uint32_t*)FROM68K(rp->a[0]);
         if (RANGE_IN_ARENA(bkptlist, (ulong)bkptcnt*sizeof(uint32_t))) { /* else bad a0: no list, no breakpoints */
-            for (i = 0; i < bkptcnt; i++) dbg_bkpt_list[childpid][i] = os9_long(bkptlist[i]);
+            /* os9_get_l, not bkptlist[i]: a0 is the guest's and may be odd. */
+            for (i = 0; i < bkptcnt; i++) dbg_bkpt_list[childpid][i] = os9_get_l(&bkptlist[i]);
         }
         else dbg_bkpt_count[childpid] = 0;
     }
