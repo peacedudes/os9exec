@@ -2759,6 +2759,7 @@ Boolean RBF_ImgSize( long size )
       os9err err= 0;
       char   sv     [OS9PATHLEN];
       char   adjust [OS9PATHLEN];
+      char   whole  [OS9PATHLEN]; /* <adjust> as it stood before the stripping loop */
       char   *pp, *qq;
       struct stat info;
       FILE*  stream;
@@ -2786,7 +2787,14 @@ Boolean RBF_ImgSize( long size )
          loop below find the image by peeling off trailing components. */
       if (err) err= 0;
       pp =                    adjust;
-      
+
+      /* Keep the un-stripped path. The loop below walks <pp>, which points INTO
+       * <adjust>, and terminates it in place with *qq=NUL -- so after even one
+       * strip, <adjust> and <pp> are the same string and comparing them can no
+       * longer tell "the caller named the image file itself" from "the caller
+       * named something inside it". See the check further down that needs it. */
+      strcpy( whole, adjust );
+
       /* cut the path piece by piece (no sub paths within RBF images) */
       /* If AdjustPath/parsepath already reduced <pp> to an empty string
        * (e.g. a top-level path like "/test" that matches no known device),
@@ -2825,8 +2833,16 @@ Boolean RBF_ImgSize( long size )
           if (*isFolder) { err= E_FNA; break; }
 
           /* allow to access the image as a normal file, but not for root/raw device paths
-             (e.g. /h0, /h0@, /dd) where the caller wants directory or raw-device access */
-          if (ustrcmp(adjust,pp)==0 && !IsDir(mode) && !IsRoot(os9path) && !IsRaw(os9path)) { err= E_FNA; break; }
+             (e.g. /h0, /h0@, /dd) where the caller wants directory or raw-device access.
+             Compare against <whole>, NOT <adjust>: the stripping loop truncates <adjust>
+             in place through <pp>, so "adjust==pp" was true whenever anything had been
+             stripped and this fired for every ordinary file inside an image. The effect
+             was that opening a FILE on a not-yet-installed RBF image returned E$FNA, so
+             IO_Type fell back to the host managers and the open failed E$PNNF -- while
+             opening a DIRECTORY on the same image installed it and then worked. Hence
+             `list /h1/hello.c` failed as the first command of a session but succeeded
+             once anything had touched /h1. */
+          if (ustrcmp(whole,pp)==0 && !IsDir(mode) && !IsRoot(os9path) && !IsRaw(os9path)) { err= E_FNA; break; }
 
           err= stat_( pp,  &info );           if (err) { err= E_PNNF; break; }
           if (!RBF_ImgSize( info.st_size ))            { err= E_FNA;  break; }
