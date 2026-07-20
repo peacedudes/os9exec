@@ -947,8 +947,12 @@ static void show_title( Boolean show, char* name )
 
 
 
+/* <n> is int64_t, not int: it carries the -1 "no count to show" sentinel (so it
+   must stay SIGNED), while every caller passes a ulong counter -- as an int
+   those were truncated to 32 bits, and a count past 2^31 would have printed as
+   negative or matched the sentinel by accident. */
 static void show_line( Boolean show, ushort mode, 
-                       char c, char* name, ulong t, int n, ulong active, int ticksLim )
+                       char c, char* name, ulong t, int64_t n, ulong active, int ticksLim )
 {
     #define Lim  0.051
     #define GLim 1
@@ -960,7 +964,10 @@ static void show_line( Boolean show, ushort mode,
     if (active==0) f= 0; /* no division by zero */
     else           f= (float)100*t/active;
 
-    if ((mode & STIM_TICKAVAIL) && t<ticksLim) return;
+    /* ticksLim is signed and t is not: comparing them directly converted a
+       NEGATIVE limit into a huge unsigned one, which filtered out every line
+       instead of none. Guard the sign, then compare like with like. */
+    if ((mode & STIM_TICKAVAIL) && ticksLim>0 && t<(ulong)ticksLim) return;
     if ((mode & STIM_PERCENT  ) && f<GLim    ) return;
     
     /* snprintf: both fit today (an int is at most 11 chars, and `f` is a
@@ -969,7 +976,7 @@ static void show_line( Boolean show, ushort mode,
      * Bound them structurally so a future change to `f`'s computation cannot
      * turn this into an overflow. */
     if (n==-1) strcpy  ( nnnn,"" );
-    else       snprintf( nnnn, sizeof(nnnn), "%d", n );
+    else       snprintf( nnnn, sizeof(nnnn), "%lld", (long long)n );
     if (f<Lim) strcpy  ( perc,"-" );
     else       snprintf( perc, sizeof(perc), "%1.1f%%", f );
         
@@ -979,14 +986,19 @@ static void show_line( Boolean show, ushort mode,
 } /* show_line */
 
 
-static void show_sline( char* name,  ulong t, int n, ulong active )
+static void show_sline( char* name,  ulong t, int64_t n, ulong active )
 {           show_line ( true,0, ' ', name, t,n, active, 1 );
 } /* show_sline */
 
 
 
 /* show system call timers */
-static void Get_FI_tn( ushort k, Boolean icalls, int *t, int *n )
+/* <t>/<n> are ulong OUT params, matching the ulong counters they read. They
+   used to be int*, which truncated a 64-bit tick total to 32 bits and, once
+   bit 31 was set, produced a NEGATIVE count that the ulong comparisons below
+   then read as enormous -- so the "pick the largest" sort selected the wrong
+   entry. Same LP64 truncation class as the earlier host-pointer fixes. */
+static void Get_FI_tn( ushort k, Boolean icalls, ulong *t, ulong *n )
 {
   *t= icalls ? icall_time[ k ] : fcall_time[ k ];
   *n= icalls ? icall_num [ k ] : fcall_num [ k ];
@@ -998,7 +1010,7 @@ static void show_syscalltimers( Boolean icalls, ushort mode, ulong active,
 {
   ushort   k, j, kInd;
   ulong    mxTicks, mxNum;
-  int      t, n;
+  ulong    t, n;
   char*    name;
   Boolean  kDone[ NUMFCALLS ]; // NUMFALLS is larger than NUMICALLS
   Boolean  sort= mode & STIM_ORDERED;
@@ -1048,7 +1060,7 @@ static void show_syscalltimers( Boolean icalls, ushort mode, ulong active,
 
 
 /* show system call timers */
-static void Get_Statistics_tn( ushort k, st_typ** s, int *t, int *n )
+static void Get_Statistics_tn( ushort k, st_typ** s, ulong *t, ulong *n ) /* see Get_FI_tn */
 {
        *s= &statistics[ k ];
   *t= (*s)->ticks;
@@ -1061,7 +1073,7 @@ static void show_os9timers( ushort mode, ulong active, ulong *call, ulong *num, 
   ushort  k, j, kInd;
   ulong   mxTicks, mxNum;
   st_typ* s;
-  int     t, n;
+  ulong   t, n;
   Boolean kDone[ MAX_OS9PROGS ];
   Boolean sort= mode & STIM_ORDERED;
   Boolean show= mode & STIM_OS9;
