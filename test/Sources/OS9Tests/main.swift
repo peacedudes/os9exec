@@ -732,6 +732,32 @@ check  ("f$prsnam: input redirect from a one-character file name",
     absent: "syntax error",
     "mount -r=200 /ram9", "echo t >/ram9/a", "list </ram9/a", "unmount ram9")
 
+// ---- move / mv (int_move.c) ----------------------------------------------------
+// int_move.c was 0%-covered by the suite though `move` is a live, platform-active
+// internal command (vmod/printer/filescsi, the other 0% files, are dead code or
+// SCSI-hardware paths on this platform). The positive cases assert `noError` on a
+// trailing `list` of the DESTINATION: a `move` that did nothing leaves that `list`
+// failing E$PNNF, so the test goes red -- and, unlike a `contains:` on the moved
+// text, the shell's command echo cannot fake that (it can't manufacture an error).
+noError("move: the file is listable at its new name after a rename",
+    "mount -r=200 /ram9", "echo x >/ram9/a.txt",
+    "move /ram9/a.txt /ram9/b.txt", "list /ram9/b.txt", "unmount ram9")
+noError("move: -w wildcard delivers a matching file to the target dir",
+    "mount -r=200 /ram9", "makdir /ram9/dst",
+    "echo x >/ram9/f.txt", "move -w=/ram9/dst /ram9/*.txt",
+    "list /ram9/dst/f.txt", "unmount ram9")
+noError("move: -w wildcard leaves a non-matching file in place",
+    "mount -r=200 /ram9", "makdir /ram9/dst",
+    "echo f >/ram9/f.txt", "echo g >/ram9/g.dat",
+    "move -w=/ram9/dst /ram9/*.txt", "list /ram9/g.dat", "unmount ram9")
+check  ("move: a cross-device move is refused",
+    contains: "can't move",
+    "mount -r=200 /ram9", "mount -r=200 /ram8", "echo x >/ram9/a.txt",
+    "move /ram9/a.txt /ram8/a.txt", "unmount ram9", "unmount ram8")
+check  ("move: a missing source reports it cannot be found",
+    contains: "can't find",
+    "mount -r=200 /ram9", "move /ram9/nosuch.txt /ram9/x.txt", "unmount ram9")
+
 // ══════════════════════════════════════════════════════════════════════════════
 // FILESYSTEM SELF-TESTS   (name prefix "fs:" — run just these with
 //   swift run --package-path test OS9Tests fs:)
