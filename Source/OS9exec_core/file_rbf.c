@@ -3717,7 +3717,17 @@ os9err pRlock( ushort pid, syspath_typ* spP, uint32_t* d0, uint32_t* d1, uint32_
     } // if
 
     beg= rbf->currPos;
-    end= (*d2==0xFFFFFFFF) ? 0xFFFFFFFF : beg + *d2;
+    /* Saturate instead of wrapping. The size is the guest's, so beg+size can
+     * overflow 32 bits for any position past zero -- and an inverted range is
+     * WORSE than a wrong one: LockHolder qualifies a holder with
+     * lockBeg<lockEnd, so a wrapped range is stored, reported as success, and
+     * then seen by nobody. That is exactly the "says it locked and did not"
+     * failure this call was already fixed for once. A request that runs past
+     * the end of the address space can only mean "from here on", which is what
+     * the $FFFFFFFF sentinel already means, so fold it into that. */
+    end= (*d2==0xFFFFFFFF || *d2 > 0xFFFFFFFF - beg)
+             ? 0xFFFFFFFF
+             : beg + *d2;
 
         spH= LockHolder( spP, beg,end );
     if (spH!=NULL) {

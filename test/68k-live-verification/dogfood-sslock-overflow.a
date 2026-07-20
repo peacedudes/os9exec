@@ -1,0 +1,144 @@
+* Does SS_Lock survive a size that overflows the file position?
+*
+* pRlock computes the end of the range as:
+*     end = (size == $FFFFFFFF) ? $FFFFFFFF : currPos + size
+* The addition is 32-bit and unbounded, so any size larger than
+* ($FFFFFFFF - currPos) WRAPS and produces end < beg -- an inverted range.
+* Only the exact value $FFFFFFFF is treated as "whole file"; everything just
+* below it overflows instead. The size comes straight from the guest's d2, so
+* this needs no huge file, only a nonzero position.
+*
+* An inverted range is invisible to LockHolder, which qualifies a holder with
+*     lockBeg < lockEnd   ("holds one at all")
+* so the lock is stored, reported as SUCCESS, and then seen by nobody. That is
+* the same failure this call was already fixed for once -- SS_Lock claiming
+* success while doing nothing -- reached through a different door.
+*
+* One process, two paths on one file, both open for update:
+*   1. A seeks to 16, locks $FFFFFFF8 bytes  -> expect success either way.
+*      Correctly this covers [16,EOF); with the overflow it becomes [16,8).
+*   2. B seeks to 100, locks 8 bytes         -> [100,108) lies INSIDE the
+*      range A asked for, so a real lock must refuse it with E_DEADLK.
+*      If B succeeds, A's lock is not there and step 1 lied.
+*
+* Step 2 is the whole test. Run it against a build with the overflow guard and
+* against one without: "2 FAIL" is the bug, "2 OK" is the fix.
+*
+Prgrm     set 1
+Objct     set 1
+ReEnt     set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev  set (ReEnt<<8)+1
+*
+IOpen     set $84
+IWrite    set $8A
+ISeek     set $88
+IClose    set $8F
+ISetStt   set $8E
+FExit     set $06
+Update_   set 3            read+write
+SSLock    set $11
+EDEADLK   set 254
+*
+ psect sslockov,Type_Lang,Attr_Rev,0,800,start
+*
+start
+* --- open path A for update
+ lea     fname(pc),a0
+ move.b  #Update_,d0
+ trap    #0
+ dc.w    IOpen
+ bcs     noopen
+ move.w  d0,d6                 d6 = path A
+*
+* --- open path B for update, same file
+ lea     fname(pc),a0
+ move.b  #Update_,d0
+ trap    #0
+ dc.w    IOpen
+ bcs     noopen
+ move.w  d0,d7                 d7 = path B
+*
+* --- step 1: A seeks to 16, then locks a size that overflows
+ move.w  d6,d0
+ move.l  #16,d1
+ trap    #0
+ dc.w    ISeek
+ bcs     s1fail
+ move.w  d6,d0
+ move.w  #SSLock,d1
+ move.l  #$FFFFFFF8,d2         16 + $FFFFFFF8 wraps to 8
+ trap    #0
+ dc.w    ISetStt
+ bcs     s1fail
+ lea     m1ok(pc),a0
+ move.l  #m1oklen,d1
+ bsr     say
+ bra     step2
+s1fail
+ lea     m1bad(pc),a0
+ move.l  #m1badlen,d1
+ bsr     say
+*
+* --- step 2: B seeks to 100 and locks 8 bytes, inside what A asked for
+step2
+ move.w  d7,d0
+ move.l  #100,d1
+ trap    #0
+ dc.w    ISeek
+ move.w  d7,d0
+ move.w  #SSLock,d1
+ move.l  #8,d2
+ trap    #0
+ dc.w    ISetStt
+ bcc     s2bad                 success = A's lock was never really taken
+ cmpi.w  #EDEADLK,d1
+ bne     s2bad
+ lea     m2ok(pc),a0
+ move.l  #m2oklen,d1
+ bsr     say
+ bra     done
+s2bad
+ lea     m2bad(pc),a0
+ move.l  #m2badlen,d1
+ bsr     say
+*
+done
+ move.w  d6,d0
+ trap    #0
+ dc.w    IClose
+ move.w  d7,d0
+ trap    #0
+ dc.w    IClose
+ moveq   #0,d1
+ trap    #0
+ dc.w    FExit
+*
+noopen
+ lea     mopen(pc),a0
+ move.l  #mopenlen,d1
+ bsr     say
+ moveq   #1,d1
+ trap    #0
+ dc.w    FExit
+*
+* say: a0 = text, d1 = length -- writes to stderr (path 2)
+say
+ move.w  #2,d0
+ trap    #0
+ dc.w    IWrite
+ rts
+*
+fname   dc.b "/h1/CLAUDETEST/rec3.dat",0
+m1ok    dc.b "sslockov: 1 OK   A locked with overflowing size",13
+m1oklen equ *-m1ok
+m1bad   dc.b "sslockov: 1 FAIL A could not seek or lock",13
+m1badlen equ *-m1bad
+m2ok    dc.b "sslockov: 2 OK   B refused (E_DEADLK) -- lock is real",13
+m2oklen equ *-m2ok
+m2bad   dc.b "sslockov: 2 FAIL B locked inside A's range -- lock vanished",13
+m2badlen equ *-m2bad
+mopen   dc.b "sslockov: cannot open /h1/CLAUDETEST/rec3.dat",13
+mopenlen equ *-mopen
+*
+ ends
