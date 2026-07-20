@@ -16,7 +16,8 @@ let package = Package(
         .testTarget(
             name: "RBFHammerCoreTests",
             dependencies: ["RBFHammerCore"],
-            path: "Tests/RBFHammerCoreTests"
+            path: "Tests/RBFHammerCoreTests",
+            resources: [.copy("Fixtures")]
         )
     ]
 )

@@ -30,6 +30,23 @@ Record the exact mutation so it can be reproduced.
 |---|---|---|---|
 | `Verifier.verify` (all 7 corruption tests) | `return []` as the first statement of `verify` — the "always clean" failure mode that made the counter race useless | **7 of 11 tests went red.** The 4 that stayed green correctly do not exercise `verify` (`testRecordRoundTrip`, `testEncodedRecordIsFixedWidth`, `testChecksumFitsIn16Bits`) or correctly expect a clean verdict (`testCleanRunHasNoViolations`) | 2026-07-20 |
 
+| `GuestFormatTests` (guest/host byte-format agreement) | `Record.width` 64→63 and `payloadWidth` 44→43 | **All 4 tests went red** against the real guest-produced fixture. First run of this mutation also exposed a genuine defect in the test itself — see below | 2026-07-20 |
+
+### Defect found BY the mutation, in the test code
+
+The first run of the width mutation **crashed with signal 5** instead of
+failing. `testGuestChecksumsMatchHostChecksums` computed frame bounds with
+`data.index(startIndex, offsetBy: start + width)` and walked past the end when
+the stride no longer divided the data evenly.
+
+That is not a mutation artifact — it is how the test would have behaved on a
+**genuinely torn file**, which is one of the exact conditions this harness
+exists to detect. The test would have crashed the run rather than reporting the
+tear. Fixed by giving `Record` a single bounds-safe `frames(in:)` helper that
+both the verifier and the tests use, so a short final frame is produced
+deliberately rather than indexed into existence. Re-run: 4 clean failures, no
+crash.
+
 ### Negative result, recorded deliberately
 
 | Claim | Mutation | Outcome |

@@ -135,4 +135,27 @@ public struct Record: Equatable, Sendable {
         guard field.first == tag else { return nil }
         return Int(field.dropFirst())
     }
+
+    /// Splits raw device bytes into fixed-width frames, the last possibly short.
+    ///
+    /// A short final frame is the whole point rather than an edge case: it is
+    /// how a torn write presents. Callers must handle it, so this never drops
+    /// or pads one -- and never indexes past the end to produce it.
+    public static func frames(in data: Data) -> [Data] {
+        stride(from: 0, to: data.count, by: width).map { start in
+            let lower = data.index(data.startIndex, offsetBy: start)
+            let upper = data.index(data.startIndex, offsetBy: Swift.min(start + width, data.count))
+            return data[lower..<upper]
+        }
+    }
+
+    /// Decodes one frame, returning `nil` when it is not a whole valid record.
+    ///
+    /// Strict ASCII on purpose: a lenient decode would replace corrupt bytes
+    /// with U+FFFD and quietly repair the damage this exists to find.
+    public static func decode(frame: Data) -> Record? {
+        guard frame.count == width,
+              let text = String(bytes: frame, encoding: .ascii) else { return nil }
+        return decode(text)
+    }
 }

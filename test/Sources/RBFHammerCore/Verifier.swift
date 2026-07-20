@@ -87,18 +87,12 @@ public enum Verifier {
         var sequencesByWorker: [Int: [Int]] = [:]
         let known = Set(expecting.map(\.worker))
 
-        for (index, chunk) in data.chunked(into: Record.width).enumerated() {
+        for (index, frame) in Record.frames(in: data).enumerated() {
             let offset = index * Record.width
-            // Strict ASCII on purpose. A lenient decode would replace corrupt
-            // bytes with U+FFFD and quietly repair the very damage this is
-            // looking for; records are ASCII by construction, so a byte that
-            // is not ASCII is itself the corruption.
-            guard chunk.count == Record.width,
-                  let text = String(bytes: chunk, encoding: .ascii),
-                  let record = Record.decode(text) else {
+            guard let record = Record.decode(frame: frame) else {
                 violations.append(Violation(
                     kind: .tornRecord,
-                    detail: "offset \(offset): \(chunk.count) bytes, not a whole record"))
+                    detail: "offset \(offset): \(frame.count) bytes, not a whole record"))
                 continue
             }
             if !record.isIntact {
@@ -154,19 +148,5 @@ public enum Verifier {
                 detail: "worker \(worker): missing sequences \(missing)"))
         }
         return violations
-    }
-}
-
-private extension Data {
-
-    /// Splits the data into fixed-size chunks, the last possibly short.
-    ///
-    /// A short final chunk is meaningful here rather than an edge case: it is
-    /// precisely how a torn write presents.
-    func chunked(into size: Int) -> [Data] {
-        stride(from: 0, to: count, by: size).map { start in
-            self[index(startIndex, offsetBy: start)..<index(startIndex,
-                offsetBy: Swift.min(start + size, count))]
-        }
     }
 }
