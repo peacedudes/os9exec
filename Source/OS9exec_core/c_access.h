@@ -167,19 +167,6 @@ int ustrcmp( const char *s1, const char *s2 );
 
 
 
-// ---- missing "sprintf" operations for "cclib", temporary placed here ----
-void IntToStr  ( char* s, int    i );
-void IntToStrN ( char* s, int    i, int n );
-
-void UIntToStr ( char* s, unsigned int h );
-void UIntToStrN( char* s, unsigned int h, int n );
-
-void BoolToStr ( char* s, int bo );
-void BoolToStrN( char* s, int bo, int n );
-
-void RealToStr ( char* s, double d,        int res );
-void RealToStrN( char* s, double d, int n, int res );
-
 #if defined __cplusplus
   } // end extern "C"
 #endif
