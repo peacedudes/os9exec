@@ -177,6 +177,12 @@ test-linux:
 # docker leg's setup used to be an `&&` chain, so a failed `apt-get` skipped the
 # build and printed nothing at all -- a leg that never ran looked like a leg
 # that passed. Every leg must now print a tally line and shout if it failed.
+# A tally of 0/0 means "clean" ONLY if the leg actually built. When a leg dies
+# before compiling -- a missing toolchain, or the package mirror this used to
+# depend on returning 400 -- there are no "warning:"/"error:" lines to count, so
+# a bare count reports a perfect score for a build that never happened. That is
+# the same vacuous-green trap as `make warnings` once scoring 0 on a hard
+# compile error. So the artifact is the proof: no binary, no score.
 TALLY = awk '/warning:/{w++} /error:/{e++} \
   END{printf "  warnings: %d  errors: %d\n", w+0, e+0}'
 
@@ -186,11 +192,14 @@ warnings:
 	  || echo "  BUILD FAILED -- see /tmp/os9exec-host.log"
 	@$(TALLY) /tmp/os9exec-host.log
 	@echo "=== linux (gcc, in docker) ==="
+	@rm -f /tmp/os9exec-linux-built
 	@docker run --rm -v "$(CURDIR)/Source:/src/Source:ro" -v "$(CURDIR)/GNUmakefile:/src/GNUmakefile:ro" \
-	  -w /src ubuntu:24.04 sh -c 'set -e; apt-get update -qq >/dev/null; \
-	  apt-get install -y -qq build-essential >/dev/null; mkdir -p /tmp/b; \
-	  make CC=gcc OBJDIR=/tmp/b EXE=/tmp/b/os9exec 2>&1' >/tmp/os9exec-linux.log 2>&1 \
+	  -v /tmp:/out -w /src gcc:13 sh -c 'set -e; mkdir -p /tmp/b; \
+	  make CC=gcc OBJDIR=/tmp/b EXE=/tmp/b/os9exec 2>&1; \
+	  cp /tmp/b/os9exec /out/os9exec-linux-built' >/tmp/os9exec-linux.log 2>&1 \
 	  || echo "  BUILD OR SETUP FAILED -- see /tmp/os9exec-linux.log"
+	@test -x /tmp/os9exec-linux-built \
+	  || echo "  NOT BUILT -- no Linux binary produced; the score below means nothing"
 	@$(TALLY) /tmp/os9exec-linux.log
 	@echo "=== windows (mingw-w64, LLP64) ==="
 	@$(MAKE) -B --no-print-directory OS=Windows_NT CC=x86_64-w64-mingw32-gcc \
