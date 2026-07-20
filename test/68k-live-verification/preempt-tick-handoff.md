@@ -2,8 +2,12 @@
 
 ## The task
 
-Branch `rbf-eof-lock`, worktree `../os9exec-rbf-eoflock`, adds an optional
-pre-emptive system tick (`-q`). It works — but with it on, **`r68` (the
+Branch `preempt-tick`, worktree `../os9exec-rbf-eoflock`, adds an optional
+pre-emptive system tick (`-q`). It sits on top of current
+`arm64-uae-integration` and contains **only** the pre-emption work — the RBF
+record/EOF locking that was developed alongside it is already merged and is
+not your concern. (The older `rbf-eof-lock` branch holds both and is stale;
+ignore it.) It works — but with it on, **`r68` (the
 assembler) dies of a bus error part-way through a run**, which makes the two
 `F$STrap` tests fail because the program they assemble is never produced.
 
@@ -58,13 +62,14 @@ Anything that differs is a candidate. Likely suspects, in rough order:
 
 ## Reproducing
 
-    cd ../os9exec-rbf-eoflock
+    cd ../os9exec-rbf-eoflock      # branch preempt-tick
     make
     swift build --package-path test
     BIN=test/.build/out/Products/Debug/OS9Tests
     for i in 1 2 3 4 5 6; do OS9_PREEMPT=1 "$BIN" 'a handler resumes'; done
 
-Fails roughly half the time. `OS9_PREEMPT=1` runs the whole suite with `-q`.
+Fails roughly half the time (measured 4 of 6 on this branch; 4/4 pass with
+the tick off). `OS9_PREEMPT=1` runs the whole suite with `-q`.
 `OS9_DUMPFAIL=1` is not in the committed harness — add a dump of the full
 `output` string in the FAIL branch of `run()` if you want to see the crash;
 the default preview filters out every line starting with `$` or `#`, which
