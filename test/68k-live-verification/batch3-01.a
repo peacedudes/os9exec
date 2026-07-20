@@ -1,0 +1,235 @@
+* Live-tests I$Create($83), I$Delete($87), I$MakDir($85), I$ChgDir($86),
+* I$Seek($88), I$Dup($82) against 68k/syscall-reference.md. All register
+* conventions cross-checked against os9exec's own icalls.c
+* (OS9_I_Create/Delete/MakDir/ChgDir/Seek/Dup) before writing this --
+* matched the skill's documented shape, except d1 is a BYTE (attrs) not
+* a word for I$Create/I$MakDir per source, worth confirming precisely.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+ICreate set $83
+IDelete set $87
+IMakDir set $85
+IChgDir set $86
+ISeek set $88
+IDup set $82
+IWrite set $8A
+IClose set $8F
+FExit set $06
+*
+ psect batch301,Type_Lang,Attr_Rev,0,800,start
+start
+* --- I$Create(d0.b=mode,d1.b=attrs,d2.l=size,(a0)=name) -> d0.w=path ---
+ lea fname(pc),a0
+ moveq #3,d0             mode: W|R (bits 0,1)
+ clr.l d1
+ moveq #0,d1             attrs: none
+ clr.l d2                no size hint
+ trap #0
+ dc.w ICreate
+ bcc crok
+ move.l d1,d7
+ lea crfailmsg(pc),a0
+ move.l #crfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra done
+crok
+ move.l d0,d6           save path number
+ lea crpassmsg(pc),a0
+ move.l #crpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- I$Seek(d0.w=path,d1.l=position) ---
+ clr.l d0
+ move.w d6,d0
+ move.l #5,d1
+ trap #0
+ dc.w ISeek
+ bcc skok
+ lea skfailmsg(pc),a0
+ move.l #skfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra duptest
+skok
+ lea skpassmsg(pc),a0
+ move.l #skpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- I$Dup(d0.w=path) -> d0.w=new path ---
+duptest
+ clr.l d0
+ move.w d6,d0
+ trap #0
+ dc.w IDup
+ bcc dpok
+ lea dpfailmsg(pc),a0
+ move.l #dpfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra closetest
+dpok
+ move.l d0,d5           save dup'd path number
+ lea dppassmsg(pc),a0
+ move.l #dppasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+* close the dup'd path
+ clr.l d0
+ move.w d5,d0
+ trap #0
+ dc.w IClose
+*
+* --- close+delete the created file ---
+closetest
+ clr.l d0
+ move.w d6,d0
+ trap #0
+ dc.w IClose
+ lea fname(pc),a0
+ moveq #3,d0
+ trap #0
+ dc.w IDelete
+ bcc delok
+ lea delfailmsg(pc),a0
+ move.l #delfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra mktest
+delok
+ lea delpassmsg(pc),a0
+ move.l #delpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- I$MakDir(d0.b=mode,d1.b=attrs,(a0)=name) ---
+mktest
+ lea dname(pc),a0
+ clr.l d0
+ clr.l d1
+ clr.l d2
+ trap #0
+ dc.w IMakDir
+ bcc mkok
+ move.l d1,d7
+ lea mkfailmsg(pc),a0
+ move.l #mkfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra done
+mkok
+ lea mkpassmsg(pc),a0
+ move.l #mkpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- I$ChgDir(d0.b=mode,(a0)=name) -- change into the dir just made ---
+ lea dname(pc),a0
+ clr.l d0
+ trap #0
+ dc.w IChgDir
+ bcc cdok
+ lea cdfailmsg(pc),a0
+ move.l #cdfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+cdok
+ lea cdpassmsg(pc),a0
+ move.l #cdpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+printnum
+ sub.l #16,a7
+ movea.l a7,a1
+ adda.l #16,a1
+ move.l d1,d2
+ moveq #0,d3
+ tst.l d2
+ bne.s pn_loop
+ move.b #'0',-(a1)
+ moveq #1,d3
+ bra.s pn_output
+pn_loop
+ tst.l d2
+ beq.s pn_output
+ divu.w #10,d2
+ move.w d2,d0
+ swap d2
+ move.b d2,d1
+ add.b #'0',d1
+ move.b d1,-(a1)
+ addq.w #1,d3
+ clr.l d2
+ move.w d0,d2
+ bra.s pn_loop
+pn_output
+ movea.l a1,a0
+ move.l d3,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ add.l #16,a7
+ lea crbyte(pc),a0
+ moveq #2,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+fname dc.b "batch301test.dat",0
+dname dc.b "batch301dir",0
+crpassmsg dc.b "PASS I$Create",13,10
+crpasslen equ *-crpassmsg
+crfailmsg dc.b "FAIL I$Create err="
+crfaillen equ *-crfailmsg
+skpassmsg dc.b "PASS I$Seek",13,10
+skpasslen equ *-skpassmsg
+skfailmsg dc.b "FAIL I$Seek err=",13,10
+skfaillen equ *-skfailmsg
+dppassmsg dc.b "PASS I$Dup",13,10
+dppasslen equ *-dppassmsg
+dpfailmsg dc.b "FAIL I$Dup err=",13,10
+dpfaillen equ *-dpfailmsg
+delpassmsg dc.b "PASS I$Delete",13,10
+delpasslen equ *-delpassmsg
+delfailmsg dc.b "FAIL I$Delete err=",13,10
+delfaillen equ *-delfailmsg
+mkpassmsg dc.b "PASS I$MakDir",13,10
+mkpasslen equ *-mkpassmsg
+mkfailmsg dc.b "FAIL I$MakDir err="
+mkfaillen equ *-mkfailmsg
+cdpassmsg dc.b "PASS I$ChgDir",13,10
+cdpasslen equ *-cdpassmsg
+cdfailmsg dc.b "FAIL I$ChgDir err=",13,10
+cdfaillen equ *-cdfailmsg
+crbyte dc.b 13,10
+ ends

@@ -1,0 +1,166 @@
+* Live-tests F$Send($08), F$Icpt($09) against 68k/syscall-reference.md.
+* Source (os9exec's fcalls.c) flags two real, significant divergences
+* from the documented/standard OS-9 behavior BEFORE any live test:
+*   - F$Send's own comment: "d0.w=intended receiver's process ID (0 is
+*     NOT all here!)" -- os9exec does NOT implement the standard
+*     PID-0-broadcasts-to-group convention this skill documents.
+*   - F$Icpt's own comment: "Restrictions: does not work, as signal
+*     handling is not yet implemented (%%%)".
+* This test confirms both live rather than just citing source.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+FSend set $08
+FIcpt set $09
+FID set $0C
+IWrite set $8A
+FExit set $06
+*
+ psect batch302,Type_Lang,Attr_Rev,0,800,start
+start
+* --- F$Send(d0.w=0, d1.w=1 wakeup) -- if PID 0 really meant "broadcast
+* to group", this should accept cleanly like a normal send; if os9exec's
+* "0 is NOT all here" comment is right, expect a real error (E$IPRCID,
+* invalid process ID -- there's no real process with PID 0) ---
+ clr.l d0
+ clr.l d1
+ moveq #1,d1              signal code 1 = wakeup, harmless if delivered
+ trap #0
+ dc.w FSend
+ bcc sd0ok
+ move.l d1,d7
+ lea sd0failmsg(pc),a0
+ move.l #sd0faillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra sendself
+sd0ok
+ lea sd0passmsg(pc),a0
+ move.l #sd0passlen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- F$Send to our OWN real pid (via F$ID), same harmless wakeup code --
+* -- this SHOULD succeed (a real, valid target), confirming F$Send
+* itself works correctly for an actual PID, isolating the PID-0 finding
+* above as specifically about the broadcast convention, not F$Send
+* being broken outright ---
+sendself
+ trap #0
+ dc.w FID
+ move.l d0,d6            save own pid
+ clr.l d0
+ move.w d6,d0
+ clr.l d1
+ moveq #1,d1
+ trap #0
+ dc.w FSend
+ bcc ssok
+ move.l d1,d7
+ lea ssfailmsg(pc),a0
+ move.l #ssfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra icpttest
+ssok
+ lea sspassmsg(pc),a0
+ move.l #sspasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- F$Icpt((a0)=handler,(a6)=data) -- expect this to be ACCEPTED
+* (carry clear) since source shows it just stores fields with no
+* validation, despite signal delivery itself not being implemented ---
+icpttest
+ lea icpthandler(pc),a0
+ movea.l a7,a6            harmless nonzero data pointer
+ trap #0
+ dc.w FIcpt
+ bcc icok
+ lea icfailmsg(pc),a0
+ move.l #icfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+icok
+ lea icpassmsg(pc),a0
+ move.l #icpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+* Dummy intercept handler -- never expected to actually run, per
+* os9exec's own "signal handling is not yet implemented" comment. If it
+* DOES run, that itself would be a notable, contradicting finding.
+icpthandler
+ rte
+*
+printnum
+ sub.l #16,a7
+ movea.l a7,a1
+ adda.l #16,a1
+ move.l d1,d2
+ moveq #0,d3
+ tst.l d2
+ bne.s pn_loop
+ move.b #'0',-(a1)
+ moveq #1,d3
+ bra.s pn_output
+pn_loop
+ tst.l d2
+ beq.s pn_output
+ divu.w #10,d2
+ move.w d2,d0
+ swap d2
+ move.b d2,d1
+ add.b #'0',d1
+ move.b d1,-(a1)
+ addq.w #1,d3
+ clr.l d2
+ move.w d0,d2
+ bra.s pn_loop
+pn_output
+ movea.l a1,a0
+ move.l d3,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ add.l #16,a7
+ lea crbyte(pc),a0
+ moveq #2,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+sd0passmsg dc.b "PASS F$Send pid=0",13,10
+sd0passlen equ *-sd0passmsg
+sd0failmsg dc.b "FAIL F$Send pid=0 err="
+sd0faillen equ *-sd0failmsg
+sspassmsg dc.b "PASS F$Send own pid",13,10
+sspasslen equ *-sspassmsg
+ssfailmsg dc.b "FAIL F$Send own pid err="
+ssfaillen equ *-ssfailmsg
+icpassmsg dc.b "PASS F$Icpt install accepted",13,10
+icpasslen equ *-icpassmsg
+icfailmsg dc.b "FAIL F$Icpt err=",13,10
+icfaillen equ *-icfailmsg
+crbyte dc.b 13,10
+ ends
