@@ -159,18 +159,30 @@ reason it was not.
 
 Both produced "concurrent writers lose everything" and both were the harness.
 
-**1. A procedure file cannot launch background jobs.** Driving the roster with
-`shell #32k </DD/run.s` made exactly ONE racer of four run — a *different* one
-each run — while the rest never started. The file came back correctly
-pre-extended and entirely unwritten, which reads precisely as RBF dropping every
-concurrent write.
+**1. A `What?` flood that read as total data loss — cause NOT the one first
+recorded.** Driving the roster with `shell #32k </DD/run.s` made exactly ONE
+racer of four run — a *different* one each run — while the rest never started and
+the shell emitted a burst of `What?`. The file came back correctly pre-extended
+and entirely unwritten, which reads precisely as RBF dropping every concurrent
+write. Fixed by typing commands at the shell one at a time and waiting for each.
 
-Cause: a backgrounded OS-9 child inherits the parent shell's standard input
-**and its file position**. The children consume lines out of the very file the
-parent is still reading, so the parent resumes mid-line and answers `What?` to
-the wreckage. Fixed by typing commands at the shell one at a time; there is then
-no shared stream. (The 68k adapter's combined-line trick is a workaround for its
-stdin pipe and must not be copied here.)
+The first cause recorded here — "a backgrounded child inherits the parent's
+stdin and file position, so the children eat the procedure file" — was **tested
+and is FALSE**, and is kept only as a caution. Four isolated procedure files
+(single/double background `echo`; single/double background `basic09 <file&`,
+the exact roster shape) ALL launched their background jobs and completed
+cleanly. A procedure file backgrounds fine. The real trigger of the flood was
+never pinned down; the leading candidate is channel corruption from sending
+`key` faster than the guest drains it (a documented gotcha of this REPL), which
+the one-at-a-time-with-waits driving happens to also cure. So the fix is a
+REPL-pacing workaround, not an OS-9 shell fact.
+
+This row is itself a ledger lesson: a plausible harness explanation was written
+into three files (this one, the adapter comment, the skill) without being made
+to fail on demand. The owner asked "did you try `&`?", a five-minute live test
+disproved it, and the retraction is recorded rather than quietly deleted.
+**Successor task: find what actually caused the flood, make it reproduce, then
+replace this caveat with the real cause.**
 
 **2. The golden master was booted instead of the clone.** An XRoar survived a
 `stop`, a later boot reused it, and a run wrote to the golden master while every

@@ -299,17 +299,21 @@ public struct Adapter6809: Adapter {
                        environment: environment)
         type("chd \(device)", in: run)
 
-        // Commands are typed at the shell ONE AT A TIME rather than fed to it
-        // as a procedure file (`shell <run.s`), which does not work here.
+        // Commands are typed at the shell ONE AT A TIME, each waited for, rather
+        // than fed to it as a procedure file (`shell <run.s`).
         //
-        // A backgrounded child inherits the parent shell's standard input AND
-        // its file position. With the roster in a procedure file, the children
-        // consume lines out of the very file the parent is still reading, so
-        // the parent resumes mid-line and answers `What?` to the wreckage.
-        // Observed directly: exactly one racer of four would start -- a
-        // different one each run -- and the rest never ran at all, which reads
-        // exactly like RBF dropping concurrent writers and is nothing of the
-        // kind. Typed commands share no such stream.
+        // The procedure-file approach produced a `What?` flood and left the
+        // shared file pre-extended but unwritten -- reading exactly like RBF
+        // dropping every concurrent writer, and nothing of the kind. The cause
+        // is NOT inherent to procedure files: isolated tests confirm a
+        // procedure file backgrounds multiple `basic09 <file&` workers fine.
+        // The real trigger was not pinned down; the likeliest is channel
+        // corruption from driving `key` faster than the guest consumes it (a
+        // known gotcha of this REPL). Typing one command at a time and waiting
+        // for each re-paces the channel, which is what actually avoids it --
+        // so this is a REPL-pacing workaround, not a statement about OS-9
+        // shell semantics. Do not restore the shared-stdin explanation that
+        // once stood here; it was tested and is false.
         for worker in provision {
             let marker = "PROV\(worker.id)DONE"
             type("basic09 #32k </DD/\(scriptName(worker))", in: run)
