@@ -641,6 +641,41 @@ static void RingJoin( syspath_typ* spP )
     } // for
 } /* RingJoin */
 
+static void RingPublishFD( syspath_typ* spP )
+/* hand this path's FD to every other path open on the same file. Anything
+ * that changes the descriptor -- attributes, owner, size -- has to do this,
+ * or the others go on using the copy they took when they opened, which is the
+ * whole class of bug the ring exists to remove. */
+{
+    rbfdev_typ*  dev= &rbfdev[spP->u.rbf.devnr];
+    syspath_typ* spK;
+    ushort       k  =  spP->u.rbf.sameFile;
+
+    if (spP->fd_sct==NULL || spP->rawMode) return;
+
+    while (k!=spP->nr && k!=0) {
+             spK= &syspaths[k];
+      if (   spK->fd_sct!=NULL) memcpy( spK->fd_sct, spP->fd_sct, dev->sctSize );
+      k= spK->u.rbf.sameFile;
+    } // while
+} /* RingPublishFD */
+
+static void RingSetLastPos( syspath_typ* spP, ulong size )
+/* force every other path's idea of the end of the file to <size>. Needed when
+ * the file is TRUNCATED: publishing the FD alone leaves a reader whose
+ * <lastPos> still sits past the new end. */
+{
+    syspath_typ* spK;
+    ushort       k= spP->u.rbf.sameFile;
+
+    while (k!=spP->nr && k!=0) {
+             spK= &syspaths[k];
+      if (   spK->u.rbf.lastPos>size) spK->u.rbf.lastPos= size;
+      if (   spK->u.rbf.currPos>size) spK->u.rbf.currPos= size;
+      k= spK->u.rbf.sameFile;
+    } // while
+} /* RingSetLastPos */
+
 static void RingPublish( syspath_typ* spP, ulong size )
 /* hand this path's view of the file to the others open on it: the segment
  * list, attributes and owner exactly as they stand in this path's FD, plus
@@ -748,7 +783,14 @@ static ushort WriterOnFile( syspath_typ* spP )
 
     while (k!=spP->nr && k!=0) {
              spK= &syspaths[k];
-      if (   spK->u.rbf.wMode) return spK->u.rbf.ownPid;
+      /* UPDATE mode, not merely write. Locking belongs to update-mode opens
+       * and nothing else -- one rule, easy to state and easy to reason about.
+       * A plain write-only appender therefore never makes a reader wait: two
+       * programs appending to one log cannot get in each other's way even by
+       * accident, which is worth more than making tail-style following work
+       * for a writer that never asked to participate. A writer that DOES want
+       * a reader to follow it opens for update and gets it. */
+      if (   spK->u.rbf.updMode) return spK->u.rbf.ownPid;
 
       k= spK->u.rbf.sameFile;
     } // while
@@ -3852,6 +3894,7 @@ os9err pRsetFD( _pid_, syspath_typ* spP, byte *buffer )
         (GET_OS9W( buffer,1 ) & 0x00FF) != (FDOwn(spP) & 0x00FF)) return E_PERMIT;
 
     memcpy( spP->fd_sct, buffer, maxbyt );  /* copy to the buffer */
+    RingPublishFD( spP );  /* owner/attrs just changed for every path, not one */
     return WriteFD( spP );
 } /* pRsetFD */
 
@@ -3906,16 +3949,19 @@ os9err pRsetsz( _pid_, syspath_typ* spP, uint32_t *size )
     if (rbf->currPos> *size)
         rbf->currPos= *size; /* set position back to new max */
 
-    Set_FDSize    ( spP,*size ); /* new file size */
-    return WriteFD( spP );
+    Set_FDSize     ( spP,*size ); /* new file size */
+    RingPublishFD  ( spP );
+    RingSetLastPos ( spP,*size ); /* truncation must shrink the others too */
+    return WriteFD ( spP );
 } /* pRsetsz */
 
 os9err pRsetatt( _pid_, syspath_typ* spP, uint32_t *attr )
 /* set the attributes of a file -- owner or super-user only */
 {
     if (!is_super(pid) && !IsOwner(pid, FDOwn(spP))) return E_FNA;
-    Set_FDAtt     ( spP, (byte)*attr ); /* byte ordering is already correct */
-    return WriteFD( spP );
+    Set_FDAtt      ( spP, (byte)*attr ); /* byte ordering is already correct */
+    RingPublishFD  ( spP );  /* others must see the new attributes at once */
+    return WriteFD ( spP );
 } /* pRsetatt */
 
 os9err pRnam( ushort pid, syspath_typ* spP, char* volname )
