@@ -330,13 +330,13 @@ static void disp_line( ushort pid, ushort sp, char* ups, syspath_typ* spP,
         mod= NULL;
     }
     else {
-        sprintf(  idstr,"%c%d", pid==currentpid ? '*':' ', pid );
-        sprintf( pidstr,  "%d", os9_word(cp->pd._pid) );
+        snprintf(  idstr,sizeof(idstr), "%c%d", pid==currentpid ? '*':' ', pid );
+        snprintf( pidstr,sizeof(pidstr),"%d", os9_word(cp->pd._pid) );
         mod=    get_module_ptr( cp->mid );
     }       
 
     if (spP->lastwritten_pid==0) strcpy(  lwstr,"-" );
-    else                         sprintf( lwstr,"%d",spP->lastwritten_pid );
+    else                         snprintf( lwstr,sizeof(lwstr),"%d",spP->lastwritten_pid );
 
     if (pid==currentpid) mName= "ipaths";
     else {               mName= "<none>";
@@ -354,11 +354,11 @@ static void disp_line( ushort pid, ushort sp, char* ups, syspath_typ* spP,
         case fRBF : upo_printf(" %12X",spP->u.rbf.fd_nr ); break;
         case fTTY :
         case fPTY : 
-        case fPipe: if (p==NULL) sprintf( aa, "->NULL" );
+        case fPipe: if (p==NULL) snprintf( aa,sizeof(aa), "->NULL" );
                     else { 
                       n= Pipe_NReady( p );
-                      if (p->size>=1000) sprintf( szs, "%1.0fk", (float)(p->size/1024) );
-                      else               sprintf( szs, "%3u",            p->size       );
+                      if (p->size>=1000) snprintf( szs,sizeof(szs), "%1.0fk", (float)(p->size/1024) );
+                      else               snprintf( szs,sizeof(szs), "%3u",            p->size       );
 
                                snprintf( aa,sizeof(aa), "%c>%d:%s",
                                          p->broken? '/':'-', p->sp_lock, szs );
@@ -441,7 +441,7 @@ void show_files( ushort pid )
                     strcpy( upc, "" ); stdp= false;
                     for (up=0; up<=4; up++) {                          
                         if (cp->usrpaths[up]==sp) { 
-                            sprintf( ups, "%1d",up );
+                            snprintf( ups,sizeof(ups), "%1d",up );
                             strcat ( upc, ups ); stdp= true;
                         }
                     } /* for */
@@ -455,7 +455,7 @@ void show_files( ushort pid )
                     for (up=5; up<MAXUSRPATHS; up++) {
                         if  (cp->usrpaths[up]==sp) {
                             up_found= true;
-                            sprintf         ( ups, "%3d",up );
+                            snprintf        ( ups,sizeof(ups), "%3d",up );
                             disp_line( iid,sp,ups, spP, fsspec,nameflag, typenam );
                         }
                     } /* for */

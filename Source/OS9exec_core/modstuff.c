@@ -481,9 +481,9 @@ void show_modules( char* cmp )
             if (cmp==NULL || ustrcmp( nam,cmp )==0) {
                 debugprintf(dbgUtils,dbgNorm,("# imdir: %3d '%s'\n", k,nam ));
 
-                sprintf( exeo,"%8X",           os9_long(mod->_mexec )       );
-                sprintf( dats,"%7.2fk", (float)os9_long(mod->_mdata )/KByte );
-                sprintf( stck,"%7.2fk", (float)os9_long(mod->_mstack)/KByte );
+                snprintf( exeo,sizeof(exeo),"%8X",           os9_long(mod->_mexec )       );
+                snprintf( dats,sizeof(dats),"%7.2fk", (float)os9_long(mod->_mdata )/KByte );
+                snprintf( stck,sizeof(stck),"%7.2fk", (float)os9_long(mod->_mstack)/KByte );
 
                 mtyp= Mod_TypeStr( mod );
                 if (ustrcmp( mtyp,"Prog" )!=0 &&
@@ -496,7 +496,7 @@ void show_modules( char* cmp )
                 if (os9modules[k].isBuiltIn)
                     strcpy(adrs, "  (builtin)");
                 else
-                    sprintf(adrs, " $%08X", TO68K(mod));
+                    snprintf(adrs,sizeof(adrs), " $%08X", TO68K(mod));
 
                 upo_printf("%3d %3d %c %11s %4s %8s %8s %8s %s\n",
                             k,
@@ -714,16 +714,36 @@ static void adapt_le0( mod_exec* mh, uint32_t inetAddr )
 
 
 
-static void fill_s( char** b, char* s )
+static void fill_s( char** b, const char* end, const char* s )
+/* copy <s> and its NUL to *b, then advance *b past it -- never writing at or
+ * beyond <end>.
+ *
+ * <end> is not decoration: every caller writes into a field INSIDE a guest
+ * module (inetdb's hosts and resolv.conf areas), whose length the module
+ * itself declares, while the strings come from the host (/etc/resolv.conf,
+ * gethostbyname). A long host domain name therefore used to run straight off
+ * the end of the module's field and corrupt whatever followed it in the arena.
+ * The size was known at both call sites all along -- it is the same length the
+ * memset above each of them already uses to clear the field. */
 {
-    sprintf( *b, "%s", s );
-    *b=      *b + strlen( *b )+1;
+    size_t room, n;
+
+    if (*b>=end) return;                 /* nothing left */
+    room= (size_t)(end - *b);
+    n   = strlen( s );
+    if (n>=room) n= room-1;              /* truncate, keeping space for the NUL */
+
+    memcpy( *b, s, n );
+    (*b)[n]= NUL;
+    *b += n+1;
 } /* fill_s */
 
 
 
-static void go_thru_list( char* v0, char* b0, uint32_t inetAddr )
-/* adapt "localhost" at the "inetdb" module */
+static void go_thru_list( char* v0, char* b0, const char* bEnd, uint32_t inetAddr )
+/* adapt "localhost" at the "inetdb" module.
+ * <bEnd> is one past the last writable byte of the module's hosts field, so the
+ * host-supplied names below cannot be written past it -- see fill_s. */
 {
     char      *v, *b, *blk, *bBlk;
     /* byte*, not uint32_t*: the 4-byte inetaddr lives at <blk>+2 (right after the
@@ -777,9 +797,9 @@ static void go_thru_list( char* v0, char* b0, uint32_t inetAddr )
 
     //  printf( "%3d %3d %08X '%s'\n", i, jump, os9_long( ipaVal ), v );
 
-        fill_s( &b, v );
-        if (ipaVal==os9_long( inetAddr )) fill_s( &b, "localhost" );
-        fill_s( &b, ""         ); /* one additional NUL char */
+        fill_s( &b,bEnd, v );
+        if (ipaVal==os9_long( inetAddr )) fill_s( &b,bEnd, "localhost" );
+        fill_s( &b,bEnd, ""         ); /* one additional NUL char */
         
         if ((ulong)b%2==1) b++; /* make address even */
         *(short*)bBlk= os9_word( (short)(b-bBlk) );
@@ -797,6 +817,7 @@ static void adapt_inetdb( mod_exec* mh, uint32_t inetAddr, uint32_t dns1, uint32
 {
     short   *hp;
     char    *bp, *b0, *bL, *v0;
+    char    *bpEnd; /* one past the last writable byte of the resolv.conf field */
     uint32_t d, size;
     byte    *h;
     char    sv[ OS9NAMELEN ];
@@ -814,7 +835,7 @@ static void adapt_inetdb( mod_exec* mh, uint32_t inetAddr, uint32_t dns1, uint32
     memcpy( v0,b0,    size );
     memset(    b0, 0, size ); /* clear the whole original field */
 
-    go_thru_list( v0,b0, inetAddr );     /* rearrange the field */
+    go_thru_list( v0,b0,bL, inetAddr );  /* rearrange the field */
 
     release_mem( v0 );
 
@@ -826,25 +847,37 @@ static void adapt_inetdb( mod_exec* mh, uint32_t inetAddr, uint32_t dns1, uint32
     bp+= 2;       hp= (short*)bp;
     bp+= 2;
 
-    strcpy( sv, bp );                   /* make a copy of the existing domain name */
+    /* The writable area is what the memset below clears: os9_word(*hp)-2 bytes
+       starting at bp. Capture its end BEFORE anything advances bp -- every write
+       past this point is bounded by it. */
+    bpEnd= bp + (os9_word( *hp )-2 );
+
+    /* Bounded, because <bp> is the module's own field and its existing domain
+       name is whatever the module file happened to contain: a strcpy of it into
+       sv[OS9NAMELEN] (29 bytes) was a straight stack overflow for any module
+       carrying a longer name. */
+    strncpy( sv, bp, sizeof(sv)-1 );    /* make a copy of the existing domain name */
+    sv[sizeof(sv)-1]= NUL;
     memset( bp, 0, os9_word( *hp )-2 );                 /* clear the original area */
-    
+
     if  (strcmp( domainName,"" )==0) domainName= sv;
-    fill_s( &bp, domainName );                       /* fill in the domain name */
-    
+    fill_s( &bp,bpEnd, domainName );                 /* fill in the domain name */
+
                                   d= os9_long( dns1 );
                                   h= (byte*) &d;
-    sprintf( bp, "%d.%d.%d.%d",   h[0],h[1],h[2],h[3] ); /* fill in DNS IP address */
-    bp=  bp + strlen( bp )+1;
-
-    if (dns2!=0) {                d= os9_long( dns2);
-                                  h= (byte*) &d;
-        sprintf( bp, "%d.%d.%d.%d",   h[0],h[1],h[2],h[3] ); /* fill in DNS IP address */
+    if (bp<bpEnd) {
+        snprintf( bp,(size_t)(bpEnd-bp), "%d.%d.%d.%d", h[0],h[1],h[2],h[3] ); /* fill in DNS IP address */
         bp=  bp + strlen( bp )+1;
     }
-                        
-    fill_s( &bp, ""         ); /* one additional NUL char */
-    fill_s( &bp, domainName ); /* fill in the domain name */
+
+    if (dns2!=0 && bp<bpEnd) {    d= os9_long( dns2);
+                                  h= (byte*) &d;
+        snprintf( bp,(size_t)(bpEnd-bp), "%d.%d.%d.%d", h[0],h[1],h[2],h[3] ); /* fill in DNS IP address */
+        bp=  bp + strlen( bp )+1;
+    }
+
+    fill_s( &bp,bpEnd, ""         ); /* one additional NUL char */
+    fill_s( &bp,bpEnd, domainName ); /* fill in the domain name */
     
     
  /* --- update module CRC --- */          
