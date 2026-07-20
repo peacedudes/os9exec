@@ -27,6 +27,12 @@
  *  confirmed anchors using the switch statement in debug.c (line ~1087) as
  *  a consistency check: each case must be unique.  No OS-9 source code was
  *  read; all values come from the book, the formula, and arithmetic from anchors.
+ *
+ *  SECOND-HAND, AND NOT GUARANTEED MICROWARE-COMPATIBLE. Everything here was
+ *  reconstructed from published books and documentation, never from Microware
+ *  source. We tried to get it right and believe it is close, but if something
+ *  built on this header disagrees with real OS-9, suspect the header at least
+ *  as readily as the code using it.
  */
 
 #ifndef ERRNO_FROM_BOOK_H

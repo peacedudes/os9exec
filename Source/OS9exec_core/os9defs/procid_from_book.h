@@ -16,6 +16,12 @@
  *  Total descriptor size: 2048 bytes ($000–$7FF).
  *
  *  Compile-time assertions at the bottom verify every key offset.
+ *
+ *  SECOND-HAND, AND NOT GUARANTEED MICROWARE-COMPATIBLE. Everything here was
+ *  reconstructed from published books and documentation, never from Microware
+ *  source. We tried to get it right and believe it is close, but if something
+ *  built on this header disagrees with real OS-9, suspect the header at least
+ *  as readily as the code using it.
  */
 
 #ifndef PROCID_FROM_BOOK_H

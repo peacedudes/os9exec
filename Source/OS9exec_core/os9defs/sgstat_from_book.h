@@ -20,6 +20,12 @@
  *  os9exec_nt.h also defines a subset of these PD_ constants.  Because this
  *  file is included first (via os9exec_incl.h), all defines here use #ifndef
  *  guards so they can be augmented but never silently overridden.
+ *
+ *  SECOND-HAND, AND NOT GUARANTEED MICROWARE-COMPATIBLE. Everything here was
+ *  reconstructed from published books and documentation, never from Microware
+ *  source. We tried to get it right and believe it is close, but if something
+ *  built on this header disagrees with real OS-9, suspect the header at least
+ *  as readily as the code using it.
  */
 
 #ifndef SGSTAT_FROM_BOOK_H
