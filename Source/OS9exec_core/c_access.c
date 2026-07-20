@@ -179,7 +179,7 @@ int ustrcmp( const char *s1,const char *s2 )
 
   do {
                    c=           *(s1++);
-    diff= toupper( c )-toupper( *(s2++) );
+    diff= toupper((unsigned char) c )-toupper((unsigned char) *(s2++) );
 
     if (diff!=0) return diff>0 ? 1 : -1;
   } while ( c!='\0' );

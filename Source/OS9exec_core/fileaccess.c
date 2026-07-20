@@ -746,7 +746,7 @@ os9err pHvolnam( _pid_, syspath_typ* spP, char* volname )
       debugprintf(dbgFiles,dbgDetail,("# pFvolnam: name='%s', free bytes=%ld\n",volname,free));
 
     #elif defined windows32
-      volname[ 0 ]= toupper( spP->fullName[ 0 ] ); /* first char only */       
+      volname[ 0 ]= toupper((unsigned char) spP->fullName[ 0 ] ); /* first char only */       
       volname[ 1 ]= NUL;     
     
     #elif defined UNIX

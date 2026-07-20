@@ -141,7 +141,7 @@ static os9err options (int argc,char *argv[])
       /* this argument is an option (begins with a hyphen) */
       nextarg=0;
       while ((*(++sc) != 0)&&!nextarg) {
-        switch (tolower(*sc)) {
+        switch (tolower((unsigned char)*sc)) {
           case '?' : usage(argv[0]); return 2;
           case 'x' : exe_dir= true;  break;
           case 'p' : quiet  = true;  break;

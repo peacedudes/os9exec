@@ -330,7 +330,7 @@ static os9err int_debughalt( ushort pid, int argc, char** argv )
     for (k=1; k<argc; k++) {
         p=argv[k];
         if (*p=='-') {
-            switch (tolower(*++p)) {
+            switch (tolower((unsigned char)*++p)) {
                 case '?' :
                 case 'h' :  idbg_usage( argv[ 0 ] ); return 0;
                         
@@ -339,7 +339,7 @@ static os9err int_debughalt( ushort pid, int argc, char** argv )
                 case 'd' :  level=0; /* default to level 0 */
                             if (*(p+1)=='h') { debug_help( 0,0,NULL ); return 0; }
                             if (*(p+1)=='x') { level=3; usp=&debug[0]; goto getmask; }
-                            else if (isdigit(*(p+1))) {
+                            else if (isdigit((unsigned char)*(p+1))) {
                                 level=*(p+1)-0x30;
                                 if (level>DEBUGLEVELS) level=0; /* default to 0 if level invalid */
                             }
@@ -500,7 +500,7 @@ static os9err int_paths( _pid_, int argc, char **argv )
            
     if (*p=='-') { 
          p++;
-      switch (tolower(*p)) {
+      switch (tolower((unsigned char)*p)) {
         case '?' :
         case 'h' : ipaths_usage( argv[ 0 ] ); return 0;
         default  : ipaths_usage( argv[ 0 ] );
@@ -546,7 +546,7 @@ static os9err int_mem( _pid_, int argc, char** argv )
             
     if (*p=='-') { 
          p++;
-      switch (tolower(*p)) {
+      switch (tolower((unsigned char)*p)) {
         case '?' :
         case 'h' : imem_usage( argv[ 0 ] ); return 0;
                 
@@ -623,7 +623,7 @@ static os9err int_devs( _pid_, int argc, char** argv )
         
         if (*p=='-') { 
             p++;
-            switch (tolower(*p)) {
+            switch (tolower((unsigned char)*p)) {
                 case '?' :
                 case 'h' : idevs_usage( argv[ 0 ] ); return 0;
                 
@@ -1187,7 +1187,7 @@ Boolean Plugin_Possible( Boolean hardCheck )
             
       if (*p=='-') { 
            p++;
-        switch (tolower(*p)) {
+        switch (tolower((unsigned char)*p)) {
           case '?' :
           case 'h' : native_usage( argv[ 0 ], v );
                      return 0;
@@ -1254,7 +1254,7 @@ Boolean Plugin_Possible( Boolean hardCheck )
            p++;
         removeIt= false;
         
-        switch (tolower(*p)) {
+        switch (tolower((unsigned char)*p)) {
           case '?' :
           case 'h' : native_usage( argv[ 0 ], "on/off" ); 
                      return 0;
@@ -1321,7 +1321,7 @@ Boolean Plugin_Possible( Boolean hardCheck )
             
       if (*p=='-') { 
            p++;
-        switch (tolower(*p)) {
+        switch (tolower((unsigned char)*p)) {
           case '?' :
           case 'h' : plugin_usage( argv[ 0 ] ); 
                      return 0;

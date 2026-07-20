@@ -431,9 +431,9 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
           #endif
           */
           
-            if (ot->_sgs_case && islower(c)) {
+            if (ot->_sgs_case && islower((unsigned char)c)) {
                 /* lower case -> upper case */
-                c = toupper(c);
+                c = toupper((unsigned char)c);
             }
             
             if (edit && c==ot->_sgs_dulnch) {
@@ -1013,10 +1013,10 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
               int     need;    /* FIFO slots this char needs (2 if CR+LF) */
 
               c= buffer[cnt];
-              if (ot->_sgs_case && islower(c)) {
+              if (ot->_sgs_case && islower((unsigned char)c)) {
                   /* lower case -> upper case
                      NOTE: this may wreck alpha escape codes */
-                  c = toupper(c);
+                  c = toupper((unsigned char)c);
               }
 
               /* A CR that gets an auto-LF and its LF must reach the FIFO

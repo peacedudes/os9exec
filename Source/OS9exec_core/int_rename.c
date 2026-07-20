@@ -186,7 +186,7 @@ os9err int_rename( ushort cpid, int argc, char **argv )
         p= argv[h];    
         if (*p=='-') { 
             p++;
-            switch (tolower(*p)) {
+            switch (tolower((unsigned char)*p)) {
                 case '?' :  usage(argv[0],cpid); return 0;
                 case 'x' :  exedir= 1; break;
                 default  :  upe_printf("Error: unknown option '%c'!\n",*p); 

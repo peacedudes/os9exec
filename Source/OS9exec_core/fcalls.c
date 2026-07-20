@@ -2179,7 +2179,7 @@ os9err OS9_F_CmpNam( regs_type *rp, _pid_ )
             
             /* now we must find *pat in *targ */
             while(*targ!=0) {
-                if (tolower(*pat)==tolower(*targ)) {
+                if (tolower((unsigned char)*pat)==tolower((unsigned char)*targ)) {
                     spat =pat;
                     starg=targ;
                     break; /* continue normally, match so far */
@@ -2191,7 +2191,7 @@ os9err OS9_F_CmpNam( regs_type *rp, _pid_ )
         else {
             if (*targ==0) break; /* end of string reached */
 
-            if (pat<patend && tolower(*pat)==tolower(*targ)) {
+            if (pat<patend && tolower((unsigned char)*pat)==tolower((unsigned char)*targ)) {
                pat++; targ++;
             }
             else {

@@ -522,7 +522,7 @@ void TwoCharDev( char* p, char** p3, char* tmp )
     Boolean isXX= ustrncmp( p,"xx",2 )==0; /* /xx = system device, same as /dd */
 
     if (isDD || isXX) *p3= egetenv("OS9DISK"); /* default/system device */
-    else if (tolower(*p)=='h' &&
+    else if (tolower((unsigned char)*p)=='h' &&
             (*(p+2)==PATHDELIM || *(p+2)==NUL)) {
         strcpy      ( envnam,"OS9H" );
         strncat     ( envnam,(p+1),1 );

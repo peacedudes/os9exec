@@ -712,7 +712,7 @@ void os9_main( int argc, char **argv, char **envp )
       if (*p=='-')
     #endif
       {
-        switch (tolower(*++p)) {
+        switch (tolower((unsigned char)*++p)) {
           case '?' :
           case 'h' :  if (*(p+1)=='h') { show_wish(); exit( 0 ); }
                       os9_usage( argv[0] );           exit( 0 );
@@ -771,7 +771,7 @@ void os9_main( int argc, char **argv, char **envp )
                 
           case 'd' :  level=0; /* default to level 0 */
                       if (*(p+1)=='h') { debug_help( 0,0,NULL ); exit(0); }
-                      if (isdigit(*(p+1))) {
+                      if (isdigit((unsigned char)*(p+1))) {
                         level=*(p+1)-0x30;
                         if (level>DEBUGLEVELS) level=0; /* default to 0 if level invalid */
                       } // if
@@ -866,7 +866,7 @@ void os9_main( int argc, char **argv, char **envp )
                       } // if
                       *ulp= lnum; /* now store it, at the destination's real width */
 
-                      switch (tolower(modifier)) {
+                      switch (tolower((unsigned char)modifier)) {
                         case 'm' : *ulp *=1024; /* fall into Kbytes */
                         case 'k' : *ulp *=1024;
                         case  0  : break;

@@ -152,7 +152,7 @@ static void omega_filter(char *linebuf, FILE *stream, void *fmv)
         /* could be */
         if (sscanf(&linebuf[0],"%d", &thisline)==1) {
             /* line number seems to be ok */
-            if (isdigit(linebuf[5])) {
+            if (isdigit((unsigned char)linebuf[5])) {
                 /* we take this as a Omegasoft error number */
                 fputs("#--------------------------------------------------------------------------------------------------------------------------------\n",stream);
                 fprintf(stream,"    File \"%s\"; Line %d\n",fm->filepath,thisline);

@@ -325,8 +325,8 @@ int ustrcmp( const char *s1,const char *s2 )
     char c;
 
     do {
-        if ((diff=toupper(c=*(s1++))
-                 -toupper(  *(s2++)))!=0) return diff>0 ?1:-1;
+        if ((diff=toupper((unsigned char)(c=*(s1++)))
+                 -toupper((unsigned char)  *(s2++)))!=0) return diff>0 ?1:-1;
     } while (c!=NUL);
 
     return 0; // equal
@@ -352,8 +352,8 @@ int pustrcmp( const char *s1,const char *s2 )
    s2++;
    
    for (n=1; n<=len; n++) {
-      if ((diff=toupper(c=*(s1++))
-               -toupper(  *(s2++)))!=0) return diff>0 ? 1:-1;
+      if ((diff=toupper((unsigned char)(c=*(s1++)))
+               -toupper((unsigned char)  *(s2++)))!=0) return diff>0 ? 1:-1;
    }
 
    if (len1<len2) return -1;
@@ -372,8 +372,8 @@ int ustrncmp( const char *s1, const char *s2, ushort n )
     char c;
 
     while (n-- > 0) {
-        if ((diff=toupper(c=*(s1++))
-                 -toupper(  *(s2++)))!=0) return diff>0 ? 1:-1;
+        if ((diff=toupper((unsigned char)(c=*(s1++)))
+                 -toupper((unsigned char)  *(s2++)))!=0) return diff>0 ? 1:-1;
         if (c==NUL) break;
     }
    
@@ -1156,7 +1156,7 @@ Boolean VolInfo( const char* pathname, char* volname )
       ok= GetVolumeInformation( pathname,  volname, OS9NAMELEN, 
                &serno,&maxComp,&sysFlags, &sysname, OS9NAMELEN );
       if (!ok ||  *volname==NUL)
-          snprintf( volname,OS9NAMELEN, "%c:", toupper(pathname[0]) ); /* same bound GetVolumeInformation above was given */  
+          snprintf( volname,OS9NAMELEN, "%c:", toupper((unsigned char)pathname[0]) ); /* same bound GetVolumeInformation above was given */  
     #endif
     
     return ok;
@@ -1397,7 +1397,7 @@ static int HashF( char* name )
   
                len= strlen( name );  
   for (i= 0; i<len+1; i++) {
-    ups[ i ]= toupper( name[ i ] ); // make comparisons more "the same"
+    ups[ i ]= toupper((unsigned char) name[ i ] ); // make comparisons more "the same"
   } // for
   
   
@@ -2231,7 +2231,7 @@ Boolean SCSI_Device( const char* os9path,
                    w=='\\'; // end or separator
             break;
           } // if
-          if (toupper( v )!=toupper( w )) break;
+          if (toupper((unsigned char) v )!=toupper((unsigned char) w )) break;
           
           k++;
         } // loop

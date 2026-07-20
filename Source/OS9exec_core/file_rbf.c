@@ -1266,7 +1266,7 @@ static Boolean ParseDiskSize( const char* s, uint32_t* sizeKBOut )
 
     if (sscanf( s,"%lu%c", &val,&modifier )<1) return false;
 
-    switch (tolower(modifier)) {
+    switch (tolower((unsigned char)modifier)) {
         case 'g' : val*= 1024; /* fall into M */
         case 'm' : val*= 1024; /* fall into k */
         case 'k' : val*= 1024;
@@ -1861,7 +1861,7 @@ static os9err CreateBlankDevice( ushort pid, const char* name, uint32_t sizeKB,
     FILE*     fp;
 
     if (*p==PSEP) p++; /* allow a leading '/' */
-    if (tolower(p[0])!='h' || p[1]==NUL || p[2]!=NUL || !isalnum((unsigned char)p[1]))
+    if (tolower((unsigned char)p[0])!='h' || p[1]==NUL || p[2]!=NUL || !isalnum((unsigned char)p[1]))
       return _errmsg( E_BPNAM, "mount -k: device must be h0..hz, got \"%s\".\n", name );
 
     strcpy( hostpath,startPath );
@@ -2013,7 +2013,7 @@ os9err int_mount( ushort pid, int argc, char** argv )
              p= argv[ k ];    
         if (*p=='-') { 
             p++;
-            switch (tolower(*p)) {
+            switch (tolower((unsigned char)*p)) {
                 case '?' : mount_usage( argv[0], pid ); return 0;
 
                 case 'w' : wProtect= true;         break;
@@ -2174,7 +2174,7 @@ os9err int_unmount( ushort pid, int argc, char** argv )
         p= argv[h];    
         if (*p=='-') { 
             p++;
-            switch (tolower(*p)) {
+            switch (tolower((unsigned char)*p)) {
                 case '?' :  unmount_usage( argv[0], pid ); return 0;
                 default  :  upe_printf("Error: unknown option '%c'!\n",*p); 
                             unmount_usage( argv[0], pid ); return 1;

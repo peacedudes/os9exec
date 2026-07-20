@@ -611,7 +611,7 @@ static void dumpmem(uint32_t *memptrP,int numlines)
         for (i=0;i<16;i++) {
             byte* hp= (byte*)FROM68K(*memptrP+i);
             char c= hp ? *hp : '?';
-            upe_printf("%c",isprint(c) ? c : '.');
+            upe_printf("%c",isprint((unsigned char)c) ? c : '.');
         }
         upe_printf("\n");
         (*memptrP)+=16;
@@ -734,7 +734,7 @@ ushort debugwait( void )
           }
         #endif
         
-        switch (tolower(inp[0])) {
+        switch (tolower((unsigned char)inp[0])) {
             case 'q' : stop_os9exec(); /* --- and never come back */
                                            
             case 'n' : if (inp[1]>0x20) {
@@ -743,7 +743,7 @@ ushort debugwait( void )
                        }
                        else triggername[0]=0;
                        
-            case 'r' : if (tolower(inp[1])=='u') temp=MAXPROCESSES;
+            case 'r' : if (tolower((unsigned char)inp[1])=='u') temp=MAXPROCESSES;
                        else if (sscanf(&inp[1],"%hu", &temp)<1) temp= currentpid;
                        dumpregs    ( temp ); break;
                        
@@ -763,7 +763,7 @@ ushort debugwait( void )
                        break;
                                          
             #ifdef MACOS9
-              case 'b': if (tolower(inp[1])=='b') {
+              case 'b': if (tolower((unsigned char)inp[1])=='b') {
                             Debugger();
                             break;
                         }
