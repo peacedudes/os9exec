@@ -650,12 +650,16 @@ void debug_return( regs_type* crp, ushort pid, Boolean cwti )
 ushort pthread_pid()
 {
   #ifdef THREAD_SUPPORT
-    ulong tid= pthread_self();
-    int   i;
-    
+    pthread_t tid= pthread_self();
+    int       i;
+
+    /* pthread_equal, not ==: pthread_t is opaque and comparing it as an
+       integer is not portable. The old code stashed it in a ulong and compared
+       against an int field, which truncated on every LP64 host and matched
+       nothing -- see the tid declaration in os9exec_nt.h. */
     for (i= 0; i<MAXPROCESSES; i++) {
-      if (procs[ i ].tid==tid) return i;
-    } // if
+      if (procs[ i ].tidValid && pthread_equal( procs[ i ].tid, tid )) return i;
+    } // for
   #endif
   
   return currentpid;

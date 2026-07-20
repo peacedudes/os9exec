@@ -206,7 +206,7 @@
 #endif
 
 #ifdef THREAD_SUPPORT
-  #include <types.h>
+  #include <pthread.h> /* was <types.h> -- see the note in os9exec_nt.h */
 #endif
 
 #ifdef PTOC_SUPPORT
@@ -1797,12 +1797,19 @@ static void large_pipe_connect( ushort pid, syspath_typ* spC )
    
   // The POSIX thread function, must be passed the Thread Object address as parameter
   //extern "C" void * IntCmdThread( void* threadVars );
-  void* IntCmdThread( ThreadVars* t )
+  void* IntCmdThread( void* threadVars )
   {
+    /* Takes void*, as pthread_create requires. It used to be declared
+       `void* IntCmdThread( ThreadVars* )` and passed straight to
+       pthread_create, which is an incompatible function pointer -- undefined
+       behaviour, and rejected outright by current compilers. The commented-out
+       prototype just above already had the right shape. */
+    ThreadVars*  t = (ThreadVars*)threadVars;
     os9err       err;
     process_typ* cp= &procs[ t->pid ];
     process_typ* pp;      
-    cp->tid= pthread_self();
+    cp->tid     = pthread_self();
+    cp->tidValid= true;
     
     err= (commandtable[t->index].iRoutine)( t->pid,t->argc,t->argv );
 
@@ -1817,7 +1824,7 @@ static void large_pipe_connect( ushort pid, syspath_typ* spC )
     sig_mask    ( t->pid, 0 ); /* activate queued intercepts */
     kill_process( t->pid    );
     free        ( t );
-    cp->tid= NULL;
+    cp->tidValid= false; /* pthread_t is opaque -- no null to assign */
 
     // mutex unlock for systemcalls
     pthread_mutex_unlock( &sysCallMutex );
@@ -1844,7 +1851,9 @@ static void large_pipe_connect( ushort pid, syspath_typ* spC )
     (*t)->pid  = pid;
     (*t)->index= index;
     (*t)->argc = argc;
-    (*t)->argv = (*t)+1;
+    /* the argv pointer array sits immediately after the struct; cast, because
+       (*t)+1 has the right ADDRESS but type ThreadVars* */
+    (*t)->argv = (char**)((*t)+1);
   
     p= (char*)*t + blk;
   
@@ -1931,8 +1940,12 @@ os9err callcommand( char* name, ushort pid, ushort parentid, int argc, char** ar
     #ifdef THREAD_SUPPORT
       if (*asThread) {
         err= PrepareParams         ( pid, index, argc, argv, &t );
-        if (!err)
+        if (!err) {
+          /* pthread_create's result was assigned and then ignored, so a failed
+             spawn looked exactly like a command that ran and did nothing. */
           rslt= pthread_create( &threadID, NULL, IntCmdThread,  t );
+          if (rslt!=0) { free( t ); err= os9error(E_NORAM); }
+        } // if
       } // if
     #endif
     

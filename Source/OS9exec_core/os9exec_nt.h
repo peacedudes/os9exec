@@ -311,7 +311,15 @@
 #endif
 
 #ifdef THREAD_SUPPORT
-  #include <types.h>
+  /* <pthread.h>, not <types.h>. The threading code below uses pthread_t,
+     pthread_mutex_t, pthread_self() and pthread_create(), and nothing else
+     includes pthread.h -- on the original Mac/MPW host <types.h> was the
+     umbrella header that happened to supply them. It exists on no platform
+     this builds on today, so THREAD_SUPPORT could not even be switched on to
+     look at. Same class as the glibc-internal __mode_t (8c4f2a0) and the bogus
+     struct __dirstream (28a24a0): a host-specific header standing in for the
+     portable one. */
+  #include <pthread.h>
 #endif
 
 #include <setjmp.h>
@@ -1254,7 +1262,19 @@ typedef struct {
                 pstate_typ saved_state;     /* saved process' state */
                 
                 os9addr_t my_args;          /* 68k arena offset of process argument area */
-                int   tid;                  /* thread ID */
+                #ifdef THREAD_SUPPORT
+                  /* pthread_t, NOT int. pthread_t is a POINTER on macOS and
+                     Linux, so storing pthread_self() in an int truncated it:
+                     pthread_pid() compared the truncated half against a full
+                     pthread_self() and could never match, so it always fell
+                     through to currentpid -- silently defeating the lookup it
+                     exists to perform. Worse under LLP64, where long is 32 bits.
+                     pthread_t is opaque and has no null value, so validity is a
+                     separate flag rather than the old `tid= NULL`, and
+                     comparison goes through pthread_equal(). */
+                  pthread_t tid;            /* thread running this process' internal command */
+                  Boolean   tidValid;       /* whether <tid> refers to a live thread */
+                #endif
             } process_typ;
             
 
