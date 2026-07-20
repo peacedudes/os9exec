@@ -64,6 +64,13 @@ let scratch     = "/\(scratchDev)"
 try? FileManager.default.removeItem(atPath: scratchDisk)
 try? FileManager.default.createDirectory(atPath: scratchDisk,
                                          withIntermediateDirectories: true)
+// Inside OS-9 the boot disk is /dd; the ONE thing /h0 is for is proving the
+// default device naming still resolves. That default is "startPath/<dev>" --
+// the emulator's working directory, which is this scratch -- so h0 is linked
+// here rather than forced with OS9H0. An explicit override would test the
+// override, not the default, and the alias would stop meaning anything.
+try? FileManager.default.createSymbolicLink(atPath: scratchDisk + "/h0",
+                                            withDestinationPath: diskPath)
 
 // Optional container image for testing
 // Docker: DOCKER_IMAGE=os9exec:latest swift run
@@ -129,13 +136,13 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
     // Named so a timeout can actually stop it -- see killContainer above.
     let containerName = "os9test-\(UUID().uuidString.prefix(8))"
 
-    // `mount -k` writes its scratch image relative to the emulator's working
-    // directory, and every scratch-image cleanup below deletes repoRoot/<dev>.
-    // Without pinning cwd the two only agree when the harness happens to be
-    // launched from the repo root: run it from test/ and the images are created
-    // one directory away from where they are deleted, so they survive to
-    // pollute the next run's `mount -k`.
-    process.currentDirectoryURL = repoRoot
+    // `mount -k` writes its scratch image relative to the emulator's WORKING
+    // DIRECTORY -- it ignores OS9Hx, verified directly -- and every image
+    // cleanup below deletes scratchDisk/<dev>. Both point at the per-run
+    // scratch so they cannot disagree: cwd used to be repoRoot, which put the
+    // images in the worktree where two runs from the same checkout overwrote
+    // each other's, and left h8/h9/ha/hb/hc lying about after a killed run.
+    process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
 
     if let image = dockerImage {
         // Run via Docker: mount local dd directory and pipe stdin/stdout
@@ -169,7 +176,8 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
         // Run locally: OS9DISK points straight at the repo-root h0 dir.
         process.executableURL = execURL
         process.arguments    = speedFlag + [shellArg]
-        process.environment  = ["OS9DISK": disk, "OS9H\(scratchDev.dropFirst())": scratchDisk]
+        process.environment  = ["OS9DISK": disk,
+                                "OS9H\(scratchDev.dropFirst())": scratchDisk]
     }
 
     let stdinPipe  = Pipe()
@@ -632,7 +640,7 @@ check("error: dir nonexistent path",    contains: "Error",    "dir /dd/no_such_d
 // and verify it with dsave -ive (not just touch), then delete the host
 // file -- no pre-existing disk image required.
 let scratchDevice   = "h9"
-let scratchHostPath = repoRoot.appendingPathComponent(scratchDevice).path
+let scratchHostPath = scratchDisk + "/" + scratchDevice
 try? FileManager.default.removeItem(atPath: scratchHostPath) // in case a previous run left it behind
 
 // One session, not four: `mount -k` writes its image relative to the emulator's
@@ -806,7 +814,7 @@ if !containerized {
     // is just this suite's default top-level session -- no login needed for it.
     let permDev     = "h8"
     let permDevPath = "/\(permDev)"
-    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(permDev).path)
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + permDev)
 
     // NOTE: every sequence below that ends still logged in as claude/dog closes
     // with an explicit "logout" before the run/check helpers' implicit final
@@ -849,7 +857,7 @@ if !containerized {
         contains: "Error #",
         "chd \(permDevPath)", "login dog", "chd \(permDevPath)", "attr f -nr", "logout")
 
-    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(permDev).path)
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + permDev)
 
     // ---- permissions: file-level write bit (has_open_perm's write path) ----
     // `>` redirection always requests create, so re-running it against a file
@@ -861,7 +869,7 @@ if !containerized {
     // cleared, succeeds when it's set).
     let filePermDev     = "hc"
     let filePermDevPath = "/\(filePermDev)"
-    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(filePermDev).path)
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + filePermDev)
 
     run("fs: permission — owner locks self out of writing own file (write bit via touch)",
         expectation: "clearing only owner-write blocks touch (open-for-write) on the owner's own file",
@@ -873,12 +881,12 @@ if !containerized {
         contains: "6162 63",
         "chd \(filePermDevPath)", "login claude", "chd \(filePermDevPath)", "dump f", "logout")
 
-    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(filePermDev).path)
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + filePermDev)
 
     // ---- permissions: directories (read gates traversal, write gates create/delete) ----
     let dirPermDev  = "ha"
     let dirPermPath = "/\(dirPermDev)"
-    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(dirPermDev).path)
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + dirPermDev)
 
     run("fs: permission dir — dog can create inside claude's dir while public r+w are set",
         expectation: "makdir's default attrs (owner+public rwx) let a non-owner create inside",
@@ -897,7 +905,7 @@ if !containerized {
         "chd \(dirPermPath)", "login claude", "chd \(dirPermPath)", "attr sub -npr", "logout",
         "login dog", "chd \(dirPermPath)/sub", "logout")
 
-    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(dirPermDev).path)
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + dirPermDev)
 
     // ---- permissions: pRdelete's parent-directory write check ----
     // Deletion is gated on the PARENT DIRECTORY's write permission, not on who
@@ -908,7 +916,7 @@ if !containerized {
     // control that proves the negative result above isn't vacuous.
     let delDev     = "hd"
     let delDevPath = "/\(delDev)"
-    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(delDev).path)
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + delDev)
 
     run("fs: permission del — dog blocked from deleting a file in claude's dir (no public-write)",
         expectation: "pRdelete's parent-directory write check rejects a non-owner without dir write",
@@ -923,7 +931,7 @@ if !containerized {
         absent: "Error #",
         "chd \(delDevPath)/sub2", "login claude", "chd \(delDevPath)/sub2", "del f", "logout")
 
-    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent(delDev).path)
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + delDev)
 
     // ---- permissions: RAM disk (mount -r) backed RBF gets identical enforcement ----
     // A RAM disk is still a genuine RBF filesystem (same file_rbf.c path as an
@@ -975,13 +983,13 @@ if !containerized {
     // hb/f is left write-denied at the real host level by the check above;
     // remove it so the next check's "echo abc >f" isn't trying to overwrite
     // a file it (correctly) no longer has permission to touch.
-    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent("hb").path)
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
 
     check("fs: permission — host-native: attr can still restore access it just revoked",
         contains: "6162 63",
         "mount -k=0 hb", "chd /hb", "echo abc >f",
         "attr f -nr -nw -ne -npr -npw -npe", "attr f -r -pr", "dump f")
-    try? FileManager.default.removeItem(atPath: repoRoot.appendingPathComponent("hb").path)
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
 }
 
 // ── F$STrap: exception-handler dispatch across a run of vectors ───────────────
