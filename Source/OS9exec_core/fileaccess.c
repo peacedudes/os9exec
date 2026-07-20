@@ -2167,7 +2167,15 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
                   fdsize= os9_long( 2*DIRENTRYSZ ); /* if no entries */   
               
                   if (spRec.dDsc!=NULL) {
-                      fdsize= os9_long( DirSize(&spRec) );
+                      /* Call DirSize ONCE into a temp. os9_long() is a macro that
+                         mentions its argument four times on a little-endian host,
+                         so passing a call expression directly ran DirSize four
+                         times -- and DirSize rewinds the directory and walks every
+                         entry, so that was four full directory traversals per FD
+                         read. (Same macro family as the TO68K double-evaluation
+                         that broke single-character path names.) */
+                      uint32_t dirbytes= DirSize(&spRec);
+                      fdsize= os9_long( dirbytes );
                       closedir( spRec.dDsc );
                   }
               }

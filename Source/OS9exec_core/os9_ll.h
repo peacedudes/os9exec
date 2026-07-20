@@ -168,7 +168,16 @@
     #endif
 
     /* access bytes/words/longs in OS9-byteorder */
-    /* (Intel needs byte reversal) */
+    /* (Intel needs byte reversal)
+     *
+     * CAUTION -- these mention their argument TWICE (os9_word) and FOUR TIMES
+     * (os9_long). Never pass an expression with a side effect, and never pass a
+     * call: `os9_long(DirSize(&sp))` really did run DirSize four times, and
+     * `TO68K(++p)` (same hazard, since fixed by making TO68K a function) advanced
+     * p twice and broke every one-character path name. Assign to a temp first.
+     * They cannot be made functions like TO68K was: on the big-endian branch
+     * below they are identity macros, so pinning a width here would silently
+     * truncate any caller that passes something wider. */
     #define os9_byte(b)    (b)
     #define os9_word(w) ((((w)<<8) &0xFF00)    |(((w)>>8) &0x00FF))
     #define os9_long(l) ((((l)<<24)&0xFF000000)|(((l)>>24)&0x000000FF)|(((l)<<8)&0x00FF0000)|(((l)>>8)&0x0000FF00))
