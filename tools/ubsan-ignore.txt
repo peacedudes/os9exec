@@ -1,0 +1,22 @@
+# UBSan ignorelist -- excludes the UAE 68k core from UndefinedBehaviorSanitizer.
+#
+# The UAE core contains 8 known UB sites (negative shift exponents, left shifts
+# overflowing int, left shift of a negative value). They are analysed and
+# recorded in ROADMAP.md and are deliberately NOT fixed: the standing rule is
+# "don't touch the UAE core". They are value-benign on two's-complement
+# hardware, so they indicate no wrong emulation result today.
+#
+# Without this file UBSan is useless as a gate. The very first instruction
+# dispatched trips newcpu.c:229, so with -fno-sanitize-recover every single test
+# aborts, and WITHOUT that flag UBSan only writes to stderr -- which the Swift
+# harness reads and discards. Either way, real UB in os9exec's own code is
+# invisible. Excluding the core makes a UBSan failure mean something.
+#
+# Usage:
+#   make -B CC="cc -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+#             -fsanitize-ignorelist=tools/ubsan-ignore.txt -g"
+#   swift run --package-path test
+#
+# If the UAE UB is ever addressed (ROADMAP has the upstream-friendly fix), drop
+# this file rather than letting it hide new problems.
+src:*/UAE68emulator/*
