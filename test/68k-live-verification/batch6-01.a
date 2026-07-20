@@ -1,0 +1,162 @@
+* Live-tests F$DFork($22), F$DExec($23), F$DExit($24) against
+* 68k/syscall-reference.md, using childprg68k (already on disk from
+* batch 1/2, a trivial F$Exit(77) module) as the debug target. Register
+* conventions cross-checked against os9exec's own fcalls.c
+* (OS9_F_DFork/OS9_F_DExec/OS9_F_DExit) before writing this.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+FDFork set $22
+FDExec set $23
+FDExit set $24
+IWrite set $8A
+FExit set $06
+*
+ psect batch601,Type_Lang,Attr_Rev,0,800,start
+start
+* --- F$DFork(same as F$Fork, plus (a2)=register frame buffer) ---
+ lea cpname(pc),a0
+ clr.w d0
+ clr.l d1
+ clr.l d2
+ clr.w d3
+ move.w #128,d4
+ movea.l a0,a1            harmless nonzero param ptr, param size 0
+ lea regbuf(pc),a2
+ trap #0
+ dc.w FDFork
+ bcc dfok
+ move.l d1,d7
+ lea dffailmsg(pc),a0
+ move.l #dffaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra done
+dfok
+ move.l d0,d6            save child pid
+ lea dfpassmsg(pc),a0
+ move.l #dfpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ moveq #0,d1
+ move.w d6,d1
+ bsr printnum
+*
+* --- F$DExec(d0.w=child pid,d1.l=instr count,d2.w=bkpt count,(a0)=list)
+* -- single-step exactly one instruction, no breakpoints ---
+ clr.l d0
+ move.w d6,d0
+ moveq #1,d1
+ clr.l d2
+ trap #0
+ dc.w FDExec
+ bcc dxok
+ move.l d1,d7
+ lea dxfailmsg(pc),a0
+ move.l #dxfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra dxittest
+dxok
+ lea dxpassmsg(pc),a0
+ move.l #dxpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+* --- F$DExit(d0.w=child pid) -- kill the debug child ---
+dxittest
+ clr.l d0
+ move.w d6,d0
+ trap #0
+ dc.w FDExit
+ bcc dtok
+ lea dtfailmsg(pc),a0
+ move.l #dtfaillen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+dtok
+ lea dtpassmsg(pc),a0
+ move.l #dtpasslen,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+printnum
+ sub.l #16,a7
+ movea.l a7,a1
+ adda.l #16,a1
+ move.l d1,d2
+ moveq #0,d3
+ tst.l d2
+ bne.s pn_loop
+ move.b #'0',-(a1)
+ moveq #1,d3
+ bra.s pn_output
+pn_loop
+ tst.l d2
+ beq.s pn_output
+ divu.w #10,d2
+ move.w d2,d0
+ swap d2
+ move.b d2,d1
+ add.b #'0',d1
+ move.b d1,-(a1)
+ addq.w #1,d3
+ clr.l d2
+ move.w d0,d2
+ bra.s pn_loop
+pn_output
+ movea.l a1,a0
+ move.l d3,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ add.l #16,a7
+ lea crbyte(pc),a0
+ moveq #2,d1
+ moveq #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+cpname dc.b "childprg68k",0
+dfpassmsg dc.b "PASS F$DFork pid="
+dfpasslen equ *-dfpassmsg
+dffailmsg dc.b "FAIL F$DFork err="
+dffaillen equ *-dffailmsg
+dxpassmsg dc.b "PASS F$DExec",13,10
+dxpasslen equ *-dxpassmsg
+dxfailmsg dc.b "FAIL F$DExec err="
+dxfaillen equ *-dxfailmsg
+dtpassmsg dc.b "PASS F$DExit",13,10
+dtpasslen equ *-dtpassmsg
+dtfailmsg dc.b "FAIL F$DExit err=",13,10
+dtfaillen equ *-dtfailmsg
+crbyte dc.b 13,10
+regbuf dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ ends
