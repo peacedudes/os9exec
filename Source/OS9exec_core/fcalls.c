@@ -2123,9 +2123,18 @@ os9err OS9_F_PrsNam( regs_type *rp, _pid_ )
     debugprintf(dbgFiles,dbgDeep,("# F$PrsNam: input string='%s'\n",p));
     if (*p=='/') rp->a[0]=TO68K(++p); /* assign updated ptr to path element */
     n=0; /* pathlist size=0 */
-    while (isalnum(*p) || *p=='.' || *p=='_' || *p=='$' || *p=='{' || *p=='}' ) {
+    /* Re-check IN_ARENA every step: the guest chose this string, so a name of
+       all name-chars with no terminator before the arena end would walk *p off
+       the arena (the initial IN_ARENA only covers the first byte) -- the same
+       one-check-then-walk hazard fixed in F$STrap. isalnum() also needs the byte
+       as unsigned char: *p is signed, and a name byte >=0x80 is negative, which
+       is UB for the ctype functions (cf. the (unsigned char) casts already in
+       os9main.c and file_rbf.c). */
+    while (IN_ARENA(p) &&
+           (isalnum((unsigned char)*p) || *p=='.' || *p=='_' || *p=='$' || *p=='{' || *p=='}')) {
         p++; n++;
     }
+    if (!IN_ARENA(p)) return os9error(E_BPADDR); /* name ran to the arena end with no terminator */
     if (n==0) return os9error(E_BNAM); /* null name is bad name */
     debugprintf(dbgFiles,dbgDeep,("# F$PrsNam: a0='%s', a1='%s', terminator='%c'\n",(char*)FROM68K(rp->a[0]),p,*p));
     rp->a[1]=TO68K(p); /* pointer to terminator */
