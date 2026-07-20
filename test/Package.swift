@@ -8,6 +8,15 @@ let package = Package(
         .executableTarget(
             name: "OS9Tests",
             path: "Sources/OS9Tests"
+        ),
+        .target(
+            name: "RBFHammerCore",
+            path: "Sources/RBFHammerCore"
+        ),
+        .testTarget(
+            name: "RBFHammerCoreTests",
+            dependencies: ["RBFHammerCore"],
+            path: "Tests/RBFHammerCoreTests"
         )
     ]
 )
