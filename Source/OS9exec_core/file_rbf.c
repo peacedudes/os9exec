@@ -2792,6 +2792,7 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     uint32_t    bstart=  rbf->currPos;
     ulong       boffs =  0;
     uint32_t    remain= *lenP;
+    uint32_t    reqLen= *lenP;  /* what was ASKED for; *lenP becomes what was got */
     uint32_t*   mw    = &spP->mustW;
     ulong       ma    = Max( dev->sas,dev->clusterSize );
     ulong       sect, slim, offs, size, totsize, maxc, pos, scs, *rs, pref, coff, sv, req;
@@ -3051,7 +3052,22 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
            * with a lock held on a later one. Reading is not destructive, so the
            * honest thing is to see what was actually delivered and hand it back
            * only if nobody holds those bytes. */
-          syspath_typ* spH= LockHolder( spP, sv, rbf->currPos );
+          /* The range ASKED FOR, not the range delivered: the manual is
+           * explicit that a ReadLn wanting 256 locks 256 wherever the CR
+           * actually landed.
+           * Clamped to the end of the file, though, because a reader has no
+           * business holding bytes that do not exist yet -- that ground
+           * belongs to whoever is appending, and is what the EOF lock covers.
+           * Without the clamp a follower asking for more than is there locks
+           * past the end, the producer's next append collides with it, and
+           * the two wait on each other forever: demonstrated, a live deadlock
+           * with an update-mode follower. */
+          ulong        eofPos= FDSize( spP );
+          ulong        lckEnd= sv+reqLen;
+          syspath_typ* spH;
+
+          if (lckEnd>eofPos) lckEnd= eofPos;
+          spH= (lckEnd>sv) ? LockHolder( spP, sv, lckEnd ) : NULL;
 
           if (spH!=NULL) {
               rbf->currPos= sv; /* pretend it never happened */
@@ -3063,10 +3079,11 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
           } // if
 
           WaitDone( spP );
-          if (rbf->updMode) {
-              rbf->lockBeg= sv;  /* exactly the bytes handed back, no more */
-              rbf->lockEnd= rbf->currPos;
-          } // if
+          if (rbf->updMode && lckEnd>sv) {
+              rbf->lockBeg= sv;      /* requested extent, clamped to the end */
+              rbf->lockEnd= lckEnd;
+          }
+          else LockDrop( spP ); /* nothing real was read: hold nothing */
       } // if
     } // if
 

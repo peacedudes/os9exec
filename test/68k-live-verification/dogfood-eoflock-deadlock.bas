@@ -10,6 +10,10 @@ PROCEDURE eofdlk
 ! E_DEADLK (254). That makes this testable at all -- the alternative is a
 ! test that hangs, which is the worst kind to own.
 !
+! The writer opens UPDATE, not WRITE, and must: locking belongs to
+! update-mode opens, so a plain write-only path is invisible to the
+! mechanism and a reader would simply be told the file ended (211).
+!
 ! Expect "OK deadlock refused err=254". A hang means the writer's identity
 ! is not being checked; 211 means the file was declared finished while a
 ! writer was still open, which is the bug this whole mechanism exists to fix.
@@ -19,7 +23,7 @@ DIM w, r: BYTE
 DIM e: INTEGER
 DIM line: STRING[20]
 ON ERROR GOTO 800
-CREATE #w, "dlk.dat": WRITE
+CREATE #w, "dlk.dat": UPDATE
 OPEN #r, "dlk.dat": READ
 WRITE #w, "ONLY"
 READ #r, line
