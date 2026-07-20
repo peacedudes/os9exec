@@ -63,6 +63,7 @@ Since the tagged `v0.0.0`, this branch fixes a large class of crashes, hangs, an
 **More robust**
 - **OS-9's own `debug` command works for the first time** — live register display, single-stepping, breakpoints. See [OS-9 `debug` now works](#os-9-debug-now-works).
 - **A buggy program can't crash the emulator through a syscall** — a wild or null pointer handed to a system call now returns `E_BPADDR`, as real OS-9 would, instead of faulting the host.
+- **A corrupt or hostile module file can't crash the loader** — a module whose internal name/data offsets point outside itself is rejected (`E_BMID`/`E_FNA`) instead of reading or writing host memory it shouldn't; sync word, parity and CRC alone were never enough to trust those offsets. An over-long path is likewise refused (`E_BPNAM`) instead of overrunning a buffer.
 - **Console baud-rate pacing** — output trickles at the path's configured baud rate like real serial hardware; `-r` restores full speed for scripts.
 
 **More platforms**
