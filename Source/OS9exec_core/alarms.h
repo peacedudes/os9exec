@@ -60,4 +60,6 @@ void   A_Kill     ( ushort pid );
 
 os9err Alarm( ushort pid, uint32_t *aId, short aFunc, ushort aCode, uint32_t aTime, uint32_t aDate );
 
+void CheckAlarms( void );
+
 /* eof */

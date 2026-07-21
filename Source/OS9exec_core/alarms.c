@@ -272,6 +272,39 @@ static os9err Alarm_AtJul( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTi
 
 
 
+void CheckAlarms( void )
+/* Deliver the signal for the earliest-due alarm, if it's actually due.
+ * alarm_queue is kept sorted by A_Insert, so index 0 is always the next one
+ * to fire.
+ *
+ * Callers: previously only the syscall (TRAP0) dispatch branch of
+ * os9exec_loop, which meant a due alarm sat unchecked for as long as every
+ * process in the system was asleep/blocked -- confirmed live, a 1-second
+ * alarm did not interrupt a 10-second F$Sleep, the signal only arriving once
+ * the sleep expired naturally and the process made its own next syscall.
+ * Root cause traced with a debug counter: while anything is asleep,
+ * os9exec_loop's own dispatch loop is not what's iterating -- do_arbitrate()
+ * (procstuff.c) blocks inside ITS OWN loop, calling DoWait() over and over
+ * until something's wakeUpTick expires, and control doesn't return to
+ * os9exec_loop until then. So the fix lives in DoWait() itself: the same
+ * function already polls stdin there (see its own comment, added for the
+ * identical "only DoWait() ever runs while idle" reason with tsmon), now
+ * also checked once per os9exec_loop iteration for symmetry/redundancy
+ * (harmless -- A_Remove() makes a duplicate check inert). */
+{
+	alarm_typ* aa= alarm_queue[ 0 ];
+	uint32_t   aaNew;
+
+	if (aa!=NULL && GetSystemTick()>=aa->due) {
+		aaNew= 0; /* must be zero! */
+		if (aa->cyclic) A_Make( aa->pid, &aaNew, aa->signal, aa->ticks, true );
+		send_signal          ( aa->pid,         aa->signal ); /* renew it */
+		A_Remove( aa ); /* and remove the old one */
+	} /* if */
+} /* CheckAlarms */
+
+
+
 os9err Alarm( ushort pid, uint32_t *aId, short aFunc, ushort sig, uint32_t aTime, uint32_t aDate )
 {
 	#define A_Delete    0x00

@@ -1535,6 +1535,249 @@ do {
     }
 }
 
+// ── F$Alarm: a fired alarm kills an active process (no F$Icpt handler) ─────────
+// 68k/syscall-reference.md flags this explicitly: A$Set's register contract and
+// A$Delete were Live-verified, but "actual signal delivery on firing not
+// exercised". F$Icpt (how a program would normally catch a delivered signal) is
+// itself documented non-functional on os9exec, so a program with no real
+// handler installed should be KILLED when an alarm fires (send_signal's
+// documented no-handler fallback, confirmed by reading procstuff.c's
+// send_signal()). Zero interval -- the check right after the very F$Alarm
+// syscall that creates it sees it already due, so this needs no sleep/wait
+// and isolates the fire-and-kill mechanism from any scheduling question.
+do {
+    let alAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Alarm  equ  $56",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect alfire1,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  clr.l   d0",
+        "  move.w  #1,d1",           // A$Set
+        "  move.w  #7,d2",           // sig=7, ordinary interceptable, no special name
+        "  clr.l   d3",              // interval=0 -- due immediately
+        "  OS9     F$Alarm",
+        "  bcs     setfail",
+        "  lea     nofiremsg(pc),a0",
+        "  moveq   #nofiremsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "setfail:",
+        "  lea     setfailmsg(pc),a0",
+        "  moveq   #setfailmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "nofiremsg:   dc.b  \"ALARM DID NOT FIRE\",$0D",
+        "nofiremsgl   equ   *-nofiremsg",
+        "setfailmsg:  dc.b  \"A$SET FAILED\",$0D",
+        "setfailmsgl  equ   *-setfailmsg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = scratchDisk + "/alfire1.a"
+    try? alAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "f$alarm: a fired alarm kills the owning process (no F$Icpt handler)"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/alfire1.a -o=/h5/alfire1.r",
+            "l68 /h5/alfire1.r -o=/h5/alfire1",
+            "/h5/alfire1"
+        ], timeout: 15)
+        if !out.contains("ALARM DID NOT FIRE") && !out.contains("A$SET FAILED") && out != "(timeout)" {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [an alarm with a zero interval must fire and kill the process immediately]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["alfire1.a", "alfire1.r", "alfire1"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
+// ── F$Alarm: a fired alarm interrupts a FINITE F$Sleep ─────────────────────────
+// The actual bug this pair of tests found and this fix addresses: while every
+// process in the system is asleep/blocked, os9exec_loop's own dispatch loop
+// is not what's iterating -- do_arbitrate() (procstuff.c) blocks inside its
+// own retry loop, calling DoWait() repeatedly until something's wakeUpTick
+// expires, and control doesn't return to os9exec_loop (where the alarm queue
+// used to be checked, only after an actual syscall dispatch) until then.
+// Confirmed live before the fix: a 1-second alarm did not interrupt a
+// 10-second F$Sleep -- the signal only arrived once the sleep expired
+// naturally and the process made its own next syscall. Fixed by also checking
+// CheckAlarms() inside DoWait() itself (alongside the existing CheckInputBuffers()
+// call there, added for the identical reason on a different symptom -- see
+// DoWait()'s own comment, procstuff.c).
+do {
+    let alAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Alarm  equ  $56",
+        "F$Sleep  equ  $0A",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect alfire2,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  clr.l   d0",
+        "  move.w  #1,d1",           // A$Set
+        "  move.w  #7,d2",           // sig=7
+        "  move.l  #100,d3",         // interval=100 ticks = 1 real second
+        "  OS9     F$Alarm",
+        "  bcs     setfail",
+        "  move.l  #1000,d0",        // F$Sleep(1000) -- finite, ~10 real seconds
+        "  OS9     F$Sleep",
+        "  lea     nofiremsg(pc),a0",
+        "  moveq   #nofiremsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "setfail:",
+        "  lea     setfailmsg(pc),a0",
+        "  moveq   #setfailmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "nofiremsg:   dc.b  \"ALARM DID NOT INTERRUPT FINITE SLEEP\",$0D",
+        "nofiremsgl   equ   *-nofiremsg",
+        "setfailmsg:  dc.b  \"A$SET FAILED\",$0D",
+        "setfailmsgl  equ   *-setfailmsg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = scratchDisk + "/alfire2.a"
+    try? alAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "f$alarm: a fired alarm interrupts a finite F$Sleep (does not wait it out)"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/alfire2.a -o=/h5/alfire2.r",
+            "l68 /h5/alfire2.r -o=/h5/alfire2",
+            "/h5/alfire2"
+        ], timeout: 15)
+        if !out.contains("ALARM DID NOT INTERRUPT FINITE SLEEP") && !out.contains("A$SET FAILED") && out != "(timeout)" {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [a 1-second alarm must interrupt a 10-second sleep, not wait it out]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["alfire2.a", "alfire2.r", "alfire2"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
+// ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
+// Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
+// natural timeout at all) was likewise never interrupted by a due alarm
+// before the fix -- doc note in the syscall reference explicitly said this
+// combination was "deliberately never tested live... nothing in a scripted
+// harness can safely signal it" until the alarm itself became a safe,
+// self-contained signal source for exactly this.
+do {
+    let alAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Alarm  equ  $56",
+        "F$Sleep  equ  $0A",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect alfire3,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  clr.l   d0",             // aId must be 0 on input (A_Make's own check)
+        "  move.w  #1,d1",          // A$Set (one-shot)
+        "  move.w  #7,d2",          // sig=7
+        "  move.l  #100,d3",        // interval=100 ticks = 1 real second
+        "  OS9     F$Alarm",
+        "  bcs     setfail",
+        "  clr.l   d0",             // F$Sleep(0): indefinite, wakes only on signal
+        "  OS9     F$Sleep",
+        "  lea     nofiremsg(pc),a0",
+        "  moveq   #nofiremsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "setfail:",
+        "  lea     setfailmsg(pc),a0",
+        "  moveq   #setfailmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "nofiremsg:   dc.b  \"ALARM DID NOT KILL SLEEPING PROCESS\",$0D",
+        "nofiremsgl   equ   *-nofiremsg",
+        "setfailmsg:  dc.b  \"A$SET FAILED\",$0D",
+        "setfailmsgl  equ   *-setfailmsg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = scratchDisk + "/alfire3.a"
+    try? alAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "f$alarm: a fired alarm interrupts an indefinite F$Sleep(0)"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/alfire3.a -o=/h5/alfire3.r",
+            "l68 /h5/alfire3.r -o=/h5/alfire3",
+            "/h5/alfire3"
+        ], timeout: 15)
+        if !out.contains("ALARM DID NOT KILL SLEEPING PROCESS") && !out.contains("A$SET FAILED") && out != "(timeout)" {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [an alarm must interrupt an indefinite sleep, which by design never wakes on its own]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["alfire3.a", "alfire3.r", "alfire3"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us

@@ -986,6 +986,14 @@ void DoWait( void )
      * and pd._signal=0 even after keystrokes were sent into the pty. */
     CheckInputBuffers();
 
+    /* Same reasoning, same fix shape, different symptom: a due F$Alarm was
+     * never checked here either, so a process asleep specifically to be
+     * woken BY its own alarm firing could sleep right through it -- confirmed
+     * live, a 1-second alarm did not interrupt a 10-second F$Sleep. See
+     * CheckAlarms()'s own comment (alarms.c) for the debug trace that found
+     * this idle-wait loop as the actual root cause. */
+    CheckAlarms();
+
   #elif defined windows32
   //ulong ticks= GetSystemTick();
     Sleep( 1 ); // sleep for a short time

@@ -1951,8 +1951,6 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
   if (!fromIntUtil) os9_tick_start();
   ushort       svd_intpid= 0; // by default, we are not called from intutil
   ulong        resL;          // llm_os9_go result
-  alarm_typ*   aa;
-  uint32_t    aaNew;         // new alarm number for cyclic alarm
   Boolean      last_arbitrate;
   process_typ* sigp;
   
@@ -1967,6 +1965,12 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
   } // if
   
   do {
+    // --- checked every round regardless of process state: a due alarm used to
+    // sit unfired for as long as every process was asleep/blocked, since the
+    // only other check ran inside actual syscall dispatch, further down. See
+    // CheckAlarms()'s own comment for how this was confirmed live.
+    CheckAlarms();
+
     // --- prepare for entry into OS9 world, process is "currentpid"
     cpid= currentpid;     // make a copy to allow currentpid to be changed by F$xxx calls
     cp  = &procs[ cpid ]; // pointer to procs   descriptor
@@ -2155,16 +2159,11 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
           get_syscall_name(cp->func),cpid,PStateStr(cp));
         } // if
 				
-    	// --- Alarm handling
-            aa= alarm_queue[ 0 ];
-        if (aa!=NULL) {
-          if (GetSystemTick()>=aa->due) {     aaNew= 0; // must be zero !
-            if (aa->cyclic) A_Make( aa->pid, &aaNew, aa->signal, aa->ticks, true );
-            send_signal           ( aa->pid,         aa->signal ); // renew it
-            A_Remove( aa ); // and remove the old one
-          } // if
-        } // if
-   
+    	// --- Alarm handling (also checked unconditionally at the top of this
+    	// loop, see CheckAlarms() there -- this call is now usually a no-op,
+    	// left in place rather than relied on alone)
+        CheckAlarms();
+
         // --------------------------------------------
         // asynchronous signals are allowed here
         async_area= true; 
