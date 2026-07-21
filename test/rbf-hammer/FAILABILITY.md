@@ -430,8 +430,22 @@ call: refuse to delete a file open for write (`E_SHARE`, as some OS-9 versions
 do), or defer/rerun deallocation on the last close of a deleted file. Recorded
 with `XCTExpectFailure` in `testDeletingFilesMidWriteReclaimsAllSpace`: the suite
 stays green, and if os9exec is ever changed here the test "unexpectedly passes"
-and fails loudly, prompting a revisit. **Not yet checked on 6809/NitrOS-9 --
-worth doing, since a leak there would be a separate clone finding.**
+and fails loudly, prompting a revisit.
+
+**★ Cross-checked on real NitrOS-9 (6809) -- it does NOT have the leak, because
+it forbids the operation that causes it.** `Live` on a `format`ted 512-sector
+RAM disk (`/r0`): a writer holds a file open `UPDATE`, another `del` is issued
+mid-write, and NitrOS-9 RBF returns **`Error #253` (Non-sharable file busy,
+`E$Share`)** -- it REFUSES to delete a file open non-sharable. Close the file
+first, then `del` succeeds, `free` returns to baseline (495/495), `dcheck`
+intact. So the reference RBF makes the leak impossible by rejecting delete of an
+open write file. os9exec instead ALLOWS that delete (deferred) and then leaks the
+post-delete writes. **This is the strongest evidence the os9exec behaviour is a
+defect, not undefined-but-acceptable: the canonical RBF returns `E$Share` here,
+and matching it (enforce the non-sharable check on the delete path) is the
+clean fix.** (NitrOS-9's `dcheck` uses the same "file structure is intact" clean
+bill, so the oracle ports; its `free` groups digits with commas on large
+devices, which the oracle's regex would need to tolerate for a full 6809 port.)
 
 Remaining destructive scenario (truncate-under-reader) needs an `SS.Size` path
 the 68k shell does not expose; deferred.
