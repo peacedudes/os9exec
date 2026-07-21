@@ -2011,6 +2011,18 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
     if (cp->state==pSysTask) {
       arbitrate= true; // allow arbitration by default after sysTask execution
       
+      // A process parked in a blocked pipe/tty write (pSysTask) never reaches
+      // the pActive-branch async signal handling further below, so a queued
+      // keyboard abort (Ctrl-C/Ctrl-E) or F$Send signal could never interrupt
+      // it -- it stayed wedged until a restart. Drain pending signals here too,
+      // the same way the pActive path does; a delivered abort kills the process
+      // (state left != pSysTask), so only run the write continuation while it is
+      // still blocked.
+      async_area= true;
+      if (async_pending && cp->masklevel<=0) sig_mask( cpid, 0 );
+      async_area= false;
+
+      if (cp->state==pSysTask) {
       // --- execute system task function
           cp->oerr= (cp->systask)( cpid,cp->systaskdataP, crp );
       if (cp->oerr) set_os9_state( cpid, pActive, "" ); // on error, continue with task execution anyway
@@ -2023,6 +2035,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
                                 crp->sr |=  CARRY; }
         else                    crp->sr &= ~CARRY;
       } // if
+      } // if still blocked after draining signals
     } // system task
     
     else if (cp->state==pActive   ||
