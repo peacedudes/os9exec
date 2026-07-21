@@ -1690,7 +1690,13 @@ os9err syspath_read( ushort pid,ushort spnum, uint32_t *len, void* buffer, Boole
     syspath_typ*   spP= get_syspathd( pid,spnum );
 
     if  (spP==NULL) return os9error(E_BPNUM);
-    
+
+    /* Symmetric to the write side: reading a disk file that was NOT opened with
+     * read access is E$BMode. Only disk-file types are checked (directories are
+     * fDir, not fFile/fRBF, so directory reads are unaffected). R = 0x01. */
+    if ((spP->type==fRBF || spP->type==fFile) && !(spP->mode & 0x01))
+        return os9error(E_BMODE);
+
                      f= fmgr_op[spP->type];
     if (rdln) rproc= f->readln;
     else      rproc= f->read;
