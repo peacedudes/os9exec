@@ -65,6 +65,19 @@ final class ScenarioTests: XCTestCase {
         XCTAssertFalse(result.transcript.contains("FAIL"),
                        "a worker reported failure:\n\(result.transcript)",
                        file: file, line: line)
+
+        // Structural: a real RBF device also ran `dcheck`/`free`. A file that
+        // reads back perfectly proves nothing if the filesystem around it is
+        // cross-linked or leaking clusters -- damage a content check cannot see.
+        // Host directories are not RBF, so `dcheck` never ran and there is
+        // nothing to judge.
+        if scenario.backend != .hostDirectory {
+            let structural = StructuralOracle.structuralViolations(dcheck: result.transcript)
+            XCTAssertEqual(structural, [],
+                           "scenario '\(scenario.name)' left the device damaged:\n"
+                         + structural.map(\.detail).joined(separator: "\n")
+                         + "\nScratch kept at \(result.scratchPath)", file: file, line: line)
+        }
     }
 
     // ── Single worker, one per backend ────────────────────────────────────────

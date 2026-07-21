@@ -64,6 +64,15 @@ public struct Violation: Equatable, Sendable {
 
         /// Fewer (or more) records than the worker reported writing.
         case countMismatch
+
+        /// `dcheck` did not report the filesystem structure intact: a
+        /// cross-linked, unaccounted, or dangling sector -- the on-disk damage a
+        /// content check cannot see. This is what the destructive scenarios hunt.
+        case structuralDamage
+
+        /// The device's free-sector count did not return to its baseline after a
+        /// create/delete round-trip: allocation was leaked or double-freed.
+        case allocationLeak
     }
 
     /// Which class of damage this is.

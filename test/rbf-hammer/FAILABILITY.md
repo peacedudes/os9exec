@@ -34,6 +34,8 @@ Record the exact mutation so it can be reproduced.
 
 | `ScenarioTests` (all 6, end-to-end through os9exec) | Adapter substitutes `@COUNT@` as `worker.count - 1`, so the guest writes one fewer record than the scenario claims | **All 6 went red** (15 assertion failures). Proves the full path is live: the guest really runs, the file really comes back, and the host really compares | 2026-07-20 |
 
+| `StructuralOracle` (the on-disk damage oracle for the destructive scenarios) | **Real corruption, not a code mutation:** a fresh `mount -k=500K` image was given a file, then a bitmap byte was flipped host-side (`byte 268 |= 0x10`) to mark an unused sector allocated, and `dcheck` re-run | **`dcheck` DETECTED it** (`Sector 000063 ... not in file structure` / `1 cluster not in file structure`) and the oracle reports `.structuralDamage`. Crucially it also caught the oracle being WRONG first: `dcheck` prints `file structure is intact` **alongside** the fault, so a naive "require intact" check passed the corrupt disk. Fixed to also require every allocation-fault phrase absent; the unit test now uses this exact real output | 2026-07-21 |
+
 ### Harness defect found by adding a multi-worker scenario
 
 The single-worker scenarios passed while the four-worker ones failed, and the
