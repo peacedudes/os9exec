@@ -170,6 +170,12 @@ At nap 400, both directions are demonstrated and both are fast (~10s):
 | `rmwfree` — no lock taken | **26–28** (loses ~13 of 40) | 6+, every one lost updates |
 | `rmw` — update-mode auto-lock | **40** — perfect | 5+, every one perfect |
 
+**Re-blessed after the PACK+runb change (2026-07-21):** with launches now via
+`runb`, the control still loses every time (5/5) and the locked side still keeps
+a perfect 40 (2/2), both at load ~5. PACK+runb changed only HOW the worker is
+launched, not the nap timing, so the interleave is unaffected — confirmed, not
+assumed. Both halves of the gate hold.
+
 `testUnlockedReadModifyWriteDoesLoseUpdatesOn6809` is the permanent guard: if it
 ever keeps a full 40, the `.nilWrites` window has stopped opening and every other
 6809 lock result must be treated as meaningless again — exactly the 600/600
