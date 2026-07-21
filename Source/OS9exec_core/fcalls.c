@@ -610,7 +610,7 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
     short        evCode= loword(rp->d[1]);
     process_typ* cp    = &procs[cpid];
     
-    int          evValue;
+    int          evValue= 0; /* stays 0 if evWait() errors out before setting it */
     short        wIncr, sIncr;
     int          minV,  maxV;
     uint32_t     evId;
@@ -656,16 +656,22 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
         case Ev_Wait:   evId= rp->d[0];
                         minV= rp->d[2];
                         maxV= rp->d[3];
-                        
+
                         if (cp->state==pWaitRead) {
                             set_os9_state( cpid, cp->saved_state, "OS9_F_Event" );
                         }
                         err= evWait( evId, minV,maxV, &evValue );
-                        if (err) {
+                        /* EV_NOTYET (valid event, value not in range yet) parks the
+                           process for a retry next round. Anything else -- most
+                           notably a genuinely bad evId (E_EVNTID) -- must NOT park:
+                           evWait() used to return E_EVNTID for both cases, so a bad
+                           ID parked here forever instead of erroring, since nothing
+                           re-checks "is this ID even real" on the next retry either. */
+                        if (err==EV_NOTYET) {
                             cp->saved_state= cp->state;
                             set_os9_state( cpid, pWaitRead, "OS9_F_Event" );
                         }
-                        
+
                         rp->d[1]= evValue;
                         break;
                         

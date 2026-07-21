@@ -189,13 +189,13 @@ os9err evWait( uint32_t evId, int minV, int maxV, int *evValue )
     }
     
     if (ev->value>=minV &&
-        ev->value<=maxV) { 
+        ev->value<=maxV) {
         ev->value+= ev->wInc;
-        *evValue  = ev->value; 
-        return 0; 
+        *evValue  = ev->value;
+        return 0;
     } /* if */
-    
-    return E_EVNTID;
+
+    return EV_NOTYET; /* valid event, just not in range yet -- caller should park & retry */
 } /* evWait */
 
 

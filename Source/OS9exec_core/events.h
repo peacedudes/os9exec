@@ -66,6 +66,13 @@
 #define Ev_Set      0x0A
 #define Ev_SetR     0x0B
 
+/* evWait()-internal: value not yet in the requested range, distinct from a
+   genuinely invalid event ID (E_EVNTID). Never returned to guest code -- the
+   OS9_F_Event dispatcher (fcalls.c) uses it only to decide whether to park
+   the process and retry. Chosen well outside the real 0-255 OS-9 error-code
+   range (os9errno.h) so it can never collide with one. */
+#define EV_NOTYET   0xFFFF
+
 
 
 /* the routines */

@@ -1346,6 +1346,195 @@ do {
     }
 }
 
+// ── F$Event: a bad event ID errors immediately instead of hanging forever ──────
+// evWait() (events.c) used to return E_EVNTID for BOTH "no such event" and
+// "value not yet in range" -- the exact same code the polling dispatch loop in
+// fcalls.c's OS9_F_Event treats as "not ready yet, park and retry". A
+// genuinely bad ID can never satisfy the range check, so the process parked
+// forever instead of getting an error back -- confirmed hanging past a 20s
+// timeout before the fix (EV_NOTYET, a distinct internal-only sentinel, now
+// separates "keep waiting" from "this ID was never valid").
+do {
+    let evAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Event  equ  $53",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect evwtst,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  moveq   #1,d0",          // bogus event ID -- never created by anyone
+        "  move.w  #4,d1",          // Ev_Wait
+        "  moveq   #0,d2",          // minV
+        "  move.l  #999,d3",        // maxV
+        "  OS9     F$Event",
+        "  bcs     gotErr",
+        "  lea     nofail(pc),a0",
+        "  moveq   #nofaill,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "gotErr:",
+        "  lea     mok(pc),a0",
+        "  moveq   #mokl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "mok:  dc.b  \"EVWAIT BAD ID RETURNED ERROR\",$0D",
+        "mokl  equ   *-mok",
+        "nofail:  dc.b  \"EVWAIT BAD ID DID NOT ERROR\",$0D",
+        "nofaill  equ   *-nofail",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = scratchDisk + "/evwtst.a"
+    try? evAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "f$event: Ev_Wait on a bad event ID errors immediately, doesn't hang"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/evwtst.a -o=/h5/evwtst.r",
+            "l68 /h5/evwtst.r -o=/h5/evwtst",
+            "/h5/evwtst"
+        ], timeout: 20)
+        if out.contains("EVWAIT BAD ID RETURNED ERROR") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [a bad event ID must error immediately, not park forever]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["evwtst.a", "evwtst.r", "evwtst"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
+// ── F$Event: Creat/Wait/Signl/Wait/Delet lifecycle round-trip ──────────────────
+// The Event Manager had zero automated coverage before this (not even manually
+// Live-verified per 68k/syscall-reference.md -- "Manual, name-level only").
+// Initial value is chosen already inside the wait range so this single process
+// never blocks: a genuinely-blocking wait (a second process signalling a first
+// process's parked wait) is a separate, harder test not attempted here.
+do {
+    let evAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Event  equ  $53",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect evlife,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  lea     evname(pc),a0",
+        "  moveq   #5,d0",           // initial value 5 -- already inside [1,999]
+        "  move.w  #2,d1",           // Ev_Creat
+        "  moveq   #1,d2",           // wIncr
+        "  moveq   #1,d3",           // sIncr
+        "  OS9     F$Event",
+        "  bcs     fail",
+        "  lea     evId(pc),a1",
+        "  move.l  d0,(a1)",
+        "",
+        "  lea     evId(pc),a1",     // Ev_Wait #1: 5 is already in range -> value becomes 6
+        "  move.l  (a1),d0",
+        "  move.w  #4,d1",
+        "  moveq   #1,d2",
+        "  move.l  #999,d3",
+        "  OS9     F$Event",
+        "  bcs     fail",
+        "  cmp.l   #6,d1",
+        "  bne     fail",
+        "",
+        "  lea     evId(pc),a1",     // Ev_Signl: value 6+1=7
+        "  move.l  (a1),d0",
+        "  move.w  #8,d1",
+        "  OS9     F$Event",
+        "  bcs     fail",
+        "",
+        "  lea     evId(pc),a1",     // Ev_Wait #2: 7 is in range -> value becomes 8
+        "  move.l  (a1),d0",
+        "  move.w  #4,d1",
+        "  moveq   #1,d2",
+        "  move.l  #999,d3",
+        "  OS9     F$Event",
+        "  bcs     fail",
+        "  cmp.l   #8,d1",
+        "  bne     fail",
+        "",
+        "  lea     evname(pc),a0",   // Ev_Delet: by name, not by ID
+        "  move.w  #3,d1",
+        "  OS9     F$Event",
+        "  bcs     fail",
+        "",
+        "  lea     okmsg(pc),a0",
+        "  moveq   #okmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "fail:",
+        "  lea     failmsg(pc),a0",
+        "  moveq   #failmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "evname:   dc.b  \"evlftst1\",0",
+        "evId:     dc.l  0",
+        "okmsg:    dc.b  \"EVENT LIFECYCLE OK\",$0D",
+        "okmsgl    equ   *-okmsg",
+        "failmsg:  dc.b  \"EVENT LIFECYCLE FAILED\",$0D",
+        "failmsgl  equ   *-failmsg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = scratchDisk + "/evlife.a"
+    try? evAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "f$event: Ev_Creat/Ev_Wait/Ev_Signl/Ev_Wait/Ev_Delet round-trip"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/evlife.a -o=/h5/evlife.r",
+            "l68 /h5/evlife.r -o=/h5/evlife",
+            "/h5/evlife"
+        ], timeout: 20)
+        if out.contains("EVENT LIFECYCLE OK") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [Creat->Wait->Signl->Wait->Delet must all succeed with the expected values]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["evlife.a", "evlife.r", "evlife"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us
