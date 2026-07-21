@@ -19,7 +19,7 @@ DIM rec(5): INTEGER
 DIM n, now: INTEGER
 DIM d: STRING[40]
 OPEN #path, "rl.dat": READ
-PRINT #2, "follo: opened"
+PRINT #2, "follo: opened v7"
 FOR n = 1 TO 99
   GET #path, rec
   d = DATE$

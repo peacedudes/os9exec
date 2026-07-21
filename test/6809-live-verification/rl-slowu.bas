@@ -13,6 +13,7 @@ DIM rec(5): INTEGER
 DIM i, j: INTEGER
 DIM d: STRING[40]
 OPEN #path, "rl.dat": UPDATE
+PRINT #2, "slowu: start v7"
 SEEK #path, 10
 FOR i = 2 TO 6
   d = DATE$
