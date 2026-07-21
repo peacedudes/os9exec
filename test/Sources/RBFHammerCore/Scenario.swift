@@ -164,14 +164,21 @@ public struct Scenario: Equatable, Sendable {
     /// wait/wake path, so this is an oracle, not just plumbing.
     public let timeout: TimeInterval
 
+    /// Size in KB of the RBF image device (`mount -k`). Small values are how the
+    /// disk-full scenarios exhaust space deliberately rather than by accident.
+    /// Ignored by the RAM-disk and host-directory backends.
+    public let deviceKB: Int
+
     /// Creates a scenario.
     public init(name: String, backend: Backend, workers: [WorkerSpec],
-                tick: TickMode = .enabled, timeout: TimeInterval = 60) {
+                tick: TickMode = .enabled, timeout: TimeInterval = 60,
+                deviceKB: Int = 500) {
         self.name = name
         self.backend = backend
         self.workers = workers
         self.tick = tick
         self.timeout = timeout
+        self.deviceKB = deviceKB
     }
 
     /// Every distinct file the roster touches.

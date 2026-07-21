@@ -110,7 +110,7 @@ public struct Adapter68k: Adapter {
     /// Builds the shell command sequence for a scenario.
     private func commands(for scenario: Scenario) -> [String] {
         var lines = ["chx /dd/CMDS", "load math cio"]
-        lines += Backend68k.setup(scenario.backend)
+        lines += Backend68k.setup(scenario.backend, deviceKB: scenario.deviceKB)
 
         // Provisioning workers run FIRST and in the foreground. A shared file
         // must exist before the racers open it, and two workers both CREATEing

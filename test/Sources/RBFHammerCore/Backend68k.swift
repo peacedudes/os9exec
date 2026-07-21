@@ -33,10 +33,10 @@ enum Backend68k {
     /// The host directory needs none: it is mounted by the emulator itself
     /// through `OS9H5`, which is exactly what makes it the backend the host can
     /// read back directly.
-    static func setup(_ backend: Backend) -> [String] {
+    static func setup(_ backend: Backend, deviceKB: Int = 500) -> [String] {
         switch backend {
         case .ramDisk: return ["mount -r=400 /ram9"]
-        case .rbfImage: return ["mount -k=500K h9"]
+        case .rbfImage: return ["mount -k=\(deviceKB)K h9"]
         case .hostDirectory: return []
         }
     }
