@@ -155,22 +155,18 @@ final class DestructiveTests: XCTestCase {
 
     // ── Delete several growing files at once ───────────────────────────────────
 
-    /// ★ A REAL FINDING the hammer surfaced (2026-07-21), deterministic and
-    /// isolated: **deleting a file that is still being WRITTEN leaks the clusters
-    /// allocated after the delete.** Four workers grow their own files; part way
-    /// in, all four are deleted; the workers keep writing to the doomed files and
-    /// finish. Afterwards `dcheck` reports orphaned sectors ("not in file
-    /// structure") and `free` is short of the pristine count -- the post-delete
-    /// writes' clusters were never reclaimed.
-    ///
-    /// It is NOT delete itself: `testLeakIsolation_deleteAfterClose` deletes the
-    /// same kind of file AFTER the writer closes and reclaims perfectly. The
-    /// fault is specifically writing to a deleted-but-open file. Whether that is
-    /// an os9exec defect or faithful to OS-9's undefined handling of the
-    /// operation is for the owner to judge; `XCTExpectFailure` records it so the
-    /// suite stays green AND flags loudly if the behaviour ever changes. See
-    /// FAILABILITY.md.
-    func testDeletingFilesMidWriteReclaimsAllSpace() throws {
+    /// ★ Was a REAL FINDING (2026-07-21), now FIXED: deleting a file still open
+    /// for WRITE leaked every cluster allocated after the delete, because
+    /// `DeallocateBlocks` runs once at delete time and no later close frees what
+    /// the still-open writer keeps adding. The fix matches canonical OS-9 -- RBF
+    /// now refuses the delete with `E$Share` (253) while any other path holds the
+    /// file open for write, exactly as real NitrOS-9 does (which is why that
+    /// reference never had the leak). This test guards the fix: four workers grow
+    /// their own files, all four are `del`eted mid-write, and each delete must be
+    /// REFUSED while the device stays structurally intact. A regression that
+    /// allowed the delete again would drop the E_SHARE refusals AND make the
+    /// orphaned-cluster oracle fire -- both loud. See FAILABILITY.md.
+    func testDeletingFilesOpenForWriteIsRefusedWithShare() throws {
         let files = (1...4).map { "/h9/churn\($0).dat" }
         let roster = files.enumerated().map { index, file in
             WorkerSpec(id: index + 1, role: .append, file: file,
@@ -184,18 +180,33 @@ final class DestructiveTests: XCTestCase {
 
         XCTAssertFalse(result.timedOut, "delete-during-write hung:\n\(result.transcript)")
 
-        XCTExpectFailure("delete-during-write leaks clusters -- real finding, owner to triage") {
-            let structural = StructuralOracle.structuralViolations(dcheck: result.transcript)
-            XCTAssertEqual(structural, [],
-                           "deleting growing files left the image damaged:\n"
-                         + structural.map(\.detail).joined(separator: "\n"))
-
-            if let free = StructuralOracle.freeSectors(in: result.transcript),
-               let capacity = StructuralOracle.capacitySectors(in: result.transcript) {
-                XCTAssertGreaterThanOrEqual(free, capacity - 8,
-                               "leaked clusters: only \(free)/\(capacity) sectors free")
-            }
+        // The del must land mid-write: each worker finishing its 40 records proves
+        // it held the file open for write across the delete attempt, so a refusal
+        // here is a refusal of a genuinely-busy file, not of an idle one.
+        for id in 1...4 {
+            XCTAssertTrue(result.transcript.contains("worker \(id) wrote 40"),
+                          "worker \(id) did not finish -- the del may not have raced a live writer:\n"
+                        + result.transcript)
         }
+
+        // Canonical OS-9: every delete of a file open for write is refused. The
+        // `E$Share` code proves it is the busy-file refusal specifically, not some
+        // unrelated error standing in for it.
+        XCTAssertTrue(result.transcript.contains("E_SHARE"),
+                      "no E_SHARE refusal -- the busy-file delete was not rejected:\n"
+                    + result.transcript)
+        for file in files {
+            XCTAssertTrue(result.transcript.contains("can't delete '\(file)'"),
+                          "delete of open-for-write '\(file)' was not refused:\n"
+                        + result.transcript)
+        }
+
+        // The integrity guarantee the leak violated: no orphaned clusters.
+        let structural = StructuralOracle.structuralViolations(dcheck: result.transcript)
+        XCTAssertEqual(structural, [],
+                       "delete-during-write left the image damaged:\n"
+                     + structural.map(\.detail).joined(separator: "\n")
+                     + "\nScratch kept at \(result.scratchPath)")
     }
 
     /// Isolation for the finding above: one writer, but the `del` waits until the

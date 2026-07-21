@@ -394,7 +394,23 @@ cross-linked or leaking clusters is caught even when every file reads back clean
 | **delete held-open** — pre-extend a file, two readers walk it slowly (nap=3), `del` it mid-read | Deferred-delete, done right: both readers `read done 40` off the doomed file, then on last close the clusters were reclaimed (`free` back to the pristine 2012/2016) and `dcheck` stayed intact. `Live` 2026-07-21 | Two checks that can each fail: `dcheck` structural damage (oracle proven-failable), AND `free >= capacity-8` -- a delete-while-open that leaked the file's clusters would leave free well short and fail the reclamation assertion |
 | **kill mid-write** — a lone slow writer (nap=3) is `kill 3`ed while extending a file | Clean process-death cleanup: proc 3 `Exited with Error #000:228 (E_PRCABT)` after ~5 of 100 records, `F$Exit` closed its open path, and `dcheck` reported the half-written file's device intact (9 of 2016 sectors used, accounted for). `Live` 2026-07-21 | The test REQUIRES the absence of `worker 1 wrote 100` -- a writer that finished before the kill fails the "was it interrupted?" guard -- plus the proven-failable structural oracle |
 
-### ★★ REAL FINDING: delete-during-write leaks clusters (owner, please triage)
+### ★★ FIXED (was: delete-during-write leaks clusters)
+
+**Resolution 2026-07-21:** fixed in `file_rbf.c` by matching canonical OS-9 —
+`pRdelete` now refuses to delete a file another path holds open for write,
+returning `E$Share` (253), the exact behaviour the NitrOS-9 cross-check below
+proved the reference RBF uses. New helper `RingHasOtherWriter` walks the open
+path ring (the same structure the shared-buffer cache uses) for any member with
+`wMode` set. Verified live: the pre-fix binary orphaned 28 clusters with no
+refusal; post-fix all four mid-write `del`s return `Error #000:253 (E_SHARE)`,
+the writers finish, and `dcheck` reports the device intact.
+`testDeletingFilesOpenForWriteIsRefusedWithShare` now guards it — a regression
+that allowed the delete again drops the E_SHARE lines AND fires the orphan
+oracle, both loud. Readers still delete-defer cleanly
+(`testDeletingAFileHeldOpenLeavesTheImageIntact` unchanged) because the gate is
+write-mode only. This also closes the ROADMAP "E$Share not enforced when
+deleting an open file" item for the RBF path. Original finding, kept as the
+record of how it was chased down:
 
 The destructive hammer found a genuine, **deterministic, isolated** RBF
 allocation fault in os9exec (68k):
