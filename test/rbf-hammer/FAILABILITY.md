@@ -237,6 +237,31 @@ done. Replaced by waiting on each worker's own `hammer: worker N ...` line
 (`waitForWorkers`) — no extra command to drop, and a missing worker names itself.
 `renderPack` is 6809-only; the shared template and the 68k path are untouched.
 
+### The lock PAIR keeps a residual load-sensitivity — now guarded (2026-07-21)
+
+PACK+runb cured the editor-build hang, but a full-suite run at 1-min load ~4
+showed the rmw **control** (`testUnlockedReadModifyWriteDoesLoseUpdatesOn6809`,
+`.nilWrites` nap 400) is still load-fragile for a *different* reason: with no
+editor left to race, a racer can still be starved of CPU inside the `.nilWrites`
+burst under host load, so the four workers fail to overlap and the roster hangs
+to the 600s timeout (the LOCKED half passed the same run in 13.7s — the lock
+itself is fine; only the control's interleave is timing-dependent). So the
+earlier "green at load ~5" reading held for the editor-race fix but not for the
+pair's interleave window. This is the load caveat the P1 notes flagged as
+unexplained-but-direction-safe, now pinned to worker starvation rather than
+editor parsing.
+
+**Guarded, not papered over:** both lock-pair tests now call
+`skipLockPairWhenHostBusy()`, which reads the 1-min load (`getloadavg`) and
+`XCTSkip`s above `maxLoadForLockPair` (2.5 — measured rock-solid below ~2,
+fragile by ~4-5). Seen fail first: the un-guarded run hung 606s and failed at
+load 3.7; guarded, the same two tests skip in 0.001s with the load in the
+message. At a quiet host they run and assert as before — the control must still
+lose updates or the locked result means nothing. The skip is honest: under load
+there is simply no lock verdict, neither a false pass nor a ten-minute hang. The
+other eight 6809 tests (destructive, four-worker, single) are NOT timing-gated
+and stay green under load — verified live at load ~4 (all passed, 11-14s each).
+
 ### RAM: the CoCo3 is now given 2MB, not the stock 512K
 
 `Backend`/`replEnvironment` boots XRoar with `-ram 2048`. A 512K machine leaves
