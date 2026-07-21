@@ -13,6 +13,13 @@ let package = Package(
             name: "RBFHammerCore",
             path: "Sources/RBFHammerCore"
         ),
+        // The soak/gate CLI: runs the hammer scenarios in a parallel pool, once
+        // (--gate) or for many iterations (--soak). `swift run RBFHammer ...`.
+        .executableTarget(
+            name: "RBFHammer",
+            dependencies: ["RBFHammerCore"],
+            path: "Sources/RBFHammer"
+        ),
         .testTarget(
             name: "RBFHammerCoreTests",
             dependencies: ["RBFHammerCore"],
