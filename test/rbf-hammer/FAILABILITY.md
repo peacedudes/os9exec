@@ -393,6 +393,7 @@ cross-linked or leaking clusters is caught even when every file reads back clean
 | **disk full** — one worker writes 500 records to a `mount -k=16K` image | Raised `E_FULL` (248) at the wall — `hammer: worker 1 ERROR err 248`, `0 free sectors` — and `dcheck` certified the FULL image `file structure is intact`. RBF hit the limit without corrupting the disk. `Live` 2026-07-21 | The test REQUIRES `ERROR err 248` in the transcript, so a roster that quietly fit (a large device) fails the "was it exhausted?" guard rather than passing vacuously; and the structural oracle is proven to catch a real bitmap corruption |
 | **delete held-open** — pre-extend a file, two readers walk it slowly (nap=3), `del` it mid-read | Deferred-delete, done right: both readers `read done 40` off the doomed file, then on last close the clusters were reclaimed (`free` back to the pristine 2012/2016) and `dcheck` stayed intact. `Live` 2026-07-21 | Two checks that can each fail: `dcheck` structural damage (oracle proven-failable), AND `free >= capacity-8` -- a delete-while-open that leaked the file's clusters would leave free well short and fail the reclamation assertion |
 | **kill mid-write** — a lone slow writer (nap=3) is `kill 3`ed while extending a file | Clean process-death cleanup: proc 3 `Exited with Error #000:228 (E_PRCABT)` after ~5 of 100 records, `F$Exit` closed its open path, and `dcheck` reported the half-written file's device intact (9 of 2016 sectors used, accounted for). `Live` 2026-07-21 | The test REQUIRES the absence of `worker 1 wrote 100` -- a writer that finished before the kill fails the "was it interrupted?" guard -- plus the proven-failable structural oracle |
+| **truncate** — a file is pre-extended to 200 records (~50 sectors) then shrunk to 320 bytes via `SS.Size` (the `trunc` helper) | The file really shrinks (reads back at 320 bytes) and `dcheck` stays intact, BUT the ~48 tail sectors are **not reclaimed** — free stays 1960/2016 instead of returning to ~2008. A live FINDING, below. `Live` 2026-07-21 | Three checks: the retrieved file must be exactly 320 bytes (a no-op trunc fails it), the proven-failable structural oracle, and `free >= capacity-8` wrapped in `XCTExpectFailure` — green today, flips loud when `pRsetsz` learns to free the tail |
 
 ### ★★ FIXED (was: delete-during-write leaks clusters)
 
@@ -463,8 +464,38 @@ clean fix.** (NitrOS-9's `dcheck` uses the same "file structure is intact" clean
 bill, so the oracle ports; its `free` groups digits with commas on large
 devices, which the oracle's regex would need to tolerate for a full 6809 port.)
 
-Remaining destructive scenario (truncate-under-reader) needs an `SS.Size` path
-the 68k shell does not expose; deferred.
+### ★ FINDING (candidate): truncate does not reclaim the tail's clusters
+
+The truncate scenario is now built — the 68k shell exposes no `SS.Size`, so a
+tiny cio-free helper (`test/rbf-hammer/trunc`, source `trunc.c`) opens the file
+and calls `_ss_size`. os9exec cannot fork a binary from the host-directory
+scratch, so the harness copies it onto the RBF image and runs it there. It found
+a second, independent allocation gap:
+
+**os9exec's `SS.Size` shrink sets the logical size but never frees the truncated
+tail's clusters.** Pre-extend `tr.dat` to 200 records, shrink to 320 bytes: the
+file really shrinks (the retrieved copy is exactly 320 bytes) and `dcheck` stays
+intact, but `free` stays 1960/2016 — the ~48 tail sectors remain allocated to
+the file. They are reclaimed only when the file is later deleted, not on the
+truncate.
+
+**Root cause, from reading `file_rbf.c` (read-only, not changed):** the `SS.Size`
+handler `pRsetsz` (~line 3995) does `Set_FDSize(spP,*size)` + `RingSetLastPos` +
+`WriteFD` — it updates the logical size and the open-path ring, but never calls
+`ReleaseBlocks`/`DeallocateBlocks` to return the now-unused tail segments to the
+bitmap. So the space is retained by the file, not orphaned — which is exactly why
+`dcheck` reports "file structure is intact": the clusters are still in `tr.dat`'s
+own segment list. This is un-reclaimed space, NOT a cross-link or a tear.
+
+Standard OS-9 RBF frees the tail on a shrink. Recorded with `XCTExpectFailure` in
+`testTruncatingAFileShrinksItAndStaysIntact`: the suite is green today and flips
+to a loud "unexpectedly passed" the moment `pRsetsz` learns to release the tail,
+prompting removal of the wrapper. **Marked candidate, not confirmed, pending a
+6809/NitrOS-9 cross-check** — the delete-leak above was only nailed as a defect
+(not undefined-but-acceptable) once the reference RBF was shown to differ; the
+same rigor is owed here before calling it a bug. Cross-check is harder than the
+delete one: it needs an `SS.Size` path on 6809 (NitrOS-9's shell has no truncate
+either, so a 6809 `trunc` equivalent or a Basic09 `SS.Size` call is required).
 
 Planned injections, one per defect class:
 

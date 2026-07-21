@@ -232,4 +232,69 @@ final class DestructiveTests: XCTestCase {
         XCTAssertEqual(StructuralOracle.structuralViolations(dcheck: result.transcript), [],
                        "delete-after-close left the image damaged:\n\(result.transcript)")
     }
+
+    // ── Truncate ───────────────────────────────────────────────────────────────
+
+    /// A file is pre-extended to 200 records (~50 sectors), then truncated to
+    /// 320 bytes with `SS.Size` (the `trunc` helper, since the shell has no
+    /// truncate). Two things must hold: the file really shrinks (it reads back
+    /// at the new length), and the device stays structurally consistent.
+    ///
+    /// It also documents a live FINDING: os9exec's `SS.Size` shrink sets the
+    /// logical size but does NOT release the truncated tail's clusters. The
+    /// handler `pRsetsz` (file_rbf.c ~3995) calls `Set_FDSize`/`RingSetLastPos`
+    /// but never `ReleaseBlocks`, so the ~48 tail sectors stay allocated to the
+    /// file -- reclaimed only when it is deleted, not on the truncate. `dcheck`
+    /// stays intact precisely because the clusters remain in the file's own
+    /// segment list (not orphaned), so this is un-reclaimed space, not a tear.
+    /// Standard OS-9 RBF frees the tail on shrink; the reclamation assertion is
+    /// therefore wrapped in `XCTExpectFailure` so the suite is green today and
+    /// flips to failing the moment `pRsetsz` is fixed -- a reminder to delete
+    /// the wrapper then. (A 6809/NitrOS-9 cross-check to nail the divergence is
+    /// noted in FAILABILITY.md.)
+    func testTruncatingAFileShrinksItAndStaysIntact() throws {
+        let file = "/h9/tr.dat"
+        // os9exec cannot fork a binary straight from the host-directory scratch,
+        // so the helper is copied onto the RBF image, run there, then removed --
+        // leaving only the truncated file, so the free count reflects just it.
+        let scenario = Scenario(name: "truncate",
+                                backend: .rbfImage,
+                                workers: [WorkerSpec(id: 99, role: .create, file: file, count: 200)],
+                                midFlight: ["copy /h5/trunc /h9/trunc",
+                                            "/h9/trunc \(file) 320",
+                                            "del /h9/trunc"])
+        let result = try Adapter68k(repoRoot: Self.repoRoot).run(scenario)
+        dump(result)
+
+        XCTAssertFalse(result.timedOut, "truncate run hung:\n\(result.transcript)")
+
+        // The truncate really happened: the file now reads back at 320 bytes,
+        // not the ~25600 it held after pre-extension. Without this the whole
+        // test could pass on a trunc that silently did nothing.
+        guard let data = result.produced[file] else {
+            return XCTFail("tr.dat was not retrieved:\n\(result.transcript)")
+        }
+        XCTAssertEqual(data.count, 320,
+                       "trunc should have set the size to 320 bytes, got \(data.count)")
+
+        let structural = StructuralOracle.structuralViolations(dcheck: result.transcript)
+        XCTAssertEqual(structural, [],
+                       "truncate left the image damaged:\n"
+                     + structural.map(\.detail).joined(separator: "\n")
+                     + "\nScratch kept at \(result.scratchPath)")
+
+        // FINDING (see the doc comment): the tail's ~48 sectors are NOT freed on
+        // truncate, so free stays well short of capacity. When pRsetsz learns to
+        // release the tail, this block will pass and XCTExpectFailure will flag
+        // the stale wrapper for removal.
+        XCTExpectFailure("os9exec SS.Size truncate does not reclaim the tail (pRsetsz: no ReleaseBlocks)") {
+            guard let free = StructuralOracle.freeSectors(in: result.transcript),
+                  let capacity = StructuralOracle.capacitySectors(in: result.transcript) else {
+                return XCTFail("no free/capacity to judge the truncate:\n\(result.transcript)")
+            }
+            XCTAssertGreaterThanOrEqual(free, capacity - 8,
+                           "truncate did not free the tail: only \(free)/\(capacity) sectors free "
+                         + "-- the file should be down to a couple of sectors")
+        }
+    }
 }

@@ -67,6 +67,12 @@ public struct Adapter68k: Adapter {
         for worker in scenario.workers {
             try writeScript(for: worker, in: scratch)
         }
+        // Stage the truncate helper (an OS-9/68k binary) alongside the scripts,
+        // so a scenario's midFlight can `/h5/trunc <file> <bytes>` -- the shell
+        // has no way to shrink a file, so this small SS.Size program is it.
+        try? FileManager.default.copyItem(
+            at: repoRoot.appendingPathComponent("test/rbf-hammer/trunc"),
+            to: scratch.appendingPathComponent("trunc"))
         let outcome = try launch(scenario, scratch: scratch)
         let produced = collect(scenario, from: scratch)
         let result = RunResult(transcript: outcome.transcript, produced: produced,
