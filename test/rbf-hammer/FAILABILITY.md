@@ -188,9 +188,11 @@ never toward silently passing a broken lock. The *mechanism* is NOT established 
 a uniform emulator slowdown should not change the *relative* timing that drives
 the interleave, yet under load it did. Per this ledger's own discipline that is
 left as an observed, unexplained caveat rather than given a fabricated cause.
-**Do not run the 6809 lock pair as a gate on a loaded host without re-checking;
-prefer a quiet host, or treat a single 40/40 as inconclusive-under-load rather
-than as a lock pass.**
+**This load-sensitivity was root-caused and FIXED — see the editor-build-race
+section immediately below.** The mechanism was not an emulator slowdown; it was a
+worker stalling in the BASIC09 editor at launch, and PACK+runb removes the editor
+from the launch path. The suite now passes at load ~5. The caveat is kept as the
+record of how the flake was chased down.
 
 ### The load-sensitivity above IS an editor-build race (2026-07-21)
 
@@ -205,17 +207,27 @@ the roster simply hung to the timeout. This also explains the 152s "zero
 interleave" control runs above: a worker that stalls in `E:` starts so late the
 others have finished, so nothing overlaps.
 
-It is reliable on a quiet host (all of P1's lock-pair measurements, and 5/5
-four-worker runs at load < 2). Under a busy host (a second XRoar from another
-session, load ~5) it hangs most runs. Confirmed both directions of the trade:
-**serialising** the launches (wait for a per-worker "up" marker before launching
-the next) removes the hang entirely — 5/5 four-worker runs green — but then the
-rmw control keeps a perfect tally, because staggered starts no longer overlap
-and the lock race never happens. So the parse-at-launch cannot be both
-concurrent (needed for the race) and unraced (needed to not hang); the only real
-fix is to **stop parsing at launch** — `PACK` each worker once during setup and
-`runb` the module, so launches are instant and truly concurrent. That is the
-next task; it was already on the plan for the lock-pair speedup.
+Confirmed both directions of the trade before fixing it: **serialising** the
+launches (a per-worker "up" marker before the next) removed the hang but then the
+rmw control kept a perfect tally, because staggered starts no longer overlap and
+the lock race never happens. So parse-at-launch cannot be both concurrent (needed
+for the race) and unraced (needed to not hang).
+
+**FIXED 2026-07-21 by PACK+runb.** The worker is no longer parsed at launch. Each
+racer is built ONCE, sequentially, in a setup phase (`WorkerScript.renderPack` →
+`basic09 </DD/w<id>p.s` builds `hnap<id>`+`hwork<id>` and `PACK`s them to a module
+`hwork<id>`), and then launched with `runb hwork<id>&` — instant, no editor. The
+per-racer id-suffixed names mean no two modules share a name, so concurrent
+`runb`s never contaminate each other's resident modules. The setup is sequential
+so nothing races the editor; the launches are concurrent so the lock race is
+real. Result: the whole 6809 suite is green **at load ~5** (7 tests, 0 failures,
+50s), and four-worker runs are 5/5 at ~12.7s — the intermittent hang is gone in
+both directions. A second latent hang surfaced once the editor race was cured:
+the completion wait was a `w`-per-racer plus one `echo HAMMER-DONE`, and a dropped
+key-send of that trailing sequence hung the roster after all the work was already
+done. Replaced by waiting on each worker's own `hammer: worker N ...` line
+(`waitForWorkers`) — no extra command to drop, and a missing worker names itself.
+`renderPack` is 6809-only; the shared template and the 68k path are untouched.
 
 ### RAM: the CoCo3 is now given 2MB, not the stock 512K
 

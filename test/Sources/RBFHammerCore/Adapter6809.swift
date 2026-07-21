@@ -180,12 +180,21 @@ public struct Adapter6809: Adapter {
         for worker in scenario.workers {
             let url = staging.appendingPathComponent(scriptName(worker))
             // Comments stripped: BASIC09 re-parses the whole template through
-            // its editor at EVERY worker launch, and on a 2MHz 6809 with
-            // several workers starting at once that entry cost dominates the
-            // run. Comments cannot affect behaviour, only entry time.
+            // its editor, and comments cannot affect behaviour, only entry time.
             try Data(WorkerScript.render(worker, from: template,
                                          stripComments: true).utf8).write(to: url)
             staged.append(url)
+
+            // Racers additionally get a PACK script: it builds the worker once
+            // and packs it to module `hwork<id>`, so the racer can be launched
+            // with `runb` (no editor at launch, so concurrent starts don't race
+            // the editor). Provisioning stays a plain run -- it goes first, one
+            // at a time, so it never races anything.
+            if worker.role != .create && worker.role != .seed {
+                let pack = staging.appendingPathComponent(packScriptName(worker))
+                try Data(WorkerScript.renderPack(worker, from: template).utf8).write(to: pack)
+                staged.append(pack)
+            }
         }
         // The old-style single procedure file, staged so the diagnostic
         // `RBF_DRIVE=procfile` mode can drive the whole roster with one
@@ -202,8 +211,14 @@ public struct Adapter6809: Adapter {
         try writePartitionBack(run)
     }
 
-    /// Filename of one worker's script.
+    /// Filename of one worker's run script.
     private func scriptName(_ worker: WorkerSpec) -> String { "w\(worker.id).s" }
+
+    /// Filename of one racer's build-and-pack script.
+    private func packScriptName(_ worker: WorkerSpec) -> String { "w\(worker.id)p.s" }
+
+    /// Name of the packed module a racer is launched by (`runb`).
+    private func moduleName(_ worker: WorkerSpec) -> String { "hwork\(worker.id)" }
 
     /// Renders the old-style procedure file that launches the whole roster.
     ///
@@ -377,27 +392,51 @@ public struct Adapter6809: Adapter {
             }
         }
 
-        // Racers launch concurrently: staggered starts would stop them
-        // overlapping, and the rmw lock test needs a real read-modify-write
-        // race. That concurrency is also what exposes a load-only fragility --
-        // building a worker drives the BASIC09 editor from its script file, and
-        // several editors parsing at once can race until one spins at its `E:`
-        // prompt and the roster hangs. It is reliable on a quiet host; the real
-        // cure is to stop parsing at launch at all (PACK the worker once and
-        // `runb` it). See FAILABILITY.md.
+        // SETUP: build and pack each racer ONE AT A TIME. Building drives the
+        // BASIC09 editor from a script file; doing several at once races the
+        // editors and one hangs spinning at its `E:` prompt. Done sequentially,
+        // nothing races, and the output is a standalone module `hwork<id>`.
         for worker in racers {
-            type("basic09 #32k </DD/\(scriptName(worker))&", in: run)
+            let marker = "PACKED\(worker.id)"
+            type("basic09 #32k </DD/\(packScriptName(worker))", in: run)
+            type("echo \(marker)", in: run)
+            guard waitFor(marker, in: run, until: deadline) != nil else {
+                return (capture(run), true)
+            }
         }
-        // `w` waits for exactly ONE child, so the roster needs one per racer.
-        // Waiting for fewer reads the files while workers are still writing and
-        // manufactures torn-record violations that are the harness's own fault.
-        for _ in racers { type("w", in: run) }
-        type("echo \(Self.doneMarker)", in: run)
 
-        guard let transcript = waitFor(Self.doneMarker, in: run, until: deadline) else {
+        // LAUNCH: `runb` the packed modules concurrently. There is no editor
+        // phase now, so simultaneous starts are safe -- yet the workers still
+        // run at the same time, which is what the rmw lock race needs.
+        for worker in racers {
+            type("runb \(moduleName(worker))&", in: run)
+        }
+        // Wait for each racer's OWN completion line rather than a `w` per racer
+        // plus one `echo HAMMER-DONE`. A worker prints its line only after it
+        // closes its file (or from its ON ERROR handler), so this guarantees the
+        // files are flushed, needs no trailing command a dropped key-send could
+        // lose (which hung the roster after all the work was already done), and
+        // names any worker that never finishes in the timeout.
+        guard let transcript = waitForWorkers(racers, in: run, until: deadline) else {
             return (capture(run), true)
         }
         return (transcript, false)
+    }
+
+    /// Polls until every racer has printed its own completion line, or the
+    /// deadline passes. Each worker prints `hammer: worker <id> ...` exactly once
+    /// when it finishes -- on a clean close or from ON ERROR. The trailing space
+    /// keeps `worker 1 ` from matching `worker 12 `.
+    private func waitForWorkers(_ racers: [WorkerSpec], in run: Run,
+                                until deadline: Date) -> String? {
+        while Date() < deadline {
+            let transcript = capture(run)
+            if racers.allSatisfy({ transcript.contains("worker \($0.id) ") }) {
+                return transcript
+            }
+            Thread.sleep(forTimeInterval: 1.0)
+        }
+        return nil
     }
 
     /// Types one command at the guest shell, followed by Enter.

@@ -38,16 +38,48 @@ public enum WorkerScript {
     /// - Returns: Script text ready to feed to `basic`/`basic09` on stdin.
     public static func render(_ worker: WorkerSpec, from template: String,
                               stripComments: Bool = false) -> String {
-        let substituted = template
+        editorScript(for: procedures(in: substitute(worker, into: template),
+                                     stripComments: stripComments),
+                     tail: ["run hwork", "bye"])
+    }
+
+    /// Renders a worker as a script that BUILDS AND PACKS it into a standalone
+    /// module named `hwork<id>`, instead of running it.
+    ///
+    /// This is what lets the 6809 driver launch racers with `runb hwork<id>`
+    /// (instant, no editor) rather than driving the BASIC09 editor from a script
+    /// file at every launch. Several editors parsing at once race and hang; a
+    /// packed module has no editor phase, so concurrent launches are safe.
+    ///
+    /// Both procedures are renamed with the worker's id (`hnap<id>` / `hwork<id>`
+    /// and the `RUN` between them), so each racer's module shares NO name with
+    /// any other -- no resident-module contamination when several run at once.
+    /// `PACK hwork<id>,hnap<id>` makes `hwork<id>` the module's entry point.
+    public static func renderPack(_ worker: WorkerSpec, from template: String) -> String {
+        let suffix = String(worker.id)
+        let named = substitute(worker, into: template)
+            .replacingOccurrences(of: "hnap", with: "hnap\(suffix)")
+            .replacingOccurrences(of: "hwork", with: "hwork\(suffix)")
+        return editorScript(for: procedures(in: named, stripComments: true),
+                            tail: ["pack hwork\(suffix),hnap\(suffix)", "bye"])
+    }
+
+    /// Bakes a worker's values into the template's `@TOKEN@`s.
+    static func substitute(_ worker: WorkerSpec, into template: String) -> String {
+        template
             .replacingOccurrences(of: "@ID@", with: String(worker.id))
             .replacingOccurrences(of: "@COUNT@", with: String(worker.count))
             .replacingOccurrences(of: "@NAP@", with: String(max(0, worker.nap)))
             .replacingOccurrences(of: "@ROLE@", with: worker.role.rawValue)
             .replacingOccurrences(of: "@NAPMODE@", with: worker.napMode.rawValue)
             .replacingOccurrences(of: "@FILE@", with: worker.file)
+    }
 
+    /// Turns a list of procedures into editor commands, then appends `tail`.
+    private static func editorScript(for procedures: [(name: String, body: [String])],
+                                     tail: [String]) -> String {
         var lines: [String] = []
-        for procedure in procedures(in: substituted, stripComments: stripComments) {
+        for procedure in procedures {
             // `e <name>` writes the PROCEDURE header itself, so the body must
             // not repeat it. A leading space is what makes the editor INSERT a
             // line rather than read it as an editor command.
@@ -55,7 +87,7 @@ public enum WorkerScript {
             lines += procedure.body.map { " \($0)" }
             lines.append("q")
         }
-        lines += ["run hwork", "bye"]
+        lines += tail
         return lines.joined(separator: "\r") + "\r"
     }
 
