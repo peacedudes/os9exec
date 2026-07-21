@@ -51,11 +51,12 @@ public enum Backend6809 {
             // with a real allocator, which is what the hammer is aimed at.
             return "/DD"
         case .ramDisk:
-            // `Rammer`/`R0` are present in the boot module directory, but
-            // provisioning them (iniz + format) has NOT been verified live,
-            // and an unverified provision that silently no-ops would leave the
-            // scenario running on /DD while claiming to be a RAM disk.
-            throw Unsupported.backend(.ramDisk)
+            // `/r0` (the `Rammer` RAM disk), now VERIFIED live: `format /r0`
+            // gives a small (512-sector) RBF device on which `dcheck` is
+            // instant -- unlike the 134MB `/DD`, where it runs for minutes. The
+            // adapter formats it before the run and checks it afterwards. This
+            // is the device the 6809 destructive scenarios use.
+            return "/r0"
         case .hostDirectory:
             throw Unsupported.backend(.hostDirectory)
         }

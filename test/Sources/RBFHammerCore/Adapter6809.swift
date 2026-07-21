@@ -357,6 +357,13 @@ public struct Adapter6809: Adapter {
             return (transcript, false)
         }
 
+        // A RAM-disk scenario needs its device formatted first -- a small, fast
+        // RBF device the destructive scenarios can exhaust and `dcheck` in
+        // seconds, where `dcheck` on the 134MB `/DD` runs for minutes.
+        if scenario.backend == .ramDisk {
+            guard formatRamDisk(in: run, until: deadline) else { return (capture(run), true) }
+        }
+
         type("chd \(device)", in: run)
 
         // Commands are typed at the shell ONE AT A TIME rather than fed as a
@@ -411,6 +418,11 @@ public struct Adapter6809: Adapter {
         for worker in racers {
             type("runb \(moduleName(worker))&", in: run)
         }
+
+        // The destructive act, if any: fired while the racers are running and
+        // still hold the file open (delete it, kill a writer).
+        for command in scenario.midFlight { type(command, in: run) }
+
         // Wait for each racer's OWN completion line rather than a `w` per racer
         // plus one `echo HAMMER-DONE`. A worker prints its line only after it
         // closes its file (or from its ON ERROR handler), so this guarantees the
@@ -420,7 +432,52 @@ public struct Adapter6809: Adapter {
         guard let transcript = waitForWorkers(racers, in: run, until: deadline) else {
             return (capture(run), true)
         }
+
+        // On a RAM disk, check the device was left consistent: `dcheck`/`free`
+        // run in the guest and land in the transcript for StructuralOracle. (A
+        // RAM disk lives in guest RAM, so there is nothing to extract host-side
+        // -- the structural verdict IS the result.)
+        if scenario.backend == .ramDisk {
+            return (inspectRamDisk(in: run, until: deadline) ?? capture(run), false)
+        }
         return (transcript, false)
+    }
+
+    /// Formats `/r0` into a fresh RBF RAM disk, answering `format`'s prompts.
+    ///
+    /// `iniz` first is REQUIRED: the RAM disk's storage is allocated on the
+    /// first `iniz`, and formatting a raw, un-`iniz`ed `/r0` produces a
+    /// malformed device (wrong cluster size) whose writes fail with E#241
+    /// Sector Error. Verified live -- with `iniz` the default identity gets a
+    /// clean 512-sector, 1-sector-cluster disk; without it, 14-sector clusters
+    /// and immediate write errors.
+    ///
+    /// - Returns: false if a prompt never appeared before the deadline.
+    private func formatRamDisk(in run: Run, until deadline: Date) -> Bool {
+        type("iniz /r0", in: run)
+        type("format /r0", in: run)
+        guard waitFor("Ready", in: run, until: deadline) != nil else { return false }
+        type("Y", in: run)
+        guard waitFor("Disk name", in: run, until: deadline) != nil else { return false }
+        type("HAMMER", in: run)
+        let marker = "FMTOK"
+        type("echo \(marker)", in: run)
+        return waitFor(marker, in: run, until: deadline) != nil
+    }
+
+    /// Runs `dcheck`/`free` on the RAM disk and returns the transcript with them.
+    ///
+    /// The `dcheck` work file goes in `/dd/CMDS` (`-w`), not on `/r0` itself:
+    /// putting it on the device under test would fail exactly when the device is
+    /// full, which is one of the conditions being tested. `/dd/CMDS` is the
+    /// execution directory the packed worker modules already write to, so the
+    /// run's identity can write there.
+    private func inspectRamDisk(in run: Run, until deadline: Date) -> String? {
+        type("dcheck -w=/dd/CMDS /r0", in: run)
+        type("free /r0", in: run)
+        let marker = "INSPECT-DONE"
+        type("echo \(marker)", in: run)
+        return waitFor(marker, in: run, until: deadline)
     }
 
     /// Polls until every racer has printed its own completion line, or the

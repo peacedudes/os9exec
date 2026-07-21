@@ -58,13 +58,16 @@ public enum StructuralOracle {
     /// The device's free-sector count, parsed from `free` output, or nil if the
     /// output does not contain it (which is itself worth failing on -- a `free`
     /// that produced no count means the round-trip cannot be judged).
+    ///
+    /// Digits may be comma-grouped: NitrOS-9's `free` prints `7,471,391 free
+    /// sectors` on a large device (os9exec's does not). Commas are stripped.
     public static func freeSectors(in transcript: String) -> Int? {
-        firstInt(in: transcript, matching: #/(?<n>\d+) free sectors/#)
+        firstInt(in: transcript, matching: #/(?<n>[\d,]+) free sectors/#)
     }
 
     /// The device's total capacity in sectors, parsed from `free` output.
     public static func capacitySectors(in transcript: String) -> Int? {
-        firstInt(in: transcript, matching: #/Capacity:\s*(?<n>\d+) sectors/#)
+        firstInt(in: transcript, matching: #/Capacity:\s*(?<n>[\d,]+) sectors/#)
     }
 
     /// A structural violation if `dcheck` did not certify the disk.
@@ -106,11 +109,11 @@ public enum StructuralOracle {
 
     // ── Parsing helpers ─────────────────────────────────────────────────────
 
-    /// First capture of `regex`'s `n` group in `text`, as an Int.
+    /// First capture of `regex`'s `n` group in `text`, as an Int (commas dropped).
     private static func firstInt(in text: String,
                                  matching regex: some RegexComponent<(Substring, n: Substring)>)
         -> Int? {
-        text.firstMatch(of: regex).flatMap { Int($0.output.n) }
+        text.firstMatch(of: regex).flatMap { Int($0.output.n.filter { $0 != "," }) }
     }
 
     /// The dcheck lines worth putting in a failure report -- the clean/damage
