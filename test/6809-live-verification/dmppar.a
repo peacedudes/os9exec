@@ -1,0 +1,85 @@
+* Probe: dump the command-line parameter area at process entry (6809).
+* Resolves the os9-dev Flag on shell-fork param-area layout: emits the raw
+* param bytes bracketed <...> (reveals any leading space / trailing CR) and
+* D= the entry parameter-size register, in decimal.
+ nam DmpPar
+ mod eom,nm,$11,$81,start,$0100
+nm fcs /DmpPar/
+OUTBUF equ 0
+VALUE equ 60
+DIGIT equ 62
+PLEN equ 63
+PPTR equ 65
+start equ *
+ std PLEN,u
+ stx PPTR,u
+* print "D=" + decimal(PLEN)
+ leax OUTBUF,u
+ leay DMSG,pcr
+ ldb #DMSGL
+ lbsr copys
+ ldd PLEN,u
+ std VALUE,u
+ lbsr prdec
+ lbsr crwrite
+* print '<'
+ leax LT,pcr
+ ldy #1
+ lda #1
+ swi2
+ fcb $8A
+* print raw param bytes: X=entry param ptr, Y=entry param size
+ ldx PPTR,u
+ ldy PLEN,u
+ lda #1
+ swi2
+ fcb $8A
+* print '>' + CR
+ leax GT,pcr
+ ldy #2
+ lda #1
+ swi2
+ fcb $8A
+ clrb
+ swi2
+ fcb $06
+copys lda ,y+
+ sta ,x+
+ decb
+ bne copys
+ rts
+crwrite equ *
+ lda #$0D
+ sta ,x+
+ leax OUTBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ rts
+prdec leay dectbl,pcr
+ ldb #5
+prdout pshs b
+ clr DIGIT,u
+prdin ldd VALUE,u
+ subd ,y
+ bcs prddn
+ std VALUE,u
+ inc DIGIT,u
+ bra prdin
+prddn lda DIGIT,u
+ adda #$30
+ sta ,x+
+ leay 2,y
+ puls b
+ decb
+ bne prdout
+ rts
+dectbl fdb 10000,1000,100,10,1
+DMSG fcc /D=/
+DMSGL equ *-DMSG
+LT fcc /</
+GT fcc />/
+ fcb $0D
+ emod
+eom equ *
