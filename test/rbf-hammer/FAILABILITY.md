@@ -394,8 +394,37 @@ cross-linked or leaking clusters is caught even when every file reads back clean
 | **delete held-open** — pre-extend a file, two readers walk it slowly (nap=3), `del` it mid-read | Deferred-delete, done right: both readers `read done 40` off the doomed file, then on last close the clusters were reclaimed (`free` back to the pristine 2012/2016) and `dcheck` stayed intact. `Live` 2026-07-21 | Two checks that can each fail: `dcheck` structural damage (oracle proven-failable), AND `free >= capacity-8` -- a delete-while-open that leaked the file's clusters would leave free well short and fail the reclamation assertion |
 | **kill mid-write** — a lone slow writer (nap=3) is `kill 3`ed while extending a file | Clean process-death cleanup: proc 3 `Exited with Error #000:228 (E_PRCABT)` after ~5 of 100 records, `F$Exit` closed its open path, and `dcheck` reported the half-written file's device intact (9 of 2016 sectors used, accounted for). `Live` 2026-07-21 | The test REQUIRES the absence of `worker 1 wrote 100` -- a writer that finished before the kill fails the "was it interrupted?" guard -- plus the proven-failable structural oracle |
 
-Remaining destructive scenario (truncate-under-reader) is next; it gets a row
-here once it runs and its check can fail.
+### ★★ REAL FINDING: delete-during-write leaks clusters (owner, please triage)
+
+The destructive hammer found a genuine, **deterministic, isolated** RBF
+allocation fault in os9exec (68k):
+
+**Deleting a file while it is still being WRITTEN orphans the clusters allocated
+after the delete.** Four `append` workers grow their own files; part way in all
+four are `del`eted; the workers keep writing (deferred delete) and finish. The
+device then reports, every run:
+- `dcheck`: many `Sector NNN ... not in file structure` -- clusters marked
+  allocated that no file owns.
+- `free`: short of pristine (1984 of 2016 vs the expected 2012) -- ~28 leaked.
+
+It is **not** delete itself: `testLeakIsolation_deleteAfterClose` deletes the
+same kind of `append`-grown file AFTER the writer closes and reclaims **perfectly
+(2012/2016, `dcheck` intact)**. The only variable is whether writes continue
+after the `del`. So the fault is specifically the post-delete writes' allocation
+never being freed on close.
+
+Harness exonerated: the isolation reclaims clean, the workers really did write
+past the delete (`wrote 40`), and the structural oracle is proven to catch real
+bitmap corruption. Whether this is an os9exec defect in the I$Delete/close
+interaction or faithful to OS-9's undefined handling of writing-to-a-deleted-file
+is the **owner's call** (former RBF author). Recorded with `XCTExpectFailure` in
+`testDeletingFilesMidWriteReclaimsAllSpace`: the suite stays green, and if os9exec
+is ever changed here the test "unexpectedly passes" and fails loudly, prompting a
+revisit. **Not yet checked on 6809/NitrOS-9 -- worth doing, since a leak there
+would be a separate clone finding.**
+
+Remaining destructive scenario (truncate-under-reader) needs an `SS.Size` path
+the 68k shell does not expose; deferred.
 
 Planned injections, one per defect class:
 

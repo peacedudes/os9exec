@@ -152,4 +152,73 @@ final class DestructiveTests: XCTestCase {
                      + structural.map(\.detail).joined(separator: "\n")
                      + "\nScratch kept at \(result.scratchPath)")
     }
+
+    // ── Delete several growing files at once ───────────────────────────────────
+
+    /// ★ A REAL FINDING the hammer surfaced (2026-07-21), deterministic and
+    /// isolated: **deleting a file that is still being WRITTEN leaks the clusters
+    /// allocated after the delete.** Four workers grow their own files; part way
+    /// in, all four are deleted; the workers keep writing to the doomed files and
+    /// finish. Afterwards `dcheck` reports orphaned sectors ("not in file
+    /// structure") and `free` is short of the pristine count -- the post-delete
+    /// writes' clusters were never reclaimed.
+    ///
+    /// It is NOT delete itself: `testLeakIsolation_deleteAfterClose` deletes the
+    /// same kind of file AFTER the writer closes and reclaims perfectly. The
+    /// fault is specifically writing to a deleted-but-open file. Whether that is
+    /// an os9exec defect or faithful to OS-9's undefined handling of the
+    /// operation is for the owner to judge; `XCTExpectFailure` records it so the
+    /// suite stays green AND flags loudly if the behaviour ever changes. See
+    /// FAILABILITY.md.
+    func testDeletingFilesMidWriteReclaimsAllSpace() throws {
+        let files = (1...4).map { "/h9/churn\($0).dat" }
+        let roster = files.enumerated().map { index, file in
+            WorkerSpec(id: index + 1, role: .append, file: file,
+                       count: 40, nap: 2, napMode: .sleep)
+        }
+        let scenario = Scenario(name: "delete-during-write",
+                                backend: .rbfImage, workers: roster, timeout: 120,
+                                midFlight: ["sleep 40"] + files.map { "del \($0)" })
+        let result = try Adapter68k(repoRoot: Self.repoRoot).run(scenario)
+        dump(result)
+
+        XCTAssertFalse(result.timedOut, "delete-during-write hung:\n\(result.transcript)")
+
+        XCTExpectFailure("delete-during-write leaks clusters -- real finding, owner to triage") {
+            let structural = StructuralOracle.structuralViolations(dcheck: result.transcript)
+            XCTAssertEqual(structural, [],
+                           "deleting growing files left the image damaged:\n"
+                         + structural.map(\.detail).joined(separator: "\n"))
+
+            if let free = StructuralOracle.freeSectors(in: result.transcript),
+               let capacity = StructuralOracle.capacitySectors(in: result.transcript) {
+                XCTAssertGreaterThanOrEqual(free, capacity - 8,
+                               "leaked clusters: only \(free)/\(capacity) sectors free")
+            }
+        }
+    }
+
+    /// Isolation for the finding above: one writer, but the `del` waits until the
+    /// writer has FINISHED and CLOSED. This reclaims cleanly -- proving the leak
+    /// is writing-to-a-deleted-file, not delete itself.
+    func testLeakIsolation_deleteAfterClose() throws {
+        let file = "/h9/isolate.dat"
+        let scenario = Scenario(name: "delete-after-close",
+                                backend: .rbfImage,
+                                workers: [WorkerSpec(id: 1, role: .append, file: file, count: 20)],
+                                timeout: 60,
+                                midFlight: ["w", "del \(file)"])
+        let result = try Adapter68k(repoRoot: Self.repoRoot).run(scenario)
+        dump(result)
+        XCTAssertTrue(result.transcript.contains("worker 1 wrote 20"),
+                      "precondition: the writer should finish before the del:\n\(result.transcript)")
+        guard let free = StructuralOracle.freeSectors(in: result.transcript),
+              let capacity = StructuralOracle.capacitySectors(in: result.transcript) else {
+            return XCTFail("no free/capacity:\n\(result.transcript)")
+        }
+        XCTAssertGreaterThanOrEqual(free, capacity - 8,
+                       "delete-after-close should reclaim cleanly but leaked: \(free)/\(capacity)")
+        XCTAssertEqual(StructuralOracle.structuralViolations(dcheck: result.transcript), [],
+                       "delete-after-close left the image damaged:\n\(result.transcript)")
+    }
 }
