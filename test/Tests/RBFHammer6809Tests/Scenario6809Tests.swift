@@ -241,9 +241,10 @@ final class Scenario6809Tests: XCTestCase {
         }
     }
 
-    /// The RAM disk modules are present in the boot image but provisioning them
-    /// has not been verified live, so it is refused rather than assumed.
-    func testRAMDiskBackendIsRefusedUntilVerified() throws {
-        XCTAssertThrowsError(try Backend6809.device(.ramDisk))
+    /// The RAM disk is now VERIFIED and supported: `.ramDisk` resolves to `/r0`,
+    /// the small fast device the destructive scenarios `format` and `dcheck`
+    /// (see `DestructiveTests6809`). It used to be refused as unverified.
+    func testRAMDiskBackendResolvesToR0() throws {
+        XCTAssertEqual(try Backend6809.device(.ramDisk), "/r0")
     }
 }
