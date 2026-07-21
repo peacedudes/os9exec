@@ -87,7 +87,7 @@ UAE_SUPPRESS = -Wno-unused-variable -Wno-unused-but-set-variable \
 
 VPATH = $(CORE):$(PLAT):Source/OS9execMPW:$(APPEMU):$(UAE)
 
-.PHONY: all prod clean test test-linux warnings
+.PHONY: all prod clean test test-notick test-linux warnings hammer hammer-soak hammer-6809
 
 all: $(OBJDIR) $(EXE)
 
@@ -144,7 +144,7 @@ clean:
 	rm -rf $(OBJDIR) os9exec os9exec.exe
 
 test: $(EXE)
-	swift run --package-path test
+	swift run --package-path test OS9Tests
 
 # The same suite with the system tick OFF ("-q"). The tick is on by default, so
 # this is the one configuration users can select that `make test` never covers,
@@ -152,7 +152,35 @@ test: $(EXE)
 # nobody exercises is one that frays quietly. Not part of `test`: it doubles the
 # runtime (~1 min each) for a mode that is deliberately not the supported one.
 test-notick: $(EXE)
-	OS9_FLAGS=-q swift run --package-path test
+	OS9_FLAGS=-q swift run --package-path test OS9Tests
+
+# ── RBF integrity hammer ────────────────────────────────────────────────────
+# A multiprocess stress test aimed at RBF: concurrent writers on shared and
+# separate files, on every backend, verified for BOTH file content and on-disk
+# structure (dcheck/free). Two entry points:
+#
+#   make hammer        the GATE: every scenario once, a few seconds -- a
+#                      pre-commit check.
+#   make hammer-soak   the SOAK: HAMMER_ITER iterations in a parallel pool of
+#                      HAMMER_JOBS, to shake out intermittent faults a single
+#                      run hides. HAMMER_ITER=2000 is roughly ten minutes.
+#   make hammer-6809   the same against real NitrOS-9 under XRoar (needs the
+#                      XRoar/ToolShed/NitrOS-9 setup; slow -- ~15s per run).
+#
+# The record-lock, destructive, and cross-target tests live in the test targets
+# (`swift test`); these run the contended scenarios that verify generically.
+HAMMER_ITER ?= 500
+HAMMER_JOBS ?= 8
+
+hammer: $(EXE)
+	swift run --package-path test RBFHammer --target 68k --gate
+
+hammer-soak: $(EXE)
+	swift run --package-path test RBFHammer --target 68k \
+		--iterations $(HAMMER_ITER) --jobs $(HAMMER_JOBS)
+
+hammer-6809:
+	swift run --package-path test RBFHammer --target 6809 --iterations 5 --jobs 2
 
 # Run the same integration suite against a real Linux build, in Docker.
 #
@@ -163,7 +191,7 @@ test-notick: $(EXE)
 # `char c = fgetc(...)` could never equal EOF where char is unsigned.
 test-linux:
 	docker build -f docker/Dockerfile -t os9exec:linux .
-	DOCKER_IMAGE=os9exec:linux swift run --package-path test
+	DOCKER_IMAGE=os9exec:linux swift run --package-path test OS9Tests
 
 # Compile-only sweep across all three toolchains. Each one sees bugs the others
 # do not: mingw (LLP64) catches host pointers truncated through 32-bit ints,
