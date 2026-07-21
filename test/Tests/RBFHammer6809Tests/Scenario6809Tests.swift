@@ -39,6 +39,21 @@ final class Scenario6809Tests: XCTestCase {
     /// a real RBF device with a real allocator.
     private static let device = "/DD"
 
+    /// Operating point for the record-lock pair, found by measurement (the
+    /// rows are in `test/rbf-hammer/FAILABILITY.md`).
+    ///
+    /// A `.nilWrites` burst of this many writes, held between the read and the
+    /// write, spans several of NitrOS-9's 60Hz preemption ticks -- long enough
+    /// that a competing worker is scheduled into the window, and with no
+    /// process fork (which is what made `.sleep` too slow to run). Chosen by
+    /// bisection: nap 100 never interleaves, nap 1000 interleaves but holds the
+    /// lock so long the locked roster starves and times out. At nap 400 the
+    /// unlocked control loses ~13 of 40 updates every run while the locked
+    /// roster keeps all 40 in about ten seconds.
+    private static let lockNap = 400
+    private static let lockWorkers = 4
+    private static let lockIncrements = 10
+
     // ── Floor ─────────────────────────────────────────────────────────────────
 
     /// The smallest possible end-to-end proof that the 6809 path works at all:
@@ -118,24 +133,23 @@ final class Scenario6809Tests: XCTestCase {
 
     /// Runs an rmw roster and returns the final tally the workers left behind.
     private func finalTally(workers population: Int, increments: Int,
-                            nap: Int, role: WorkerSpec.Role) throws -> Int {
+                            nap: Int, role: WorkerSpec.Role,
+                            napMode: NapMode = .sleep) throws -> Int {
         let file = "\(Self.device)/tally.dat"
         var roster = [WorkerSpec(id: 98, role: .seed, file: file, count: 1)]
         roster += (1...population).map {
-            // `.sleep`, and the cheaper `.nilWrites` is NOT an option here --
-            // measured, not assumed. With `.nilWrites` the whole roster runs in
-            // 11 seconds and the UNLOCKED control kept a perfect 100/100
-            // tally: writing to /nil does not yield long enough for the
-            // read-modify-write to ever interleave on this target, so every
-            // result in that configuration is worthless. That is the exact
-            // shape of the old counter race passing 600/600 with no locking.
-            //
-            // `SHELL "sleep n"` is a genuine F$Sleep and does open the window,
-            // at the cost of forking a process per increment -- roughly a
-            // quarter of an increment per second on a 2MHz 6809, which is why
-            // the roster is kept small.
+            // The lock pair below uses `.nilWrites` with a LARGE burst -- see
+            // the operating-point constants and the tests. An earlier reading
+            // that `.nilWrites` "never interleaves" was measured with a nap of
+            // ONE /nil write, which opens no window at all; a burst of a few
+            // hundred writes spans several of NitrOS-9's 60Hz preemption ticks
+            // and does interleave, with no process fork. `.sleep` is retained
+            // as the caller's choice but forks a `sleep` per increment, which
+            // is why it was too slow here. Whichever the caller picks, the
+            // control (`rmwfree`) must lose updates or the locked result means
+            // nothing.
             WorkerSpec(id: $0, role: role, file: file, count: increments,
-                       nap: nap, napMode: .sleep)
+                       nap: nap, napMode: napMode)
         }
         let scenario = Scenario(name: "rmw-6809-\(population)x\(increments)",
                                 backend: .rbfImage, workers: roster, timeout: 600)
@@ -151,6 +165,33 @@ final class Scenario6809Tests: XCTestCase {
         return tally
     }
 
+    /// Env-driven bench: measure interleave/timing without editing code per run.
+    ///
+    /// Inert unless RBF_MEASURE is set. Knobs (all optional):
+    ///   RBF_ROLE=rmw|rmwfree   RBF_NAP_MODE=sleep|nil   RBF_NAP_COUNT=<n>
+    ///   RBF_WORKERS=<n>        RBF_INCREMENTS=<n>
+    /// Prints "MEASURED tally=<t> expected=<e>" and never asserts, so a run
+    /// always reports what happened rather than failing the process.
+    func testMeasure6809() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["RBF_MEASURE"] != nil else {
+            throw XCTSkip("measurement harness; set RBF_MEASURE=1 to run")
+        }
+        let role: WorkerSpec.Role = env["RBF_ROLE"] == "rmw" ? .rmw : .rmwfree
+        let napMode: NapMode = env["RBF_NAP_MODE"] == "nil" ? .nilWrites : .sleep
+        let nap = Int(env["RBF_NAP_COUNT"] ?? "") ?? 1
+        let workers = Int(env["RBF_WORKERS"] ?? "") ?? 4
+        let increments = Int(env["RBF_INCREMENTS"] ?? "") ?? 10
+
+        let started = Date()
+        let tally = try finalTally(workers: workers, increments: increments,
+                                   nap: nap, role: role, napMode: napMode)
+        let elapsed = Date().timeIntervalSince(started)
+        print("MEASURED role=\(role.rawValue) napMode=\(napMode.rawValue) nap=\(nap) "
+            + "\(workers)x\(increments) tally=\(tally) expected=\(workers * increments) "
+            + "elapsed=\(Int(elapsed))s")
+    }
+
     /// CONTROL, and the one that must be read first: the identical race with NO
     /// lock taken (a READ path and a separate WRITE path, so RBF's update-mode
     /// auto-lock never engages).
@@ -160,55 +201,29 @@ final class Scenario6809Tests: XCTestCase {
     /// exactly how the old counter race passed 600/600 against code with no
     /// locking at all.
     func testUnlockedReadModifyWriteDoesLoseUpdatesOn6809() throws {
-        throw XCTSkip("""
-            NOT ESTABLISHED ON 6809 -- skipped so it cannot be mistaken for coverage.
-
-            Two configurations were measured, and neither is usable yet:
-
-            * napMode .nilWrites  -- roster completes in 11s, but the UNLOCKED
-              control kept a PERFECT 100/100 tally. The read-modify-write never
-              interleaves, so a locked pass here would mean nothing. This is the
-              600/600 counter-race failure mode exactly.
-            * napMode .sleep      -- genuinely opens the window (a 4x25 roster
-              reached 75/100 before a 300s deadline, so it does interleave and
-              does lose updates), but forks a process per increment at roughly
-              0.26 increments/second. A 4x10 roster still exceeded 10 minutes.
-
-            So the mechanism that interleaves is too slow to run as a test, and
-            the mechanism that is fast enough does not interleave. Until one of
-            those is resolved, NitrOS-9's record locking is UNMEASURED by this
-            harness -- which is NOT the same as "NitrOS-9 passes".
-
-            Next step: PACK the worker once and launch it with runb, removing
-            the per-launch BASIC09 parse, then re-measure whether .sleep with a
-            small roster fits in a sane runtime.
-            """)
-        let workers = 4, increments = 10
-        let tally = try finalTally(workers: workers, increments: increments,
-                                   nap: 1, role: .rmwfree)
-        XCTAssertLessThan(tally, workers * increments,
+        let expected = Self.lockWorkers * Self.lockIncrements
+        let tally = try finalTally(workers: Self.lockWorkers, increments: Self.lockIncrements,
+                                   nap: Self.lockNap, role: .rmwfree, napMode: .nilWrites)
+        XCTAssertLessThan(tally, expected,
                           "unlocked RMW kept a perfect tally of \(tally) -- the race never "
-                        + "interleaved, so any locked result on this target is meaningless")
+                        + "interleaved, so any locked result on this target is meaningless. "
+                        + "If this starts passing, the .nilWrites window has stopped opening "
+                        + "and every other lock result here must be treated as meaningless.")
     }
 
     /// The locked race: RBF auto-locks the record an update-mode read returns.
     /// A short tally is a lost update.
+    ///
+    /// Meaningful only because its control loses updates in the SAME
+    /// configuration -- run `testUnlockedReadModifyWriteDoesLoseUpdatesOn6809`
+    /// first. A green here on its own would say the workers never contended,
+    /// not that the lock worked.
     func testConcurrentReadModifyWriteLosesNoUpdatesOn6809() throws {
-        throw XCTSkip("""
-            Skipped for the same reason as its control, and specifically because
-            its control is not passing. A locked result is only meaningful once
-            the UNLOCKED control has been shown to lose updates in the SAME
-            configuration -- otherwise a green here says the workers never
-            contended, not that the lock worked.
-
-            See testUnlockedReadModifyWriteDoesLoseUpdatesOn6809.
-            """)
-        let workers = 4, increments = 10
-        let tally = try finalTally(workers: workers, increments: increments,
-                                   nap: 1, role: .rmw)
-        XCTAssertEqual(tally, workers * increments,
-                       "lost update on NitrOS-9: expected \(workers * increments), "
-                     + "got \(tally)")
+        let expected = Self.lockWorkers * Self.lockIncrements
+        let tally = try finalTally(workers: Self.lockWorkers, increments: Self.lockIncrements,
+                                   nap: Self.lockNap, role: .rmw, napMode: .nilWrites)
+        XCTAssertEqual(tally, expected,
+                       "lost update on NitrOS-9: expected \(expected), got \(tally)")
     }
 
     // ── Backends that do not exist here ───────────────────────────────────────

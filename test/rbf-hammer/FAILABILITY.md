@@ -136,24 +136,49 @@ the golden master; the master is never booted by the harness.
 `testFourWorkersShareOneFileOn6809` passes (11.5s) and shares the mutation
 above, since both go through the same render/inject/collect path.
 
-### What is NOT established — the record lock is UNMEASURED on 6809
+### The record lock IS measured on 6809 — MEASURED + PROVEN FAILABLE 2026-07-20
 
-**`rmw`/`rmwfree` are skipped, not passing.** Both configurations were measured
-and neither is usable:
+**`rmw`/`rmwfree` now run, and the control loses updates.** The earlier reading
+that `.nilWrites` "never interleaves" was measured at **nap 1** — a single `/nil`
+write, which opens no scheduling window at all. A *large* burst does interleave,
+cheaply, with no process fork. The operating point was found by bisection:
 
-| napMode | Roster runtime | Unlocked control tally | Verdict |
-|---|---|---|---|
-| `.nilWrites` | 11s | **100/100 — perfect** | Never interleaves. A locked pass here would be worthless — this is the 600/600 counter race exactly |
-| `.sleep` | 4x25 reached only 75/100 in 300s; 4x10 exceeded 10 min | loses updates (real window) | Genuinely interleaves, but forks a process per increment at ~0.26/s — too slow to run |
+| napMode | nap | Roster (4×10) | Unlocked control tally | Verdict |
+|---|---|---|---|---|
+| `.nilWrites` | **1** | 11s | 40/40 — perfect | window is one write; never interleaves. This is the misread the old note generalised from |
+| `.nilWrites` | 100 | 10s | 20/20 (at 4×5) — perfect | window still too narrow |
+| `.nilWrites` | **400** | ~10s | **26–28/40 — loses ~13 every run** | interleaves reliably AND fast. **The operating point.** |
+| `.nilWrites` | 1000 | control 11s; **locked 606s TIMEOUT** | control loses (11/20 at 4×5) | window so wide the *locked* roster starves — worker 2 never ran, tally 15/20 was a timed-out run, NOT a lost update. Do not cite it as one |
+| `.sleep` | 1 | 4×25→75/100 in 300s; 4×10 >10min | loses | genuine window but forks a `sleep` per increment at ~0.26/s — too slow. `PACK`+`runb` was the proposed fix and is NOT needed: `.nilWrites` nap 400 gets there without it |
 
-The mechanism that interleaves is too slow; the mechanism that is fast enough
-does not interleave. **"NitrOS-9's record locking is unmeasured" is not
-"NitrOS-9 passes."** Next step is `PACK` + `runb` to remove the per-launch
-BASIC09 parse, then re-measure `.sleep` with a small roster.
+At nap 400, both directions are demonstrated and both are fast (~10s):
 
-That `.nilWrites` row is the ledger doing its job: the roster was fast and green
-and would have been reported as 6809 lock coverage. The control is the only
-reason it was not.
+| Configuration | Final tally (4×10) | Runs |
+|---|---|---|
+| `rmwfree` — no lock taken | **26–28** (loses ~13 of 40) | 6+, every one lost updates |
+| `rmw` — update-mode auto-lock | **40** — perfect | 5+, every one perfect |
+
+`testUnlockedReadModifyWriteDoesLoseUpdatesOn6809` is the permanent guard: if it
+ever keeps a full 40, the `.nilWrites` window has stopped opening and every other
+6809 lock result must be treated as meaningless again — exactly the 600/600
+counter-race trap. Why nap 400 interleaves where nap 1 does not: the burst has to
+span several of the emulated 100Hz preemption ticks for a competing worker to be
+scheduled into the window between the read and the write. One write spans none.
+
+**Open robustness caveat, recorded honestly — the control is load-sensitive.**
+Twice, both while other `swift test`/build processes were loading the host
+(1-min load ~8), the control run stretched to ~152s (≈15× normal) and reported a
+**perfect** 40/40 — zero interleave — which FAILS its assertion. At normal load
+(<~2) the pair is solid: 3/3 back-to-back pair runs and a full-suite run all
+passed at ~10s each, control losing ~13 every time. **The failure direction is
+SAFE**: it faults toward a loud false alarm (the control refusing to certify),
+never toward silently passing a broken lock. The *mechanism* is NOT established —
+a uniform emulator slowdown should not change the *relative* timing that drives
+the interleave, yet under load it did. Per this ledger's own discipline that is
+left as an observed, unexplained caveat rather than given a fabricated cause.
+**Do not run the 6809 lock pair as a gate on a loaded host without re-checking;
+prefer a quiet host, or treat a single 40/40 as inconclusive-under-load rather
+than as a lock pass.**
 
 ### Two harness defects that looked exactly like RBF data loss
 
