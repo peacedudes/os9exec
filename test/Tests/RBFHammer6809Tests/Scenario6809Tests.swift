@@ -54,6 +54,34 @@ final class Scenario6809Tests: XCTestCase {
     private static let lockWorkers = 4
     private static let lockIncrements = 10
 
+    /// The 1-minute host load above which the lock pair is not run. The pair
+    /// needs its four workers to actually OVERLAP inside the `.nilWrites`
+    /// window; measured rock-solid below ~2 and fragile by ~4-5, where a racer
+    /// starves and the roster either fails to interleave or hangs to the 600s
+    /// timeout. Neither outcome is an RBF verdict -- both are the busy host --
+    /// so the honest move is to skip, not to emit a false pass or a 10-minute
+    /// hang. (See `test/rbf-hammer/FAILABILITY.md`, the 6809 load caveat.)
+    private static let maxLoadForLockPair = 2.5
+
+    /// The system's 1-minute load average, or nil if the host does not report
+    /// one. `getloadavg` comes from libc via Foundation on the macOS host these
+    /// 6809 tests require.
+    private func hostLoadAverage() -> Double? {
+        var samples = [Double](repeating: 0, count: 3)
+        return getloadavg(&samples, 3) > 0 ? samples[0] : nil
+    }
+
+    /// Skips the calling lock-pair test when the host is too busy for its timing
+    /// to mean anything. A load artifact must never read as a lock verdict.
+    private func skipLockPairWhenHostBusy() throws {
+        if let load = hostLoadAverage(), load > Self.maxLoadForLockPair {
+            throw XCTSkip(String(format:
+                "host 1-min load %.1f exceeds %.1f: the rmw lock pair needs a quiet host to "
+              + "interleave. Running it loaded yields a hang or a false no-interleave, not an "
+              + "RBF result -- re-run at low load.", load, Self.maxLoadForLockPair))
+        }
+    }
+
     // ── Floor ─────────────────────────────────────────────────────────────────
 
     /// The smallest possible end-to-end proof that the 6809 path works at all:
@@ -201,6 +229,7 @@ final class Scenario6809Tests: XCTestCase {
     /// exactly how the old counter race passed 600/600 against code with no
     /// locking at all.
     func testUnlockedReadModifyWriteDoesLoseUpdatesOn6809() throws {
+        try skipLockPairWhenHostBusy()
         let expected = Self.lockWorkers * Self.lockIncrements
         let tally = try finalTally(workers: Self.lockWorkers, increments: Self.lockIncrements,
                                    nap: Self.lockNap, role: .rmwfree, napMode: .nilWrites)
@@ -219,6 +248,7 @@ final class Scenario6809Tests: XCTestCase {
     /// first. A green here on its own would say the workers never contended,
     /// not that the lock worked.
     func testConcurrentReadModifyWriteLosesNoUpdatesOn6809() throws {
+        try skipLockPairWhenHostBusy()
         let expected = Self.lockWorkers * Self.lockIncrements
         let tally = try finalTally(workers: Self.lockWorkers, increments: Self.lockIncrements,
                                    nap: Self.lockNap, role: .rmw, napMode: .nilWrites)
