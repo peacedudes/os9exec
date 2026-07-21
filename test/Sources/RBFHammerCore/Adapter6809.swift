@@ -187,6 +187,14 @@ public struct Adapter6809: Adapter {
                                          stripComments: true).utf8).write(to: url)
             staged.append(url)
         }
+        // The old-style single procedure file, staged so the diagnostic
+        // `RBF_DRIVE=procfile` mode can drive the whole roster with one
+        // `shell </DD/run.s`. Harmless when the default one-at-a-time driving
+        // is used -- it just sits on the disk unread.
+        let runProc = staging.appendingPathComponent("run.s")
+        try Data(renderRunProcedure(scenario, device: device).utf8).write(to: runProc)
+        staged.append(runProc)
+
         for file in staged {
             try shell(toolShed.path,
                       ["copy", file.path, "\(run.partition.path),/\(file.lastPathComponent)"])
@@ -196,6 +204,25 @@ public struct Adapter6809: Adapter {
 
     /// Filename of one worker's script.
     private func scriptName(_ worker: WorkerSpec) -> String { "w\(worker.id).s" }
+
+    /// Renders the old-style procedure file that launches the whole roster.
+    ///
+    /// This is the driving that produced the `What?` flood. Kept only so the
+    /// flood can be reproduced ON DEMAND (`RBF_DRIVE=procfile`) and its cause
+    /// pinned down, rather than described from memory. Provisioning workers run
+    /// foreground first; racers are backgrounded; one `w` per racer waits for
+    /// them; then the done marker. Byte-for-byte the sequence the default
+    /// driving issues one command at a time, but handed to the shell as a file.
+    private func renderRunProcedure(_ scenario: Scenario, device: String) -> String {
+        let (provision, racers) = scenario.workers
+            .partitioned { $0.role == .create || $0.role == .seed }
+        var lines = ["chd \(device)"]
+        lines += provision.map { "basic09 #32k </DD/\(scriptName($0))" }
+        lines += racers.map { "basic09 #32k </DD/\(scriptName($0))&" }
+        lines += racers.map { _ in "w" }
+        lines.append("echo \(Self.doneMarker)")
+        return lines.joined(separator: "\r") + "\r"
+    }
 
     // ── Partition plumbing ────────────────────────────────────────────────────
 
@@ -297,23 +324,43 @@ public struct Adapter6809: Adapter {
         // forever and every poll re-scans them.
         _ = try? shell("/usr/bin/env", ["tmux", "clear-history", "-t", "\(run.session):chan"],
                        environment: environment)
+
+        // Diagnostic: drive the whole roster the OLD way, as one procedure file,
+        // to reproduce the `What?` flood on demand. Off by default.
+        if ProcessInfo.processInfo.environment["RBF_DRIVE"] == "procfile" {
+            type("shell #32k </DD/run.s", in: run)
+            guard let transcript = waitFor(Self.doneMarker, in: run, until: deadline) else {
+                return (capture(run), true)
+            }
+            return (transcript, false)
+        }
+
         type("chd \(device)", in: run)
 
-        // Commands are typed at the shell ONE AT A TIME, each waited for, rather
-        // than fed to it as a procedure file (`shell <run.s`).
+        // Commands are typed at the shell ONE AT A TIME rather than fed as a
+        // procedure file (`shell <run.s`). The procedure-file form floods the
+        // channel with `What?` and leaves the shared file unwritten -- which
+        // reads exactly like RBF dropping every concurrent writer, and is
+        // nothing of the kind. The cause is now CONFIRMED (reproduced on demand
+        // via RBF_DRIVE=procfile, traced live -- see FAILABILITY.md):
         //
-        // The procedure-file approach produced a `What?` flood and left the
-        // shared file pre-extended but unwritten -- reading exactly like RBF
-        // dropping every concurrent writer, and nothing of the kind. The cause
-        // is NOT inherent to procedure files: isolated tests confirm a
-        // procedure file backgrounds multiple `basic09 <file&` workers fine.
-        // The real trigger was not pinned down; the likeliest is channel
-        // corruption from driving `key` faster than the guest consumes it (a
-        // known gotcha of this REPL). Typing one command at a time and waiting
-        // for each re-paces the channel, which is what actually avoids it --
-        // so this is a REPL-pacing workaround, not a statement about OS-9
-        // shell semantics. Do not restore the shared-stdin explanation that
-        // once stood here; it was tested and is false.
+        //   1. Under procedure-file driving the racers launch nearly at once,
+        //      and the outer `shell #32k </DD/run.s` is an EXTRA #32k process on
+        //      top of the four #32k basic09 workers.
+        //   2. A racer reaches hnap and its `SHELL "sleep"` fork fails with
+        //      Error #237 (RAM Full) -- the CoCo3 is simply out of memory.
+        //   3. hnap has no ON ERROR, so the uncaught error BREAKs into BASIC09's
+        //      interactive DEBUGGER (the `D:` prompt -- THAT is what prints
+        //      `What?`, not the shell). The worker's stdin is its redirected
+        //      script file, now at EOF, so the debugger spins reading past EOF
+        //      forever: the unbounded `D:What?` flood.
+        //
+        // So it is memory exhaustion surfacing as a debugger spin -- NOT channel
+        // corruption, NOT rapid `key`, and NOT an RBF fault. One-at-a-time
+        // driving avoids it by not adding the procedure-file shell and by
+        // staggering the launches, which keeps peak RAM under the limit. Do not
+        // restore the "channel corruption" or "shared-stdin" explanations that
+        // once stood here; both were tested and are false.
         for worker in provision {
             let marker = "PROV\(worker.id)DONE"
             type("basic09 #32k </DD/\(scriptName(worker))", in: run)

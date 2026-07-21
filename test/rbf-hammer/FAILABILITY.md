@@ -184,30 +184,50 @@ than as a lock pass.**
 
 Both produced "concurrent writers lose everything" and both were the harness.
 
-**1. A `What?` flood that read as total data loss — cause NOT the one first
-recorded.** Driving the roster with `shell #32k </DD/run.s` made exactly ONE
-racer of four run — a *different* one each run — while the rest never started and
-the shell emitted a burst of `What?`. The file came back correctly pre-extended
-and entirely unwritten, which reads precisely as RBF dropping every concurrent
-write. Fixed by typing commands at the shell one at a time and waiting for each.
+**1. A `What?` flood that read as total data loss — CAUSE NOW CONFIRMED
+(reproduced on demand 2026-07-21).** Driving the roster with
+`shell #32k </DD/run.s` floods the channel with `What?` and leaves the shared
+file pre-extended but entirely unwritten — which reads precisely as RBF dropping
+every concurrent write, and is nothing of the kind.
 
-The first cause recorded here — "a backgrounded child inherits the parent's
-stdin and file position, so the children eat the procedure file" — was **tested
-and is FALSE**, and is kept only as a caution. Four isolated procedure files
-(single/double background `echo`; single/double background `basic09 <file&`,
-the exact roster shape) ALL launched their background jobs and completed
-cleanly. A procedure file backgrounds fine. The real trigger of the flood was
-never pinned down; the leading candidate is channel corruption from sending
-`key` faster than the guest drains it (a documented gotcha of this REPL), which
-the one-at-a-time-with-waits driving happens to also cure. So the fix is a
-REPL-pacing workaround, not an OS-9 shell fact.
+The cause was pinned live, in order, by driving the guest interactively and by an
+onset snapshotter that caught the trigger line before the flood buried it
+(`RBF_DRIVE=procfile` reproduces the whole thing):
 
-This row is itself a ledger lesson: a plausible harness explanation was written
-into three files (this one, the adapter comment, the skill) without being made
-to fail on demand. The owner asked "did you try `&`?", a five-minute live test
-disproved it, and the retraction is recorded rather than quietly deleted.
-**Successor task: find what actually caused the flood, make it reproduce, then
-replace this caveat with the real cause.**
+1. **`What?` is BASIC09's interactive DEBUGGER, not the shell.** An uncaught
+   BASIC09 runtime error `BREAK`s into the debugger (`D:` prompt). Proven with a
+   minimal `x=1/0` program: run with stdin = terminal it drops to `D:` and
+   **blocks** (a single `D:`, responds to `q`); run with stdin = a redirected
+   script file (`basic09 <file`) the debugger reads past the file's EOF and
+   **spins**, emitting `What?` on every empty read — the unbounded flood.
+2. **The uncaught error is `Error #237 — RAM Full`, in `PROCEDURE hnap`**, at its
+   `SHELL "sleep"` line. The snapshotter caught it exactly:
+   `*003E SHELL "sleep "+STR$(ticks)` / `Error #237` / `BREAK: PROCEDURE hnap`.
+   `SHELL` forks, and the fork runs the CoCo3 out of memory.
+3. **Why procedure-file driving and not one-at-a-time:** the outer
+   `shell #32k </DD/run.s` is an EXTRA #32k process on top of the four #32k
+   basic09 racers, and run.s launches all four nearly simultaneously, so their
+   `SHELL` forks coincide. One-at-a-time driving adds no such shell and staggers
+   the launches, keeping peak RAM under the limit — which is the real reason it
+   "cures" the flood.
+
+So the flood is **memory exhaustion surfacing as a debugger EOF-spin** — NOT
+channel corruption, NOT rapid `key`, NOT a backgrounded child eating the
+procedure file, and crucially **NOT an RBF fault hiding behind it** (#237 is
+benign to RBF). Every one of those earlier guesses is now disproven on demand.
+
+**Ledger lesson, kept:** the previously-recorded cause ("channel corruption from
+rapid key", and before that "a backgrounded child inherits the parent's stdin")
+was written into three files WITHOUT being made to fail. Both were wrong. The
+rule held: reproduce first, then name the cause.
+
+**Standing harness hazard this exposes:** the workers have NO `ON ERROR` (only
+the `read` role does), so ANY uncaught worker error — a real RBF error included —
+manifests as this same hang-and-flood rather than a diagnosable message. A worker
+`ON ERROR` that reports the code to `#2` and exits would turn a masked flood into
+`worker N error NNN`. Not yet applied: the worker template is shared with the
+68k target, whose results are proven against its current text, so changing it is
+an owner decision.
 
 **2. The golden master was booted instead of the clone.** An XRoar survived a
 `stop`, a later boot reused it, and a run wrote to the golden master while every
