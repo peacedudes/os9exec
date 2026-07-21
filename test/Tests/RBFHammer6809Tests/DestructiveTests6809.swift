@@ -79,4 +79,35 @@ final class DestructiveTests6809: XCTestCase {
                      + structural.map(\.detail).joined(separator: "\n")
                      + "\nClone at \(result.scratchPath)")
     }
+
+    /// One worker writes past the end of the 512-sector RAM disk. NitrOS-9's RBF
+    /// must hit the wall with a clean error (the worker's ON ERROR reports it)
+    /// and leave the device structurally intact -- exhaustion must not corrupt.
+    func testExhaustingTheRamDiskLeavesItIntactOn6809() throws {
+        let file = "/r0/big.dat"
+        let scenario = Scenario(name: "disk-full-6809",
+                                backend: .ramDisk,
+                                workers: [WorkerSpec(id: 1, role: .append, file: file, count: 2500)],
+                                timeout: 300)
+        let result = try Adapter6809(repoRoot: Self.repoRoot).run(scenario)
+
+        XCTAssertFalse(result.timedOut,
+                       "disk-full run never completed. Clone at \(result.scratchPath)\n"
+                     + result.transcript.suffix(2500))
+
+        // It must actually have run out of space: a worker that finished all 2500
+        // records (never hit the wall) would make the intact check vacuous.
+        XCTAssertFalse(result.transcript.contains("worker 1 wrote 2500"),
+                       "the RAM disk was never exhausted -- disk-full proved nothing:\n"
+                     + result.transcript.suffix(2500))
+        XCTAssertTrue(result.transcript.contains("worker 1 ERROR err"),
+                      "expected the worker to report an exhaustion error:\n"
+                     + result.transcript.suffix(2500))
+
+        let structural = StructuralOracle.structuralViolations(dcheck: result.transcript)
+        XCTAssertEqual(structural, [],
+                       "the exhausted RAM disk came back damaged:\n"
+                     + structural.map(\.detail).joined(separator: "\n")
+                     + "\nClone at \(result.scratchPath)")
+    }
 }
