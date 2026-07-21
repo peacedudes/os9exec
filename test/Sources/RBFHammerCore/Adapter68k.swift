@@ -123,6 +123,10 @@ public struct Adapter68k: Adapter {
         // delayed, or interleaved with the previous process's output.
         lines.append(racers.map { "basic #32k </h5/\(scriptName($0))&" }.joined())
 
+        // The destructive act, if any: fired while the racers are running and
+        // still hold the file open (delete it, kill a writer, truncate it).
+        lines += scenario.midFlight
+
         // `w` waits for exactly ONE child, so the roster needs one per racer.
         // Waiting for fewer reads the files while workers are still writing and
         // manufactures torn-record violations that are the harness's own fault.

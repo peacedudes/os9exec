@@ -73,4 +73,45 @@ final class DestructiveTests: XCTestCase {
                      + structural.map(\.detail).joined(separator: "\n")
                      + "\nScratch kept at \(result.scratchPath)")
     }
+
+    // ── Delete a file out from under processes holding it open ─────────────────
+
+    /// A file is pre-extended, two readers open it and start walking it slowly,
+    /// and then it is deleted while they still hold it open. RBF must resolve the
+    /// contention -- refuse the delete, defer it, or let the readers finish on
+    /// the doomed file -- and whatever it chooses, the DEVICE must end
+    /// structurally intact, with the file's clusters accounted for either way.
+    func testDeletingAFileHeldOpenLeavesTheImageIntact() throws {
+        let file = "/h9/held.dat"
+        var roster = [WorkerSpec(id: 99, role: .create, file: file, count: 40)]
+        roster += (1...2).map {
+            WorkerSpec(id: $0, role: .read, file: file, count: 40, nap: 3, napMode: .sleep)
+        }
+        let scenario = Scenario(name: "delete-held-open",
+                                backend: .rbfImage, workers: roster, timeout: 120,
+                                midFlight: ["sleep 40", "del \(file)"])
+        let result = try Adapter68k(repoRoot: Self.repoRoot).run(scenario)
+        dump(result)
+
+        XCTAssertFalse(result.timedOut,
+                       "delete-held-open hung -- a reader parked on a doomed file:\n"
+                     + result.transcript)
+
+        let structural = StructuralOracle.structuralViolations(dcheck: result.transcript)
+        XCTAssertEqual(structural, [],
+                       "deleting a held-open file left the image damaged:\n"
+                     + structural.map(\.detail).joined(separator: "\n")
+                     + "\nScratch kept at \(result.scratchPath)")
+
+        // The deleted file's clusters must return. A delete-while-open that
+        // freed nothing (or freed twice) would leave the free count well off the
+        // pristine baseline -- only the bitmap and root dir stay allocated.
+        guard let free = StructuralOracle.freeSectors(in: result.transcript),
+              let capacity = StructuralOracle.capacitySectors(in: result.transcript) else {
+            return XCTFail("no free/capacity to judge reclamation:\n\(result.transcript)")
+        }
+        XCTAssertGreaterThanOrEqual(free, capacity - 8,
+                       "delete-while-open leaked clusters: only \(free)/\(capacity) sectors "
+                     + "free, expected all but the bitmap/root reclaimed")
+    }
 }

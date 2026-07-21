@@ -169,16 +169,24 @@ public struct Scenario: Equatable, Sendable {
     /// Ignored by the RAM-disk and host-directory backends.
     public let deviceKB: Int
 
+    /// Shell commands run AFTER the racers are launched but BEFORE they are
+    /// waited for -- the destructive act, fired while the workers still hold the
+    /// file open. Empty for an ordinary run. This is how a file is deleted, or a
+    /// writer killed, mid-flight, so the disk can then be checked for the damage
+    /// that violence might have left behind.
+    public let midFlight: [String]
+
     /// Creates a scenario.
     public init(name: String, backend: Backend, workers: [WorkerSpec],
                 tick: TickMode = .enabled, timeout: TimeInterval = 60,
-                deviceKB: Int = 500) {
+                deviceKB: Int = 500, midFlight: [String] = []) {
         self.name = name
         self.backend = backend
         self.workers = workers
         self.tick = tick
         self.timeout = timeout
         self.deviceKB = deviceKB
+        self.midFlight = midFlight
     }
 
     /// Every distinct file the roster touches.
