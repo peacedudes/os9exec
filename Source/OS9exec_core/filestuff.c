@@ -1516,11 +1516,20 @@ os9err syspath_write( ushort pid,ushort spnum, uint32_t *len, void* buffer, Bool
                 return E_BPNUM; /* infinit recursion in case of debugprintf */
             }
     }
-    
+
+    /* Enforce the path's open access mode for disk files: writing to a file that
+     * was NOT opened with write access is E$BMode on real OS-9 RBF (previously
+     * os9exec ignored the mode and let the write through). Only disk-file types
+     * are checked -- the console (fCons/fTTY) shares a single read-mode descriptor
+     * for stdin/stdout/stderr, so it must keep its looser semantics. Access-mode
+     * bit W = 0x02 (mode byte layout is `. . D S - E W R`). */
+    if ((spP->type==fRBF || spP->type==fFile) && !(spP->mode & 0x02))
+        return os9error(E_BMODE);
+
     #ifdef TERMINAL_CONSOLE
       gLastwritten_pid= proc_slot( pid ); /* save this info in terminal interface system */
     #endif
-   
+
                      f= fmgr_op[spP->type];
     if (wrln) wproc= f->writeln;
     else      wproc= f->write;
