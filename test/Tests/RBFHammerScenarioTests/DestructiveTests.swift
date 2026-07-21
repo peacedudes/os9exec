@@ -114,4 +114,42 @@ final class DestructiveTests: XCTestCase {
                        "delete-while-open leaked clusters: only \(free)/\(capacity) sectors "
                      + "free, expected all but the bitmap/root reclaimed")
     }
+
+    // ── Kill a writer mid-write ────────────────────────────────────────────────
+
+    /// A lone writer extends a file slowly; part way through, its process is
+    /// killed with the file still open. The kernel's process-death cleanup
+    /// (`F$Exit` closing the dying process's paths) must leave the filesystem
+    /// consistent -- a half-written file is fine, a cross-linked or half-freed
+    /// cluster is not.
+    ///
+    /// The writer is the only backgrounded process, so it is proc 3 (`Live`: the
+    /// shell's `&` reply is `+3`); `kill 3` after a short sleep lands mid-write.
+    func testKillingAWriterMidWriteLeavesTheImageIntact() throws {
+        let file = "/h9/victim.dat"
+        let scenario = Scenario(name: "kill-mid-write",
+                                backend: .rbfImage,
+                                workers: [WorkerSpec(id: 1, role: .append, file: file,
+                                                     count: 100, nap: 3, napMode: .sleep)],
+                                timeout: 60,
+                                midFlight: ["sleep 40", "kill 3"])
+        let result = try Adapter68k(repoRoot: Self.repoRoot).run(scenario)
+        dump(result)
+
+        XCTAssertFalse(result.timedOut,
+                       "kill-mid-write hung -- the dead writer's path was never reaped:\n"
+                     + result.transcript)
+
+        // It must really have died mid-write: a writer that finished all 100
+        // records before the kill proves nothing about interrupted writes.
+        XCTAssertFalse(result.transcript.contains("worker 1 wrote 100"),
+                       "writer finished before the kill -- it was not interrupted:\n"
+                     + result.transcript)
+
+        let structural = StructuralOracle.structuralViolations(dcheck: result.transcript)
+        XCTAssertEqual(structural, [],
+                       "killing a writer mid-write left the image damaged:\n"
+                     + structural.map(\.detail).joined(separator: "\n")
+                     + "\nScratch kept at \(result.scratchPath)")
+    }
 }

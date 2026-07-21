@@ -392,9 +392,10 @@ cross-linked or leaking clusters is caught even when every file reads back clean
 |---|---|---|
 | **disk full** — one worker writes 500 records to a `mount -k=16K` image | Raised `E_FULL` (248) at the wall — `hammer: worker 1 ERROR err 248`, `0 free sectors` — and `dcheck` certified the FULL image `file structure is intact`. RBF hit the limit without corrupting the disk. `Live` 2026-07-21 | The test REQUIRES `ERROR err 248` in the transcript, so a roster that quietly fit (a large device) fails the "was it exhausted?" guard rather than passing vacuously; and the structural oracle is proven to catch a real bitmap corruption |
 | **delete held-open** — pre-extend a file, two readers walk it slowly (nap=3), `del` it mid-read | Deferred-delete, done right: both readers `read done 40` off the doomed file, then on last close the clusters were reclaimed (`free` back to the pristine 2012/2016) and `dcheck` stayed intact. `Live` 2026-07-21 | Two checks that can each fail: `dcheck` structural damage (oracle proven-failable), AND `free >= capacity-8` -- a delete-while-open that leaked the file's clusters would leave free well short and fail the reclamation assertion |
+| **kill mid-write** — a lone slow writer (nap=3) is `kill 3`ed while extending a file | Clean process-death cleanup: proc 3 `Exited with Error #000:228 (E_PRCABT)` after ~5 of 100 records, `F$Exit` closed its open path, and `dcheck` reported the half-written file's device intact (9 of 2016 sectors used, accounted for). `Live` 2026-07-21 | The test REQUIRES the absence of `worker 1 wrote 100` -- a writer that finished before the kill fails the "was it interrupted?" guard -- plus the proven-failable structural oracle |
 
-Remaining destructive scenarios (kill-mid-write, truncate-under-reader) are next;
-each gets a row here once it runs and its `dcheck`/allocation check can fail.
+Remaining destructive scenario (truncate-under-reader) is next; it gets a row
+here once it runs and its check can fail.
 
 Planned injections, one per defect class:
 
