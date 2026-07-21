@@ -1778,6 +1778,96 @@ do {
     }
 }
 
+// ── F$CpyMem: a user process may write memory it owns, not memory it doesn't ────
+// OS-9 lets a user-state F$CpyMem READ any address but only WRITE where the
+// caller has permission (F$ChkMem). os9exec used to skip that check entirely, so
+// any process could clobber any arena address. The check now allows the caller's
+// own data/blocks AND any loaded RAM module (shared data modules must stay
+// writable -- owner's call), and refuses a foreign system address. Both halves
+// are asserted: dropping either token is a regression -- and the pre-fix binary
+// dropped the "FOREIGN BLOCKED" token (the copy was allowed), so this fails red
+// against it.
+do {
+    let cmAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$CpyMem equ  $1B",
+        "F$ID     equ  $0C",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect cpytst,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  OS9     F$ID",              // d0.w = own PID (F$CpyMem's cosmetic owner arg)
+        "  move.w  d0,d2",
+        "* stage 1: copy into the module's own buffer (dst is PC-relative) -- allowed",
+        "  lea     src(pc),a0",
+        "  lea     dst(pc),a1",
+        "  moveq   #8,d1",
+        "  move.w  d2,d0",
+        "  OS9     F$CpyMem",
+        "  bcs     s2",                // errored: skip the OK token
+        "  lea     mown(pc),a0",
+        "  moveq   #mownl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "s2:",
+        "* stage 2: copy into a foreign in-arena address ($1000) -- must be refused",
+        "  lea     src(pc),a0",
+        "  move.l  #$1000,a1",
+        "  moveq   #8,d1",
+        "  move.w  d2,d0",
+        "  OS9     F$CpyMem",
+        "  bcc     done",             // carry clear = write allowed = gate failed
+        "  lea     mfor(pc),a0",
+        "  moveq   #mforl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "mown:  dc.b  \"CPYMEM OWN OK\",$0D",
+        "mownl  equ   *-mown",
+        "mfor:  dc.b  \"CPYMEM FOREIGN BLOCKED\",$0D",
+        "mforl  equ   *-mfor",
+        "src:   dc.b  \"ABCDEFGH\"",
+        "dst:   dc.b  0,0,0,0,0,0,0,0",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = scratchDisk + "/cpytst.a"
+    try? cmAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "f$cpymem: writes its own memory, refuses a foreign address"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/cpytst.a -o=/h5/cpytst.r",
+            "l68 /h5/cpytst.r -o=/h5/cpytst",
+            "/h5/cpytst"
+        ], timeout: 20)
+        if out.contains("CPYMEM OWN OK") && out.contains("CPYMEM FOREIGN BLOCKED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [own-memory write must succeed AND a foreign-address write must be refused]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["cpytst.a", "cpytst.r", "cpytst"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us

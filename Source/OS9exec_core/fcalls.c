@@ -1284,7 +1284,20 @@ os9err OS9_F_CpyMem( regs_type *rp, _pid_ )
     byte* dst= (byte*)FROM68K(rp->a[1]);
     ulong cnt= (ulong)rp->d[1];
 
-    if (cnt>0 && (!RANGE_IN_ARENA(src,cnt) || !RANGE_IN_ARENA(dst,cnt))) return os9error(E_BPADDR); /* both required when copying */
+    /* OS-9 lets a user-state caller READ any address -- the source is never
+     * checked for ownership (the d0.w "owner PID" is not used to validate it);
+     * the arena test is only host-safety, so a wild source cannot fault the
+     * host. But the caller may only WRITE memory it has r/w permission to, which
+     * is F$ChkMem's job: its own data area or allocated blocks (RangeInProcMem),
+     * or any loaded RAM module incl. shared data modules (RangeInAnyModule).
+     * System-state callers would skip this -- os9exec has none, every F$CpyMem
+     * here is a user process. */
+    if (cnt>0) {
+        if (!RANGE_IN_ARENA(src,cnt)) return os9error(E_BPADDR); /* source: host-safety only */
+        if (!RANGE_IN_ARENA(dst,cnt) ||
+            (!RangeInProcMem(currentpid,dst,cnt) && !RangeInAnyModule(dst,cnt)))
+                                      return os9error(E_BPADDR); /* dest: caller must be able to write it */
+    }
     MoveBlk( dst,src, cnt );
     debugprintf(dbgMemory,dbgDeep,("# F$CpyMem: copied %u bytes from %p to %p\n", (uint32_t)cnt,src,dst ));
     return 0;

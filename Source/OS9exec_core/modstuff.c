@@ -362,6 +362,36 @@ void Update_MDir( void )
 }
 
 
+Boolean RangeInAnyModule( void* p, ulong cnt )
+/* True if [p, p+cnt) lies within any loaded 68k module's memory. F$CpyMem lets
+ * a user-state caller WRITE here as well as into its own data: modules live in
+ * RAM, os9exec cannot tell a write-protected module from a writable one (no ROM,
+ * no immutable attribute), and shared DATA MODULES -- the sanctioned way to pass
+ * data between processes -- must stay writable even for a process that did not
+ * create them. Self-modifying a shared code module is a bad idea but not made
+ * illegal here, deliberately (owner's call). Built-in modules are skipped: their
+ * storage is os9exec's own C image, never the 68k arena, so an arena destination
+ * cannot fall inside one. Overflow-safe (cnt<=size-off) like RANGE_IN_ARENA. */
+{
+    byte* b= (byte*)p;
+    int   k;
+
+    if (cnt==0) return true;
+
+    for (k=0; k<MAXMODULES; k++) {
+        mod_exec* mod= os9mod( k );
+        byte*     base;
+        ulong     size;
+        if (mod==NULL || os9modules[k].isBuiltIn) continue; /* real 68k modules only */
+        base= (byte*)mod;
+        size= os9_long( mod->_mh._msize );
+        if (b>=base && b<base+size && cnt<=(ulong)(base+size-b)) return true;
+    } // for
+
+    return false;
+} /* RangeInAnyModule */
+
+
 /*
 void MoveBlk( byte* dst, byte* src, ulong size )
 // copy the block with <size> form <src> to <dst

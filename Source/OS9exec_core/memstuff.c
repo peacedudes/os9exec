@@ -526,6 +526,44 @@ static ushort install_memblock(ushort pid, void *base, ulong size)
 } /* install_memblock */
 
 
+Boolean RangeInProcMem( ushort pid, void* p, ulong cnt )
+/* True if the byte range [p, p+cnt) lies wholly within process <pid>'s own
+ * writable memory: its static-storage data area [memstart,memtop) -- which the
+ * emulator treats as the whole data area, stack and parameter block included
+ * (os9exec_nt.c warns when A7 leaves that span) -- or one of its F$SRqMem
+ * blocks. This is the process-owned half of F$ChkMem's write-access test (the
+ * other half, loaded RAM modules, is RangeInAnyModule) -- the check F$CpyMem
+ * applies to its DESTINATION: OS-9 lets a user-state caller READ any address but
+ * only WRITE where it has permission. Each span is tested as cnt<=(top-b) rather
+ * than b+cnt<=top, so it never forms an out-of-range pointer -- a b+cnt overflow
+ * check is undefined and the compiler folds it (the RANGE_IN_ARENA note). It
+ * also skips a zero-length data area (memstart==memtop==0 for a process with no
+ * memory), whose NULL bound a relational compare may not touch. */
+{
+  process_typ* cp= &procs[ pid ];
+  byte*        b = (byte*)p;
+  int          k;
+
+  if (cnt==0) return true;   /* an empty write touches nothing */
+
+  if (cp->memtop > cp->memstart) { /* has a data area at all */
+    byte* lo= (byte*)FROM68K( cp->memstart );
+    byte* hi= (byte*)FROM68K( cp->memtop   );
+    if (b>=lo && b<hi && cnt<=(ulong)(hi-b)) return true;
+  } // if
+
+  for (k=0; k<MAXMEMBLOCKS; k++) { /* or one of its allocated memory blocks */
+    byte* base= (byte*)pmem[ pid ].m[ k ].base;
+    byte* end;
+    if (base==NULL) continue;
+    end= base + pmem[ pid ].m[ k ].size;
+    if (b>=base && b<end && cnt<=(ulong)(end-b)) return true;
+  } // for
+
+  return false;
+} /* RangeInProcMem */
+
+
 
 void release_mem( void* membase )
 /* process independent part of memory deallocation */

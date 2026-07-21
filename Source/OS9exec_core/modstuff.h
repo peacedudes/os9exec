@@ -73,6 +73,8 @@ void      init_modules( void );
 void   release_module ( ushort mid, Boolean modOK );
 
 mod_exec*  get_module_ptr( int   mid     );
+
+Boolean RangeInAnyModule( void* p, ulong cnt ); // does [p,p+cnt) lie in a loaded module?
 int        get_mid       ( void *modptr );
 
 int       find_mod_id             ( const char* name );
