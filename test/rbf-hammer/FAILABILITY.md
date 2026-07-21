@@ -180,6 +180,44 @@ left as an observed, unexplained caveat rather than given a fabricated cause.
 prefer a quiet host, or treat a single 40/40 as inconclusive-under-load rather
 than as a lock pass.**
 
+### The load-sensitivity above IS an editor-build race (2026-07-21)
+
+The "unexplained" load caveat now has a mechanism, caught live. Every racer is
+built by driving the BASIC09 **editor** from its script file (`e hnap` / `e
+hwork` / insert lines / `q` / `run`) on each launch. The racers launch
+concurrently, so several editors parse at once — and under host load two of them
+race until one spins forever at its `E:` prompt (`E:*` without end), the
+editor-phase cousin of the `D:` debugger flood. Caught with an onset snapshot:
+workers 3-4 finished, workers 1-2 stuck in a 669-line `E:*` spin, no data lost,
+the roster simply hung to the timeout. This also explains the 152s "zero
+interleave" control runs above: a worker that stalls in `E:` starts so late the
+others have finished, so nothing overlaps.
+
+It is reliable on a quiet host (all of P1's lock-pair measurements, and 5/5
+four-worker runs at load < 2). Under a busy host (a second XRoar from another
+session, load ~5) it hangs most runs. Confirmed both directions of the trade:
+**serialising** the launches (wait for a per-worker "up" marker before launching
+the next) removes the hang entirely — 5/5 four-worker runs green — but then the
+rmw control keeps a perfect tally, because staggered starts no longer overlap
+and the lock race never happens. So the parse-at-launch cannot be both
+concurrent (needed for the race) and unraced (needed to not hang); the only real
+fix is to **stop parsing at launch** — `PACK` each worker once during setup and
+`runb` the module, so launches are instant and truly concurrent. That is the
+next task; it was already on the plan for the lock-pair speedup.
+
+### RAM: the CoCo3 is now given 2MB, not the stock 512K
+
+`Backend`/`replEnvironment` boots XRoar with `-ram 2048`. A 512K machine leaves
+only ~304K free after the resident OS (read straight off `mfree`); a roster of
+several `#32k` BASIC09 workers each forking `SHELL "sleep"` exhausts it and the
+fork fails `Error #237 (RAM Full)`, which — with no `ON ERROR` — becomes the
+debugger flood. At 2MB `mfree` reports **1824K free**, and the procedure-file
+roster that always flooded at 512K completes cleanly (9.6s). NitrOS-9 EOU detects
+and uses the expansion (the 1520K block at `$80000–$1FBFFF` only exists above
+512K). Separately, every worker role now carries an `ON ERROR` that reports the
+code to `#2` and exits, so **any** uncaught error — a real RBF error included —
+surfaces as `worker N ERROR NNN` instead of an opaque hang-and-flood.
+
 ### Two harness defects that looked exactly like RBF data loss
 
 Both produced "concurrent writers lose everything" and both were the harness.

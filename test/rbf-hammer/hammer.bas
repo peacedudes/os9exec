@@ -27,6 +27,7 @@ PARAM mode: STRING[8]
 PARAM ticks: INTEGER
 DIM nilpath: BYTE
 DIM spin: INTEGER
+ON ERROR GOTO 800
 IF ticks > 0 THEN
   IF mode = "sleep" THEN
     SHELL "sleep " + STR$(ticks)
@@ -38,7 +39,9 @@ IF ticks > 0 THEN
     CLOSE #nilpath
   ENDIF
 ENDIF
-END
+GOTO 810
+800 PRINT #2, "hammer: hnap ERROR "; ERR
+810 END
 
 PROCEDURE hwork
 ! Parameterized RBF hammer worker. ONE program, many scenarios.
@@ -107,6 +110,7 @@ fname = "@FILE@"
 pad = "                                            "
 gotcount = 0
 failed = 0
+ON ERROR GOTO 900
 IF role = "seed" THEN
   ! One record holding a decimal tally, for the rmw role to increment.
   CREATE #path, fname: UPDATE
@@ -244,4 +248,6 @@ ELSE
 ENDIF
 ENDIF
 ENDIF
-END
+GOTO 910
+900 PRINT #2, "hammer: worker "; worker; " ERROR err "; ERR
+910 END

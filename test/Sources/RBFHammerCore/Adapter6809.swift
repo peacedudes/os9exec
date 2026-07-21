@@ -251,7 +251,14 @@ public struct Adapter6809: Adapter {
         environment["NITROS9REPL_SESSION"] = run.session
         environment["NITROS9REPL_BECKER_PORT"] = String(run.beckerPort)
         environment["NITROS9REPL_CHAN_PORT"] = String(run.chanPort)
-        environment["NITROS9REPL_EXTRA_XROAR"] = "-no-ratelimit"
+        // 2MB, not the stock 512K CoCo3. A 512K machine leaves only ~304K free
+        // after the resident OS, and a roster of several `#32k` BASIC09 workers
+        // each forking `SHELL "sleep"` exhausts it -- Error #237 (RAM Full),
+        // which the guest surfaces as a debugger flood (see execute()). NitrOS-9
+        // EOU detects and uses the expansion: `mfree` reports 1824K free here
+        // versus ~304K at 512K. This lifts the memory ceiling so the hammer can
+        // actually run many concurrent writers, which is the whole point of it.
+        environment["NITROS9REPL_EXTRA_XROAR"] = "-no-ratelimit -ram 2048"
         return environment
     }
 
@@ -370,6 +377,14 @@ public struct Adapter6809: Adapter {
             }
         }
 
+        // Racers launch concurrently: staggered starts would stop them
+        // overlapping, and the rmw lock test needs a real read-modify-write
+        // race. That concurrency is also what exposes a load-only fragility --
+        // building a worker drives the BASIC09 editor from its script file, and
+        // several editors parsing at once can race until one spins at its `E:`
+        // prompt and the roster hangs. It is reliable on a quiet host; the real
+        // cure is to stop parsing at launch at all (PACK the worker once and
+        // `runb` it). See FAILABILITY.md.
         for worker in racers {
             type("basic09 #32k </DD/\(scriptName(worker))&", in: run)
         }
