@@ -1,0 +1,1 @@
+#include <stdio.h>main(){	int path, i, n;	char buf[256];	for (i=0; i<256; i++) buf[i]=0x58;	path = create("/pipe", 0x02);	if (path < 0) { printf("CREATEFAIL\n"); exit(1); }	for (i=0; ; i++) {		n = write(path, buf, 256);		if (n < 0) { printf("UNNAMED_EWRITE_AFTER_%d\n", i); exit(0); }	}}
