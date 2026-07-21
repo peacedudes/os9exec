@@ -113,14 +113,26 @@ After the fix: 5/5 clean runs of all 11 scenarios at N=50.
 until the harness itself is exonerated.** This would have been filed as an RBF
 data-loss bug against freshly merged code.
 
-### Open, NOT yet classified
+### N=200 / N=500 — CLASSIFIED 2026-07-21: `Error #237 RAM Full`, not disk
 
-The N=200 and N=500 failures are **unclassified**. `testTwelveWorkersShareOneFile`
-passes at N=500 in isolation, so the failures are either in other scenarios or
-emerge only when the set runs together. Candidates: the 500K image is tight for
-12x500x64 = 384000 bytes, and disk-full is a real condition worth testing
-deliberately rather than tripping over accidentally. Do not describe these as
-RBF defects until each one has been isolated the way the N=50 case was.
+The old guess ("the 500K image is tight, disk-full") is **wrong** and is
+disproven by the run itself. The worker `ON ERROR` handler added this session
+turned the opaque N=500 failure into a self-report: the transcript is now ~900
+lines of `hammer: hnap ERROR 237` — **RAM Full**, raised inside `hnap` at its
+`SHELL "sleep"` fork. It is process memory, not disk: in the same run the
+provisioner pre-extends `shared.dat` to **2000 slots** and all four workers
+report `wrote 500`, so allocation and the writes themselves succeed. The cause
+is the nap: `.sleep` forks a `SHELL` per increment, and 4 workers × 500
+increments is ~2000 forks in flight, which exhausts the 68k guest's free memory
+the same way the 6809 procedure-file roster exhausted the CoCo3's.
+
+N=200 passes; N=500 fails — the fork pressure crosses the memory ceiling
+somewhere between. It is the SAME defect class as the 6809 flood (an uncaught
+`#237` from a `SHELL` fork), and it is **not** an RBF fault: the data written is
+correct. Two clean fixes, neither yet applied: give the guest more memory, or
+use `.nilWrites` (no fork) for the nap at high N. The writes succeeding under
+900 nap failures is itself the `ON ERROR` handler proving its worth — before it,
+this was an unreadable flood.
 
 ## 6809 / NitrOS-9 (Adapter6809) — 2026-07-20
 
