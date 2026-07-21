@@ -415,13 +415,23 @@ never being freed on close.
 
 Harness exonerated: the isolation reclaims clean, the workers really did write
 past the delete (`wrote 40`), and the structural oracle is proven to catch real
-bitmap corruption. Whether this is an os9exec defect in the I$Delete/close
-interaction or faithful to OS-9's undefined handling of writing-to-a-deleted-file
-is the **owner's call** (former RBF author). Recorded with `XCTExpectFailure` in
-`testDeletingFilesMidWriteReclaimsAllSpace`: the suite stays green, and if os9exec
-is ever changed here the test "unexpectedly passes" and fails loudly, prompting a
-revisit. **Not yet checked on 6809/NitrOS-9 -- worth doing, since a leak there
-would be a separate clone finding.**
+bitmap corruption.
+
+**Root cause, from reading `Source/OS9exec_core/file_rbf.c` (read-only, not
+changed):** `DeallocateBlocks` -- the only routine that frees a file's whole
+segment list -- has exactly ONE caller: `Delete` (line ~3713). It walks the file
+descriptor's segment list *as it stands at delete time* and releases those
+clusters; **close never deallocates.** So when another open path keeps writing
+after the `del`, it allocates fresh clusters into its own descriptor that
+`DeallocateBlocks` has already run past and that no later close frees -- they
+orphan. Delete-while-reading doesn't grow the file, so nothing new is allocated
+and it reclaims clean, exactly as observed. Two plausible fixes, both the owner's
+call: refuse to delete a file open for write (`E_SHARE`, as some OS-9 versions
+do), or defer/rerun deallocation on the last close of a deleted file. Recorded
+with `XCTExpectFailure` in `testDeletingFilesMidWriteReclaimsAllSpace`: the suite
+stays green, and if os9exec is ever changed here the test "unexpectedly passes"
+and fails loudly, prompting a revisit. **Not yet checked on 6809/NitrOS-9 --
+worth doing, since a leak there would be a separate clone finding.**
 
 Remaining destructive scenario (truncate-under-reader) needs an `SS.Size` path
 the 68k shell does not expose; deferred.
