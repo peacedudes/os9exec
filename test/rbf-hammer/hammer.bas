@@ -426,7 +426,28 @@ ELSE
       PRINT #2, "hammer: worker "; worker; " cross error "; failed
     ENDIF
   ELSE
+  IF role = "dirstorm" THEN
+    ! Directory storm (#2): GROW the shared directory `fname` by creating `total`
+    ! files that all coexist (so the directory spans many sectors), then DELETE
+    ! them all, freeing the entries. Each name is per-worker unique so no two
+    ! workers touch the same entry, but they grow and shrink the one directory
+    ! concurrently. dcheck then checks the directory, its multi-sector FD, and the
+    ! allocation bitmap stayed consistent -- an orphaned FD, a torn entry or a
+    ! cluster cross-linked between a freed file and a live one is what this hunts.
+    FOR index = 1 TO total
+      line = fname + "/s" + STR$(worker) + "x" + STR$(index)
+      CREATE #path, line: WRITE
+      PRINT #path, "storm"
+      CLOSE #path
+    NEXT index
+    FOR index = 1 TO total
+      line = fname + "/s" + STR$(worker) + "x" + STR$(index)
+      DELETE line
+    NEXT index
+    PRINT #2, "hammer: worker "; worker; " dirstorm done "; total
+  ELSE
     PRINT #2, "hammer: worker "; worker; " FAIL unknown role "; role
+  ENDIF
   ENDIF
   ENDIF
   ENDIF

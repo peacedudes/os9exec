@@ -434,4 +434,39 @@ final class DestructiveTests: XCTestCase {
                           "reader read \(count) of 50 records after the file was shrunk to 10 "
                         + "-- it ran off the preserved tail past the new EOF. Scratch \(result.scratchPath)")
     }
+
+    // ── Directory storm ──────────────────────────────────────────────────────────
+
+    /// Four workers rapidly create, write and delete 30 files each in ONE shared
+    /// directory, all at once -- 120 create/delete cycles churning the directory's
+    /// entries and the allocation bitmap. The directory grows past a single sector
+    /// and its entries are freed and reused throughout. Afterwards every file is
+    /// gone and `dcheck` must certify the device intact: no orphaned file
+    /// descriptor, no torn directory entry, no cluster cross-linked between a
+    /// freed FD and a live file.
+    func testConcurrentDirectoryStormLeavesTheDeviceIntact() throws {
+        let workers = 4, files = 40
+        let scenario = Scenario(name: "dir-storm",
+                                backend: .rbfImage,
+                                workers: (1...workers).map {
+                                    WorkerSpec(id: $0, role: .dirstorm, file: "/h9", count: files)
+                                })
+        let result = try Adapter68k(repoRoot: Self.repoRoot).run(scenario)
+        dump(result)
+        XCTAssertFalse(result.timedOut, "directory storm hung:\n\(result.transcript)")
+
+        // Non-vacuous: every worker must actually have finished its churn.
+        for id in 1...workers {
+            XCTAssertTrue(result.transcript.contains("worker \(id) dirstorm done"),
+                          "worker \(id) never finished the storm:\n\(result.transcript)")
+        }
+        XCTAssertFalse(result.transcript.contains("ERROR err"),
+                       "a storm worker hit an uncaught error:\n\(result.transcript)")
+
+        let structural = StructuralOracle.structuralViolations(dcheck: result.transcript)
+        XCTAssertEqual(structural, [],
+                       "the directory storm corrupted the filesystem:\n"
+                     + structural.map(\.detail).joined(separator: "\n")
+                     + "\nScratch kept at \(result.scratchPath)")
+    }
 }

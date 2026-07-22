@@ -162,6 +162,11 @@ public struct WorkerSpec: Equatable, Sendable {
         /// Seeds TWO 10-byte records for the `cross` deadlock probe.
         case seedbin2
 
+        /// Directory storm: rapidly creates, writes and deletes many files in the
+        /// shared directory named by `file`, churning directory entries and the
+        /// allocation bitmap under concurrent workers.
+        case dirstorm
+
         /// Creates an empty file and exits, provisioning a shared file before
         /// racers start. Two workers both CREATEing one file is itself an
         /// error and would mask the result.
