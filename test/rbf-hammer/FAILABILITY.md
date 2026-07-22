@@ -520,38 +520,34 @@ clean fix.** (NitrOS-9's `dcheck` uses the same "file structure is intact" clean
 bill, so the oracle ports; its `free` groups digits with commas on large
 devices, which the oracle's regex would need to tolerate for a full 6809 port.)
 
-### ★ FINDING (candidate): truncate does not reclaim the tail's clusters
+### NOT A BUG (resolved): SS.Size shrink preserves the tail update-mode-not-at-EOF
 
-The truncate scenario is now built — the 68k shell exposes no `SS.Size`, so a
-tiny cio-free helper (`test/rbf-hammer/trunc`, source `trunc.c`) opens the file
-and calls `_ss_size`. os9exec cannot fork a binary from the host-directory
-scratch, so the harness copies it onto the RBF image and runs it there. It found
-a second, independent allocation gap:
+Originally flagged as an allocation gap: shrinking `tr.dat` to 320 bytes with
+`SS.Size` (the `trunc` helper) left `free` at 1960/2016 — the ~48 tail sectors
+not reclaimed. It looked like `pRsetsz` (~file_rbf.c 3995) missing a
+`ReleaseBlocks`. **Wrong reading — resolved against the skill and the owner.**
 
-**os9exec's `SS.Size` shrink sets the logical size but never frees the truncated
-tail's clusters.** Pre-extend `tr.dat` to 200 records, shrink to 320 bytes: the
-file really shrinks (the retrieved copy is exactly 320 bytes) and `dcheck` stays
-intact, but `free` stays 1960/2016 — the ~48 tail sectors remain allocated to
-the file. They are reclaimed only when the file is later deleted, not on the
-truncate.
+The skill's `file-managers.md` documents the actual rule: "On close, unused
+sectors in the last segment are normally deallocated (truncated) — EXCEPT when
+the file is closed in write/update mode while not at EOF, where truncation is
+deliberately skipped to preserve reserved space for random-access/database
+files." os9exec implements exactly this: `pRclose` releases the tail
+(`ReleaseBlocks`) only when `currPos == lastPos && currPos != 0` (pointer at
+EOF). `SS.Size` does not itself reclaim; reclamation is a close-time action.
 
-**Root cause, from reading `file_rbf.c` (read-only, not changed):** the `SS.Size`
-handler `pRsetsz` (~line 3995) does `Set_FDSize(spP,*size)` + `RingSetLastPos` +
-`WriteFD` — it updates the logical size and the open-path ring, but never calls
-`ReleaseBlocks`/`DeallocateBlocks` to return the now-unused tail segments to the
-bitmap. So the space is retained by the file, not orphaned — which is exactly why
-`dcheck` reports "file structure is intact": the clusters are still in `tr.dat`'s
-own segment list. This is un-reclaimed space, NOT a cross-link or a tear.
+The original `trunc` helper opens update-mode and never seeks, so `currPos`
+stays 0 (not at EOF) — precisely the preserved case. So keeping the tail is
+CORRECT, faithful behaviour, not a leak. **Proven both ways, live:**
+- `trunc` (no seek) → tail preserved, `free` 1960/2016 (`testTruncatingAFileShrinksItAndStaysIntact`).
+- `truncsk` (seek to new EOF before close) → tail RECLAIMED, `free` 2009/2016
+  (`testSetSizeShrinkReclaimsTailWhenClosedAtEOF`).
 
-Standard OS-9 RBF frees the tail on a shrink. Recorded with `XCTExpectFailure` in
-`testTruncatingAFileShrinksItAndStaysIntact`: the suite is green today and flips
-to a loud "unexpectedly passed" the moment `pRsetsz` learns to release the tail,
-prompting removal of the wrapper. **Marked candidate, not confirmed, pending a
-6809/NitrOS-9 cross-check** — the delete-leak above was only nailed as a defect
-(not undefined-but-acceptable) once the reference RBF was shown to differ; the
-same rigor is owed here before calling it a bug. Cross-check is harder than the
-delete one: it needs an `SS.Size` path on 6809 (NitrOS-9's shell has no truncate
-either, so a 6809 `trunc` equivalent or a Basic09 `SS.Size` call is required).
+Both tests now assert the faithful outcome for their case; neither is an
+`XCTExpectFailure`. The owner (firsthand OS-9 author) confirmed the design intent
+is to free blocks (which the close-at-EOF path does); the skill supplies the
+random-access preservation exception. So of the two `SS.Size` "findings", both
+are faithful OS-9 (this one and the grow-exposes-raw-disk one); the only real
+RBF bug the hammer found remains the delete-during-write leak (fixed).
 
 ### NOT A BUG (owner-confirmed): SS.Size GROW exposes raw reclaimed disk — faithful OS-9
 

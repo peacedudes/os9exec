@@ -235,23 +235,21 @@ final class DestructiveTests: XCTestCase {
 
     // ── Truncate ───────────────────────────────────────────────────────────────
 
-    /// A file is pre-extended to 200 records (~50 sectors), then truncated to
-    /// 320 bytes with `SS.Size` (the `trunc` helper, since the shell has no
-    /// truncate). Two things must hold: the file really shrinks (it reads back
-    /// at the new length), and the device stays structurally consistent.
+    /// A file is pre-extended to 200 records (~50 sectors), then shrunk to 320
+    /// bytes with `SS.Size` (the `trunc` helper) and closed WITHOUT seeking to
+    /// the new EOF. The file really shrinks, the device stays consistent, and
+    /// the tail clusters are deliberately KEPT -- which is faithful OS-9, not a
+    /// leak.
     ///
-    /// It also documents a live FINDING: os9exec's `SS.Size` shrink sets the
-    /// logical size but does NOT release the truncated tail's clusters. The
-    /// handler `pRsetsz` (file_rbf.c ~3995) calls `Set_FDSize`/`RingSetLastPos`
-    /// but never `ReleaseBlocks`, so the ~48 tail sectors stay allocated to the
-    /// file -- reclaimed only when it is deleted, not on the truncate. `dcheck`
-    /// stays intact precisely because the clusters remain in the file's own
-    /// segment list (not orphaned), so this is un-reclaimed space, not a tear.
-    /// Standard OS-9 RBF frees the tail on shrink; the reclamation assertion is
-    /// therefore wrapped in `XCTExpectFailure` so the suite is green today and
-    /// flips to failing the moment `pRsetsz` is fixed -- a reminder to delete
-    /// the wrapper then. (A 6809/NitrOS-9 cross-check to nail the divergence is
-    /// noted in FAILABILITY.md.)
+    /// `trunc` leaves the file pointer at 0, so on close it is in update mode and
+    /// not at EOF -- exactly the case the file-manager spec preserves for
+    /// random-access/database files ("unused sectors normally deallocated on
+    /// close, EXCEPT when closed in write/update mode while not at EOF"). So os9exec
+    /// keeping the tail here is correct; `pRclose` only runs `ReleaseBlocks` when
+    /// `currPos == lastPos`. The companion `testSetSizeShrinkReclaimsTailWhenClosedAtEOF`
+    /// proves the tail IS reclaimed once the pointer is at EOF (owner-consulted +
+    /// skill-confirmed; an earlier read of this as a `pRsetsz` leak was wrong --
+    /// the test was simply positioned in the preserved case).
     func testTruncatingAFileShrinksItAndStaysIntact() throws {
         let file = "/h9/tr.dat"
         // os9exec cannot fork a binary straight from the host-directory scratch,
@@ -283,19 +281,50 @@ final class DestructiveTests: XCTestCase {
                      + structural.map(\.detail).joined(separator: "\n")
                      + "\nScratch kept at \(result.scratchPath)")
 
-        // FINDING (see the doc comment): the tail's ~48 sectors are NOT freed on
-        // truncate, so free stays well short of capacity. When pRsetsz learns to
-        // release the tail, this block will pass and XCTExpectFailure will flag
-        // the stale wrapper for removal.
-        XCTExpectFailure("os9exec SS.Size truncate does not reclaim the tail (pRsetsz: no ReleaseBlocks)") {
-            guard let free = StructuralOracle.freeSectors(in: result.transcript),
-                  let capacity = StructuralOracle.capacitySectors(in: result.transcript) else {
-                return XCTFail("no free/capacity to judge the truncate:\n\(result.transcript)")
-            }
-            XCTAssertGreaterThanOrEqual(free, capacity - 8,
-                           "truncate did not free the tail: only \(free)/\(capacity) sectors free "
-                         + "-- the file should be down to a couple of sectors")
+        // Faithful behaviour: the tail is PRESERVED (update-mode, pointer not at
+        // EOF), so free stays well short of capacity -- the ~48 tail sectors are
+        // still the file's, to be released on a close-at-EOF or a delete. A run
+        // that reclaimed here would mean os9exec had DROPPED the random-access
+        // preservation, which is what would deserve a look.
+        guard let free = StructuralOracle.freeSectors(in: result.transcript),
+              let capacity = StructuralOracle.capacitySectors(in: result.transcript) else {
+            return XCTFail("no free/capacity to judge the truncate:\n\(result.transcript)")
         }
+        XCTAssertLessThan(free, capacity - 8,
+                       "the tail was reclaimed (\(free)/\(capacity)) despite the file being "
+                     + "closed update-mode not-at-EOF -- os9exec dropped the random-access "
+                     + "preservation the spec calls for")
+    }
+
+    /// The companion to the above: when the shrunk file IS closed with the
+    /// pointer at the new EOF, RBF's close-time truncation runs and the tail
+    /// clusters ARE returned to the free map. `truncsk` seeks to the new size
+    /// before closing (unlike `trunc`), so `pRclose`'s `crp == lsp` release path
+    /// fires. This is the other half of the skill's rule, and it proves os9exec
+    /// reclaims the tail whenever it is supposed to -- so the preserved case
+    /// above is a deliberate feature, not a leak.
+    func testSetSizeShrinkReclaimsTailWhenClosedAtEOF() throws {
+        let file = "/h9/trs.dat"
+        let scenario = Scenario(name: "truncate-seek",
+                                backend: .rbfImage,
+                                workers: [WorkerSpec(id: 99, role: .create, file: file, count: 200)],
+                                midFlight: ["copy /h5/truncsk /h9/truncsk",
+                                            "/h9/truncsk \(file) 320",
+                                            "del /h9/truncsk"])
+        let result = try Adapter68k(repoRoot: Self.repoRoot).run(scenario)
+        dump(result)
+        XCTAssertFalse(result.timedOut, "truncate-seek run hung:\n\(result.transcript)")
+
+        let structural = StructuralOracle.structuralViolations(dcheck: result.transcript)
+        XCTAssertEqual(structural, [], structural.map(\.detail).joined(separator: "\n"))
+
+        guard let free = StructuralOracle.freeSectors(in: result.transcript),
+              let capacity = StructuralOracle.capacitySectors(in: result.transcript) else {
+            return XCTFail("no free/capacity to judge the truncate:\n\(result.transcript)")
+        }
+        XCTAssertGreaterThanOrEqual(free, capacity - 8,
+                       "seek-to-EOF truncate did NOT reclaim the tail: \(free)/\(capacity) free "
+                     + "-- close-time truncation should have released it. Scratch \(result.scratchPath)")
     }
 
     // ── Stale-sector disclosure ──────────────────────────────────────────────────

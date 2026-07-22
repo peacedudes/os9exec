@@ -67,12 +67,17 @@ public struct Adapter68k: Adapter {
         for worker in scenario.workers {
             try writeScript(for: worker, in: scratch)
         }
-        // Stage the truncate helper (an OS-9/68k binary) alongside the scripts,
+        // Stage the truncate helpers (OS-9/68k binaries) alongside the scripts,
         // so a scenario's midFlight can `/h5/trunc <file> <bytes>` -- the shell
-        // has no way to shrink a file, so this small SS.Size program is it.
-        try? FileManager.default.copyItem(
-            at: repoRoot.appendingPathComponent("test/rbf-hammer/trunc"),
-            to: scratch.appendingPathComponent("trunc"))
+        // has no way to shrink a file, so these small SS.Size programs are it.
+        // `trunc` leaves the pointer at 0 (RBF preserves the tail for random
+        // access); `truncsk` seeks to the new EOF so close-time truncation runs
+        // and releases the tail.
+        for helper in ["trunc", "truncsk"] {
+            try? FileManager.default.copyItem(
+                at: repoRoot.appendingPathComponent("test/rbf-hammer/\(helper)"),
+                to: scratch.appendingPathComponent(helper))
+        }
         let outcome = try launch(scenario, scratch: scratch)
         let produced = collect(scenario, from: scratch)
         let result = RunResult(transcript: outcome.transcript, produced: produced,
