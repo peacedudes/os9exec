@@ -40,3 +40,25 @@ python3 tools/nitros9-install-rbf.py \
 #   rlcreaw creator:  reader stops     | rlcreau creator:  reader follows
 # revert with rbf.stock.mn to show both defects return (A/B/A).
 ```
+
+## Lost-update fix (2026-07-21)
+
+| file | sha1 (first 8) | CRC | what it is |
+|---|---|---|---|
+| `rbf.lostupdate-fix-testdisk.mn` | `8aaabd4c` | `$9EAFB1` | Stock-on-disk + `nitros9-rbf-lostupdate-regfix.patch` + the 1-byte ChgDir accommodation. **The module the 2026-07-21 A/B/A was measured on.** 4850 bytes. |
+| `rbf.lostupdate-fix.mn` | `5874fb6e` | `$F2DA9C` | Upstream `main` + the same patch, nothing else — the PR artifact. Do not install on the test disk. |
+
+The bug: the record-lock retry path (`L0B11`→`L0B1D`) reloaded only A from the
+`L0B1B` stack frame; B held `L1053`'s `P$Signal` read (0 after a consumed
+`S$Wake`) and X held the `F$Sleep`/`PE.TmOut` leftover (0).  Any lock request
+under 256 bytes therefore re-presented as the count-0 "dismiss" request after a
+park: the claim routine released everything, returned carry-clear, and the
+woken waiter proceeded with **no lock**, racing the holder unlocked.  The fix
+re-presents the caller's saved request (`ldd ,s` + `ldx 2,s`, one `bne`→`lbne`
+for reach; +4 bytes).
+
+Measured (rl-race3 pair, losses per 400, done=2-trusted runs):
+stock 21/59/21/48/64 → fix 0/0/0/0 → stock again 110/73 → fix 0.
+Under the fix: holder/waiter still blocks 3.4s and reads the post-write value;
+crossed two-path holds still yield exactly one `E$DeadLk` #254 (same as stock);
+the rl-race3o observation log shows 400/400 distinct reads (zero duplicates).
