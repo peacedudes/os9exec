@@ -191,8 +191,8 @@ public struct Adapter6809: Adapter {
             // with `runb` (no editor at launch, so concurrent starts don't race
             // the editor). Provisioning stays a plain run -- it goes first, one
             // at a time, so it never races anything.
-            if worker.role != .create && worker.role != .seed
-                && worker.role != .seedbin && worker.role != .seedbig {
+            if worker.role != .create && worker.role != .seed && worker.role != .seedbin
+                && worker.role != .seedbig && worker.role != .seedbin2 {
                 let pack = staging.appendingPathComponent(packScriptName(worker))
                 try Data(WorkerScript.renderPack(worker, from: template).utf8).write(to: pack)
                 staged.append(pack)
@@ -233,7 +233,7 @@ public struct Adapter6809: Adapter {
     private func renderRunProcedure(_ scenario: Scenario, device: String) -> String {
         let (provision, racers) = scenario.workers
             .partitioned { $0.role == .create || $0.role == .seed
-                        || $0.role == .seedbin || $0.role == .seedbig }
+                        || $0.role == .seedbin || $0.role == .seedbig || $0.role == .seedbin2 }
         var lines = ["chd \(device)"]
         lines += provision.map { "basic09 #32k </DD/\(scriptName($0))" }
         lines += racers.map { "basic09 #32k </DD/\(scriptName($0))&" }
@@ -342,7 +342,7 @@ public struct Adapter6809: Adapter {
         let device = (try? Backend6809.device(scenario.backend)) ?? "/DD"
         let (provision, racers) = scenario.workers
             .partitioned { $0.role == .create || $0.role == .seed
-                        || $0.role == .seedbin || $0.role == .seedbig }
+                        || $0.role == .seedbin || $0.role == .seedbig || $0.role == .seedbin2 }
         let deadline = Date().addingTimeInterval(scenario.timeout)
 
         // A cleared pane makes the marker search cheap and unambiguous: without

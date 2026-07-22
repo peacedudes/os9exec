@@ -383,7 +383,52 @@ ELSE
     CLOSE #path
     PRINT #2, "hammer: worker "; worker; " rmwmix done "; total
   ELSE
+  IF role = "seedbin2" THEN
+    ! Provision TWO 10-byte records for the deadlock probe (offsets 0 and 10).
+    CREATE #path, fname: UPDATE
+    FOR index = 1 TO 5
+      rec(index) = 0
+    NEXT index
+    PUT #path, rec
+    PUT #path, rec
+    CLOSE #path
+    PRINT #2, "hammer: seeded "; fname
+  ELSE
+  IF role = "cross" THEN
+    ! Deadlock probe (#4), TWO paths per worker so it holds TWO record auto-locks
+    ! at once -- a single path only holds one (a second GET moves it). Even worker
+    ! locks record 0 on path, then reaches for record 1 on wpath; odd worker does
+    ! the opposite. Each holds its first over the nap, so the other grabs its
+    ! first, then both reach for the second -> crossed wait. RBF must DETECT the
+    ! cycle and return E$DeadLk (#254) to one, not hang.
+    OPEN #path, fname: UPDATE
+    OPEN #wpath, fname: UPDATE
+    IF (worker - (worker/2)*2) = 0 THEN
+      slotbase = 0
+      slotnum = 10
+    ELSE
+      slotbase = 10
+      slotnum = 0
+    ENDIF
+    ON ERROR GOTO 140
+    SEEK #path, slotbase
+    GET #path, rec
+    RUN hnap(napmode, napcount)
+    SEEK #wpath, slotnum
+    GET #wpath, rec
+    gotcount = 1
+    CLOSE #path
+    CLOSE #wpath
+140 failed = ERR
+    IF gotcount = 1 THEN
+      PRINT #2, "hammer: worker "; worker; " cross ok"
+    ELSE
+      PRINT #2, "hammer: worker "; worker; " cross error "; failed
+    ENDIF
+  ELSE
     PRINT #2, "hammer: worker "; worker; " FAIL unknown role "; role
+  ENDIF
+  ENDIF
   ENDIF
   ENDIF
   ENDIF

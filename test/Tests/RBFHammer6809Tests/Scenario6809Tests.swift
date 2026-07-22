@@ -308,6 +308,34 @@ final class Scenario6809Tests: XCTestCase {
         FileHandle.standardError.write(Data("MIX counter=\(counter) expected=\(2 * increments)\n".utf8))
     }
 
+    /// Runs the deadlock probe (blind spot #4) and returns whether RBF returned
+    /// `E$DeadLk` (#254) and whether the roster hung. Two `cross` workers each
+    /// open the file twice and lock two records in opposite orders (a crossed
+    /// wait). `#254 fired && !hung` = detection works; `hung` = the wait/park
+    /// rewrite broke detection (gold). The ~1s hold covers `runb` launch skew so
+    /// both lock their first record before either reaches the second.
+    private func deadlockOutcome(golden: URL?) throws -> (fired254: Bool, hung: Bool, transcript: String) {
+        let file = "/r0/dl.dat"
+        let roster = [
+            WorkerSpec(id: 98, role: .seedbin2, file: file, count: 1),
+            WorkerSpec(id: 1, role: .cross, file: file, count: 1, nap: 100, napMode: .sleep),
+            WorkerSpec(id: 2, role: .cross, file: file, count: 1, nap: 100, napMode: .sleep),
+        ]
+        let scenario = Scenario(name: "deadlock-6809", backend: .ramDisk, workers: roster, timeout: 120)
+        let result = try Adapter6809(repoRoot: Self.repoRoot, goldenMaster: golden).run(scenario)
+        return (result.transcript.contains("cross error 254"), result.timedOut, result.transcript)
+    }
+
+    /// Env probe for the deadlock scenario (set RBF_DEADLOCK; RBF_GOLDEN picks image).
+    func testDeadlockProbe6809() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["RBF_DEADLOCK"] != nil else { throw XCTSkip("deadlock probe; set RBF_DEADLOCK=1") }
+        let outcome = try deadlockOutcome(golden: env["RBF_GOLDEN"].map { URL(fileURLWithPath: $0) })
+        let report = "DEADLOCK fired254=\(outcome.fired254) hung=\(outcome.hung)\n"
+            + "===TRANSCRIPT===\n\(outcome.transcript)\n===END===\n"
+        FileHandle.standardError.write(Data(report.utf8))
+    }
+
     /// ★ Blind spot #5: the two NitrOS-9 fixes (lockmode + lostupdate) exercised
     /// TOGETHER on one file for the first time. A write-only producer creates the
     /// file (Creat lock path) and writes it while two update-mode racers increment
@@ -332,6 +360,32 @@ final class Scenario6809Tests: XCTestCase {
                            "mixed write-only + update-mode RMW lost \(lost) of \(expected) "
                          + "on the same file -- the two lock paths interfered")
         }
+    }
+
+    /// ★ Blind spot #4: crossed record holds must be DETECTED as a deadlock, not
+    /// hang. Two workers each open the file twice (so each holds two record
+    /// auto-locks -- a single path holds only one) and lock record 0 and record 1
+    /// in opposite orders. RBF must break the cycle with `E$DeadLk` (#254), which
+    /// is the exact detection the lostupdate fix's wait/park rewrite could have
+    /// regressed. Verified live: #254 fires on BOTH stock and the combined-fix
+    /// image, never a hang -- the fix preserved detection.
+    ///
+    /// A regression guard, not an XCTExpectFailure: the correct behaviour (detect,
+    /// don't hang) holds on the default image today. A hang would fail loudly
+    /// (gold). Retries up to 3x because the crossed hold depends on both workers
+    /// overlapping; a run where they don't cross is retried rather than passed
+    /// vacuously, so the guard only passes when #254 actually fired.
+    func testCrossedRecordHoldsAreDeadlockDetectedOn6809() throws {
+        for _ in 1...3 {
+            let outcome = try deadlockOutcome(golden: nil)
+            if outcome.hung {
+                return XCTFail("crossed record holds HUNG -- deadlock detection is broken:\n"
+                             + outcome.transcript)
+            }
+            if outcome.fired254 { return }   // detection fired -- the guard is satisfied
+        }
+        XCTFail("E$DeadLk (#254) never fired in 3 tries -- the crossed hold was not exercised, "
+              + "so this proved nothing; the timing needs tuning")
     }
 
     /// ★ Blind spot #3: a WRITE-only producer must NOT make a reader follow it

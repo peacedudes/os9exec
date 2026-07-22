@@ -153,6 +153,15 @@ public struct WorkerSpec: Equatable, Sendable {
         /// while a `wobin` producer writes the same file concurrently.
         case rmwmix
 
+        /// Deadlock probe: opens TWO paths so it can hold two record auto-locks
+        /// at once, locking one record then reaching for a second in the opposite
+        /// order from its peer -- a crossed wait RBF must detect (`E$DeadLk`)
+        /// rather than hang. Pairs with `seedbin2`.
+        case cross
+
+        /// Seeds TWO 10-byte records for the `cross` deadlock probe.
+        case seedbin2
+
         /// Creates an empty file and exits, provisioning a shared file before
         /// racers start. Two workers both CREATEing one file is itself an
         /// error and would mask the result.

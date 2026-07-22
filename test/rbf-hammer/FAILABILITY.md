@@ -367,21 +367,31 @@ combined fix keeps every update -- the two fixes do not interfere. Pinned as
 no-loss invariant, retry x3 for the bimodal variance; default image is stock).
 This is the live A/B the upstream PRs were waiting on.
 
-### Blind spot #4 NOT reachable from BASIC09 — deadlock needs explicit SS.Lock
+### Blind spot #4 covered — crossed record holds deadlock, detected (2026-07-22)
 
-Attempted a two-crossed-path deadlock (`cross` role: GET record A, hold, GET
-record B, in opposite orders). It cannot deadlock: **OS-9's update-mode auto-lock
-holds only ONE record per path** -- a second GET moves the lock, it does not
-accumulate -- so two consecutive GETs never hold two records at once, and there
-is nothing to cross. Measured: both crossed workers report "cross ok" every run
-(no #254, no hang), at 0.2s and 1s holds alike. So the crossed-hold that
-`E$DeadLk` (#254) detection exists for can only be built with EXPLICIT `SS.Lock`
-calls, which BASIC09 cannot issue -- it would take a C helper (like `trunc`) or
-an assembly racer. The dead `cross`/`seedbin2` roles were reverted (a probe that
-structurally cannot fire is worse than none). Deadlock detection is therefore
-left to the fix author's own assembly A/B (`E$DeadLk#254 regression-proven`);
-re-attempting it in the hammer needs an SS.Lock helper first. Recorded so a
-later session does not rebuild the same unreachable BASIC09 probe.
+First attempt was a SINGLE-path crossed hold (`cross`: GET record A, hold, GET
+record B). It could not deadlock: **OS-9's update-mode auto-lock holds only ONE
+record per path** -- a second GET MOVES the lock, it does not accumulate -- so
+one path never holds two records. Both workers reported "cross ok" every run.
+I wrongly concluded BASIC09 couldn't do it (would need explicit `SS.Lock` via a
+machine-code sub).
+
+The owner corrected it: open the file **twice per worker**. Each PATH keeps its
+own auto-lock (released only by a write on THAT path), so a worker GETs record 0
+on path 1 (lock persists) and then GETs record 1 on path 2 -- holding TWO records
+at once, in pure BASIC09, no assembly. Two workers doing that in opposite orders
+cross:
+
+| | stock | combined-fix |
+|---|---|---|
+| crossed two-path hold | `#254` (E$DeadLk) fires, no hang | `#254` fires, no hang |
+
+So RBF DETECTS the cycle (one worker gets `cross error 254`, the other proceeds)
+on both images -- the lostupdate fix's wait/park rewrite did NOT regress deadlock
+detection. Pinned as `testCrossedRecordHoldsAreDeadlockDetectedOn6809`, a plain
+regression guard (a HANG would fail it loudly; retries 3x so a non-overlapping
+run never passes vacuously -- it only passes when #254 actually fired). Lesson:
+"BASIC09 can't hold two locks" was wrong -- one PATH can't, two paths can.
 
 ### RAM: the CoCo3 is now given 2MB, not the stock 512K
 
