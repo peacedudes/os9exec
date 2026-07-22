@@ -62,3 +62,30 @@ stock 21/59/21/48/64 → fix 0/0/0/0 → stock again 110/73 → fix 0.
 Under the fix: holder/waiter still blocks 3.4s and reads the post-write value;
 crossed two-path holds still yield exactly one `E$DeadLk` #254 (same as stock);
 the rl-race3o observation log shows 400/400 distinct reads (zero duplicates).
+
+## Combined build (2026-07-21) — lockmode + lostupdate together, untested by hammer yet
+
+Both patches applied to the same base, since both are headed upstream and had
+only ever been A/B/A'd independently.
+
+| file | sha1 (first 8) | CRC | what it is |
+|---|---|---|---|
+| `rbf.combined-fix-testdisk.mn` | `9704d7df` | `$8E59F9` | Stock-on-disk + `nitros9-rbf-lockmode.patch` + `nitros9-rbf-lostupdate-regfix.patch` + the 1-byte ChgDir accommodation. 4874 bytes (4846 + 24 + 4). |
+| `rbf.combined-fix.mn` | `ddf06c86` | `$CB16A8` | Upstream `main` + both patches, nothing else — the PR artifact. Do not install on the test disk. |
+
+Built from a fresh detached worktree at `origin/main` (`70c68f21`), confirmed
+against the exact blob (`44a5479`) both patches were written against; both
+applied with zero fuzz. Reviewed for interaction risk: the two patches touch
+disjoint code regions (lockmode: `Creat131`, the RcdLock fast-claim path
+around `L0BAA`, the `L0BF0` eof-lock assert; lostupdate: only the `L0B1D`
+retry reload). Under lockmode's gating, a non-update path never reaches the
+`L0B9F`/`L0B1D` claim-retry engine at all — it returns via `LokNoRc` before
+ever contending — so lostupdate's fix, which only matters on that contended
+retry path, is exercised identically to its standalone form for every case
+that triggers it. No shared bytes, no shared branch targets.
+
+Installed into a private disk copy
+(`eou_ide-v0.3-6809-combined-fix-test/`, not in this repo) and **boot-verified
+live**: clean `{N1|NN}` shell prompt, `mdir` confirms RBF resident. Functional
+A/B/A on this combined build (lock-mode + lost-update fixtures together) not
+yet run — that's the hammer session's next step, not done here.
