@@ -36,47 +36,52 @@ public struct ChoreographyExecutor {
     }
 
     public func run(_ entry: ManifestEntry, scratchDir: URL, timeout: TimeInterval) -> ExecutionResult {
-        guard let roles = entry.roles, !roles.isEmpty else {
-            return .fail("no roles (should have been caught by validate())")
+        do {
+            guard let roles = entry.roles, !roles.isEmpty else {
+                return .fail("no roles (should have been caught by validate())")
+            }
+            // Within os9exec, the scratch directory is mounted at /h5
+            let scratch = "/h5"
+
+            // Unlike SoloExecutor, no separate on-disk staging step is needed:
+            // `editorPackScriptBody` reads each source's content directly and
+            // builds a CR-joined editor script from it, so there is no
+            // intermediate CR-converted file any command below needs to read.
+            //
+            // Every source's pack script is one continuous BASIC09 editor
+            // session (matches how the original dogfood pass packed all three
+            // lostupdate procedures together): concatenate their CR-joined
+            // texts, `bye` once at the very end.
+            let editorSession = try entry.sources
+                .map { try editorPackScriptBody($0, scratch: scratch) }
+                .joined() + "bye\r"
+
+            // Stage 1: mount + pack everything (immediate).
+            let firstStageText = try writePackScriptAndBuildFirstStage(editorSession: editorSession,
+                                                                       scratch: scratch,
+                                                                       scratchDir: scratchDir,
+                                                                       entry: entry)
+            var staged: [StagedInput] = [
+                StagedInput(text: firstStageText, delay: 0),
+            ]
+
+            // Stage 2+: one StagedInput per role, in the order given, honoring
+            // each role's own delay and background flag.
+            for role in roles {
+                let command = role.background ? "runb \(role.moduleName) &\n" : "runb \(role.moduleName)\n"
+                staged.append(StagedInput(text: command, delay: role.delayBeforeStart))
+            }
+
+            let outcome = runner.run(staged: staged, scratchDir: scratchDir, timeout: timeout)
+            if outcome.timedOut { return .timedOut }
+            let transcript = normalizeTranscript(outcome.transcript)
+            if evaluate(entry.expect, against: transcript) {
+                return .pass
+            }
+            return .fail(preview(transcript))
+        } catch {
+            return .buildFailed(error.localizedDescription)
         }
-        // Within os9exec, the scratch directory is mounted at /h5
-        let scratch = "/h5"
-
-        // Unlike SoloExecutor, no separate on-disk staging step is needed:
-        // `editorPackScriptBody` reads each source's content directly and
-        // builds a CR-joined editor script from it, so there is no
-        // intermediate CR-converted file any command below needs to read.
-        //
-        // Every source's pack script is one continuous BASIC09 editor
-        // session (matches how the original dogfood pass packed all three
-        // lostupdate procedures together): concatenate their CR-joined
-        // texts, `bye` once at the very end.
-        let editorSession = entry.sources
-            .map { editorPackScriptBody($0, scratch: scratch) }
-            .joined() + "bye\r"
-
-        // Stage 1: mount + pack everything (immediate).
-        var staged: [StagedInput] = [
-            StagedInput(text: writePackScriptAndBuildFirstStage(editorSession: editorSession,
-                                                                scratch: scratch,
-                                                                scratchDir: scratchDir,
-                                                                entry: entry), delay: 0),
-        ]
-
-        // Stage 2+: one StagedInput per role, in the order given, honoring
-        // each role's own delay and background flag.
-        for role in roles {
-            let command = role.background ? "runb \(role.moduleName) &\n" : "runb \(role.moduleName)\n"
-            staged.append(StagedInput(text: command, delay: role.delayBeforeStart))
-        }
-
-        let outcome = runner.run(staged: staged, scratchDir: scratchDir, timeout: timeout)
-        if outcome.timedOut { return .timedOut }
-        let transcript = normalizeTranscript(outcome.transcript)
-        if evaluate(entry.expect, against: transcript) {
-            return .pass
-        }
-        return .fail(preview(transcript))
     }
 
     /// The corpus's choreography sources hardcode a real path under the
@@ -91,9 +96,17 @@ public struct ChoreographyExecutor {
     /// `e <name>` / body (space-prefixed) / `q` / `pack <name> >path` for
     /// one source -- everything except the session-final `bye`, which is
     /// appended once after every source (see `run(_:scratchDir:timeout:)`).
-    private func editorPackScriptBody(_ source: SourceFile, scratch: String) -> String {
+    /// Throws if the fixture file cannot be read.
+    private func editorPackScriptBody(_ source: SourceFile, scratch: String) throws -> String {
         let hostPath = corpusDir.appendingPathComponent(source.file)
-        let text = (try? String(contentsOf: hostPath, encoding: .utf8)) ?? ""
+        let text: String
+        do {
+            text = try String(contentsOf: hostPath, encoding: .utf8)
+        } catch {
+            throw NSError(domain: "ChoreographyExecutor", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "failed to read fixture \(source.file): \(error.localizedDescription)"
+            ])
+        }
         var body = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         if body.first?.hasPrefix("PROCEDURE ") == true { body.removeFirst() }
         while body.last == "" { body.removeLast() }
@@ -112,9 +125,17 @@ public struct ChoreographyExecutor {
     /// omitting this step, relying on PACK's own registration alone,
     /// produces wrong results), and `chd` to the scratch RAM disk so any
     /// role that opens a file by bare relative name resolves there.
+    /// Throws if the pack script cannot be written.
     private func writePackScriptAndBuildFirstStage(editorSession: String, scratch: String,
-                                                   scratchDir: URL, entry: ManifestEntry) -> String {
-        try? Data(editorSession.utf8).write(to: scratchDir.appendingPathComponent("packscript"))
+                                                   scratchDir: URL, entry: ManifestEntry) throws -> String {
+        let scriptPath = scratchDir.appendingPathComponent("packscript")
+        do {
+            try Data(editorSession.utf8).write(to: scriptPath)
+        } catch {
+            throw NSError(domain: "ChoreographyExecutor", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "failed to write pack script to \(scriptPath.path): \(error.localizedDescription)"
+            ])
+        }
         var lines = ["mount -r=200 \(Self.scratchDiskDevice)", "load math", "basic <\(scratch)/packscript"]
         for source in entry.sources {
             lines.append("load \(scratch)/\(source.moduleName)")
