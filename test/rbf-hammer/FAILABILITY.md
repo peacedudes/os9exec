@@ -367,6 +367,22 @@ combined fix keeps every update -- the two fixes do not interfere. Pinned as
 no-loss invariant, retry x3 for the bimodal variance; default image is stock).
 This is the live A/B the upstream PRs were waiting on.
 
+### Blind spot #4 NOT reachable from BASIC09 — deadlock needs explicit SS.Lock
+
+Attempted a two-crossed-path deadlock (`cross` role: GET record A, hold, GET
+record B, in opposite orders). It cannot deadlock: **OS-9's update-mode auto-lock
+holds only ONE record per path** -- a second GET moves the lock, it does not
+accumulate -- so two consecutive GETs never hold two records at once, and there
+is nothing to cross. Measured: both crossed workers report "cross ok" every run
+(no #254, no hang), at 0.2s and 1s holds alike. So the crossed-hold that
+`E$DeadLk` (#254) detection exists for can only be built with EXPLICIT `SS.Lock`
+calls, which BASIC09 cannot issue -- it would take a C helper (like `trunc`) or
+an assembly racer. The dead `cross`/`seedbin2` roles were reverted (a probe that
+structurally cannot fire is worse than none). Deadlock detection is therefore
+left to the fix author's own assembly A/B (`E$DeadLk#254 regression-proven`);
+re-attempting it in the hammer needs an SS.Lock helper first. Recorded so a
+later session does not rebuild the same unreachable BASIC09 probe.
+
 ### RAM: the CoCo3 is now given 2MB, not the stock 512K
 
 `Backend`/`replEnvironment` boots XRoar with `-ram 2048`. A 512K machine leaves
