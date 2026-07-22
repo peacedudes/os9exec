@@ -44,7 +44,7 @@ public struct Role: Codable {
     /// Must match a `SourceFile.moduleName` in the same entry.
     public let moduleName: String
     /// Real seconds to wait (via the host, not OS-9) before launching this
-    /// role, measured from when the choreography started.
+    /// role, relative to the previous role's launch (or to the choreography start for the first role).
     public let delayBeforeStart: Double
     /// True to background this role in the OS-9 shell (`&`); a `false`
     /// role blocks until it exits before the next command is sent.

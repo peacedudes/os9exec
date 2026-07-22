@@ -75,6 +75,9 @@ public struct ChoreographyExecutor {
             let outcome = runner.run(staged: staged, scratchDir: scratchDir, timeout: timeout)
             if outcome.timedOut { return .timedOut }
             let transcript = normalizeTranscript(outcome.transcript)
+            if transcript.contains("error -") {
+                return .buildFailed(preview(transcript))
+            }
             if evaluate(entry.expect, against: transcript) {
                 return .pass
             }

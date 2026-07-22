@@ -55,15 +55,16 @@ public struct SoloExecutor {
             return runShellScript(primary)
         }
 
+        let staged: [StagedInput]
         do {
             for source in entry.sources {
                 try stage(source, into: scratchDir)
             }
+            staged = try buildCommands(entry: entry, primary: primary, scratchDir: scratchDir)
         } catch {
             return .buildFailed("failed to stage fixtures into scratch: \(error)")
         }
 
-        let staged = buildCommands(entry: entry, primary: primary, scratchDir: scratchDir)
         let outcome = runner.run(staged: staged, scratchDir: scratchDir, timeout: timeout)
         if outcome.timedOut { return .timedOut }
 
@@ -111,8 +112,9 @@ public struct SoloExecutor {
     /// Builds the full staged command list for a non-`.sh` entry: every
     /// dependency source first (assembled/linked/`load`ed, never run
     /// directly), then the primary source's own build-and-run recipe.
+    /// Throws if fixture files cannot be read or intermediate scripts cannot be written.
     private func buildCommands(entry: ManifestEntry, primary: SourceFile,
-                               scratchDir: URL) -> [StagedInput] {
+                               scratchDir: URL) throws -> [StagedInput] {
         var lines: [String] = []
         // Within os9exec, the scratch directory is mounted at /h5
         let scratch = "/h5"
@@ -159,8 +161,15 @@ public struct SoloExecutor {
             // writing the script to a file and redirecting it as `basic`'s
             // stdin (`basic <path`) is what actually runs it; piping the
             // same text as top-level shell commands does nothing useful.
-            let editorText = editorRunScript(primary, scratch: scratch)
-            try? Data(editorText.utf8).write(to: scratchDir.appendingPathComponent("runscript"))
+            let editorText = try editorRunScript(primary, scratch: scratch)
+            let runscriptPath = scratchDir.appendingPathComponent("runscript")
+            do {
+                try Data(editorText.utf8).write(to: runscriptPath)
+            } catch {
+                throw NSError(domain: "SoloExecutor", code: -1, userInfo: [
+                    NSLocalizedDescriptionKey: "failed to write runscript to \(runscriptPath.path): \(error.localizedDescription)"
+                ])
+            }
             lines.append("basic <\(scratch)/runscript")
             return [StagedInput(text: lines.joined(separator: "\n") + "\n", delay: 0)]
         }
@@ -191,13 +200,21 @@ public struct SoloExecutor {
     /// prefixed with a space (a bare command with no leading space is read
     /// as an editor command, not inserted text), `q` to leave edit mode,
     /// `run <name>`, `bye`.
-    private func editorRunScript(_ source: SourceFile, scratch: String) -> String {
+    /// Throws if the fixture file cannot be read.
+    private func editorRunScript(_ source: SourceFile, scratch: String) throws -> String {
         var lines = ["e \(source.moduleName)"]
         // The body is staged into the scratch dir as source.file, but for
         // the editor we need its BASIC09 text with the `PROCEDURE <name>`
         // header stripped (`e <name>` synthesizes that header itself).
         let hostPath = corpusDir.appendingPathComponent(source.file)
-        let text = (try? String(contentsOf: hostPath, encoding: .utf8)) ?? ""
+        let text: String
+        do {
+            text = try String(contentsOf: hostPath, encoding: .utf8)
+        } catch {
+            throw NSError(domain: "SoloExecutor", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "failed to read fixture \(source.file): \(error.localizedDescription)"
+            ])
+        }
         var body = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         if body.first?.hasPrefix("PROCEDURE ") == true { body.removeFirst() }
         while body.last == "" { body.removeLast() }
