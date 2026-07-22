@@ -16,6 +16,12 @@
 
 import Foundation
 
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
+
 /// One chunk of shell input, sent after waiting `delay` real seconds from
 /// the previous chunk (or from run start, for the first chunk).
 public struct StagedInput {
@@ -48,7 +54,7 @@ public struct OS9Runner {
         }
     }
 
-    /// Runs `staged` against a fresh `os9exec -r /dd/CMDS/shell`, using
+    /// Runs `staged` against a fresh `os9exec -r shell`, using
     /// `scratchDir` (a directory the caller creates and owns) as the `/h5`
     /// device. Every staged chunk after the last real one is followed by
     /// ESC (`\u{1B}`), matching `OS9Tests`' own end-of-input convention, so
@@ -68,7 +74,7 @@ public struct OS9Runner {
         process.standardError = stderrPipe
 
         guard (try? process.run()) != nil else {
-            return RunOutcome(transcript: "", timedOut: false)
+            return RunOutcome(transcript: "OS9Runner: failed to launch process at \(execURL.path)", timedOut: false)
         }
 
         var collected = Data()
@@ -98,6 +104,15 @@ public struct OS9Runner {
         let timedOut = readGroup.wait(timeout: .now() + timeout) == .timedOut
         if timedOut {
             process.terminate()
+            // Give the process a grace period to exit after SIGTERM
+            let graceEnd = Date().addingTimeInterval(2.0)
+            while process.isRunning && Date() < graceEnd {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            // If still running after grace period, escalate to SIGKILL
+            if process.isRunning {
+                _ = kill(process.processIdentifier, SIGKILL)
+            }
         }
         process.waitUntilExit()
         while process.isRunning { Thread.sleep(forTimeInterval: 0.01) }
