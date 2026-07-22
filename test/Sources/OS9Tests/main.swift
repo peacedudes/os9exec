@@ -1778,6 +1778,222 @@ do {
     }
 }
 
+// ── F$Icpt: an installed intercept handler actually runs, and the process
+// survives the signal instead of being killed ─────────────────────────────────
+// ROADMAP.md carried this as a documented non-functional feature ("F$Icpt
+// accepts an install but never delivers a signal to the handler"), based on a
+// 2026-07-20 dogfood pass (dogfood-report-syscalls-batch3-2026-07-20.md) that
+// only ever installed the handler and sent S_Wake (signal code 1) -- S_Wake is
+// explicitly special-cased in send_signal() (procstuff.c) and skips the whole
+// intercept-dispatch branch, so that pass could never have exercised delivery
+// regardless of the gap it was checking for.
+//
+// Reading procstuff.c's send_signal() shows a complete dispatch path already
+// exists for a real (non-S_Wake) signal when a handler is installed: it saves
+// the interrupted registers into rteregs/rtevector/rtefunc, points pc at
+// pd._sigvec with a[6]=icpta6 and d1.w=signal, and F$RTE (OS9_F_RTE, fcalls.c)
+// restores the saved state afterward. Confirmed live BEFORE writing this test:
+// an alarm-delivered signal (sig=7, not S_Wake) to a process that installed an
+// F$Icpt handler runs the handler and the process resumes and exits cleanly --
+// this is a live re-characterization, not a fix; no production code changed.
+// Verified non-vacuous: forcing procstuff.c's `sigp->pd._sigvec!=0 && ptocOK`
+// check false in a scratch build makes both tests below fail red (the process
+// is killed with the signal as its abort code instead of printing HANDLER
+// RAN/SURVIVED) -- see docs/ for the session's investigation notes.
+do {
+    let icAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Icpt   equ  $09",
+        "F$RTE    equ  $1E",
+        "F$Alarm  equ  $56",
+        "F$Sleep  equ  $0A",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect icptalm,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  lea     handler(pc),a0",
+        "  movea.l a7,a6",
+        "  OS9     F$Icpt",
+        "  bcs     icptfail",
+        "  clr.l   d0",
+        "  move.w  #1,d1",            // A$Set
+        "  move.w  #7,d2",            // sig=7, ordinary interceptable
+        "  move.l  #100,d3",          // interval=100 ticks = 1 real second
+        "  OS9     F$Alarm",
+        "  bcs     setfail",
+        "  clr.l   d0",               // F$Sleep(0): indefinite, wakes only on signal
+        "  OS9     F$Sleep",
+        "  lea     survivedmsg(pc),a0",
+        "  moveq   #survivedmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "icptfail:",
+        "  lea     icptfailmsg(pc),a0",
+        "  moveq   #icptfailmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "setfail:",
+        "  lea     setfailmsg(pc),a0",
+        "  moveq   #setfailmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "handler:",
+        "  lea     handlermsg(pc),a0",
+        "  moveq   #handlermsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  OS9     F$RTE",
+        "survivedmsg:  dc.b  \"SURVIVED\",$0D",
+        "survivedmsgl  equ   *-survivedmsg",
+        "icptfailmsg:  dc.b  \"F$ICPT FAILED\",$0D",
+        "icptfailmsgl  equ   *-icptfailmsg",
+        "setfailmsg:   dc.b  \"A$SET FAILED\",$0D",
+        "setfailmsgl   equ   *-setfailmsg",
+        "handlermsg:   dc.b  \"HANDLER RAN\",$0D",
+        "handlermsgl   equ   *-handlermsg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = scratchDisk + "/icptalm.a"
+    try? icAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "f$icpt: an alarm-delivered signal runs the installed handler, process survives"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/icptalm.a -o=/h5/icptalm.r",
+            "l68 /h5/icptalm.r -o=/h5/icptalm",
+            "/h5/icptalm"
+        ], timeout: 15)
+        if out.contains("HANDLER RAN") && out.contains("SURVIVED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [installed handler must run and the process must survive the signal]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["icptalm.a", "icptalm.r", "icptalm"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
+// ── F$Icpt: same thing via a self-directed F$Send while ACTIVE (not asleep) ────
+// Distinct code path from the alarm test above: this signal is queued and
+// drained via sig_mask()'s async-pending check right after the F$Send syscall
+// itself returns (see os9exec_nt.c's main loop), rather than via CheckAlarms()
+// inside DoWait(). Exercising both confirms the intercept mechanism doesn't
+// depend on the process being asleep when the signal arrives.
+do {
+    let icAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Icpt   equ  $09",
+        "F$RTE    equ  $1E",
+        "F$Send   equ  $08",
+        "F$ID     equ  $0C",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect icptsnd,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  lea     handler(pc),a0",
+        "  movea.l a7,a6",
+        "  OS9     F$Icpt",
+        "  bcs     icptfail",
+        "  OS9     F$ID",
+        "  move.l  d0,d6",
+        "  clr.l   d0",
+        "  move.w  d6,d0",
+        "  clr.l   d1",
+        "  move.w  #7,d1",            // sig=7, ordinary interceptable
+        "  OS9     F$Send",
+        "  bcs     sendfail",
+        "  lea     survivedmsg(pc),a0",
+        "  moveq   #survivedmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "icptfail:",
+        "  lea     icptfailmsg(pc),a0",
+        "  moveq   #icptfailmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "sendfail:",
+        "  lea     sendfailmsg(pc),a0",
+        "  moveq   #sendfailmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "handler:",
+        "  lea     handlermsg(pc),a0",
+        "  moveq   #handlermsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  OS9     F$RTE",
+        "survivedmsg:  dc.b  \"SURVIVED\",$0D",
+        "survivedmsgl  equ   *-survivedmsg",
+        "icptfailmsg:  dc.b  \"F$ICPT FAILED\",$0D",
+        "icptfailmsgl  equ   *-icptfailmsg",
+        "sendfailmsg:  dc.b  \"F$SEND FAILED\",$0D",
+        "sendfailmsgl  equ   *-sendfailmsg",
+        "handlermsg:   dc.b  \"HANDLER RAN\",$0D",
+        "handlermsgl   equ   *-handlermsg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = scratchDisk + "/icptsnd.a"
+    try? icAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "f$icpt: a self-directed F$Send while active runs the installed handler, process survives"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/icptsnd.a -o=/h5/icptsnd.r",
+            "l68 /h5/icptsnd.r -o=/h5/icptsnd",
+            "/h5/icptsnd"
+        ], timeout: 15)
+        if out.contains("HANDLER RAN") && out.contains("SURVIVED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [installed handler must run and the process must survive the signal]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["icptsnd.a", "icptsnd.r", "icptsnd"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── F$CpyMem: a user process may write memory it owns, not memory it doesn't ────
 // OS-9 lets a user-state F$CpyMem READ any address but only WRITE where the
 // caller has permission (F$ChkMem). os9exec used to skip that check entirely, so
