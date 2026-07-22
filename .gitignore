@@ -36,5 +36,9 @@ dd
 # Internal planning doc — not ready for public visibility yet
 /ROADMAP.md
 
+# Session-to-session handoff/continuity notes — for the pair, not the community
+*HANDOFF.md
+*NEXT-SESSION.md
+
 # Subagent-driven-development scratch state (progress ledger, review packages)
 /.superpowers/
