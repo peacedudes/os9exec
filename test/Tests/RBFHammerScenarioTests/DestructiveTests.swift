@@ -308,20 +308,20 @@ final class DestructiveTests: XCTestCase {
     /// the read must stop at the real allocated end -- it must NEVER surface the
     /// deleted filler's bytes.
     ///
-    /// `pRsetsz` (file_rbf.c ~3995) sets the logical size without allocating or
-    /// zeroing, so this probes directly whether a grown region can disclose a
-    /// deleted file.
+    /// `SS.Size` grow exposes RAW reclaimed disk -- and that is CORRECT, faithful
+    /// OS-9 behaviour, confirmed by the owner (a firsthand OS-9 author): "no
+    /// zeroing; if you open a file and setsize big, you get to read the garbage
+    /// data, noproblemo" -- and `/h0@` reads the raw device anyway. OS-9 security
+    /// is relaxed-but-present, and unzeroed grown space is by design, not a leak.
     ///
-    /// ★ FINDING (reproduced, CANDIDATE): it CAN. The grown victim reads back
-    /// the deleted filler's `unwritten slot` records verbatim -- a confidentiality
-    /// leak of another file's freed data. Pinned with `XCTExpectFailure` (the
-    /// assertion is the safe invariant, so it fails and is cataloged) rather than
-    /// asserted clean, because this may be faithful to real OS-9 RBF, which does
-    /// not zero space grown via `SS.Size` -- the owner (a firsthand OS-9 author)
-    /// can say whether os9exec should diverge and zero it. Either way the suite
-    /// now records the disclosure. See FAILABILITY.md and the truncate finding
-    /// (same `pRsetsz` block-list mishandling).
-    func testGrowingAFileViaSetSizeDoesNotDiscloseDeletedData() throws {
+    /// So this is a FAITHFULNESS guard, not a bug: growing a file must expose the
+    /// raw reclaimed clusters exactly as real OS-9 does. Fill a 16K image to
+    /// `E_FULL` (every cluster stamped `unwritten slot`), delete it, grow a tiny
+    /// victim into the freed space; the grown region must read back that raw
+    /// content. If os9exec ever started ZEROING grown space it would diverge from
+    /// OS-9, and this test would catch it. `pRsetsz` (file_rbf.c ~3995) sets the
+    /// logical size without touching the block list, which is what produces this.
+    func testSetSizeGrowExposesRawReclaimedDiskAsRealOS9Does() throws {
         let filler = "/h9/filler.dat", victim = "/h9/victim.dat"
         // 400 x 64B far exceeds a 16K image, so the create worker fills it to
         // E_FULL, stamping "unwritten slot" across every cluster. Deleting it
@@ -351,14 +351,16 @@ final class DestructiveTests: XCTestCase {
         // file's contents.
         let bytes = [UInt8](data)
         let needle = [UInt8]("unwritten slot".utf8)
-        let leaked = bytes.indices.contains { start in
+        let rawDataExposed = bytes.indices.contains { start in
             start + needle.count <= bytes.count
                 && Array(bytes[start ..< start + needle.count]) == needle
         }
-        XCTExpectFailure("SS.Size grow discloses a deleted file's data -- confidentiality leak") {
-            XCTAssertFalse(leaked,
-                           "SS.Size grow DISCLOSED deleted filler in the \(data.count)-byte victim "
-                         + "-- a confidentiality leak. Scratch kept at \(result.scratchPath)")
-        }
+        // Faithful to OS-9: the grown region reads back the raw reclaimed
+        // clusters, filler and all. A zeroed (or E$EOF-bounded) result would be
+        // a divergence from real OS-9, and THAT is what would deserve a flag.
+        XCTAssertTrue(rawDataExposed,
+                      "SS.Size grow did NOT expose the raw reclaimed clusters in the "
+                    + "\(data.count)-byte victim -- os9exec diverged from OS-9, which does "
+                    + "not zero grown space. Scratch kept at \(result.scratchPath)")
     }
 }

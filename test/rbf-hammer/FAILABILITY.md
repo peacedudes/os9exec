@@ -553,27 +553,26 @@ same rigor is owed here before calling it a bug. Cross-check is harder than the
 delete one: it needs an `SS.Size` path on 6809 (NitrOS-9's shell has no truncate
 either, so a 6809 `trunc` equivalent or a Basic09 `SS.Size` call is required).
 
-### ★★ FINDING (reproduced, CANDIDATE): SS.Size GROW discloses deleted data
+### NOT A BUG (owner-confirmed): SS.Size GROW exposes raw reclaimed disk — faithful OS-9
 
-The same `pRsetsz` block-list mishandling has a confidentiality face, and the
-hammer reproduces it deterministically (`testGrowingAFileViaSetSizeDoesNotDiscloseDeletedData`,
-68k, 0.4s): **a file grown with `SS.Size` reads back a DELETED file's contents.**
-Fill a 16K image to `E_FULL` with a `create` worker (every cluster stamped
-`---------- unwritten slot`), `del` it (frees the clusters, pattern still on the
-media), `echo VICTIMHDR >victim.dat`, then `trunc victim.dat 12000` (`SS.Size`
-grow). The retrieved victim is 12000 bytes: `VICTIMHDR` followed by the deleted
-filler's `unwritten slot` records, verbatim (~4 copies). The grow neither zeroes
-the new region nor bounds the read to the file's own allocation, so it surfaces
-whatever the reclaimed clusters still held.
+The hammer reproduced this deterministically and it looked like a confidentiality
+leak: a file grown with `SS.Size` reads back a DELETED file's contents. Fill a
+16K image to `E_FULL` (every cluster stamped `unwritten slot`), `del` it, grow a
+tiny victim into the freed space with `trunc victim.dat 12000` — the 12000-byte
+victim comes back as `VICTIMHDR` then the deleted filler's `unwritten slot`
+records verbatim. `pRsetsz` (file_rbf.c ~3995) sets the logical size without
+zeroing or bounding the read to the file's own allocation.
 
-Pinned with `XCTExpectFailure` on the safe invariant (no deleted-data bytes in
-the grown file), so the suite CATALOGS the disclosure rather than reporting
-green. Marked CANDIDATE, not confirmed a defect: real OS-9 RBF may not zero
-`SS.Size`-grown space either (see [[nitros9-runb-abort-sssize]] — a stale-sector
-disclosure was already seen on the runb abort `SS.Size` path), so this could be
-OS-9-faithful rather than an os9exec bug. The owner (a firsthand OS-9 author) can
-say whether os9exec should diverge and zero grown space. Either way it is now a
-recorded, reproducible disclosure the suite guards.
+**Owner (a firsthand OS-9 author) confirmed this is CORRECT, faithful OS-9
+behaviour, not a defect:** "no zeroing; if you open a file and setsize big, you
+get to read the garbage data, noproblemo" — and `/h0@` reads the raw device
+anyway. OS-9 security is relaxed-but-present; unzeroed grown space is by design.
+So the test (`testSetSizeGrowExposesRawReclaimedDiskAsRealOS9Does`) was FLIPPED
+from pinning a leak to a FAITHFULNESS guard: it asserts the raw data IS exposed,
+and would fail only if os9exec ever started zeroing (a divergence from OS-9).
+Recorded here so the reproduction is not re-flagged as a bug by a later session.
+Distinct from the truncate (shrink) finding above, which is a space-accounting
+question, not confidentiality, and remains open.
 
 Planned injections, one per defect class:
 
