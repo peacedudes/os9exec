@@ -214,6 +214,10 @@
 
 #include "os9exec_incl.h"
 
+#if defined UNIX && !defined MINGW
+  #include <sys/select.h>   /* select()/fd_set for the interactive idle wait in DoWait() */
+#endif
+
 /* process routines */
 /* ================ */
 
@@ -966,13 +970,44 @@ void DoWait( void )
   ulong ticks= GetSystemTick();
 
   #ifdef UNIX
-    struct timespec wait_time;
-    ulong           delay_us= baud_next_wake_delay_us();
-    long            delay_ns= (delay_us<1000000UL) ? (long)delay_us*1000L : 1000000L; /* cap idle nap at 1ms */
+    ulong delay_us= baud_next_wake_delay_us();
+    long  delay_ns= (delay_us<1000000UL) ? (long)delay_us*1000L : 1000000L; /* cap idle nap at 1ms */
 
-    wait_time.tv_sec =       0;
-    wait_time.tv_nsec= delay_ns;
-    nanosleep( &wait_time, NULL );
+    /* Wait out the idle interval -- but on an interactive terminal, wake the
+     * instant a keystroke arrives instead of napping the whole interval and
+     * only then discovering the input. Parking in select() on stdin -- the very
+     * fd CheckInputBuffers()/HandleEvent() drains (non-blocking, via FIONREAD)
+     * -- makes console input event-driven rather than a fixed-rate poll: the
+     * "park and be woken by host readiness" the console reader was missing. The
+     * select timeout is the SAME interval as the nap it replaces, so F$Sleep,
+     * F$Alarm and baud-pacing timing are unchanged; only wake-on-input latency
+     * improves, and a spurious wake (EINTR / exceptional fd) just re-polls
+     * below. Two deliberate exclusions stay on the plain nap: a pipe (the test
+     * harness, any non-interactive driver) sits at EOF, where select() returns
+     * readable forever and would spin; and MINGW's select() is Winsock-only
+     * (sockets, not fd 0) with its own console plumbing. Dropping the residual
+     * 1ms heartbeat entirely -- blocking until the next real deadline when
+     * nothing at all is pending -- needs a next-deadline scan across
+     * sleepers/alarms/baud and is left as a follow-up (see ROADMAP). */
+    Boolean waited= false;
+    #if !defined MINGW
+      if (isatty( STDIN_FILENO )) {
+          fd_set         rfds;
+          struct timeval tv;
+          FD_ZERO( &rfds );
+          FD_SET ( STDIN_FILENO, &rfds );
+          tv.tv_sec =  0;
+          tv.tv_usec= delay_ns/1000L;
+          select( STDIN_FILENO+1, &rfds, NULL,NULL, &tv );
+          waited= true;
+      }
+    #endif
+    if (!waited) {
+        struct timespec wait_time;
+        wait_time.tv_sec =       0;
+        wait_time.tv_nsec= delay_ns;
+        nanosleep( &wait_time, NULL );
+    }
   //slp_idleticks++;
 
     /* Mirror the windows32 branch's HandleEvent() call below: without this,
