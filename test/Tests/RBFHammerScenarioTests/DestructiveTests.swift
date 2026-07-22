@@ -392,4 +392,46 @@ final class DestructiveTests: XCTestCase {
                     + "\(data.count)-byte victim -- os9exec diverged from OS-9, which does "
                     + "not zero grown space. Scratch kept at \(result.scratchPath)")
     }
+
+    // ── Shrink under a live reader ───────────────────────────────────────────────
+
+    /// A file of 50 records is walked by a slow reader; part way through, another
+    /// process `SS.Size`-shrinks it to 10 records. RBF must make the shrink
+    /// visible to the reader (it calls `RingSetLastPos` on the other open paths),
+    /// so the reader stops at the new end. A reader that runs on to 50 would be
+    /// reading the preserved tail past the file's new logical EOF -- a stale read
+    /// the shrink was supposed to hide.
+    func testShrinkingAFileUnderAReaderStopsItAtTheNewEnd() throws {
+        let file = "/h9/shrink.dat"
+        let scenario = Scenario(name: "shrink-under-reader",
+                                backend: .rbfImage,
+                                workers: [
+                                    WorkerSpec(id: 99, role: .create, file: file, count: 50),
+                                    WorkerSpec(id: 1, role: .read, file: file, count: 50,
+                                               nap: 20, napMode: .sleep),
+                                ],
+                                midFlight: ["sleep 10",
+                                            "copy /h5/trunc /h9/trunc",
+                                            "/h9/trunc \(file) 640",
+                                            "del /h9/trunc"])
+        let result = try Adapter68k(repoRoot: Self.repoRoot).run(scenario)
+        dump(result)
+        XCTAssertFalse(result.timedOut, "shrink-under-reader hung:\n\(result.transcript)")
+
+        // The reader's own tally: "worker 1 read done N".
+        guard let line = result.transcript.split(whereSeparator: \.isNewline)
+                .first(where: { $0.contains("read done") }),
+              let count = line.split(separator: " ").last.flatMap({ Int($0) }) else {
+            return XCTFail("reader never reported a count:\n\(result.transcript)")
+        }
+
+        let structural = StructuralOracle.structuralViolations(dcheck: result.transcript)
+        XCTAssertEqual(structural, [], structural.map(\.detail).joined(separator: "\n"))
+
+        // 640 bytes = 10 records. The reader should stop at the new end, not run
+        // to the original 50 off the preserved tail.
+        XCTAssertLessThan(count, 20,
+                          "reader read \(count) of 50 records after the file was shrunk to 10 "
+                        + "-- it ran off the preserved tail past the new EOF. Scratch \(result.scratchPath)")
+    }
 }
