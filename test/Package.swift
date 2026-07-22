@@ -39,6 +39,20 @@ let package = Package(
             name: "RBFHammer6809Tests",
             dependencies: ["RBFHammerCore"],
             path: "Tests/RBFHammer6809Tests"
+        ),
+        .target(
+            name: "LiveVerifyCore",
+            path: "Sources/LiveVerifyCore"
+        ),
+        .executableTarget(
+            name: "LiveVerify",
+            dependencies: ["LiveVerifyCore"],
+            path: "Sources/LiveVerify"
+        ),
+        .testTarget(
+            name: "LiveVerifyCoreTests",
+            dependencies: ["LiveVerifyCore"],
+            path: "Tests/LiveVerifyCoreTests"
         )
     ]
 )
