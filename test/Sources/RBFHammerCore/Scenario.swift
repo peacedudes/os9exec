@@ -143,6 +143,16 @@ public struct WorkerSpec: Equatable, Sendable {
         /// signal.
         case follow
 
+        /// Write-only BINARY producer for the mixed scenario: CREATEs the file
+        /// write-only (Creat lock gate) and writes paced 10-byte records, record
+        /// 0 being the counter the `rmwmix` racers increment.
+        case wobin
+
+        /// Update-mode RMW racer for the mixed scenario: naps past the create
+        /// race, then increments record 0's counter back-to-back like `rmwbin`,
+        /// while a `wobin` producer writes the same file concurrently.
+        case rmwmix
+
         /// Creates an empty file and exits, provisioning a shared file before
         /// racers start. Two workers both CREATEing one file is itself an
         /// error and would mask the result.

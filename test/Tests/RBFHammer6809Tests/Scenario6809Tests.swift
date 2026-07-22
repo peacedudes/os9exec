@@ -279,6 +279,61 @@ final class Scenario6809Tests: XCTestCase {
         FileHandle.standardError.write(Data("FOLLOW count=\(count.map(String.init) ?? "?") of \(records)\n".utf8))
     }
 
+    /// Runs the MIXED scenario (blind spot #5) and returns record 0's final
+    /// counter. A `wobin` write-only producer CREATEs the file (Creat lock path)
+    /// and writes paced records while `racers` `rmwmix` update-mode workers
+    /// increment record 0 back-to-back (lost-update path) on the SAME file -- the
+    /// first live interaction of the lockmode and lostupdate fixes. Correct final
+    /// counter is `racers * increments`; a short count is a lost update surviving
+    /// the mix. `/DD` so the counter record can be read back.
+    private func mixedCounter(racers: Int, increments: Int, golden: URL?) throws -> Int {
+        let file = "/DD/mix.dat"
+        var roster = [WorkerSpec(id: 1, role: .wobin, file: file, count: 8, nap: 40, napMode: .sleep)]
+        roster += (2...(racers + 1)).map {
+            WorkerSpec(id: $0, role: .rmwmix, file: file, count: increments, nap: 30, napMode: .sleep)
+        }
+        let scenario = Scenario(name: "mix-6809", backend: .rbfImage, workers: roster, timeout: 600)
+        let result = try Adapter6809(repoRoot: Self.repoRoot, goldenMaster: golden).run(scenario)
+        guard let data = result.produced[file], data.count >= 2 else { return -1 }
+        return Int(data[data.startIndex]) << 8 | Int(data[data.startIndex + 1])
+    }
+
+    /// Env probe for the mixed scenario (set RBF_MIX; RBF_GOLDEN picks the image).
+    func testMixProbe6809() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["RBF_MIX"] != nil else { throw XCTSkip("mix probe; set RBF_MIX=1") }
+        let increments = Int(env["RBF_MIX_INC"] ?? "") ?? 200
+        let counter = try mixedCounter(racers: 2, increments: increments,
+                                       golden: env["RBF_GOLDEN"].map { URL(fileURLWithPath: $0) })
+        FileHandle.standardError.write(Data("MIX counter=\(counter) expected=\(2 * increments)\n".utf8))
+    }
+
+    /// ★ Blind spot #5: the two NitrOS-9 fixes (lockmode + lostupdate) exercised
+    /// TOGETHER on one file for the first time. A write-only producer creates the
+    /// file (Creat lock path) and writes it while two update-mode racers increment
+    /// record 0 back-to-back (lost-update path). The record-0 counter must end at
+    /// `racers * increments`; a short count is a lost update surviving the mix.
+    ///
+    /// Teeth proven on stock before this (counter 356 of 400) and clean on the
+    /// combined-fix image (400 of 400) -- the fixes do not interfere. Pinned with
+    /// XCTExpectFailure because the default boot image is still stock; retries up
+    /// to 3x for the bimodal loss variance and takes the bug as present the moment
+    /// any run comes up short, so a lucky-clean run cannot masquerade as a fix.
+    func testMixedWriteOnlyAndRmwKeepEveryUpdateOn6809() throws {
+        let racers = 2, increments = 200
+        let expected = racers * increments
+        var lost = 0
+        for _ in 1...3 {
+            let counter = try mixedCounter(racers: racers, increments: increments, golden: nil)
+            if counter >= 0 && counter < expected { lost = expected - counter; break }
+        }
+        XCTExpectFailure("stock RBF loses updates when write-only Creat traffic races update-mode RMW") {
+            XCTAssertEqual(lost, 0,
+                           "mixed write-only + update-mode RMW lost \(lost) of \(expected) "
+                         + "on the same file -- the two lock paths interfered")
+        }
+    }
+
     /// ★ Blind spot #3: a WRITE-only producer must NOT make a reader follow it
     /// past EOF. Stock NitrOS-9 RBF takes record+eof locks regardless of open
     /// mode, so a reader trails a write-only (`>`) producer instead of stopping

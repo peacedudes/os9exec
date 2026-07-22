@@ -348,6 +348,25 @@ then failed E_PNNF). Widened to `STRING[16]`. A reminder that BASIC09 truncates
 over-length string assignments without error -- any 9+ char role name would have
 vanished the same way.
 
+### Blind spot #5 covered — the two fixes together on one file (2026-07-22)
+
+The PR-gating check: the `lockmode` and `lostupdate` patches had never run
+together live (structurally reviewed as disjoint, no functional A/B). New roles
+`wobin` (write-only BINARY producer -- CREATEs the file, writes paced 10-byte
+records, record 0 the counter) + `rmwmix` (update-mode racer that naps past the
+create race, then increments record 0 back-to-back like `rmwbin`). Both hit the
+SAME `/DD` file concurrently, so both lock paths are live at once.
+
+| | stock | combined-fix |
+|---|---|---|
+| record-0 counter (2 racers x 200) | **356 / 400** (44 lost) | **400 / 400** (clean) |
+
+The lost update reproduces THROUGH the write-only traffic (teeth), and the
+combined fix keeps every update -- the two fixes do not interfere. Pinned as
+`testMixedWriteOnlyAndRmwKeepEveryUpdateOn6809` (XCTExpectFailure on the
+no-loss invariant, retry x3 for the bimodal variance; default image is stock).
+This is the live A/B the upstream PRs were waiting on.
+
 ### RAM: the CoCo3 is now given 2MB, not the stock 512K
 
 `Backend`/`replEnvironment` boots XRoar with `-ram 2048`. A 512K machine leaves

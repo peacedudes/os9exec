@@ -350,7 +350,42 @@ ELSE
       PRINT #2, "hammer: worker "; worker; " FAIL error "; failed
     ENDIF
   ELSE
+  IF role = "wobin" THEN
+    ! Write-only BINARY producer for the mixed scenario (#5). CREATE the file
+    ! WRITE-only (the Creat lock gate), then write `total` 10-byte records paced:
+    ! record 0 is the zero counter the update-mode racers increment; the rest
+    ! keep the write-only lock path busy on the SAME file while they do.
+    CREATE #path, fname: WRITE
+    FOR index = 1 TO 5
+      rec(index) = 0
+    NEXT index
+    FOR index = 1 TO total
+      PUT #path, rec
+      RUN hnap(napmode, napcount)
+    NEXT index
+    CLOSE #path
+    PRINT #2, "hammer: worker "; worker; " wrote "; total
+  ELSE
+  IF role = "rmwmix" THEN
+    ! Update-mode RMW racer for the mixed scenario. Nap first so wobin creates
+    ! the file, then increment record 0's counter back-to-back like rmwbin (no
+    ! gap between GET and PUT, so the lost-update path is exercised) while the
+    ! write-only producer keeps writing the same file.
+    RUN hnap(napmode, napcount)
+    OPEN #path, fname: UPDATE
+    FOR index = 1 TO total
+      SEEK #path, 0
+      GET #path, rec
+      rec(1) = rec(1) + 1
+      SEEK #path, 0
+      PUT #path, rec
+    NEXT index
+    CLOSE #path
+    PRINT #2, "hammer: worker "; worker; " rmwmix done "; total
+  ELSE
     PRINT #2, "hammer: worker "; worker; " FAIL unknown role "; role
+  ENDIF
+  ENDIF
   ENDIF
   ENDIF
   ENDIF
