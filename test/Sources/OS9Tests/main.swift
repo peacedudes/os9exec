@@ -1994,6 +1994,200 @@ do {
     }
 }
 
+// ── F$Send: PID 0 broadcasts to the sender's own forked children, sender
+// survives ──────────────────────────────────────────────────────────────────
+// Same stale-claim shape as the F$Icpt retraction above. ROADMAP.md and the
+// os9-dev skill's syscall reference both carried "F$Send doesn't implement
+// PID-0 broadcast" -- based on OS9_F_Send's own comment ("0 is NOT all
+// here!") and a 2026-07-20 test that only ever checked F$Send(pid=0,...)
+// returned success, never whether anyone else actually received it. Reading
+// send_signal() (procstuff.c) shows a complete broadcast loop already exists,
+// gated only on the SENDER's own pid not being 0:
+//   if (currentpid!=0 && spid==0) { for k in 1..<MAXPROCESSES:
+//       if same group && same user && k!=currentpid: send_signal(k,signal) }
+// Confirmed live: a process forks two children (which just sleep forever),
+// sends signal 0 (Kill) to pid 0, then confirms both children are gone (a
+// harmless post-kill signal to each now errors) and that it -- the sender --
+// is still alive (a self-directed signal still succeeds, and it reaches the
+// PASS line at all). Verified non-vacuous: forcing procstuff.c's broadcast
+// condition false in a scratch build (never ./os9exec) makes the run hang
+// (the forked children never die, so the harness's shutdown wedges on them)
+// -- same failure shape the harness already treats as red via its
+// `out != "(timeout)"` guard elsewhere in this file. No production code
+// changed this session.
+do {
+    let kslpAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Sleep  equ  $0A",
+        "",
+        "  psect kslp,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,400,start",
+        "",
+        "start:",
+        "  clr.l   d0",
+        "  OS9     F$Sleep",
+        "  moveq   #99,d1",
+        "  OS9     F$Exit",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let kslpPath = scratchDisk + "/kslp.a"
+    try? kslpAsm.write(toFile: kslpPath, atomically: true, encoding: .utf8)
+
+    let k0Asm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Fork   equ  $03",
+        "F$Send   equ  $08",
+        "F$ID     equ  $0C",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect kill0test,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,800,start",
+        "",
+        "start:",
+        "  lea     childname(pc),a0",
+        "  clr.l   d0",
+        "  clr.l   d1",
+        "  clr.l   d2",
+        "  clr.l   d3",
+        "  moveq   #128,d4",
+        "  movea.l a0,a1",
+        "  OS9     F$Fork",
+        "  bcs     forkAfail",
+        "  move.l  d0,d6",
+        "  lea     childname(pc),a0",
+        "  clr.l   d0",
+        "  clr.l   d1",
+        "  clr.l   d2",
+        "  clr.l   d3",
+        "  moveq   #128,d4",
+        "  movea.l a0,a1",
+        "  OS9     F$Fork",
+        "  bcs     forkBfail",
+        "  move.l  d0,d7",
+        "  clr.l   d0",
+        "  clr.l   d1",
+        "  OS9     F$Send",
+        "  bcs     killfail",
+        "  OS9     F$ID",
+        "  move.l  d0,d5",
+        "  clr.l   d0",
+        "  move.w  d5,d0",
+        "  clr.l   d1",
+        "  moveq   #1,d1",
+        "  OS9     F$Send",
+        "  bcs     selfsendfail",
+        "  clr.l   d0",
+        "  move.w  d6,d0",
+        "  clr.l   d1",
+        "  moveq   #1,d1",
+        "  OS9     F$Send",
+        "  bcc     achildalive",
+        "  clr.l   d0",
+        "  move.w  d7,d0",
+        "  clr.l   d1",
+        "  moveq   #1,d1",
+        "  OS9     F$Send",
+        "  bcc     bchildalive",
+        "  lea     passmsg(pc),a0",
+        "  moveq   #passmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "forkAfail:",
+        "  lea     forkAfailmsg(pc),a0",
+        "  moveq   #forkAfailmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "forkBfail:",
+        "  lea     forkBfailmsg(pc),a0",
+        "  moveq   #forkBfailmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "killfail:",
+        "  lea     killfailmsg(pc),a0",
+        "  moveq   #killfailmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "selfsendfail:",
+        "  lea     selfsendfailmsg(pc),a0",
+        "  moveq   #selfsendfailmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "achildalive:",
+        "  lea     achildalivemsg(pc),a0",
+        "  moveq   #achildalivemsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "bchildalive:",
+        "  lea     bchildalivemsg(pc),a0",
+        "  moveq   #bchildalivemsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "childname:       dc.b  \"/h5/kslp\",0",
+        "passmsg:         dc.b  \"PASS BROADCAST\",$0D",
+        "passmsgl         equ   *-passmsg",
+        "forkAfailmsg:    dc.b  \"FORK A FAILED\",$0D",
+        "forkAfailmsgl    equ   *-forkAfailmsg",
+        "forkBfailmsg:    dc.b  \"FORK B FAILED\",$0D",
+        "forkBfailmsgl    equ   *-forkBfailmsg",
+        "killfailmsg:     dc.b  \"F$SEND KILL0 FAILED\",$0D",
+        "killfailmsgl     equ   *-killfailmsg",
+        "selfsendfailmsg: dc.b  \"SENDER DID NOT SURVIVE\",$0D",
+        "selfsendfailmsgl equ   *-selfsendfailmsg",
+        "achildalivemsg:  dc.b  \"CHILD A STILL ALIVE\",$0D",
+        "achildalivemsgl  equ   *-achildalivemsg",
+        "bchildalivemsg:  dc.b  \"CHILD B STILL ALIVE\",$0D",
+        "bchildalivemsgl  equ   *-bchildalivemsg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let k0Path = scratchDisk + "/kill0.a"
+    try? k0Asm.write(toFile: k0Path, atomically: true, encoding: .utf8)
+
+    let name = "f$send: PID 0 broadcasts to the sender's own children, sender survives"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/kslp.a -o=/h5/kslp.r",
+            "l68 /h5/kslp.r -o=/h5/kslp",
+            "r68 /h5/kill0.a -o=/h5/kill0.r",
+            "l68 /h5/kill0.r -o=/h5/kill0",
+            "/h5/kill0"
+        ], timeout: 15)
+        if out.contains("PASS BROADCAST") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [F$Send(pid=0,...) must kill every other process sharing the sender's user/group, but not the sender]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["kslp.a", "kslp.r", "kslp", "kill0.a", "kill0.r", "kill0"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── F$CpyMem: a user process may write memory it owns, not memory it doesn't ────
 // OS-9 lets a user-state F$CpyMem READ any address but only WRITE where the
 // caller has permission (F$ChkMem). os9exec used to skip that check entirely, so
