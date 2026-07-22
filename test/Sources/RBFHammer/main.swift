@@ -248,7 +248,10 @@ func chaosDevice(_ target: Target) -> (backend: Backend, path: String) {
 func chaosScenario(_ rng: inout SplitMix64, target: Target, n: Int) -> Scenario {
     let is68k = target == .os968k
     let (backend, dev) = chaosDevice(target)
-    let maxW = is68k ? 8 : 5                      // 6809 packs >5 racers unreliably
+    // 6809 caps hard at ~4 concurrent racers: past that, `runb` packs modules
+    // unreliably (Error #043) and the CoCo3 runs out of RAM (#237) when several
+    // workers fork `SHELL sleep` at once. 68k has no such limit.
+    let maxW = is68k ? 8 : 4
     let w = Int.random(in: 2...maxW, using: &rng)
     let r = Int.random(in: 5...40, using: &rng)
     let nap = [0, 0, 1, Int.random(in: 1...8, using: &rng)].randomElement(using: &rng)!
@@ -281,11 +284,14 @@ func chaosScenario(_ rng: inout SplitMix64, target: Target, n: Int) -> Scenario 
         ]
         return Scenario(name: "c\(n)-follow-r\(r)", backend: backend, workers: roster, timeout: tmo)
     case 4:                                        // mixed write-only + update RMW
+        // The producer counts as a racer, so cap the RMW workers to keep the
+        // total within the 6809's ~4-racer ceiling.
+        let mw = min(w, is68k ? w : 3)
         let f = "\(dev)/mix.dat"
         var roster = [WorkerSpec(id: 1, role: .wobin, file: f, count: 8, nap: 40, napMode: .sleep)]
-        roster += (2...(w + 1)).map { WorkerSpec(id: $0, role: .rmwmix, file: f,
-                                                 count: r * 5, nap: 30, napMode: .sleep) }
-        return Scenario(name: "c\(n)-mixed-w\(w)", backend: backend, workers: roster, timeout: tmo)
+        roster += (2...(mw + 1)).map { WorkerSpec(id: $0, role: .rmwmix, file: f,
+                                                  count: r * 5, nap: 30, napMode: .sleep) }
+        return Scenario(name: "c\(n)-mixed-w\(mw)", backend: backend, workers: roster, timeout: tmo)
     default:                                       // crossed-hold deadlock
         let f = "\(dev)/dl.dat"
         let roster = [
