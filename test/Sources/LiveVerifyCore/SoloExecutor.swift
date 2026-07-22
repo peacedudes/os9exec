@@ -4,12 +4,12 @@
 //
 //  Builds and runs one `category: .solo` manifest entry. Each SourceFile's
 //  extension picks the recipe: .a assembles+links via r68/l68, .c compiles
-//  via cc (with any .a dependency built and F$Load-resident first so a
-//  bare-name os9fork()/F$Fork from the C program can find it), .bas is fed
-//  to an interactive `basic` session as an editor script (raw piped source
-//  text does NOT work -- see the design doc and dogfood-report-eoflock-
-//  2026-07-18.md's own note that these were "PACKed and run standalone"),
-//  and .sh executes the file directly, host-side, using its own exit code.
+//  via cc (with any .a dependency built and resolved via CHX when the bare-name
+//  os9fork()/F$Fork from the C program runs), .bas is fed to an interactive
+//  `basic` session as an editor script (raw piped source text does NOT work --
+//  see the design doc and dogfood-report-eoflock-2026-07-18.md's own note that
+//  these were "PACKed and run standalone"), and .sh executes the file directly,
+//  host-side, using its own exit code.
 //
 //  Toolchain paths, chx, and CR line endings all follow gotchas documented
 //  in 68k/os9-68k-assembly.md and basic09/pack-and-runb.md -- see inline
@@ -32,7 +32,6 @@ public enum ExecutionResult {
 public struct SoloExecutor {
     private let runner: OS9Runner
     private let corpusDir: URL
-    private let repoRoot: URL
 
     /// - Parameters:
     ///   - runner: drives `os9exec`.
@@ -40,23 +39,9 @@ public struct SoloExecutor {
     ///     files named in manifest entries (in production,
     ///     `test/68k-live-verification/`; in tests, the `Fixtures` bundle
     ///     resource).
-    ///   - repoRoot: the repository root containing `os9exec` and `h0` (used
-    ///     when running shell scripts that need access to the emulator).
-    public init(runner: OS9Runner, corpusDir: URL, repoRoot: URL? = nil) {
+    public init(runner: OS9Runner, corpusDir: URL) {
         self.runner = runner
         self.corpusDir = corpusDir
-        // If not provided, derive repoRoot from corpusDir (go up until we find os9exec)
-        if let repoRoot = repoRoot {
-            self.repoRoot = repoRoot
-        } else {
-            var current = corpusDir
-            while !FileManager.default.fileExists(atPath: current.appendingPathComponent("os9exec").path) {
-                let parent = current.deletingLastPathComponent()
-                if parent == current { break }
-                current = parent
-            }
-            self.repoRoot = current
-        }
     }
 
     public func run(_ entry: ManifestEntry, scratchDir: URL, timeout: TimeInterval) -> ExecutionResult {
@@ -104,17 +89,12 @@ public struct SoloExecutor {
     }
 
     private func runShellScript(_ source: SourceFile) -> ExecutionResult {
-        let scriptAbsPath = corpusDir.appendingPathComponent(source.file)
-
-        // Try to find the script in the canonical test/68k-live-verification location first
-        // (for production use); fall back to corpusDir (for test fixtures).
-        let canonicalPath = repoRoot.appendingPathComponent("test/68k-live-verification/\(source.file)").path
-        let scriptPath = FileManager.default.fileExists(atPath: canonicalPath) ? canonicalPath : scriptAbsPath.path
+        let scriptPath = corpusDir.appendingPathComponent(source.file).path
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = [scriptPath]
-        process.currentDirectoryURL = repoRoot
+        process.currentDirectoryURL = corpusDir
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe

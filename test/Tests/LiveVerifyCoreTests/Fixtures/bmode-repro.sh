@@ -11,6 +11,14 @@
 set -e
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
+# If the relative path didn't find os9exec (e.g., running from test Fixtures),
+# walk up to find the repo root by looking for the os9exec binary itself.
+if [ ! -f "$REPO/os9exec" ]; then
+    REPO=$(dirname "$(dirname "$0")")
+    while [ ! -f "$REPO/os9exec" ] && [ "$REPO" != "/" ]; do
+        REPO=$(dirname "$REPO")
+    done
+fi
 OS9EXEC="$REPO/os9exec"
 DISK="$REPO/h0"
 SCR=$(mktemp -d)

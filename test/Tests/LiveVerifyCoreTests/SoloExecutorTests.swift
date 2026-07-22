@@ -14,7 +14,7 @@ final class SoloExecutorTests: XCTestCase {
     }
 
     func makeExecutor() throws -> SoloExecutor {
-        SoloExecutor(runner: try OS9Runner(repoRoot: repoRoot), corpusDir: fixturesDir, repoRoot: repoRoot)
+        SoloExecutor(runner: try OS9Runner(repoRoot: repoRoot), corpusDir: fixturesDir)
     }
 
     func makeScratch() throws -> URL {
