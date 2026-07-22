@@ -328,7 +328,7 @@ func runChaos(target: Target, minutes: Int, jobs: Int, golden: URL?,
     var rng = SplitMix64(seed: seed)
     var made = 0, runs = 0
     var failures: [(String, [String])] = []
-    await withTaskGroup(of: (String, [String], Double).self) { group in
+    await withTaskGroup(of: (String, [String], Double, String?).self) { group in
         func addNext() {
             guard Date() < deadline else { return }
             made += 1
@@ -336,22 +336,29 @@ func runChaos(target: Target, minutes: Int, jobs: Int, golden: URL?,
             group.addTask {
                 let start = Date()
                 var faultList: [String]
+                var scratch: String? = nil
                 do {
                     let result = try makeAdapter(target, golden: golden).run(scenario)
                     faultList = chaosFaults(result)
+                    scratch = result.scratchPath
                 } catch { faultList = ["adapter threw: \(error)"] }
-                return (scenario.name, faultList, Date().timeIntervalSince(start))
+                return (scenario.name, faultList, Date().timeIntervalSince(start), scratch)
             }
         }
         for _ in 0..<jobs { addNext() }
         while let outcome = await group.next() {
-            let (name, faults, secs) = outcome
+            let (name, faults, secs, scratch) = outcome
             runs += 1
             let tag = faults.isEmpty ? "ok  " : "FAIL"
             let remaining = Int(deadline.timeIntervalSinceNow / 60)
             var line = "  [\(tag)] \(name) (\(String(format: "%.1f", secs))s) "
                      + "[run \(runs), ~\(max(0, remaining))m left]\n"
-            if !faults.isEmpty {
+            if faults.isEmpty {
+                // Reclaim a clean run's per-run image clone immediately -- a
+                // 1000-run soak leaks ~130GB otherwise. Failing runs keep theirs
+                // so the corruption can be inspected and the seed replayed.
+                if let scratch { try? FileManager.default.removeItem(atPath: scratch) }
+            } else {
                 failures.append((name, faults))
                 line += faults.map { "        ! \($0)\n" }.joined()
             }
