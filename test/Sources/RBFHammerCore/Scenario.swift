@@ -108,9 +108,22 @@ public struct WorkerSpec: Equatable, Sendable {
         /// that proves `rmw` can fail.
         case rmwfree
 
+        /// Read-modify-writes ONE shared record with BINARY `GET`/`PUT` on a
+        /// small integer array -- the exact shape of the proven 6809 lost-update
+        /// reproduction (`rl-race3`). Unlike `rmw` (text `READ`/`PRINT`, whose
+        /// lock serializes correctly), this exercises the binary `I$Read`/
+        /// `I$Write` lock-retry path where a woken waiter re-presents a clobbered
+        /// byte count and proceeds UNLOCKED -- the live data-loss bug. Pairs with
+        /// `seedbin`.
+        case rmwbin
+
         /// Writes a single record holding a decimal tally for `rmw` to
         /// increment.
         case seed
+
+        /// Seeds the binary tally file for `rmwbin`: one small integer record,
+        /// all zeros, written with `PUT`. The binary counterpart of `seed`.
+        case seedbin
 
         /// Creates an empty file and exits, provisioning a shared file before
         /// racers start. Two workers both CREATEing one file is itself an

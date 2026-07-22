@@ -262,6 +262,37 @@ there is simply no lock verdict, neither a false pass nor a ten-minute hang. The
 other eight 6809 tests (destructive, four-worker, single) are NOT timing-gated
 and stay green under load — verified live at load ~4 (all passed, 11-14s each).
 
+### ★★ REPRODUCED DATA-LOSS BUG — binary GET/PUT loses updates (2026-07-21)
+
+The hammer now REPRODUCES the live 6809 lost update — the bug the text `rmw`
+role was structurally blind to. `testBinaryReadModifyWriteLosesUpdatesOn6809`:
+four `rmwbin` workers each run 200 back-to-back `SEEK0/GET/+1/SEEK0/PUT` on ONE
+10-byte integer record (binary `GET`/`PUT`, matching `rl-race3`), launched on one
+shell line so their first GETs coincide. **Measured 302 and 258 of 800 lost**,
+every concurrent run. Pinned with `XCTExpectFailure` (retries up to 3x, bug taken
+as present the instant any run loses) so the suite CATALOGS a reproduced
+data-loss bug instead of a green pass, and flips loud if RBF is fixed here.
+
+**Why the text rmw was blind (three green-seeking choices, each proven to
+suppress it):** a big nap that HELD the lock (serializes cleanly); only 40
+updates (loss variance easily hits 0); and `READ`/`PRINT` text I/O, whose lock
+path serializes CORRECTLY. Decisive proof it is I/O-verb-specific: at 6 workers
+the UNLOCKED text control lost **977/1200** (the workers overlap hard) while the
+LOCKED text rmw kept **1200/1200** (the text lock works). Same 4 workers, same
+nap=0, same file: text keeps 800/800, binary loses ~250-300. The ONLY variable
+is `READ`/`PRINT` vs `GET`/`PUT` — the bug lives in the binary `I$Read`/`I$Write`
+lock-retry-after-park path, where a woken waiter re-presents a clobbered byte
+count and runs unlocked (root cause: `docs/nitros9-rbf-lostupdate-*`).
+
+**Launch simultaneity is load-bearing in THIS harness (measured, not assumed):**
+the one-line concurrent launch loses ~250-300; a per-key-send launch (racers land
+seconds apart, because `runb` startup is slow) keeps a clean **800/800 every
+time** — the lead worker loads and marks sector 0 before the next racer's first
+GET, exactly the stagger that suppresses the race. A native-module reproduction
+with ~ms startup does not need this; this one does, so the adapter launches the
+racers on a single shell line. (This is why the hammer never saw the bug before:
+it was launching the racers the un-buggy way, AND on the text path.)
+
 ### RAM: the CoCo3 is now given 2MB, not the stock 512K
 
 `Backend`/`replEnvironment` boots XRoar with `-ram 2048`. A 512K machine leaves

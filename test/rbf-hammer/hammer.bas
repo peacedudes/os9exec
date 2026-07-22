@@ -94,6 +94,12 @@ PROCEDURE hwork
 !           is itself an error and would mask the results.
 DIM path, wpath: BYTE
 DIM index, worker, seqnum, cksum, total, charpos: INTEGER
+! The binary tally record for the rmwbin/seedbin roles: five 16-bit integers
+! = 10 bytes, the exact shape of the proven lost-update reproduction. GET/PUT
+! move the whole 10 bytes; the tally lives in rec(1). Small (<256 bytes) on
+! purpose -- the binary lock-retry bug re-presents a clobbered byte count and
+! only bites requests that fit in the low byte.
+DIM rec(5): INTEGER
 DIM napcount, gotcount, failed, slotbase, slotnum, tally: INTEGER
 DIM payload: STRING[44]
 DIM line: STRING[64]
@@ -241,7 +247,38 @@ ELSE
     CLOSE #wpath
     PRINT #2, "hammer: worker "; worker; " rmwfree done "; total
   ELSE
+  IF role = "rmwbin" THEN
+    ! THE LIVE LOST-UPDATE REPRODUCTION. Identical loop to `rmw`, but BINARY
+    ! GET/PUT on the 10-byte integer record instead of text READ/PRINT. The
+    ! text path's lock serializes correctly (rmw keeps a perfect tally); this
+    ! binary path is the one whose lock-retry-after-park loses updates on stock
+    ! NitrOS-9. nap=0 (back-to-back) so the racers genuinely park and wake on
+    ! each other, which is what triggers the clobbered-count bug.
+    OPEN #path, fname: UPDATE
+    FOR index = 1 TO total
+      SEEK #path, 0
+      GET #path, rec
+      rec(1) = rec(1) + 1
+      RUN hnap(napmode, napcount)
+      SEEK #path, 0
+      PUT #path, rec
+    NEXT index
+    CLOSE #path
+    PRINT #2, "hammer: worker "; worker; " rmwbin done "; total
+  ELSE
+  IF role = "seedbin" THEN
+    ! Provision the binary tally file: one 10-byte record, all zeros.
+    CREATE #path, fname: UPDATE
+    FOR index = 1 TO 5
+      rec(index) = 0
+    NEXT index
+    PUT #path, rec
+    CLOSE #path
+    PRINT #2, "hammer: seeded "; fname
+  ELSE
     PRINT #2, "hammer: worker "; worker; " FAIL unknown role "; role
+  ENDIF
+  ENDIF
   ENDIF
   ENDIF
   ENDIF

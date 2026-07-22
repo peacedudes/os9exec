@@ -164,7 +164,10 @@ final class Scenario6809Tests: XCTestCase {
                             nap: Int, role: WorkerSpec.Role,
                             napMode: NapMode = .sleep) throws -> Int {
         let file = "\(Self.device)/tally.dat"
-        var roster = [WorkerSpec(id: 98, role: .seed, file: file, count: 1)]
+        // The binary rmw role reads back a 10-byte integer record, so it needs
+        // the binary provisioner; the text roles need the text one.
+        let binary = role == .rmwbin
+        var roster = [WorkerSpec(id: 98, role: binary ? .seedbin : .seed, file: file, count: 1)]
         roster += (1...population).map {
             // The lock pair below uses `.nilWrites` with a LARGE burst -- see
             // the operating-point constants and the tests. An earlier reading
@@ -184,8 +187,20 @@ final class Scenario6809Tests: XCTestCase {
         let result = try Adapter6809(repoRoot: Self.repoRoot).run(scenario)
 
         XCTAssertFalse(result.timedOut, "rmw roster hung; clone \(result.scratchPath)")
-        guard let data = result.produced[file],
-              let text = String(bytes: data.prefix(9), encoding: .ascii),
+        guard let data = result.produced[file] else {
+            XCTFail("no tally file. Transcript:\n\(result.transcript)")
+            return -1
+        }
+        if binary {
+            // rec(1) is the first of five 16-bit integers, stored MSB-first
+            // (6809 is big-endian). The tally is that leading word.
+            guard data.count >= 2 else {
+                XCTFail("binary tally too short (\(data.count) bytes). Transcript:\n\(result.transcript)")
+                return -1
+            }
+            return Int(data[data.startIndex]) << 8 | Int(data[data.startIndex + 1])
+        }
+        guard let text = String(bytes: data.prefix(9), encoding: .ascii),
               text.hasPrefix("T"), let tally = Int(text.dropFirst()) else {
             XCTFail("no readable tally. Transcript:\n\(result.transcript)")
             return -1
@@ -205,7 +220,11 @@ final class Scenario6809Tests: XCTestCase {
         guard env["RBF_MEASURE"] != nil else {
             throw XCTSkip("measurement harness; set RBF_MEASURE=1 to run")
         }
-        let role: WorkerSpec.Role = env["RBF_ROLE"] == "rmw" ? .rmw : .rmwfree
+        let role: WorkerSpec.Role = switch env["RBF_ROLE"] {
+            case "rmw": .rmw
+            case "rmwbin": .rmwbin
+            default: .rmwfree
+        }
         let napMode: NapMode = env["RBF_NAP_MODE"] == "nil" ? .nilWrites : .sleep
         let nap = Int(env["RBF_NAP_COUNT"] ?? "") ?? 1
         let workers = Int(env["RBF_WORKERS"] ?? "") ?? 4
@@ -254,6 +273,54 @@ final class Scenario6809Tests: XCTestCase {
                                    nap: Self.lockNap, role: .rmw, napMode: .nilWrites)
         XCTAssertEqual(tally, expected,
                        "lost update on NitrOS-9: expected \(expected), got \(tally)")
+    }
+
+    // ── The live lost-update bug, reproduced ──────────────────────────────────
+
+    /// ★ A REPRODUCED DATA-LOSS BUG. Binary `GET`/`PUT` read-modify-write drops
+    /// updates on stock NitrOS-9, where the byte-for-byte identical TEXT path
+    /// (`READ`/`PRINT`, `testConcurrent...` above) keeps a perfect tally. Four
+    /// workers each do 200 back-to-back `SEEK0/GET/+1/SEEK0/PUT` on ONE 10-byte
+    /// record; with no gap they genuinely park and wake on each other's record
+    /// lock, and the binary `I$Read`/`I$Write` lock-retry-after-park re-presents
+    /// a clobbered byte count (0) so the woken waiter claims nothing and runs
+    /// UNLOCKED, losing the update. The ONLY variable versus the passing text
+    /// test is the I/O verb.
+    ///
+    /// Measured ~250-300 of 800 lost, every run, INCLUDING under host load --
+    /// it is volume-driven, not a timing knife-edge, so unlike the lock pair it
+    /// needs no load guard and does not flake toward a clean tally.
+    ///
+    /// Pinned with `XCTExpectFailure`: the correctness assertion (no updates
+    /// lost) FAILS on the buggy RBF, so the suite CATALOGS a reproduced
+    /// data-loss bug rather than reporting green. If RBF is ever fixed here this
+    /// flips to "unexpectedly passed" and demands the marker be removed. Root
+    /// cause, and A/B modules (`rbf.stock.mn` vs the fix), are in
+    /// `docs/nitros9-rbf-lostupdate-*` and `docs/nitros9-rbf-reference/`.
+    func testBinaryReadModifyWriteLosesUpdatesOn6809() throws {
+        let workers = 4, increments = 200
+        let expected = workers * increments
+
+        // The reproduction is bimodal: when the racers' first GETs coincide it
+        // drops ~250-300 of 800; a rarer run whose module loads happen to
+        // stagger keeps a clean tally. So try up to three times and take the
+        // bug as PRESENT the moment any try loses -- a single lucky-clean run
+        // must not masquerade as a fix. Only three clean runs in a row (what an
+        // actual fix would produce) leave `lost` at zero and trip the
+        // XCTExpectFailure below into an "unexpectedly passed" that says: check
+        // whether RBF was fixed here.
+        var lost = 0
+        for _ in 1...3 {
+            let tally = try finalTally(workers: workers, increments: increments,
+                                       nap: 0, role: .rmwbin, napMode: .nilWrites)
+            if tally < expected { lost = expected - tally; break }
+        }
+
+        XCTExpectFailure("stock NitrOS-9 drops binary GET/PUT updates -- live data-loss bug") {
+            XCTAssertEqual(lost, 0,
+                           "binary RMW lost \(lost) of \(expected) updates -- "
+                         + "the record lock's retry-after-park ran unlocked")
+        }
     }
 
     // ── Backends that do not exist here ───────────────────────────────────────

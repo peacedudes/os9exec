@@ -190,7 +190,7 @@ public struct Adapter6809: Adapter {
             // with `runb` (no editor at launch, so concurrent starts don't race
             // the editor). Provisioning stays a plain run -- it goes first, one
             // at a time, so it never races anything.
-            if worker.role != .create && worker.role != .seed {
+            if worker.role != .create && worker.role != .seed && worker.role != .seedbin {
                 let pack = staging.appendingPathComponent(packScriptName(worker))
                 try Data(WorkerScript.renderPack(worker, from: template).utf8).write(to: pack)
                 staged.append(pack)
@@ -230,7 +230,7 @@ public struct Adapter6809: Adapter {
     /// driving issues one command at a time, but handed to the shell as a file.
     private func renderRunProcedure(_ scenario: Scenario, device: String) -> String {
         let (provision, racers) = scenario.workers
-            .partitioned { $0.role == .create || $0.role == .seed }
+            .partitioned { $0.role == .create || $0.role == .seed || $0.role == .seedbin }
         var lines = ["chd \(device)"]
         lines += provision.map { "basic09 #32k </DD/\(scriptName($0))" }
         lines += racers.map { "basic09 #32k </DD/\(scriptName($0))&" }
@@ -338,7 +338,7 @@ public struct Adapter6809: Adapter {
         let environment = replEnvironment(run)
         let device = (try? Backend6809.device(scenario.backend)) ?? "/DD"
         let (provision, racers) = scenario.workers
-            .partitioned { $0.role == .create || $0.role == .seed }
+            .partitioned { $0.role == .create || $0.role == .seed || $0.role == .seedbin }
         let deadline = Date().addingTimeInterval(scenario.timeout)
 
         // A cleared pane makes the marker search cheap and unambiguous: without
@@ -412,12 +412,17 @@ public struct Adapter6809: Adapter {
             }
         }
 
-        // LAUNCH: `runb` the packed modules concurrently. There is no editor
-        // phase now, so simultaneous starts are safe -- yet the workers still
-        // run at the same time, which is what the rmw lock race needs.
-        for worker in racers {
-            type("runb \(moduleName(worker))&", in: run)
-        }
+        // LAUNCH: `runb` the packed modules on ONE shell line, so they fork
+        // within a single parse and their first GETs land nearly together.
+        // This is load-bearing, MEASURED: the binary lost-update reproduction
+        // (`testBinaryReadModifyWriteLoses...`) drops ~250-300 of 800 with this
+        // combined launch, but ZERO when the racers are launched one key-send
+        // apart -- `runb` starts a worker slowly enough that a per-command
+        // stagger runs to seconds, and the lead worker loads and marks the
+        // shared sector before the next racer's first GET, suppressing the race.
+        // (A native-module reproduction with ~ms startup does not need this;
+        // this harness does.) Safe now that PACK+runb removed the editor phase.
+        type(racers.map { "runb \(moduleName($0))&" }.joined(separator: " "), in: run)
 
         // The destructive act, if any: fired while the racers are running and
         // still hold the file open (delete it, kill a writer).
