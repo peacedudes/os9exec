@@ -293,6 +293,36 @@ with ~ms startup does not need this; this one does, so the adapter launches the
 racers on a single shell line. (This is why the hammer never saw the bug before:
 it was launching the racers the un-buggy way, AND on the text path.)
 
+### A/B against a fixed-RBF image (2026-07-21) — fix validated, no residual found
+
+`RBF_GOLDEN=<image-dir>` points a measure run at a specific disk image, so the
+reproduction can be A/B'd. Against a candidate fix
+(`eou_ide-v0.3-6809-combined-fix-test`) the record-lock reproduction is GREEN
+across every variant that has TEETH on stock:
+
+| variant | stock (teeth) | fixed |
+|---|---|---|
+| single-sector, nap=0, 4 workers | ~250-300 of 800 lost | 800/800 |
+| heavy parking, nap=8, 4 workers | 378 of 800 lost | 800/800 |
+| 5-worker herd, nap=8 | 537 of 1000 lost | 1000/1000 |
+| multi-sector 400B (`rmwbig`) | **no teeth** (800/800 stock too) | n/a |
+
+**Two lessons recorded so a later session does not repeat them:**
+- **Multi-sector (>256 byte) RMW does not reproduce the loss on stock either** —
+  the bug is inherently single-sector, matching the `<256` root cause. `rmwbig`
+  is kept as an exploration role but earns no pinned test (a green with no teeth
+  is worthless).
+- **A false "hang" from a leaked emulator.** The fixed 5-worker run first came
+  back as a 607s timeout that looked like a fix-introduced lost-wake. It was NOT:
+  a `hammer-*` XRoar orphaned ~6 hours earlier (a `TaskStop`ped run skips the
+  `defer { teardown }`, stranding the emulator) was stealing a core and starving
+  the run past its wall-clock deadline. Killed the orphan, re-ran clean → 1000/1000
+  in 20s. Fix: `Adapter6809.reapStaleSessions()` now kills any `hammer-*` tmux
+  session older than 20 min at the start of every run (a real run is < 1 min, so
+  age alone identifies an orphan without risking a live or concurrent run). The
+  lesson is the standing one: a "fail" is not a finding until the harness is
+  exonerated -- here, until the environment is provably clean.
+
 ### RAM: the CoCo3 is now given 2MB, not the stock 512K
 
 `Backend`/`replEnvironment` boots XRoar with `-ram 2048`. A 512K machine leaves

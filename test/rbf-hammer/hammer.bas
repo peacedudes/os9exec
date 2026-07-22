@@ -100,6 +100,12 @@ DIM index, worker, seqnum, cksum, total, charpos: INTEGER
 ! purpose -- the binary lock-retry bug re-presents a clobbered byte count and
 ! only bites requests that fit in the low byte.
 DIM rec(5): INTEGER
+! A LARGE binary record for the rmwbig/seedbig roles: 200 x 16-bit = 400 bytes,
+! which SPANS MULTIPLE 256-byte sectors. The 6809 lost-update bug bit requests
+! that fit in one sector (<256 bytes); a multi-sector GET/PUT under the same
+! contention is a distinct read/lock path worth hammering separately. Tally in
+! recbig(1), same as the small record, so the host parser is unchanged.
+DIM recbig(200): INTEGER
 DIM napcount, gotcount, failed, slotbase, slotnum, tally: INTEGER
 DIM payload: STRING[44]
 DIM line: STRING[64]
@@ -276,7 +282,35 @@ ELSE
     CLOSE #path
     PRINT #2, "hammer: seeded "; fname
   ELSE
+  IF role = "rmwbig" THEN
+    ! Same lost-update loop as rmwbin, but a 400-byte MULTI-SECTOR record. The
+    ! 6809 fix was proven on single-sector (<256 byte) requests; a GET/PUT that
+    ! spans sectors is a distinct read/lock path and may not be covered.
+    OPEN #path, fname: UPDATE
+    FOR index = 1 TO total
+      SEEK #path, 0
+      GET #path, recbig
+      recbig(1) = recbig(1) + 1
+      RUN hnap(napmode, napcount)
+      SEEK #path, 0
+      PUT #path, recbig
+    NEXT index
+    CLOSE #path
+    PRINT #2, "hammer: worker "; worker; " rmwbig done "; total
+  ELSE
+  IF role = "seedbig" THEN
+    ! Provision the 400-byte tally record, all zeros.
+    CREATE #path, fname: UPDATE
+    FOR index = 1 TO 200
+      recbig(index) = 0
+    NEXT index
+    PUT #path, recbig
+    CLOSE #path
+    PRINT #2, "hammer: seeded "; fname
+  ELSE
     PRINT #2, "hammer: worker "; worker; " FAIL unknown role "; role
+  ENDIF
+  ENDIF
   ENDIF
   ENDIF
   ENDIF

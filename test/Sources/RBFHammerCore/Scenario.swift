@@ -125,6 +125,13 @@ public struct WorkerSpec: Equatable, Sendable {
         /// all zeros, written with `PUT`. The binary counterpart of `seed`.
         case seedbin
 
+        /// Like `rmwbin` but a 400-byte MULTI-SECTOR record, to hammer the
+        /// spanning-read lock path the single-sector 6809 fix may not cover.
+        case rmwbig
+
+        /// Seeds the 400-byte record for `rmwbig`.
+        case seedbig
+
         /// Creates an empty file and exits, provisioning a shared file before
         /// racers start. Two workers both CREATEing one file is itself an
         /// error and would mask the result.

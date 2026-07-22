@@ -164,10 +164,15 @@ final class Scenario6809Tests: XCTestCase {
                             nap: Int, role: WorkerSpec.Role,
                             napMode: NapMode = .sleep) throws -> Int {
         let file = "\(Self.device)/tally.dat"
-        // The binary rmw role reads back a 10-byte integer record, so it needs
-        // the binary provisioner; the text roles need the text one.
-        let binary = role == .rmwbin
-        var roster = [WorkerSpec(id: 98, role: binary ? .seedbin : .seed, file: file, count: 1)]
+        // Binary rmw roles read back an integer record, so they need a binary
+        // provisioner sized to match; the text roles need the text one.
+        let binary = role == .rmwbin || role == .rmwbig
+        let seedRole: WorkerSpec.Role = switch role {
+            case .rmwbig: .seedbig
+            case .rmwbin: .seedbin
+            default:      .seed
+        }
+        var roster = [WorkerSpec(id: 98, role: seedRole, file: file, count: 1)]
         roster += (1...population).map {
             // The lock pair below uses `.nilWrites` with a LARGE burst -- see
             // the operating-point constants and the tests. An earlier reading
@@ -184,7 +189,11 @@ final class Scenario6809Tests: XCTestCase {
         }
         let scenario = Scenario(name: "rmw-6809-\(population)x\(increments)",
                                 backend: .rbfImage, workers: roster, timeout: 600)
-        let result = try Adapter6809(repoRoot: Self.repoRoot).run(scenario)
+        // RBF_GOLDEN points the run at a specific disk image (e.g. a fixed-RBF
+        // build), so the same reproduction can be A/B'd against stock and fix.
+        let golden = ProcessInfo.processInfo.environment["RBF_GOLDEN"]
+            .map { URL(fileURLWithPath: $0) }
+        let result = try Adapter6809(repoRoot: Self.repoRoot, goldenMaster: golden).run(scenario)
 
         XCTAssertFalse(result.timedOut, "rmw roster hung; clone \(result.scratchPath)")
         guard let data = result.produced[file] else {
@@ -223,6 +232,7 @@ final class Scenario6809Tests: XCTestCase {
         let role: WorkerSpec.Role = switch env["RBF_ROLE"] {
             case "rmw": .rmw
             case "rmwbin": .rmwbin
+            case "rmwbig": .rmwbig
             default: .rmwfree
         }
         let napMode: NapMode = env["RBF_NAP_MODE"] == "nil" ? .nilWrites : .sleep

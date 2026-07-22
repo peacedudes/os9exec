@@ -101,6 +101,7 @@ public struct Adapter6809: Adapter {
 
     /// Runs one scenario to completion and collects what it produced.
     public func run(_ scenario: Scenario) throws -> RunResult {
+        reapStaleSessions()
         let device = try Backend6809.device(scenario.backend)
         let run = try Run(clone: makeClone(), session: "hammer-\(UUID().uuidString.prefix(8))")
         defer { teardown(run) }
@@ -190,7 +191,8 @@ public struct Adapter6809: Adapter {
             // with `runb` (no editor at launch, so concurrent starts don't race
             // the editor). Provisioning stays a plain run -- it goes first, one
             // at a time, so it never races anything.
-            if worker.role != .create && worker.role != .seed && worker.role != .seedbin {
+            if worker.role != .create && worker.role != .seed
+                && worker.role != .seedbin && worker.role != .seedbig {
                 let pack = staging.appendingPathComponent(packScriptName(worker))
                 try Data(WorkerScript.renderPack(worker, from: template).utf8).write(to: pack)
                 staged.append(pack)
@@ -230,7 +232,8 @@ public struct Adapter6809: Adapter {
     /// driving issues one command at a time, but handed to the shell as a file.
     private func renderRunProcedure(_ scenario: Scenario, device: String) -> String {
         let (provision, racers) = scenario.workers
-            .partitioned { $0.role == .create || $0.role == .seed || $0.role == .seedbin }
+            .partitioned { $0.role == .create || $0.role == .seed
+                        || $0.role == .seedbin || $0.role == .seedbig }
         var lines = ["chd \(device)"]
         lines += provision.map { "basic09 #32k </DD/\(scriptName($0))" }
         lines += racers.map { "basic09 #32k </DD/\(scriptName($0))&" }
@@ -338,7 +341,8 @@ public struct Adapter6809: Adapter {
         let environment = replEnvironment(run)
         let device = (try? Backend6809.device(scenario.backend)) ?? "/DD"
         let (provision, racers) = scenario.workers
-            .partitioned { $0.role == .create || $0.role == .seed || $0.role == .seedbin }
+            .partitioned { $0.role == .create || $0.role == .seed
+                        || $0.role == .seedbin || $0.role == .seedbig }
         let deadline = Date().addingTimeInterval(scenario.timeout)
 
         // A cleared pane makes the marker search cheap and unambiguous: without
@@ -577,6 +581,27 @@ public struct Adapter6809: Adapter {
     private func teardown(_ run: Run) {
         _ = try? shell(repl, ["stop"], environment: replEnvironment(run))
         try? waitForEmulatorExit(run)
+    }
+
+    /// Reaps `hammer-*` tmux sessions (and the XRoar they hold) left behind by a
+    /// run that was interrupted before its `defer { teardown }` could fire -- a
+    /// test killed with a signal skips `defer`, stranding a live emulator that
+    /// then steals a core and quietly slows or hangs every later run (it once
+    /// made a clean fixed-image run look like a lost-wake regression). A real run
+    /// finishes in well under a minute, so any hammer session older than the
+    /// threshold is unambiguously an orphan: safe to kill without touching an
+    /// active run, even a concurrent session's. Best-effort; failures are ignored.
+    private func reapStaleSessions() {
+        let staleAfter: TimeInterval = 1200   // 20 minutes; a run lasts < 1
+        let listing = (try? shell("/usr/bin/env",
+            ["tmux", "list-sessions", "-F", "#{session_name} #{session_created}"])) ?? ""
+        let now = Date().timeIntervalSince1970
+        for line in listing.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: " ")
+            guard parts.count == 2, parts[0].hasPrefix("hammer-"),
+                  let created = Double(parts[1]), now - created > staleAfter else { continue }
+            _ = try? shell("/usr/bin/env", ["tmux", "kill-session", "-t", String(parts[0])])
+        }
     }
 
     // ── Host process helper ───────────────────────────────────────────────────
