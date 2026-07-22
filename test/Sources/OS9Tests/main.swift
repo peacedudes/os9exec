@@ -1535,6 +1535,184 @@ do {
     }
 }
 
+// ── F$Event: a blocking Ev_Wait is woken by another process's Ev_Signl ─────────
+// The lifecycle test above deliberately avoided blocking (its initial value was
+// already in range). This is the harder cross-process question its own comment
+// flagged as not attempted: process A parks on an OUT-of-range Ev_Wait, and a
+// separate backgrounded process B links the same event by name and signals it
+// into range. Nothing explicitly wakes A -- Ev_Signl (events.c) only bumps the
+// counter; A's parked wait is served solely by the poll-retry re-dispatch of a
+// pWaitRead process in do_arbitrate (procstuff.c ~1229, "only every nth time").
+// So a green here proves that poll-retry actually wakes a blocked waiter across
+// two processes, not just that a single process whose value is already in range
+// falls through. Verified non-vacuous 2026-07-22: a control signaler that links
+// the event but never signals it leaves the waiter parked forever (no "WAITER
+// WOKEN", run hangs to the timeout) -- so the wake is caused by the signal, not
+// by the mere existence of a second process. First automated coverage of a
+// genuinely-blocking OS-9 event wait at all.
+do {
+    let waiterAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Event  equ  $53",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect evwait,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  lea     evname(pc),a0",
+        "  moveq   #0,d0",              // initial value 0 -- OUTSIDE the wait range [3,999]
+        "  move.w  #2,d1",              // Ev_Creat
+        "  moveq   #1,d2",              // wIncr
+        "  moveq   #1,d3",              // sIncr
+        "  OS9     F$Event",
+        "  bcs     fail",
+        "  lea     evId(pc),a1",
+        "  move.l  d0,(a1)",            // save evId
+        "",
+        "  lea     parkmsg(pc),a0",     // announce created + about to block
+        "  moveq   #parkmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "",
+        "  lea     evId(pc),a1",        // Ev_Wait for [3,999]; value 0 -> PARK
+        "  move.l  (a1),d0",
+        "  move.w  #4,d1",
+        "  moveq   #3,d2",
+        "  move.l  #999,d3",
+        "  OS9     F$Event",
+        "  bcs     fail",
+        "",
+        "  lea     okmsg(pc),a0",       // only reached if the parked wait was woken
+        "  moveq   #okmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "fail:",
+        "  lea     failmsg(pc),a0",
+        "  moveq   #failmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "",
+        "evname:   dc.b  \"evblkw\",0",
+        "evId:     dc.l  0",
+        "parkmsg:  dc.b  \"WAITER PARKED\",$0D",
+        "parkmsgl  equ   *-parkmsg",
+        "okmsg:    dc.b  \"WAITER WOKEN\",$0D",
+        "okmsgl    equ   *-okmsg",
+        "failmsg:  dc.b  \"WAITER FAILED\",$0D",
+        "failmsgl  equ   *-failmsg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let sigAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Event  equ  $53",
+        "F$Sleep  equ  $0A",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect evsig,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  lea     tries(pc),a2",       // retry Ev_Link until the waiter has created it
+        "  move.l  #20,(a2)",
+        "linkloop:",
+        "  lea     evname(pc),a0",
+        "  move.w  #0,d1",              // Ev_Link (by name)
+        "  OS9     F$Event",
+        "  bcc     linked",
+        "  moveq   #5,d0",              // not there yet -- nap 5 ticks and retry
+        "  OS9     F$Sleep",
+        "  lea     tries(pc),a2",
+        "  subq.l  #1,(a2)",
+        "  bne     linkloop",
+        "  bra     fail",
+        "linked:",
+        "  lea     evId(pc),a1",
+        "  move.l  d0,(a1)",            // evId from the link
+        "  lea     cnt(pc),a2",
+        "  move.l  #3,(a2)",            // signal 3 times: value 0 -> 3, into range
+        "sigloop:",
+        "  lea     evId(pc),a1",
+        "  move.l  (a1),d0",
+        "  move.w  #8,d1",              // Ev_Signl
+        "  OS9     F$Event",
+        "  bcs     fail",
+        "  lea     cnt(pc),a2",
+        "  subq.l  #1,(a2)",
+        "  bne     sigloop",
+        "",
+        "  move.l  #60,d0",             // give the woken waiter time to print
+        "  OS9     F$Sleep",
+        "",
+        "  lea     okmsg(pc),a0",
+        "  moveq   #okmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "fail:",
+        "  lea     failmsg(pc),a0",
+        "  moveq   #failmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "",
+        "evname:   dc.b  \"evblkw\",0",
+        "evId:     dc.l  0",
+        "tries:    dc.l  0",
+        "cnt:      dc.l  0",
+        "okmsg:    dc.b  \"SIGNALER DONE\",$0D",
+        "okmsgl    equ   *-okmsg",
+        "failmsg:  dc.b  \"SIGNALER FAILED\",$0D",
+        "failmsgl  equ   *-failmsg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    try? waiterAsm.write(toFile: scratchDisk + "/evwait.a", atomically: true, encoding: .utf8)
+    try? sigAsm.write(toFile: scratchDisk + "/evsig.a", atomically: true, encoding: .utf8)
+
+    let name = "f$event: a blocking Ev_Wait is woken by another process's Ev_Signl"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/evwait.a -o=/h5/evwait.r",
+            "l68 /h5/evwait.r -o=/h5/evwait",
+            "r68 /h5/evsig.a -o=/h5/evsig.r",
+            "l68 /h5/evsig.r -o=/h5/evsig",
+            "/h5/evwait &",             // parks on an out-of-range Ev_Wait
+            "/h5/evsig"                 // links + signals it into range
+        ], timeout: 30)
+        if out.contains("WAITER WOKEN") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [a parked Ev_Wait must be woken when a separate process signals the event into range]")
+            let preview = out.split(separator: "\n")
+                .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                .prefix(10).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["evwait.a", "evwait.r", "evwait", "evsig.a", "evsig.r", "evsig"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── F$Alarm: a fired alarm kills an active process (no F$Icpt handler) ─────────
 // 68k/syscall-reference.md flags this explicitly: A$Set's register contract and
 // A$Delete were Live-verified, but "actual signal delivery on firing not
