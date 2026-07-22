@@ -33,6 +33,10 @@ struct Options {
     var iterations = 1
     var jobs = 2
     var records = 8
+    var chaos = false
+    var minutes = 270          // ~4.5 hours
+    var golden: String?
+    var seed: UInt64 = UInt64(Date().timeIntervalSince1970)
 }
 
 func parseOptions(_ argv: [String]) -> Options {
@@ -46,6 +50,10 @@ func parseOptions(_ argv: [String]) -> Options {
         case "--jobs":       if let v = next(), let n = Int(v) { options.jobs = max(1, n) }; i += 1
         case "--records":    if let v = next(), let n = Int(v) { options.records = max(1, n) }; i += 1
         case "--gate":       options.iterations = 1
+        case "--chaos":      options.chaos = true
+        case "--minutes":    if let v = next(), let n = Int(v) { options.minutes = max(1, n) }; i += 1
+        case "--golden":     options.golden = next(); i += 1
+        case "--seed":       if let v = next(), let n = UInt64(v) { options.seed = n }; i += 1
         default: break
         }
         i += 1
@@ -161,10 +169,10 @@ struct Job: Sendable { let index: Int; let iteration: Int; let scenario: Scenari
 /// What a job produced.
 struct Outcome: Sendable { let job: Job; let faults: [String]; let seconds: Double }
 
-func makeAdapter(_ target: Target) throws -> Adapter {
+func makeAdapter(_ target: Target, golden: URL? = nil) throws -> Adapter {
     switch target {
     case .os968k:  return try Adapter68k(repoRoot: repoRoot)
-    case .os96809: return try Adapter6809(repoRoot: repoRoot)
+    case .os96809: return try Adapter6809(repoRoot: repoRoot, goldenMaster: golden)
     }
 }
 
@@ -207,9 +215,173 @@ func runPool(_ queue: [Job], target: Target, concurrency: Int) async -> [Outcome
     return outcomes
 }
 
+// ── Chaos mode ───────────────────────────────────────────────────────────────
+// A long unattended soak that bombards RBF with VARIETY, not repetition: every
+// run draws a fresh roster, backend, size and pacing from the full menu of role
+// families. The point is to shake out an intermittent structural corruption or a
+// hang that only a rare combination triggers. Reproducible from its `--seed`.
+
+/// Seedable PRNG (SplitMix64) so a chaos run replays exactly from its seed.
+struct SplitMix64: RandomNumberGenerator {
+    private var state: UInt64
+    init(seed: UInt64) { state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E3779B97F4A7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+        return z ^ (z >> 31)
+    }
+}
+
+/// The dcheck-capable device for a target -- where the structural oracle runs,
+/// so a corruption is actually visible. (68k: the RBF image; 6809: the RAM disk,
+/// since dcheck on `/DD` is far too slow.)
+func chaosDevice(_ target: Target) -> (backend: Backend, path: String) {
+    target == .os968k ? (.rbfImage, "/h9") : (.ramDisk, "/r0")
+}
+
+/// Builds one randomized-but-VALID scenario. Each template uses roles the way
+/// they actually compose (provisioners first, matching seeds, sane counts), so
+/// the chaos is in the parameters, never a malformed roster that would fault for
+/// harness reasons rather than an RBF one.
+func chaosScenario(_ rng: inout SplitMix64, target: Target, n: Int) -> Scenario {
+    let is68k = target == .os968k
+    let (backend, dev) = chaosDevice(target)
+    let maxW = is68k ? 8 : 5                      // 6809 packs >5 racers unreliably
+    let w = Int.random(in: 2...maxW, using: &rng)
+    let r = Int.random(in: 5...40, using: &rng)
+    let nap = [0, 0, 1, Int.random(in: 1...8, using: &rng)].randomElement(using: &rng)!
+    let tmo: TimeInterval = is68k ? 90 : 400
+
+    // The binary write-only / mixed / deadlock templates (3-5) are proven on
+    // 6809; on 68k only the record-lock, slot and append families are exercised
+    // so far, so keep 68k to those and let 6809 draw from the whole menu.
+    switch Int.random(in: 0..<(is68k ? 3 : 6), using: &rng) {
+    case 0:                                        // binary lost-update RMW
+        let f = "\(dev)/lu.dat"
+        var roster = [WorkerSpec(id: 99, role: .seedbin, file: f, count: 1)]
+        roster += (1...w).map { WorkerSpec(id: $0, role: .rmwbin, file: f,
+                                           count: r * 5, nap: 0, napMode: .nilWrites) }
+        return Scenario(name: "c\(n)-lu-w\(w)r\(r*5)", backend: backend, workers: roster, timeout: tmo)
+    case 1:                                        // many slot writers, one file
+        let f = "\(dev)/sl.dat"
+        var roster = [WorkerSpec(id: 99, role: .create, file: f, count: w * r)]
+        roster += (1...w).map { WorkerSpec(id: $0, role: .slot, file: f, count: r, nap: nap) }
+        return Scenario(name: "c\(n)-slot-w\(w)r\(r)", backend: backend, workers: roster, timeout: tmo)
+    case 2:                                        // separate-file appenders
+        let roster = (1...w).map { WorkerSpec(id: $0, role: .append,
+                                              file: "\(dev)/wa\($0).dat", count: r, nap: nap) }
+        return Scenario(name: "c\(n)-append-w\(w)r\(r)", backend: backend, workers: roster, timeout: tmo)
+    case 3:                                        // write-only producer + follower
+        let f = "\(dev)/wo.dat"
+        let roster = [
+            WorkerSpec(id: 1, role: .writeonly, file: f, count: max(4, r), nap: 40, napMode: .sleep),
+            WorkerSpec(id: 2, role: .follow, file: f, count: 1, nap: 15, napMode: .sleep),
+        ]
+        return Scenario(name: "c\(n)-follow-r\(r)", backend: backend, workers: roster, timeout: tmo)
+    case 4:                                        // mixed write-only + update RMW
+        let f = "\(dev)/mix.dat"
+        var roster = [WorkerSpec(id: 1, role: .wobin, file: f, count: 8, nap: 40, napMode: .sleep)]
+        roster += (2...(w + 1)).map { WorkerSpec(id: $0, role: .rmwmix, file: f,
+                                                 count: r * 5, nap: 30, napMode: .sleep) }
+        return Scenario(name: "c\(n)-mixed-w\(w)", backend: backend, workers: roster, timeout: tmo)
+    default:                                       // crossed-hold deadlock
+        let f = "\(dev)/dl.dat"
+        let roster = [
+            WorkerSpec(id: 98, role: .seedbin2, file: f, count: 1),
+            WorkerSpec(id: 1, role: .cross, file: f, count: 1, nap: 100, napMode: .sleep),
+            WorkerSpec(id: 2, role: .cross, file: f, count: 1, nap: 100, napMode: .sleep),
+        ]
+        return Scenario(name: "c\(n)-deadlock", backend: backend, workers: roster, timeout: tmo)
+    }
+}
+
+/// Chaos verdict: only the target-independent signs of an RBF DEFECT, since a
+/// random roster has no single content oracle. Structural damage (`dcheck`) is
+/// the corruption signal; a timeout is a parked-forever lock; a worker `FAIL` or
+/// an uncaught `ERROR err` is an unexpected fault (the deadlock's own handled
+/// "cross error 254" is neither, so it is not flagged).
+func chaosFaults(_ result: RunResult) -> [String] {
+    var faults: [String] = []
+    if result.timedOut { faults.append("HANG -- timed out, a worker never woke") }
+    if result.transcript.contains("FAIL") { faults.append("a worker reported FAIL") }
+    if result.transcript.contains("ERROR err") { faults.append("a worker hit an uncaught error") }
+    for violation in StructuralOracle.structuralViolations(dcheck: result.transcript) {
+        faults.append("STRUCTURE -- \(violation.detail)")
+    }
+    return faults
+}
+
+/// Generates and runs chaos scenarios until the wall-clock deadline, `jobs` at a
+/// time, logging every run and keeping a record of each failure with its seed +
+/// scenario name so any hit is reproducible (`--seed <s>` replays the sequence).
+func runChaos(target: Target, minutes: Int, jobs: Int, golden: URL?,
+              seed: UInt64) async -> (runs: Int, failures: [(name: String, faults: [String])]) {
+    let deadline = Date().addingTimeInterval(Double(minutes) * 60)
+    var rng = SplitMix64(seed: seed)
+    var made = 0, runs = 0
+    var failures: [(String, [String])] = []
+    await withTaskGroup(of: (String, [String], Double).self) { group in
+        func addNext() {
+            guard Date() < deadline else { return }
+            made += 1
+            let scenario = chaosScenario(&rng, target: target, n: made)
+            group.addTask {
+                let start = Date()
+                var faultList: [String]
+                do {
+                    let result = try makeAdapter(target, golden: golden).run(scenario)
+                    faultList = chaosFaults(result)
+                } catch { faultList = ["adapter threw: \(error)"] }
+                return (scenario.name, faultList, Date().timeIntervalSince(start))
+            }
+        }
+        for _ in 0..<jobs { addNext() }
+        while let outcome = await group.next() {
+            let (name, faults, secs) = outcome
+            runs += 1
+            let tag = faults.isEmpty ? "ok  " : "FAIL"
+            let remaining = Int(deadline.timeIntervalSinceNow / 60)
+            var line = "  [\(tag)] \(name) (\(String(format: "%.1f", secs))s) "
+                     + "[run \(runs), ~\(max(0, remaining))m left]\n"
+            if !faults.isEmpty {
+                failures.append((name, faults))
+                line += faults.map { "        ! \($0)\n" }.joined()
+            }
+            FileHandle.standardError.write(Data(line.utf8))
+            addNext()
+        }
+    }
+    return (runs, failures)
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 
 let options = parseOptions(Array(CommandLine.arguments.dropFirst()))
+
+if options.chaos {
+    let golden = options.golden.map { URL(fileURLWithPath: $0) }
+    print("RBFHammer CHAOS: target \(options.target.rawValue), \(options.minutes)m, "
+        + "\(options.jobs) at a time, seed \(options.seed)"
+        + (golden.map { ", image \($0.lastPathComponent)" } ?? ""))
+    let started = Date()
+    let (runs, failures) = await runChaos(target: options.target, minutes: options.minutes,
+                                          jobs: options.jobs, golden: golden, seed: options.seed)
+    let mins = Int(Date().timeIntervalSince(started) / 60)
+    print("\nCHAOS done: \(runs) runs in \(mins)m, seed \(options.seed) -- "
+        + "\(runs - failures.count) clean, \(failures.count) FAILED")
+    if !failures.isEmpty {
+        print("\nFAILURES (replay the run with --seed \(options.seed)):")
+        for (name, faults) in failures {
+            print("  \(name):")
+            for fault in faults { print("    - \(fault)") }
+        }
+        exit(1)
+    }
+    exit(0)
+}
+
 let set = scenarios(for: options.target, records: options.records)
 
 var queue: [Job] = []
