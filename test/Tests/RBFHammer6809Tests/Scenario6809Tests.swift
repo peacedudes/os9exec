@@ -249,6 +249,60 @@ final class Scenario6809Tests: XCTestCase {
             + "elapsed=\(Int(elapsed))s")
     }
 
+    /// Runs the write-only-Creat follow scenario (blind spot #3) and returns how
+    /// many records the follower saw. A WRITE-only producer creates a file and
+    /// writes `records` records -- the first two fast, the rest paced -- while a
+    /// follower reads it to EOF after a brief nap. Stock RBF's bogus write-only
+    /// eof lock makes the follower TRAIL to the end (count == records); the
+    /// mode-gate fix stops it at the initial EOF (count small). `golden` selects
+    /// the image (nil = default stock master).
+    private func followerRecordCount(records: Int, golden: URL?) throws -> Int? {
+        let file = "/r0/wo.dat"
+        let roster = [
+            WorkerSpec(id: 1, role: .writeonly, file: file, count: records, nap: 40, napMode: .sleep),
+            WorkerSpec(id: 2, role: .follow, file: file, count: 1, nap: 15, napMode: .sleep),
+        ]
+        let scenario = Scenario(name: "follow-6809", backend: .ramDisk, workers: roster, timeout: 300)
+        let result = try Adapter6809(repoRoot: Self.repoRoot, goldenMaster: golden).run(scenario)
+        return result.transcript.split(whereSeparator: \.isNewline)
+            .first { $0.contains("follow done") }?
+            .split(separator: " ").last.flatMap { Int($0) }
+    }
+
+    /// Env probe for interactive A/B (set RBF_FOLLOW; RBF_GOLDEN picks the image).
+    func testFollowProbe6809() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["RBF_FOLLOW"] != nil else { throw XCTSkip("follow probe; set RBF_FOLLOW=1") }
+        let records = Int(env["RBF_FOLLOW_RECS"] ?? "") ?? 8
+        let count = try followerRecordCount(records: records,
+                                            golden: env["RBF_GOLDEN"].map { URL(fileURLWithPath: $0) })
+        FileHandle.standardError.write(Data("FOLLOW count=\(count.map(String.init) ?? "?") of \(records)\n".utf8))
+    }
+
+    /// ★ Blind spot #3: a WRITE-only producer must NOT make a reader follow it
+    /// past EOF. Stock NitrOS-9 RBF takes record+eof locks regardless of open
+    /// mode, so a reader trails a write-only (`>`) producer instead of stopping
+    /// at the current end -- the exact defect the `lockmode` patch fixes by
+    /// gating lock acquisition (incl. the `Creat` site) on `PD.MOD == UPDAT`.
+    ///
+    /// Proven teeth: on the default STOCK master the follower reaches the
+    /// producer's full count; against the combined-fix image (`RBF_GOLDEN`) it
+    /// stops at the initial EOF (measured 8 vs 2 of 8). The correct behaviour is
+    /// "stops" (count < records), asserted here and wrapped in `XCTExpectFailure`
+    /// because the default image is still stock -- so the suite catalogs the
+    /// write-only follow bug and flips loud once the fix ships in the boot image.
+    func testWriteOnlyProducerDoesNotMakeAReaderFollowOn6809() throws {
+        let records = 8
+        guard let count = try followerRecordCount(records: records, golden: nil) else {
+            return XCTFail("follower never reported a count")
+        }
+        XCTExpectFailure("stock RBF makes a reader follow a write-only producer -- lockmode bug") {
+            XCTAssertLessThan(count, records,
+                              "follower trailed the write-only producer to \(count) of \(records) "
+                            + "-- it should have stopped at the initial EOF")
+        }
+    }
+
     /// CONTROL, and the one that must be read first: the identical race with NO
     /// lock taken (a READ path and a separate WRITE path, so RBF's update-mode
     /// auto-lock never engages).

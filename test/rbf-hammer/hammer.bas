@@ -111,7 +111,10 @@ DIM payload: STRING[44]
 DIM line: STRING[64]
 DIM inline: STRING[64]
 DIM pad: STRING[44]
-DIM role, napmode: STRING[8]
+DIM napmode: STRING[8]
+! role must hold the longest role name ("writeonly" = 9); STRING[8] silently
+! TRUNCATES it to "writeonl" so the dispatch falls through to "unknown role".
+DIM role: STRING[16]
 DIM fname: STRING[64]
 worker = @ID@
 total = @COUNT@
@@ -308,7 +311,48 @@ ELSE
     CLOSE #path
     PRINT #2, "hammer: seeded "; fname
   ELSE
+  IF role = "writeonly" THEN
+    ! Write-ONLY producer. CREATE the file in WRITE mode (hits the Creat lock
+    ! gate) and write `total` records: the first two fast, the rest each after a
+    ! nap, so a concurrent follower reaches EOF at two records. A write-only
+    ! producer must take NO record/eof lock (owner's design: writers create no
+    ! locks); stock NitrOS-9 wrongly does, and the follower then trails it.
+    CREATE #path, fname: WRITE
+    FOR index = 1 TO total
+      line = "W" + RIGHT$("00" + STR$(worker), 2)
+      line = line + " R" + RIGHT$("00000" + STR$(index), 5) + LEFT$(pad + pad, 54)
+      PRINT #path, line
+      IF index >= 2 THEN
+        RUN hnap(napmode, napcount)
+      ENDIF
+    NEXT index
+    CLOSE #path
+    PRINT #2, "hammer: worker "; worker; " wrote "; total
+  ELSE
+  IF role = "follow" THEN
+    ! Follower for the write-only producer. Nap briefly so the producer creates
+    ! the file first, then read to EOF counting records. On stock the producer's
+    ! bogus eof lock makes this BLOCK at EOF and FOLLOW (count == producer total);
+    ! with the fix it stops at the initial EOF (count small). The count is the
+    ! whole signal.
+    RUN hnap(napmode, napcount)
+    ON ERROR GOTO 120
+    OPEN #path, fname: READ
+    LOOP
+      READ #path, inline
+      gotcount = gotcount + 1
+    ENDLOOP
+120 failed = ERR
+    IF failed = 211 THEN
+      CLOSE #path
+      PRINT #2, "hammer: worker "; worker; " follow done "; gotcount
+    ELSE
+      PRINT #2, "hammer: worker "; worker; " FAIL error "; failed
+    ENDIF
+  ELSE
     PRINT #2, "hammer: worker "; worker; " FAIL unknown role "; role
+  ENDIF
+  ENDIF
   ENDIF
   ENDIF
   ENDIF

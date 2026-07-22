@@ -323,6 +323,31 @@ across every variant that has TEETH on stock:
   lesson is the standing one: a "fail" is not a finding until the harness is
   exonerated -- here, until the environment is provably clean.
 
+### Blind spot #3 covered — write-only Creat follow (2026-07-22)
+
+The fix author flagged five paths the green run did not exercise. First one
+built and A/B'd: **a write-only (`>`) producer must not make a reader follow it
+past EOF.** Stock NitrOS-9 takes record+eof locks regardless of open mode, so a
+reader trails a write-only producer instead of stopping at the current end; the
+`lockmode` patch gates lock acquisition (incl. the `Creat` site) on
+`PD.MOD == UPDAT`. New roles `writeonly` (creates `>`, writes two fast then
+paced) + `follow` (reads to EOF counting). Measured on `/r0`:
+
+| | stock | combined-fix |
+|---|---|---|
+| follower's record count | **8 of 8** (trails, bug) | **2 of 8** (stops, correct) |
+
+Pinned as `testWriteOnlyProducerDoesNotMakeAReaderFollowOn6809` (XCTExpectFailure
+on the correct "stops" invariant, since the default boot image is still stock).
+Teeth proven on stock before the fixed run, per the standing rule.
+
+**Harness bug found building it:** the worker's `role` was `STRING[8]`, which
+silently TRUNCATES `"writeonly"` (9 chars) to `"writeonl"` -> dispatch fell
+through to "unknown role" and the producer never created the file (the follower
+then failed E_PNNF). Widened to `STRING[16]`. A reminder that BASIC09 truncates
+over-length string assignments without error -- any 9+ char role name would have
+vanished the same way.
+
 ### RAM: the CoCo3 is now given 2MB, not the stock 512K
 
 `Backend`/`replEnvironment` boots XRoar with `-ram 2048`. A 512K machine leaves

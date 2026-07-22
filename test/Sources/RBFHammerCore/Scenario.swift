@@ -132,6 +132,17 @@ public struct WorkerSpec: Equatable, Sendable {
         /// Seeds the 400-byte record for `rmwbig`.
         case seedbig
 
+        /// CREATEs a file in WRITE-only mode and produces records slowly (two
+        /// fast, the rest paced) -- to exercise the write-only Creat lock gate
+        /// that a reader-follows test can observe.
+        case writeonly
+
+        /// Reads a file to EOF counting records, after a brief nap so the
+        /// `writeonly` producer creates it first. On stock RBF it FOLLOWS the
+        /// producer past EOF; with the mode-gate fix it stops. The count is the
+        /// signal.
+        case follow
+
         /// Creates an empty file and exits, provisioning a shared file before
         /// racers start. Two workers both CREATEing one file is itself an
         /// error and would mask the result.
