@@ -297,4 +297,68 @@ final class DestructiveTests: XCTestCase {
                          + "-- the file should be down to a couple of sectors")
         }
     }
+
+    // ── Stale-sector disclosure ──────────────────────────────────────────────────
+
+    /// Growing a file with `SS.Size` must not hand back another file's freed
+    /// contents. Fill a tiny device with a recognisable filler pattern, delete
+    /// it (freeing those clusters with the pattern still physically on the
+    /// media), then create a one-line victim file and `SS.Size`-GROW it into the
+    /// just-freed space. Whatever the grow exposes must read back as zeros, or
+    /// the read must stop at the real allocated end -- it must NEVER surface the
+    /// deleted filler's bytes.
+    ///
+    /// `pRsetsz` (file_rbf.c ~3995) sets the logical size without allocating or
+    /// zeroing, so this probes directly whether a grown region can disclose a
+    /// deleted file.
+    ///
+    /// ★ FINDING (reproduced, CANDIDATE): it CAN. The grown victim reads back
+    /// the deleted filler's `unwritten slot` records verbatim -- a confidentiality
+    /// leak of another file's freed data. Pinned with `XCTExpectFailure` (the
+    /// assertion is the safe invariant, so it fails and is cataloged) rather than
+    /// asserted clean, because this may be faithful to real OS-9 RBF, which does
+    /// not zero space grown via `SS.Size` -- the owner (a firsthand OS-9 author)
+    /// can say whether os9exec should diverge and zero it. Either way the suite
+    /// now records the disclosure. See FAILABILITY.md and the truncate finding
+    /// (same `pRsetsz` block-list mishandling).
+    func testGrowingAFileViaSetSizeDoesNotDiscloseDeletedData() throws {
+        let filler = "/h9/filler.dat", victim = "/h9/victim.dat"
+        // 400 x 64B far exceeds a 16K image, so the create worker fills it to
+        // E_FULL, stamping "unwritten slot" across every cluster. Deleting it
+        // frees them all; the victim's grow can then only draw from that pool.
+        let scenario = Scenario(name: "disclosure",
+                                backend: .rbfImage,
+                                workers: [WorkerSpec(id: 99, role: .create, file: filler, count: 400)],
+                                deviceKB: 16,
+                                midFlight: ["del \(filler)",
+                                            "copy /h5/trunc /h9/trunc",
+                                            "echo VICTIMHDR >\(victim)",
+                                            "/h9/trunc \(victim) 12000",
+                                            "del /h9/trunc",
+                                            "copy \(victim) /h5/victim.dat"])
+        let result = try Adapter68k(repoRoot: Self.repoRoot).run(scenario)
+        dump(result)
+        XCTAssertFalse(result.timedOut, "disclosure run hung:\n\(result.transcript)")
+
+        let victimHost = URL(fileURLWithPath: result.scratchPath)
+            .appendingPathComponent("victim.dat")
+        guard let data = try? Data(contentsOf: victimHost) else {
+            return XCTFail("victim.dat was not produced -- did the grow/copy run?\n"
+                         + result.transcript)
+        }
+        // The filler stamped "unwritten slot" into every cluster it touched. If
+        // any of that survives in the grown victim, the grow disclosed a deleted
+        // file's contents.
+        let bytes = [UInt8](data)
+        let needle = [UInt8]("unwritten slot".utf8)
+        let leaked = bytes.indices.contains { start in
+            start + needle.count <= bytes.count
+                && Array(bytes[start ..< start + needle.count]) == needle
+        }
+        XCTExpectFailure("SS.Size grow discloses a deleted file's data -- confidentiality leak") {
+            XCTAssertFalse(leaked,
+                           "SS.Size grow DISCLOSED deleted filler in the \(data.count)-byte victim "
+                         + "-- a confidentiality leak. Scratch kept at \(result.scratchPath)")
+        }
+    }
 }

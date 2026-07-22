@@ -553,6 +553,28 @@ same rigor is owed here before calling it a bug. Cross-check is harder than the
 delete one: it needs an `SS.Size` path on 6809 (NitrOS-9's shell has no truncate
 either, so a 6809 `trunc` equivalent or a Basic09 `SS.Size` call is required).
 
+### ★★ FINDING (reproduced, CANDIDATE): SS.Size GROW discloses deleted data
+
+The same `pRsetsz` block-list mishandling has a confidentiality face, and the
+hammer reproduces it deterministically (`testGrowingAFileViaSetSizeDoesNotDiscloseDeletedData`,
+68k, 0.4s): **a file grown with `SS.Size` reads back a DELETED file's contents.**
+Fill a 16K image to `E_FULL` with a `create` worker (every cluster stamped
+`---------- unwritten slot`), `del` it (frees the clusters, pattern still on the
+media), `echo VICTIMHDR >victim.dat`, then `trunc victim.dat 12000` (`SS.Size`
+grow). The retrieved victim is 12000 bytes: `VICTIMHDR` followed by the deleted
+filler's `unwritten slot` records, verbatim (~4 copies). The grow neither zeroes
+the new region nor bounds the read to the file's own allocation, so it surfaces
+whatever the reclaimed clusters still held.
+
+Pinned with `XCTExpectFailure` on the safe invariant (no deleted-data bytes in
+the grown file), so the suite CATALOGS the disclosure rather than reporting
+green. Marked CANDIDATE, not confirmed a defect: real OS-9 RBF may not zero
+`SS.Size`-grown space either (see [[nitros9-runb-abort-sssize]] — a stale-sector
+disclosure was already seen on the runb abort `SS.Size` path), so this could be
+OS-9-faithful rather than an os9exec bug. The owner (a firsthand OS-9 author) can
+say whether os9exec should diverge and zero grown space. Either way it is now a
+recorded, reproducible disclosure the suite guards.
+
 Planned injections, one per defect class:
 
 | Injection | Scenario class it must break |
