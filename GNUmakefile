@@ -154,6 +154,13 @@ test: $(EXE)
 test-notick: $(EXE)
 	OS9_FLAGS=-q swift run --package-path test OS9Tests
 
+# Wraps the 68k live-verification corpus (test/68k-live-verification/) into
+# a runnable PASS/FAIL suite -- see docs/superpowers/specs/
+# 2026-07-21-live-verification-suite-design.md. 6809 is deliberately not
+# wired in here (see that design doc's "6809 is deferred" section).
+live-verify: $(EXE)
+	swift run --package-path test LiveVerify
+
 # ── RBF integrity hammer ────────────────────────────────────────────────────
 # A multiprocess stress test aimed at RBF: concurrent writers on shared and
 # separate files, on every backend, verified for BOTH file content and on-disk

@@ -2,7 +2,11 @@
 //  main.swift
 //  LiveVerify
 //
-//  Entry point for the 68k live-verification suite.
+//  Entry point for the 68k live-verification suite: loads
+//  test/live-verification-manifest.json, validates every entry (no
+//  emulator), then runs each and prints PASS/FAIL, matching OS9Tests' own
+//  reporting shape.
+//
 //  Run: swift run --package-path test LiveVerify
 //       make live-verify
 //
@@ -13,5 +17,85 @@
 import Foundation
 import LiveVerifyCore
 
-print("=== LiveVerify (68k) ===")
-print("(no manifest entries yet)")
+let repoRoot = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()  // LiveVerify/
+    .deletingLastPathComponent()  // Sources/
+    .deletingLastPathComponent()  // test/
+    .deletingLastPathComponent()  // repo root
+
+let manifestURL = repoRoot.appendingPathComponent("test/live-verification-manifest.json")
+let corpusDir = repoRoot.appendingPathComponent("test/68k-live-verification")
+
+print("=== LiveVerify (68k) ===\n")
+
+guard let manifestData = try? Data(contentsOf: manifestURL) else {
+    print("FATAL: could not read \(manifestURL.path)")
+    exit(1)
+}
+guard let manifest = try? JSONDecoder().decode(Manifest.self, from: manifestData) else {
+    print("FATAL: could not decode \(manifestURL.path)")
+    exit(1)
+}
+
+var validationFailed = false
+for entry in manifest.entries {
+    do {
+        try validate(entry)
+    } catch {
+        print("MANIFEST ERROR: \(error)")
+        validationFailed = true
+    }
+}
+if validationFailed {
+    print("\nManifest validation failed -- fix the manifest before running any test.")
+    exit(1)
+}
+
+guard let runner = try? OS9Runner(repoRoot: repoRoot) else {
+    print("FATAL: os9exec not found/executable at \(repoRoot.appendingPathComponent("os9exec").path) -- run `make` first")
+    exit(1)
+}
+let soloExecutor = SoloExecutor(runner: runner, corpusDir: corpusDir)
+let choreographyExecutor = ChoreographyExecutor(runner: runner, corpusDir: corpusDir)
+
+let filter = CommandLine.arguments.dropFirst().first ?? ""
+var passed = 0
+var failed = 0
+
+for entry in manifest.entries {
+    guard filter.isEmpty || entry.id.localizedCaseInsensitiveContains(filter) else { continue }
+
+    let scratchDir = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("liveverify-\(entry.id)-\(ProcessInfo.processInfo.processIdentifier)")
+    try? FileManager.default.createDirectory(at: scratchDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: scratchDir) }
+
+    let result: ExecutionResult
+    switch entry.category {
+    case .solo:
+        result = soloExecutor.run(entry, scratchDir: scratchDir, timeout: 60)
+    case .choreography:
+        result = choreographyExecutor.run(entry, scratchDir: scratchDir, timeout: 60)
+    }
+
+    switch result {
+    case .pass:
+        print("PASS: \(entry.id)")
+        passed += 1
+    case .fail(let preview):
+        print("FAIL: \(entry.id)")
+        print("      [\(entry.notes)]")
+        print("      output: \(preview)")
+        failed += 1
+    case .buildFailed(let preview):
+        print("BUILD FAILED: \(entry.id)")
+        print("      output: \(preview)")
+        failed += 1
+    case .timedOut:
+        print("TIMEOUT: \(entry.id)")
+        failed += 1
+    }
+}
+
+print("\n\(passed) passed, \(failed) failed")
+exit(failed == 0 ? 0 : 1)
