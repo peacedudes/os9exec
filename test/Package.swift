@@ -52,7 +52,8 @@ let package = Package(
         .testTarget(
             name: "LiveVerifyCoreTests",
             dependencies: ["LiveVerifyCore"],
-            path: "Tests/LiveVerifyCoreTests"
+            path: "Tests/LiveVerifyCoreTests",
+            resources: [.copy("Fixtures")]
         )
     ]
 )

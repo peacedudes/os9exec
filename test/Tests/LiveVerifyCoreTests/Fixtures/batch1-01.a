@@ -1,0 +1,184 @@
+* Live-tests F$ID($0C), F$Time($15), F$CmpNam($11) against
+* 68k/syscall-reference.md. F$ID's register convention isn't documented
+* here at all (Manual-only, no detail) -- this test's job for that call
+* is to find out, not assume; prints d0/d1/d2 raw after the call.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+FID set $0C
+FTime set $15
+FCmpNam set $11
+IWrite set $8A
+FExit set $06
+*
+ psect batch101,Type_Lang,Attr_Rev,0,800,start
+start
+* --- F$ID() -- register convention unknown, print d0/d1/d2 raw ---
+ trap #0
+ dc.w FID
+ move.l d0,d4          save d0 (candidate PID) across the print calls below
+ move.l d1,d5          save d1 (candidate priority)
+ move.l d2,d6          save d2 (candidate group.user)
+*
+ lea idmsg(pc),a0
+ move.l #idmsglen,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d4,d1
+ bsr printnum
+ lea spacemsg(pc),a0
+ moveq #1,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d5,d1
+ bsr printnum
+ lea spacemsg(pc),a0
+ moveq #1,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d6,d1
+ bsr printnum
+*
+* --- F$Time(d0.w=mode 0=gregorian) -> d0.l=time,d1.l=date,d2.w=dow ---
+ clr.l d0
+ trap #0
+ dc.w FTime
+ bcc timeok
+ move.l d1,d7
+ lea timefailmsg(pc),a0
+ move.l #timefaillen,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d7,d1
+ bsr printnum
+ bra cmptest
+timeok
+ move.l d0,d5      save packed date/time before printnum clobbers d0-d3
+ move.l d1,d6
+ lea timepassmsg(pc),a0
+ move.l #timepasslen,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d5,d1
+ bsr printnum
+ lea spacemsg(pc),a0
+ moveq #1,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+ move.l d6,d1
+ bsr printnum
+*
+* --- F$CmpNam(d1.w=length,(a0)=pattern,(a1)=target) -- documented, confirm live ---
+cmptest
+ lea str1(pc),a0
+ lea str3(pc),a1
+ moveq #4,d1
+ trap #0
+ dc.w FCmpNam
+ bcs cmpmismatch1
+ lea cm1passmsg(pc),a0
+ move.l #cm1passlen,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+ bra cmp2
+cmpmismatch1
+ lea cm1failmsg(pc),a0
+ move.l #cm1faillen,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+cmp2
+ lea str1(pc),a0
+ lea str2(pc),a1
+ moveq #4,d1
+ trap #0
+ dc.w FCmpNam
+ bcc cmpmatch2
+ lea cm2passmsg(pc),a0
+ move.l #cm2passlen,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+ bra done
+cmpmatch2
+ lea cm2failmsg(pc),a0
+ move.l #cm2faillen,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+* printnum: d1.l = unsigned value to print as decimal, followed by CR+LF.
+printnum
+ sub.l #16,a7
+ movea.l a7,a1
+ adda.l #16,a1
+ move.l d1,d2
+ moveq #0,d3
+ tst.l d2
+ bne.s pn_loop
+ move.b #'0',-(a1)
+ moveq #1,d3
+ bra.s pn_output
+pn_loop
+ tst.l d2
+ beq.s pn_output
+ divu.w #10,d2
+ move.w d2,d0
+ swap d2
+ move.b d2,d1
+ add.b #'0',d1
+ move.b d1,-(a1)
+ addq.w #1,d3
+ clr.l d2
+ move.w d0,d2
+ bra.s pn_loop
+pn_output
+ movea.l a1,a0
+ move.l d3,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+ add.l #16,a7
+ lea crbyte(pc),a0
+ moveq #2,d1
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+tbuf dc.b 0,0,0,0,0,0
+str1 dc.b "test",0   plain NUL terminator, matches fcalls.c OS9_F_CmpNam
+str2 dc.b "othr",0   likewise
+str3 dc.b "test",0   separate memory, identical content to str1
+idmsg dc.b "F$ID raw d0/d1/d2: "
+idmsglen equ *-idmsg
+spacemsg dc.b " "
+timepassmsg dc.b "PASS F$Time year-byte="
+timepasslen equ *-timepassmsg
+timefailmsg dc.b "FAIL F$Time err="
+timefaillen equ *-timefailmsg
+cm1passmsg dc.b "PASS F$CmpNam identical strings match",13,10
+cm1passlen equ *-cm1passmsg
+cm1failmsg dc.b "FAIL F$CmpNam identical strings did not match",13,10
+cm1faillen equ *-cm1failmsg
+cm2passmsg dc.b "PASS F$CmpNam different strings correctly differ",13,10
+cm2passlen equ *-cm2passmsg
+cm2failmsg dc.b "FAIL F$CmpNam different strings matched",13,10
+cm2faillen equ *-cm2failmsg
+crbyte dc.b 13,10
+ ends
