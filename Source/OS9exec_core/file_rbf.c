@@ -1469,7 +1469,12 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
       && ustrcmp( p,"RBF" )==0 ) {
         p= (char*)mod + os9_word(mod->_mpdev);
         if (ustrcmp( p,"ram" )==0) {
-                dev->totScts= GET_OS9W((byte*)(&mod->_mdtype + PD_SCT), 0);
+                /* &mod->_mdtype is a pointer TO THE 128-byte ARRAY, so
+                 * "+ PD_SCT" was advancing by PD_SCT*128 bytes, not
+                 * PD_SCT -- mod->_mdtype decays to a plain byte pointer
+                 * and gives the intended byte offset, matching GET_OS9W's
+                 * own (buf, off) idiom used throughout this function. */
+                dev->totScts= GET_OS9W( mod->_mdtype, PD_SCT );
         } // if
     } // if
 
