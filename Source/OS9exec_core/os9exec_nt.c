@@ -1010,24 +1010,42 @@ void get_hw()
     char    acc   [OS9PATHLEN];
     char    sv    [OS9PATHLEN];
     char    result[OS9PATHLEN];
+    char*   p;
     struct  stat info;
 
-    #ifdef MINGW
-      /* The inode-walk below (DirName matching d_ino/st_ino) needs real,
-       * unique inode numbers -- mingw-w64's dirent/stat emulation over the
-       * Win32 filesystem APIs doesn't provide those, so the very first walk
-       * iteration fails to match anything and this returns an empty string.
-       * Confirmed live: on real Windows (not Wine -- whose stat() emulation
-       * is closer to genuine POSIX and doesn't hit this) an empty startPath
-       * feeds egetenv()'s unbounded backward PATHDELIM scan, which walks off
-       * the buffer and crashes (0xC0000005) on the very first OS9DISK lookup.
-       * Ask Windows directly instead and normalize to this codebase's
-       * '/'-only path convention (same reasoning as the realpath() shim
-       * above -- PATHDELIM is '/' everywhere, even under MINGW). */
-      char* p;
+    /* Ask the OS first. The inode walk below reconstructs the cwd by climbing
+     * ".." and matching each child's stat() st_ino against the parent's dirent
+     * d_ino -- which silently breaks wherever those two numbers legitimately
+     * differ for the same name:
+     *
+     *   - a MOUNT POINT. stat() reports the root inode of the mounted volume,
+     *     the parent's dirent reports the mountpoint stub on the parent volume.
+     *     No entry matches, so the component becomes "?" (see DirName). Live on
+     *     macOS: cwd /System/Volumes/Data yielded startPath "/System/Volumes/?"
+     *     and "mount -k: can't create directory '/System/Volumes/?/h9'". Same
+     *     failure hits a Docker bind mount, which is what blocks sound
+     *     container test coverage.
+     *   - a macOS FIRMLINK, e.g. /private. Same mismatch; the __MACH__ salvage
+     *     pass below then terminated the walk early, so cwd /private/tmp/x came
+     *     back as "/tmp/x" -- a component silently dropped, correct only by the
+     *     luck of /tmp being a symlink to private/tmp.
+     *
+     * getcwd() is the POSIX answer to exactly this question and is mount- and
+     * firmlink-aware. MINGW already had to do this (its dirent/stat emulation
+     * has no real inodes, so the walk returned "" and egetenv()'s unbounded
+     * backward PATHDELIM scan then crashed on the first OS9DISK lookup); the
+     * same call is simply right everywhere. Backslash normalization stays for
+     * MINGW -- PATHDELIM is '/' throughout this codebase, even on Windows.
+     *
+     * The walk is kept as a fallback: getcwd() can fail (cwd unlinked, or a
+     * path longer than the buffer), and its old answer beats no answer. */
+    if (getcwd( pathname,OS9PATHLEN )!=NULL) {
+      for (p= pathname; *p; p++) if (*p=='\\') *p= '/';
+      return;
+    } // if
 
-      if (getcwd( pathname,OS9PATHLEN )==NULL) strcpy( pathname,"" );
-      else for (p= pathname; *p; p++) if (*p=='\\') *p= '/';
+    #ifdef MINGW
+      strcpy( pathname,"" ); /* no inodes to walk -- see above */
       return;
     #endif
 
