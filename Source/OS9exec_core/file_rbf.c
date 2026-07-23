@@ -1293,6 +1293,14 @@ static Boolean ParseDiskSize( const char* s, uint32_t* sizeKBOut )
         default  : return false;
     } // switch
 
+    /* A bare number is BYTES, so anything under 1K divides down to 0 kBytes --
+     * and 0 is the caller's sentinel for "make a host directory instead of an
+     * image". Without this guard the two meanings collide silently: `mount
+     * -k=32` asked for a 32-byte image and got a DIRECTORY named h9 (verified
+     * before this guard existed). Only a literal 0 may reach that sentinel;
+     * a nonzero size too small to round to even 1K is a malformed request. */
+    if (val!=0 && val<KByte) return false;
+
     *sizeKBOut= (uint32_t)(val / KByte);
     return true;
 } /* ParseDiskSize */
@@ -2046,7 +2054,8 @@ os9err int_mount( ushort pid, int argc, char** argv )
                            } // if
 
                            if (!ParseDiskSize( p,&blankSizeKB )) {
-                             upe_printf( "mount: error - invalid size '%s'\n",p );
+                             upe_printf( "mount: error - invalid size '%s' -- a bare number is "
+                                         "bytes (use 32k/8m/1g); 0 makes a host directory\n",p );
                              return 1;
                            } // if
                            blankImage= true;
