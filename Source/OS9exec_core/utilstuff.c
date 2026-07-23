@@ -1823,22 +1823,23 @@ uint32_t DirSize( syspath_typ* spP )
 {
     int         cnt= 0;
     dirent_typ* dEnt;
-    
-    #ifdef linux
-      int sv= telldir( spP->dDsc );
-    #endif
-    
+
     seekD0( spP );       /* start at the beginning */
     while (true) {       /* search for the nth entry */
-            dEnt= ReadTDir( spP->dDsc ); 
+            dEnt= ReadTDir( spP->dDsc );
         if (dEnt==NULL) break;
         if (ustrcmp( dEnt->d_name,AppDo )!=0) cnt++; /* ignore ".AppleDouble" */
     } /* loop */
 
-    #ifdef linux
-      seekdir( spP->dDsc,sv );
-    #endif
-    
+    /* This walk left the host stream at EOF on every platform (rewinddir()+
+     * readdir()-to-NULL, no telldir()/seekdir() restore -- mingw's dirent
+     * doesn't support those reliably anyway). DirNthEntry's sequential-read
+     * cache (svD_n/svD_dEnt) doesn't know that, so invalidate it the same
+     * way pDopen/pDseek already do: the next DirNthEntry call sees i==0 and
+     * reseeks from scratch instead of trusting a stale "just keep reading"
+     * position. */
+    spP->svD_n= 0;
+
                                       /* avoid also 1 entry !!! */
     if    (cnt<2) cnt= 2; /* at least two entries are there !!! */
     return cnt*DIRENTRYSZ;
