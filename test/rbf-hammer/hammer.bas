@@ -329,6 +329,23 @@ ELSE
     CLOSE #path
     PRINT #2, "hammer: worker "; worker; " wrote "; total
   ELSE
+  IF role = "updproducer" THEN
+    ! The UPDATE-mode control for the write-only follow test: identical pacing,
+    ! but opened UPDATE, so it legitimately holds the eof lock and a follower
+    ! SHOULD trail it. Comparing this against `writeonly` separates "os9exec
+    ! correctly gives write-only no lock" from "os9exec's reader never follows".
+    CREATE #path, fname: UPDATE
+    FOR index = 1 TO total
+      line = "W" + RIGHT$("00" + STR$(worker), 2)
+      line = line + " R" + RIGHT$("00000" + STR$(index), 5) + LEFT$(pad + pad, 54)
+      PRINT #path, line
+      IF index >= 2 THEN
+        RUN hnap(napmode, napcount)
+      ENDIF
+    NEXT index
+    CLOSE #path
+    PRINT #2, "hammer: worker "; worker; " wrote "; total
+  ELSE
   IF role = "follow" THEN
     ! Follower for the write-only producer. Nap briefly so the producer creates
     ! the file first, then read to EOF counting records. On stock the producer's
@@ -447,6 +464,7 @@ ELSE
     PRINT #2, "hammer: worker "; worker; " dirstorm done "; total
   ELSE
     PRINT #2, "hammer: worker "; worker; " FAIL unknown role "; role
+  ENDIF
   ENDIF
   ENDIF
   ENDIF

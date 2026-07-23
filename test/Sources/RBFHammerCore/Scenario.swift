@@ -167,6 +167,11 @@ public struct WorkerSpec: Equatable, Sendable {
         /// allocation bitmap under concurrent workers.
         case dirstorm
 
+        /// The update-mode control for `writeonly`/`follow`: a slow producer that
+        /// opens the file for UPDATE, so it legitimately holds the eof lock and a
+        /// follower should trail it.
+        case updproducer
+
         /// Creates an empty file and exits, provisioning a shared file before
         /// racers start. Two workers both CREATEing one file is itself an
         /// error and would mask the result.
