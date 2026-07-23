@@ -2000,11 +2000,12 @@ os9err OS9_F_Wait( regs_type *rp, ushort cpid )
 
 os9err OS9_F_Sleep( regs_type *rp, ushort cpid )
 /* F$Sleep
- * Input:   none
- * Output:  d0.w=terminating child process' ID
- *          d1.w=exit code of terminating child
- *
- * Notes: - Acts as dummy counterpart to F$Fork if dummyfork is non-zero.
+ * Input:   d0.l=ticks (0=indefinite until signaled, 1=no-op/return
+ *          immediately, negative=fractional 1/256-sec units, positive=
+ *          raw tick count)
+ * Output:  d0.l=remaining ticks if woken prematurely by a signal, 0 if
+ *          the sleep ran its full course (set in send_signal()/
+ *          do_arbitrate(), not here -- this call only arms the sleep)
  */
 {
   process_typ* cp= &procs[ cpid ];

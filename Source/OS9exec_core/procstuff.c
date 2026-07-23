@@ -743,7 +743,11 @@ os9err send_signal( ushort spid, ushort signal )
 //   !sigp->isIntUtil) {
     debugprintf(dbgProcess,dbgNorm,("# send_signal: waking pid=%d from sleep\n",spid));
     set_os9_state( spid, pActive, "send_signal" );
-    sigp->os9regs.d[0]= 0;      /* %%% return # of remaining ticks! */
+    /* F$Sleep's documented output: remaining ticks if woken prematurely
+     * (68k Technical Manual / 6809 SPM). Clamped >=0 since a wake can
+     * race the normal-expiry check in do_arbitrate(). */
+    sigp->os9regs.d[0]= (sigp->wakeUpTick>GetSystemTick())
+                           ? sigp->wakeUpTick-GetSystemTick() : 0;
     sigp->os9regs.sr &= ~CARRY; /* error-free return */
     
     if (!sigp->isIntUtil) {
