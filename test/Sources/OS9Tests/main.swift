@@ -671,6 +671,39 @@ run("rbf: mount -k image is dir/free/dcheck clean",
 // does not), and `mount -k` would otherwise be handed a file that already exists.
 try? FileManager.default.removeItem(atPath: scratchHostPath)
 
+// `mount -k` names its image "<startPath>/<dev>" and prints that name, which is
+// the only place the emulator's computed startPath is observable from outside.
+// StartDir used to rebuild the cwd by climbing ".." and matching each child's
+// stat() st_ino against the parent's dirent d_ino -- two numbers that legitimately
+// differ for the same name at a MOUNT POINT (component came back "?", so
+// "mount -k: can't create '/System/Volumes/?/h9'") and at a macOS FIRMLINK
+// (component silently dropped: cwd /private/var/... came back as /var/...).
+//
+// The firmlink case is why nothing here ever caught it -- /var is a symlink to
+// private/var, so the mangled path still resolved and every test passed. Hence
+// the assertion is on the PHYSICALLY resolved path, which is what distinguishes
+// the two. Honest limits: this fails on the old code only where the temp dir sits
+// behind a symlink/firmlink (true on macOS, where NSTemporaryDirectory is
+// /var/folders/...); on a Linux /tmp it passes either way, so treat it as a macOS
+// guard. It is skipped under a container, where cwd is the image's WORKDIR
+// rather than the host scratch dir.
+if !containerized {
+    // POSIX realpath(), not URL.resolvingSymlinksInPath() -- Foundation
+    // deliberately keeps the /var form rather than resolving to /private/var,
+    // which is precisely the component in question here.
+    let resolvedScratch: String = {
+        guard let r = realpath(scratchDisk, nil) else { return scratchDisk }
+        defer { free(r) }
+        return String(cString: r)
+    }()
+    run("rbf: mount -k names its image by the physically resolved cwd",
+        expectation: "created '\(resolvedScratch)/\(scratchDevice)'",
+        commands: ["mount -k=500K \(scratchDevice)"]) {
+            $0.contains("created '\(resolvedScratch)/\(scratchDevice)'")
+        }
+    try? FileManager.default.removeItem(atPath: scratchHostPath)
+}
+
 // Mounts its own image (self-contained, so a container's throwaway filesystem is
 // fine), and asserts on the DUMPED BYTES of the copied file ("dsav" = 6473 6176)
 // rather than on the name "f1": the shell echoes every command line back, so
