@@ -8,7 +8,7 @@ file is what you need to be useful in the first five minutes.
 
 ```sh
 make                      # build ./os9exec (warning-clean, or it is a bug)
-make test                 # the integration suite -- expect 132/0, ~1 min
+make test                 # the integration suite -- expect 148/0, ~1 min
 OS9DISK=$PWD/h0 ./os9exec shell     # a live OS-9 shell
 ```
 
