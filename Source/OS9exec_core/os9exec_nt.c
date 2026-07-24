@@ -407,6 +407,10 @@
 #include <signal.h>
 #include "os9exec_incl.h"
 
+#ifdef linux
+  #include <sys/utsname.h>  /* uname() -- real host arch for get_hw() */
+#endif
+
 #ifdef MINGW
   #include <windows.h>  /* SetConsoleCtrlHandler, CTRL_C_EVENT, BOOL/DWORD */
 #endif
@@ -993,8 +997,28 @@ void get_hw()
 
   #elif defined linux
     hw_site= "PC";
-	hw_name= "Linux - PC";   platform= "x86";
-       
+    {
+      /* hw_name is strcpy'd into the "init" module's reserved slot
+       * (adapt_init(), modstuff.c) -- offset 0x84 up to sw_name's offset
+       * 0x95, i.e. 17 bytes including the NUL (confirmed against the
+       * built-in Init_mod template: "Apple Macintosh\0" already uses all
+       * 17, "PowerMac CW Mach\0" uses exactly 17 elsewhere in this same
+       * function). uname()'s output isn't bounded by anything we
+       * control, so truncate defensively -- don't just trust it to fit
+       * the way a hardcoded literal always did. */
+      static struct utsname un;
+      static char           linuxHwName[24];
+      if (uname( &un )==0) {
+        snprintf( linuxHwName, sizeof(linuxHwName), "Linux - %s", un.machine );
+        linuxHwName[16]= '\0'; /* hard-bound to 16 visible chars + NUL */
+        hw_name = linuxHwName;
+        platform= un.machine;  /* real arch, e.g. "aarch64"/"x86_64"/"riscv64"/"s390x" */
+      } else {
+        hw_name = "Linux - PC"; /* uname() failed: fall back to the old literal */
+        platform= "x86";
+      }
+    }
+
   #else
   /* unknown */
     hw_site= "?";
