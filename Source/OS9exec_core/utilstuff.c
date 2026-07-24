@@ -2168,11 +2168,16 @@ Boolean SCSI_Device( const char* os9path,
         /* &mod->_mdtype is a pointer TO THE 128-byte ARRAY, so "+ PD_xxx"
          * was advancing by PD_xxx*128 bytes, not PD_xxx -- mod->_mdtype
          * decays to a plain byte pointer and gives the intended byte
-         * offset. ssize/sas also need the big-endian-on-disk -> host
-         * swap (GET_OS9W, matching this file's own idiom), done once
-         * here so the immediate output params and the scsi[] cache
-         * below (previously inconsistent: raw here, os9_word()'d there)
-         * agree on the same host-order value. */
+         * offset. ssize (PD_SSize, book-tagged "w") needs the
+         * big-endian-on-disk -> host swap (GET_OS9W, matching this
+         * file's own idiom); sas (PD_SAS, book-tagged "b") does NOT --
+         * it's a single byte, and PD_SAS+1 is PD_ILV (sector interleave
+         * factor), a real unrelated field, not padding, so a 2-byte
+         * read there was splicing PD_ILV's byte into the SAS value
+         * instead of adding harmless zero bits. Done once here so the
+         * immediate output params and the scsi[] cache below
+         * (previously inconsistent: raw here, os9_word()'d there) agree
+         * on the same host-order value. */
         id   = mod->_mdtype[PD_CtrlID];
         lun  = mod->_mdtype[PD_LUN];
 
@@ -2182,7 +2187,7 @@ Boolean SCSI_Device( const char* os9path,
         *scsiAdapt= defSCSIAdaptNo; // bus and adaptor come from defaults
         *scsiBus  = defSCSIBusNo;
         ssize     = GET_OS9W( mod->_mdtype, PD_SSize ); *scsiSsize= ssize;
-        sas       = GET_OS9W( mod->_mdtype, PD_SAS   ); *scsiSas  = sas;
+        sas       = mod->_mdtype[PD_SAS];                *scsiSas  = sas;
         pdtyp     = mod->_mdtype[PD_TYP];                *scsiPDTyp= pdtyp;
         
         // find empty scsi entry
@@ -2196,9 +2201,9 @@ Boolean SCSI_Device( const char* os9path,
                 scsi[ ii ].lun   = lun;
                 scsi[ ii ].adapt = defSCSIAdaptNo; // bus and adaptor come from defaults
                 scsi[ ii ].bus   = defSCSIBusNo;
-                // - params (ssize/sas are already host-order -- swapped
-                // once above via GET_OS9W; os9_word() here would swap
-                // them a second time)
+                // - params (ssize is already host-order -- swapped once
+                // above via GET_OS9W; os9_word() here would swap it a
+                // second time. sas is a single byte, no swap applies.)
                 scsi[ ii ].ssize= ssize;
                 scsi[ ii ].sas  = sas;
                 scsi[ ii ].pdtyp= pdtyp;
