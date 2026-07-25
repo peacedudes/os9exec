@@ -1538,8 +1538,18 @@ os9err syspath_write( ushort pid,ushort spnum, uint32_t *len, void* buffer, Bool
     if (!err) os9_long_inc( &pd->_wbytes, *len ); /* for statistics*/
     if (!err && debugcheck(dbgSysCall,dbgDetail)) showbuff( spP, buffer,*len );
         
-    debugprintf(dbgFiles,dbgDeep,("# syspath_write: pid=%d, type=%d, writeln=%d, written=%u, err=%d\n",
-                                     pid,spP->type,wrln,*len,err));
+    /* Must honour in_recursion: this very line is emitted through upe_printf ->
+     * usrpath_puts -> syspath_write, so tracing an emulator-internal write
+     * re-enters here and traces itself, forever -- 5807 identical lines and
+     * then a stack-overflow SIGSEGV, which is what `-d2 0x0200` used to do to
+     * any session. usrpath_puts raises the flag before it writes, so checking
+     * it breaks the loop at depth 1 while still tracing genuine guest writes
+     * (those reach usrpath_write directly and never set the flag). Same idiom
+     * as get_syspathd() and showbuff() above, which were already guarded --
+     * this was the one emission in the write path that was not. */
+    if (!in_recursion)
+      debugprintf(dbgFiles,dbgDeep,("# syspath_write: pid=%d, type=%d, writeln=%d, written=%u, err=%d\n",
+                                       pid,spP->type,wrln,*len,err));
     return err;
 } /* syspath_write */
 
