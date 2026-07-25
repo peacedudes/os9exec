@@ -933,10 +933,29 @@ do {
     // on a Docker bind mount, which fakes ownership to match whatever uid asks
     // and ignores the mode outright (measured 2026-07-25; project memory
     // docker-macos-bindmount-ignores-permissions).
+    // Every bit cleared reads back as every bit cleared. This asserted
+    // "--e--e--" until 2026-07-25, which was the old forced-execute mapping
+    // showing through: `e` was the one attribute a host mount could not
+    // round-trip, so the test was documenting the bug.
     check("fs: attr — host-native device round-trips cleared attributes",
-        contains: "--e--e--",
+        contains: "--------",
         "mount -k=0 hb", "chd /hb", "echo abc >f",
         "attr f -nr -nw -ne -npr -npw -npe", "attr f")
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
+
+    // The execute bit specifically: a freshly created data file must NOT claim
+    // to be executable, and an `e` granted afterwards must survive being read
+    // back. Both host reads were forced to report `e` until 2026-07-25, so this
+    // fails outright on the old mapping -- which is the point of asserting the
+    // two states in one run rather than just the final one.
+    check("fs: attr — host-native execute bit is real, not forced on",
+        contains: "------wr",
+        "mount -k=0 hb", "chd /hb", "echo abc >f", "attr f")
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
+
+    check("fs: attr — host-native execute bit survives a set/read round-trip",
+        contains: "-----ewr",
+        "mount -k=0 hb", "chd /hb", "echo abc >f", "attr f -e", "attr f")
     try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
 
     check("fs: attr — host-native: attr still reaches a file whose bits it cleared",

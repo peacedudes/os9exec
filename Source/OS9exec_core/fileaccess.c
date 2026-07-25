@@ -1149,6 +1149,7 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
     Boolean   isW   = IsWrite(*modeP);
     Boolean   exedir= IsExec (*modeP);
     Boolean   cre   = IsCrea (*modeP);
+    Boolean   newlyCreated= false; /* a file this call brought into existence */
     file_typ* f= &spP->u.disk.u.file;
     char*     p;
     char*     pp;
@@ -1281,6 +1282,7 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
               #endif
               stream= fopen( pp,"wb+" ); /* create for update, use binary mode (bfo) ! */
               if (stream==NULL) return c2os9err(errno,E_FNA); /* default: file not accessible in this mode */
+              newlyCreated= true; /* so I$Create's requested attributes get applied below */
           }
       }
       else {
@@ -1341,6 +1343,16 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
       #ifdef win_unix
                 spP->dDsc= NULL; /* this is not a directory */
         strcpy( spP->fullName, pp );
+
+        /* I$Create's d1.b attribute byte used to be discarded here: every
+         * host-native file came out at the C library's default mode whatever
+         * was asked for. It is applied through the same Set_FileAttr() the
+         * `attr` command uses, so create and set agree by construction.
+         * Only for a file this call actually created -- OS-9's I$Create on an
+         * EXISTING file opens it without truncating, and must not silently
+         * re-permission someone else's file. Needs fullName, which is why it
+         * sits here rather than beside the fopen() above. */
+        if (newlyCreated) Set_FileAttr( spP, (byte)procs[pid].fileAtt );
       #endif
     #endif
     
@@ -2047,17 +2059,25 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
               *att|= 0x20;     /* always — if (v & S_IXOTH) was here */
             }
           #else
+            /* A real host mode: read every bit back, execute included, so an
+             * attribute set through Set_FileAttr round-trips. The execute bits
+             * used to be forced on here, which made `e` the one attribute that
+             * could not survive a write/read pair, and left no way for an OS-9
+             * program to tell a data file from a program on a host mount. */
             if (v & S_IRUSR)    *att|= poRead;
             if (v & S_IWUSR)    *att|= poWrite;
-            *att|= poExec; /* always — if (v & S_IXUSR) was here */
+            if (v & S_IXUSR)    *att|= poExec;
 
             if (v & S_IROTH)    *att|= 0x08;
             if (v & S_IWOTH)    *att|= 0x10;
-            *att|= 0x20;       /* always — if (v & S_IXOTH) was here */
+            if (v & S_IXOTH)    *att|= 0x20;
           #endif
 
           #ifdef windows32
-            *att|= 0x03; /* workaround because currently not visible */
+            /* Windows has no execute bit, and no owner/public read distinction
+             * to preserve, so those attributes stay forced on there. Unlike the
+             * UNIX branch above this is a platform limit, not a workaround. */
+            *att|= 0x03 | poExec | 0x20;
           #endif
 
           isFolder= IsTrDir(v);
