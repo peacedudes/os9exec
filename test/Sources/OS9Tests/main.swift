@@ -136,11 +136,8 @@ func killContainer(_ name: String) {
     kill.waitUntilExit()
 }
 
-/// Run commands, optionally under conditions where HOST file permissions are
-/// genuinely enforced (`unprivileged`) — see the container branch below for why
-/// that needs more than a uid change.
 func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bool = false,
-         disk: String = diskPath, unprivileged: Bool = false) -> String {
+         disk: String = diskPath) -> String {
     let setup  = "chx \(sdkCmds)\nload math cio\n"
     let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
 
@@ -204,21 +201,6 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
     //    on the emulator refusing to escape -- the exact false-pass shape this
     //    suite has already been bitten by. Both were confirmed load-bearing by
     //    making the secret reachable and watching the assertions fail.
-    //
-    // `unprivileged` is for the tests that assert the HOST refused something.
-    // A container runs as root, where a cleared permission bit means nothing --
-    // but `--user` alone does NOT fix it, which is the trap here. Measured on
-    // macOS Docker Desktop 2026-07-25: on a BIND MOUNT, `chmod 000` is recorded
-    // (stat reports 0) and then ignored -- the file reads back fine, and its
-    // owner is reported as whatever uid the container happens to run as, root
-    // or not. The mount fakes ownership to match the caller, so no uid can ever
-    // be refused. Both halves are therefore required: a non-root uid AND a cwd
-    // on the container's OWN filesystem, where Linux permission semantics are
-    // real. Any non-root uid does, precisely because nothing here touches a
-    // bind mount; 1000 is the image's `ubuntu`, so it has a passwd entry.
-    // These tests are single-invocation, so losing the shared scratch cwd
-    // (which exists for `mount -k` images to survive between containers) costs
-    // them nothing.
     let containerRunArgs = [
         "--rm",
         "-i",
@@ -228,9 +210,9 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
         "-v", canaryHost + ":/" + canaryName,
         "-v", canaryHost + ":" + canaryHost,
         "-v", scratchDisk + ":" + scratch,
-        "-w", unprivileged ? "/tmp" : scratch,
+        "-w", scratch,
         "-e", "OS9H\(scratchDev.dropFirst())=" + scratch,
-    ] + (unprivileged ? ["--user", "1000:1000"] : [])
+    ]
 
     if let image = dockerImage {
         // Run via Docker: mount local dd directory and pipe stdin/stdout
@@ -302,10 +284,9 @@ var failed = 0
 let filter = CommandLine.arguments.dropFirst().first ?? ""
 
 func run(_ name: String, expectation: String, commands: [String], disk: String = diskPath,
-         timeout: TimeInterval = defaultTimeout, unprivileged: Bool = false,
-         check: (String) -> Bool) {
+         timeout: TimeInterval = defaultTimeout, check: (String) -> Bool) {
     guard filter.isEmpty || name.localizedCaseInsensitiveContains(filter) else { return }
-    let output = os9(commands, timeout: timeout, disk: disk, unprivileged: unprivileged)
+    let output = os9(commands, timeout: timeout, disk: disk)
     if check(output) {
         print("PASS: \(name)")
         passed += 1
@@ -335,12 +316,6 @@ func check(_ name: String, contains pattern: String, disk: String, _ commands: S
     run(name, expectation: "contains: \(pattern)", commands: commands, disk: disk) {
         $0.contains(pattern)
     }
-}
-
-/// Like `check(_:contains:_:)`, but run where host permission denials are real.
-func check(_ name: String, contains pattern: String, unprivileged: Bool, _ commands: String...) {
-    run(name, expectation: "contains: \(pattern)", commands: commands,
-        unprivileged: unprivileged) { $0.contains(pattern) }
 }
 
 func check(_ name: String, absent pattern: String, _ commands: String...) {
@@ -946,25 +921,26 @@ do {
     try? FileManager.default.removeItem(atPath: fsHostDir)
     // canaryHost is removed in the epilogue, not here -- see the note there.
 
-    // ---- host-native devices: real host permissions, best-effort per platform ----
-    // attr's own F$Open requests neither read nor write (mode==0 -- it only
-    // needs a path number for the GetStat/SetStat that follows), so a real
-    // host read/write denial on the file's content must not block it, or
-    // attr could never be used to restore access once cleared -- mirroring
-    // RBF's has_open_perm(), which only checks the bits an open actually
-    // requests. dump's own open genuinely requests read, so it stays denied
-    // for real until attr grants it back.
-    check("fs: permission — host-native device enforces a real read denial",
-        contains: "Error #", unprivileged: true,
+    // ---- host-native devices: attr round-trip only, NOT permission enforcement ----
+    // A host directory cannot carry OS-9 ownership and attributes faithfully --
+    // that is what an RBF image is for, and the "fs: permission" tests above own
+    // that subject. So this asserts only what a host-native device can honestly
+    // promise: attr sets the bits and reads them back, and clearing every bit
+    // does not cost attr its own access (its F$Open requests neither read nor
+    // write -- mode==0, it just needs a path number for the GetStat/SetStat --
+    // so it can always grant access back, mirroring RBF's has_open_perm()).
+    // Deliberately no assertion that the HOST refused a read: it is unfalsifiable
+    // on a Docker bind mount, which fakes ownership to match whatever uid asks
+    // and ignores the mode outright (measured 2026-07-25; project memory
+    // docker-macos-bindmount-ignores-permissions).
+    check("fs: attr — host-native device round-trips cleared attributes",
+        contains: "--e--e--",
         "mount -k=0 hb", "chd /hb", "echo abc >f",
-        "attr f -nr -nw -ne -npr -npw -npe", "dump f")
-    // hb/f is left write-denied at the real host level by the check above;
-    // remove it so the next check's "echo abc >f" isn't trying to overwrite
-    // a file it (correctly) no longer has permission to touch.
+        "attr f -nr -nw -ne -npr -npw -npe", "attr f")
     try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
 
-    check("fs: permission — host-native: attr can still restore access it just revoked",
-        contains: "6162 63", unprivileged: true,
+    check("fs: attr — host-native: attr still reaches a file whose bits it cleared",
+        contains: "6162 63",
         "mount -k=0 hb", "chd /hb", "echo abc >f",
         "attr f -nr -nw -ne -npr -npw -npe", "attr f -r -pr", "dump f")
     try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
