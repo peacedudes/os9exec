@@ -86,35 +86,15 @@ for d in CMDS SRC DOCS SCRATCH RESULTS; do
     printf '%s\n' "$listing" | grep -aq "[[:space:]]$d\$" || fail "missing directory $d"
 done
 
-# Every required top-level file is present, lowercase per OS-9 convention.
-for f in readme runall runone rebuild; do
-    printf '%s\n' "$listing" | grep -aq "[[:space:]]$f\$" || fail "missing file $f"
-done
-
 # Nothing on the image is owned by group 0. Microware defines the super user
 # as ANY user in group zero, so a group-0 owner would ship privileged files.
 if printf '%s\n' "$listing" | grep -aqE '^[[:space:]]*0\.'; then
     fail "found group-0 (super user) ownership in root listing"
 fi
 
-# Public read is set on the top-level files, or the disk is unreadable to
-# anyone who is not our build account.
-for f in readme runall; do
-    printf '%s\n' "$listing" | grep -a "[[:space:]]$f\$" | grep -aq '\-\-\-\-r' \
-        || fail "$f lacks public read"
-done
-
-# Text files carry no non-ASCII bytes, and no LF. Extract and check the real
-# bytes -- assembled modules legitimately contain high bytes, so this must be
-# per-file, never a scan of the whole image.
-tmp=$(mktemp -d)
-for f in readme runall runone rebuild; do
-    "$OS9" copy "$IMG,/$f" "$tmp/$f" >/dev/null 2>&1 \
-        || { fail "cannot extract $f"; continue; }
-    LC_ALL=C grep -q $'[\x80-\xff]' "$tmp/$f" && fail "$f contains non-ASCII bytes"
-    LC_ALL=C grep -q $'\n' "$tmp/$f" && fail "$f contains LF -- must be CR-only"
-done
-rm -rf "$tmp"
+## Assertions added in Task 4, once the files they check exist.
+## Until then this script must not assert them: a check for something no task
+## has created yet fails for the wrong reason and teaches you to ignore it.
 
 if [ "$fails" -eq 0 ]; then printf 'VERIFY-OK %s\n' "$IMG"; exit 0; fi
 printf 'VERIFY-FAILED %d assertion(s)\n' "$fails"; exit 1
@@ -186,7 +166,11 @@ If ownership assertions fail, check the `dir -e` output in `build.log`: files cr
 
 - [ ] **Step 6: Prove the assertions can fail**
 
-Temporarily change `ACCT` to a group-0 account (`su`), rebuild, and confirm `verify-image.sh` reports `found group-0 (super user) ownership`. Then revert. A check that has never failed is not evidence — three checks in this codebase turned out to be incapable of failing.
+Build a scratch image with the `login` line omitted from the generated procedure. Everything is then created as `0.0`, and `verify-image.sh` must report `found group-0 (super user) ownership`. Rebuild normally afterwards and confirm the good `1.7` image is restored.
+
+Do **not** try to do this by pointing `ACCT` at the `su` account: its password field in `h0/SYS/password` is not empty, so `login su` inside a procedure file stops for a password prompt and consumes the following line as the answer. Omitting the login is the equivalent falsification and it works non-interactively.
+
+A check that has never failed is not evidence — three checks in this codebase turned out to be incapable of failing.
 
 - [ ] **Step 7: Commit**
 
@@ -454,10 +438,47 @@ A difference between the prebuilt run and the rebuilt run is a finding, so the r
 
 Add a temporary test whose prerequisite is deliberately absent; confirm it emits `SKIP` with a stated reason and that the tally counts it as `SKIP`, **not** `FAIL`. Remove it afterwards.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Extend `verify-image.sh` now that the files exist**
+
+Task 1 deliberately left these out. Add to `tools/selfhost6809/verify-image.sh`:
 
 ```bash
-git add test/6809-conformance/
+# Every required top-level file is present, lowercase per OS-9 convention.
+for f in readme runall runone rebuild; do
+    printf '%s\n' "$listing" | grep -aq "[[:space:]]$f\$" || fail "missing file $f"
+done
+
+# Public read, or the disk is unreadable to anyone but our build account.
+for f in readme runall; do
+    printf '%s\n' "$listing" | grep -a "[[:space:]]$f\$" | grep -aq '\-\-\-\-r' \
+        || fail "$f lacks public read"
+done
+
+# Text files carry no non-ASCII bytes and no LF. Extract and check the real
+# bytes: assembled modules legitimately contain high bytes, so this is
+# per-file, never a scan of the whole image.
+tmp=$(mktemp -d)
+for f in readme runall runone rebuild; do
+    if ! "$OS9" copy "$IMG,/$f" "$tmp/$f" >/dev/null 2>&1; then
+        fail "cannot extract $f"; continue
+    fi
+    # grep exits 0 = found, 1 = not found, >=2 = error. Treat an error as a
+    # failed assertion: `grep ... && fail` alone silently passes on exit 2,
+    # which is a check that cannot fail.
+    LC_ALL=C grep -q $'[\x80-\xff]' "$tmp/$f"
+    case $? in 0) fail "$f contains non-ASCII bytes";; 1) ;; *) fail "cannot scan $f";; esac
+    LC_ALL=C grep -q $'\n' "$tmp/$f"
+    case $? in 0) fail "$f contains LF -- must be CR-only";; 1) ;; *) fail "cannot scan $f";; esac
+done
+rm -rf "$tmp"
+```
+
+Prove each new assertion can fail before believing it: stage a copy of the image with an LF-terminated `readme` and confirm the CR check fires.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add test/6809-conformance/ tools/selfhost6809/verify-image.sh
 git commit -m "Tests: guest-side runner, report and tally for the 6809 suite"
 ```
 
