@@ -113,15 +113,25 @@ printnum
 pn_loop
  tst.l d2
  beq.s pn_output
- divu.w #10,d2
- move.w d2,d0
+* 32-bit divide by 10 in two 16-bit steps. A bare DIVU.W here overflowed
+* for any value >= 655360 (its quotient must fit 16 bits), leaving d2
+* untouched with only V set -- so large values printed as garbage.
+* Splitting high/low words keeps both quotients in range on a plain 68000.
+ move.l d2,d0
+ clr.w d0
+ swap d0
+ divu.w #10,d0
+ move.w d2,d1
+ move.w d0,d2
  swap d2
- move.b d2,d1
+ move.w d1,d0
+ divu.w #10,d0
+ move.w d0,d2
+ swap d0
+ move.b d0,d1
  add.b #'0',d1
  move.b d1,-(a1)
  addq.w #1,d3
- clr.l d2
- move.w d0,d2
  bra.s pn_loop
 pn_output
  movea.l a1,a0
