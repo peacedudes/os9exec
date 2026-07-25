@@ -300,8 +300,11 @@ cmd_start() {
     sync_chan_port || return 1
 
     : > "$SERVER_LOG"
+    # NITROS9REPL_EXTRA_DWCLI passes flags straight to drivewire-cli, e.g.
+    # --disk0 <image> to hand the guest a virtual disk (it appears as /X0..&/X3,
+    # RBF over the rbdw driver), or --rfm-root <dir>. Mirrors the XRoar hook.
     tmux new-session -d -s "$SESSION" -n server -x 220 -y 60 \
-        "'$cli' --tcp-port $BECKER_PORT --verbose 2>&1 | tee '$SERVER_LOG'"
+        "'$cli' --tcp-port $BECKER_PORT --verbose $NITROS9REPL_EXTRA_DWCLI 2>&1 | tee '$SERVER_LOG'"
     printf '[starting drivewire-cli...]\n'
     local i=0
     while [ $i -lt 35 ]; do
