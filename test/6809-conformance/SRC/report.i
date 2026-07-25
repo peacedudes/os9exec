@@ -14,12 +14,20 @@
 * this arithmetic is correct.
 *
 * Data-area offsets (U-relative), fixed here and used unchanged by every
-* test in the suite:
+* test in the suite. OUTBUF is 128 bytes and that size is load-bearing: a
+* result line costs ~39 bytes of fixed overhead before its description
+* even starts ("RESULT tNN VERDICT  obs=00000 exp=00000  "), and the
+* spec's own example lines run to 73 characters. A smaller buffer here
+* would let a normal-length description silently overwrite VALUE, then
+* DIGIT, ERRB and PATHNUM -- a corrupted PATHNUM means a botched
+* I$Close after the line is emitted, on the recipient's machine, long
+* after anyone is watching. Keep OUTBUF at least as long as the longest
+* line the format can produce.
 OUTBUF  equ 0
-VALUE   equ 60
-DIGIT   equ 62
-ERRB    equ 63
-PATHNUM equ 64
+VALUE   equ 128
+DIGIT   equ 130
+ERRB    equ 131
+PATHNUM equ 132
 
 * copys -- copy B bytes from Y to X (both advanced past the copied data).
 copys   lda ,y+
@@ -32,6 +40,9 @@ copys   lda ,y+
 * OUTBUF. Appends a CR, computes the line length as (X after CR) minus
 * (start of OUTBUF), and writes exactly that many bytes to path 1 via
 * I$WritLn. Returns with the call's own carry/register results from swi2.
+* On return X is left at OUTBUF's start (I$WritLn's own calling
+* convention), NOT at the line end -- a caller building another line
+* must re-establish X (e.g. "leax OUTBUF,u") before the next copys/prdec.
 emit    lda #$0D
         sta ,x+              terminate the line with CR
         tfr x,d               D = end address
