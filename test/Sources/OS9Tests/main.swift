@@ -76,6 +76,17 @@ try? FileManager.default.createDirectory(atPath: scratchDisk,
 try? FileManager.default.createSymbolicLink(atPath: scratchDisk + "/h0",
                                             withDestinationPath: diskPath)
 
+// The confinement canary: a file in the device root's HOST PARENT, holding a
+// secret string that must NEVER become readable from inside OS-9 by any path
+// trick (see the "fs: confine" tests). Declared and planted up here, not down
+// beside those tests, because container mode has to MOUNT it -- every os9()
+// invocation builds its mount list, so the path must exist before the first one.
+let canaryName   = "FSCANARY_\(UUID().uuidString.prefix(8))"
+let canaryHost   = URL(fileURLWithPath: diskPath).deletingLastPathComponent()
+                      .appendingPathComponent(canaryName).path
+let canarySecret = "CANARYLEAK_\(UUID().uuidString.prefix(8))"
+try? (canarySecret + "\r").write(toFile: canaryHost, atomically: true, encoding: .utf8)
+
 // Optional container image for testing
 // Docker: DOCKER_IMAGE=os9exec:latest swift run
 // Apple Container: CONTAINER_IMAGE=os9exec:apple swift run
@@ -125,8 +136,11 @@ func killContainer(_ name: String) {
     kill.waitUntilExit()
 }
 
+/// Run commands, optionally under conditions where HOST file permissions are
+/// genuinely enforced (`unprivileged`) — see the container branch below for why
+/// that needs more than a uid change.
 func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bool = false,
-         disk: String = diskPath) -> String {
+         disk: String = diskPath, unprivileged: Bool = false) -> String {
     let setup  = "chx \(sdkCmds)\nload math cio\n"
     let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
 
@@ -170,15 +184,53 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
     // differ at a mount point. Fixed in 5c662ca (getcwd), so this is safe now.
     // Not "/" either, which would collide with the OS-9 device namespace (see
     // the WORKDIR comment in docker/Dockerfile).
+    //
+    // Two further mounts exist so the fs self-tests are not vacuous in a
+    // container. Both were measured, not assumed (2026-07-25):
+    //
+    //  * diskPath at its OWN host path. `/h0` resolves by the DEFAULT rule --
+    //    startPath/h0, i.e. the symlink planted in the scratch dir, which
+    //    points at the host's diskPath. Without this the symlink dangles
+    //    inside the container and `dir /h0` gives E_MNF, so the "/h0 device
+    //    alias" resolution test could never run there. Always diskPath, never
+    //    `disk`: the local symlink points at diskPath whatever /dd is
+    //    overridden to, and /h0 must keep meaning the same thing.
+    //  * the canary at BOTH places an escape could land: the container's "/",
+    //    which is genuinely /dd's parent there (/dd is a literal absolute host
+    //    path when OS9DISK is unset), and its own host path, which is what
+    //    `/h0/..` reaches (since /h0 resolves through the symlink to diskPath).
+    //    Without these the escape spellings name a file that does not exist, so
+    //    a confinement test would PASS on the absence of the target rather than
+    //    on the emulator refusing to escape -- the exact false-pass shape this
+    //    suite has already been bitten by. Both were confirmed load-bearing by
+    //    making the secret reachable and watching the assertions fail.
+    //
+    // `unprivileged` is for the tests that assert the HOST refused something.
+    // A container runs as root, where a cleared permission bit means nothing --
+    // but `--user` alone does NOT fix it, which is the trap here. Measured on
+    // macOS Docker Desktop 2026-07-25: on a BIND MOUNT, `chmod 000` is recorded
+    // (stat reports 0) and then ignored -- the file reads back fine, and its
+    // owner is reported as whatever uid the container happens to run as, root
+    // or not. The mount fakes ownership to match the caller, so no uid can ever
+    // be refused. Both halves are therefore required: a non-root uid AND a cwd
+    // on the container's OWN filesystem, where Linux permission semantics are
+    // real. Any non-root uid does, precisely because nothing here touches a
+    // bind mount; 1000 is the image's `ubuntu`, so it has a passwd entry.
+    // These tests are single-invocation, so losing the shared scratch cwd
+    // (which exists for `mount -k` images to survive between containers) costs
+    // them nothing.
     let containerRunArgs = [
         "--rm",
         "-i",
         "--name", containerName,
         "-v", disk + ":/dd",
+        "-v", diskPath + ":" + diskPath,
+        "-v", canaryHost + ":/" + canaryName,
+        "-v", canaryHost + ":" + canaryHost,
         "-v", scratchDisk + ":" + scratch,
-        "-w", scratch,
+        "-w", unprivileged ? "/tmp" : scratch,
         "-e", "OS9H\(scratchDev.dropFirst())=" + scratch,
-    ]
+    ] + (unprivileged ? ["--user", "1000:1000"] : [])
 
     if let image = dockerImage {
         // Run via Docker: mount local dd directory and pipe stdin/stdout
@@ -250,9 +302,10 @@ var failed = 0
 let filter = CommandLine.arguments.dropFirst().first ?? ""
 
 func run(_ name: String, expectation: String, commands: [String], disk: String = diskPath,
-         timeout: TimeInterval = defaultTimeout, check: (String) -> Bool) {
+         timeout: TimeInterval = defaultTimeout, unprivileged: Bool = false,
+         check: (String) -> Bool) {
     guard filter.isEmpty || name.localizedCaseInsensitiveContains(filter) else { return }
-    let output = os9(commands, timeout: timeout, disk: disk)
+    let output = os9(commands, timeout: timeout, disk: disk, unprivileged: unprivileged)
     if check(output) {
         print("PASS: \(name)")
         passed += 1
@@ -282,6 +335,12 @@ func check(_ name: String, contains pattern: String, disk: String, _ commands: S
     run(name, expectation: "contains: \(pattern)", commands: commands, disk: disk) {
         $0.contains(pattern)
     }
+}
+
+/// Like `check(_:contains:_:)`, but run where host permission denials are real.
+func check(_ name: String, contains pattern: String, unprivileged: Bool, _ commands: String...) {
+    run(name, expectation: "contains: \(pattern)", commands: commands,
+        unprivileged: unprivileged) { $0.contains(pattern) }
 }
 
 func check(_ name: String, absent pattern: String, _ commands: String...) {
@@ -815,9 +874,10 @@ check  ("move: a missing source reports it cannot be found",
 // resolves to the SAME right place, that NO path trick escapes a host-native
 // device root into the host OS (the confinement the emulator must guarantee —
 // see the '..'-past-root regression, git log), and that OS-9 permissions are
-// honored on an RBF image. Local-only: they plant fixtures and a canary on the
-// host beside the device root, which a container's mounted /dd can't express.
-if !containerized {
+// honored on an RBF image. These run in container mode too: the canary is
+// mounted at the container's "/" (which really is /dd's parent there) and the
+// disk at its own host path so the /h0 symlink resolves -- see containerRunArgs.
+do {
     // Per-run name, for the same reason the fixtures moved to /h5: this dir
     // lives inside the SHARED system disk (it must -- these tests assert on the
     // /dd and /h0 spellings themselves, so they cannot move to a scratch
@@ -828,19 +888,19 @@ if !containerized {
     let fsHostDir    = diskPath + "/USR/CLAUDE/fsselftest\(fsRun)"   // under /dd, host-visible
     let fsSubHost    = fsHostDir + "/SUB"
     let marker       = "FSMARK_\(UUID().uuidString.prefix(8))"
-    // the canary lives in the device root's HOST PARENT — it must NEVER be
-    // reachable from inside OS-9 by any path trick.
-    let canaryName   = "FSCANARY_\(UUID().uuidString.prefix(8))"
-    let canaryHost   = URL(fileURLWithPath: diskPath).deletingLastPathComponent()
-                          .appendingPathComponent(canaryName).path
-    let canarySecret = "CANARYLEAK_\(UUID().uuidString.prefix(8))"
+    // The canary itself (in the device root's host parent) is planted up in the
+    // configuration section -- container mode must mount it, which happens
+    // before any test runs. Here we only add the fixtures that live inside the
+    // device.
 
     // provision on the host (deterministic; OS-9 files use CR line endings)
     try? FileManager.default.createDirectory(atPath: fsSubHost, withIntermediateDirectories: true)
     try? (marker + "\r").write(toFile: fsSubHost + "/deep", atomically: true, encoding: .utf8)
-    try? (canarySecret + "\r").write(toFile: canaryHost, atomically: true, encoding: .utf8)
     // a host symlink INSIDE the device pointing OUT at the canary — the realpath
-    // confinement must refuse to follow it out of the device root.
+    // confinement must refuse to follow it out of the device root. The host path
+    // works verbatim in container mode too, because the canary is mounted there
+    // under its own name; a dangling link would make this pass on a broken
+    // symlink rather than on confinement.
     try? FileManager.default.createSymbolicLink(atPath: fsSubHost + "/esclink",
                                                 withDestinationPath: canaryHost)
 
@@ -884,7 +944,7 @@ if !containerized {
     blocked("symlink out of device","esclink")            // realpath confinement must not follow it out
 
     try? FileManager.default.removeItem(atPath: fsHostDir)
-    try? FileManager.default.removeItem(atPath: canaryHost)
+    // canaryHost is removed in the epilogue, not here -- see the note there.
 
     // ---- host-native devices: real host permissions, best-effort per platform ----
     // attr's own F$Open requests neither read nor write (mode==0 -- it only
@@ -895,7 +955,7 @@ if !containerized {
     // requests. dump's own open genuinely requests read, so it stays denied
     // for real until attr grants it back.
     check("fs: permission — host-native device enforces a real read denial",
-        contains: "Error #",
+        contains: "Error #", unprivileged: true,
         "mount -k=0 hb", "chd /hb", "echo abc >f",
         "attr f -nr -nw -ne -npr -npw -npe", "dump f")
     // hb/f is left write-denied at the real host level by the check above;
@@ -904,7 +964,7 @@ if !containerized {
     try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
 
     check("fs: permission — host-native: attr can still restore access it just revoked",
-        contains: "6162 63",
+        contains: "6162 63", unprivileged: true,
         "mount -k=0 hb", "chd /hb", "echo abc >f",
         "attr f -nr -nw -ne -npr -npw -npe", "attr f -r -pr", "dump f")
     try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
@@ -2516,6 +2576,10 @@ do {
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us
+// The canary outlives its own tests: container mode mounts it into EVERY
+// invocation, so removing it when the fs block finished would leave every later
+// test asking docker to mount a path that no longer exists.
+try? FileManager.default.removeItem(atPath: canaryHost)
 
 print("\nResults: \(passed) passed, \(failed) failed")
 exit(failed > 0 ? 1 : 0)
