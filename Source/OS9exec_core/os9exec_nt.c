@@ -1009,8 +1009,17 @@ void get_hw()
       static struct utsname un;
       static char           linuxHwName[24];
       if (uname( &un )==0) {
-        snprintf( linuxHwName, sizeof(linuxHwName), "Linux - %s", un.machine );
-        linuxHwName[16]= '\0'; /* hard-bound to 16 visible chars + NUL */
+        /* "%.8s", not "%s": the prefix is 8 chars and the slot holds 16
+         * visible, so bounding the machine name to 8 IS the 16-char limit --
+         * stated where the compiler can check it instead of by chopping
+         * afterwards. glibc's un.machine is char[65], so a bare "%s" makes
+         * the call provably able to want 73 bytes for a 24-byte buffer and
+         * gcc -Wformat-truncation says so (harmless in fact, since snprintf
+         * truncates and the chop followed, but a warning nonetheless -- and
+         * it went unseen because this leg only builds under Docker). Every
+         * real value fits in 8: x86_64, aarch64, riscv64, s390x. */
+        snprintf( linuxHwName, sizeof(linuxHwName), "Linux - %.8s", un.machine );
+        linuxHwName[16]= '\0'; /* invariant guard: never exceed the slot */
         hw_name = linuxHwName;
         platform= un.machine;  /* real arch, e.g. "aarch64"/"x86_64"/"riscv64"/"s390x" */
       } else {
