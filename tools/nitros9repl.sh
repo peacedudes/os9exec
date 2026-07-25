@@ -5,42 +5,50 @@
 # tmux, one command at a time, seeing only the output produced by that
 # command — the 6809 sibling of tools/os9repl.sh.
 #
-# How it works: drivewire-cli (drpitre/drivewire, branch virtual-serial)
+# How it works: drivewire-cli (drpitre/drivewire, stock upstream main)
 # listens on the becker port; XRoar's CoCo3 connects to it; NitrOS-9's
-# startup runs `shell <>>>/n1&`, whose virtual serial channel the server
-# bridges to a local TCP port. The REPL talks to that port with nc.
+# startup runs `inetd&`, which reads /DD/SYS/inetd.conf and asks the server
+# to `tcp listen 6811`. Connecting to that port makes inetd join the
+# accepted connection to a fresh virtual serial channel and fork a `shell`
+# onto it. The REPL talks to that port with nc.
+#
+# Both halves are stock: NitrOS-9's own inetd/lib/net.as speaks the DriveWire
+# `tcp listen`/`tcp join` command protocol, and upstream DriveWire implements
+# the host side of it. Nothing here needs a patched DriveWire build.
 #
 # Usage:
-#   ./tools/nitros9repl.sh start          boot server + XRoar, wait for the /N1 shell
+#   ./tools/nitros9repl.sh start          boot server + XRoar, wait for the inetd shell
 #   ./tools/nitros9repl.sh send <cmd>     send one command, wait for prompt, print new output
 #   ./tools/nitros9repl.sh key <keys...>  send raw keystrokes (no Enter); special: Enter Space C-x
 #   ./tools/nitros9repl.sh snap [label]   print labeled snapshot of the channel pane
 #   ./tools/nitros9repl.sh peek           print current full channel pane
 #   ./tools/nitros9repl.sh connect        interactive session in YOUR terminal (Ctrl-C to
-#                                          detach; the OS-9 session survives disconnects)
+#                                          detach; that ends the forked shell)
 #   ./tools/nitros9repl.sh server         show the DriveWire server's protocol log pane
 #   ./tools/nitros9repl.sh stop           kill the session (server + XRoar)
 #   ./tools/nitros9repl.sh restart        stop + start
 #
 # Recognised prompt ("ready for next input"):
-#   {N1|NN}path:    the EOU Shell+ prompt on /N1, e.g. {N1|07}/DD:
+#   {N|NN}path:     the EOU Shell+ prompt on the session channel, e.g. {N|07}/DD:
 #
 # Notes:
 #   - OS-9 wants CR line endings; the channel pane runs `stty -icrnl -icanon`
 #     so Enter passes through as a bare CR immediately, and an unbuffered
 #     perl stage converts OS-9's CR-only output to normal lines.
-#   - Neither the guest nor the channel pane echoes input; `send` output
-#     therefore starts at the prompt row the command was typed on.
-#     (`connect` keeps local echo on so humans can see their typing.)
-#   - A disconnected client does not close the guest's shell; reconnecting
-#     resumes the same session (backlogged output is replayed).
-#   - One client per channel: `connect` displaces the scripted pane's nc;
-#     the next `send` recreates it automatically.
-#   - Escape ($1B) is OS-9's default SCF end-of-file character, so the /n1
-#     shell exits normally when it reads one. Nothing respawns it (startup
-#     launches it once), so after an EOF a full `restart` is needed.
-#     `connect` filters Esc/arrow keys so a human can't send EOF by
-#     accident; to send one deliberately, use: key Escape
+#   - inetd turns the guest's echo on (PD.EKO) for the session it forks, so
+#     the guest echoes what you type and the channel pane does not; `send`
+#     output therefore starts at the prompt row, which shows the command.
+#     (`connect` relies on the same guest-side echo.)
+#   - Each TCP connection is its own session: inetd forks a new shell per
+#     accepted connection, so disconnecting ends that shell and reconnecting
+#     starts a fresh one (new pid, cwd back at /DD). Nothing is replayed.
+#   - `connect` displaces the scripted pane's nc; the next `send` reconnects,
+#     which under inetd means a new shell rather than the same one.
+#   - Escape ($1B) is OS-9's default SCF end-of-file character, so the shell
+#     exits normally when it reads one. Under inetd that is recoverable
+#     without a restart: the next `send` opens a new connection and inetd
+#     forks another shell. `connect` still filters Esc/arrow keys so a human
+#     can't send EOF by accident; to send one deliberately, use: key Escape
 #
 # Copyright notice (disk image content):
 #   Anything observable through this REPL depends on what is in your disk
@@ -60,7 +68,9 @@ TIMEOUT=${NITROS9REPL_TIMEOUT:-20}      # seconds per command
 BOOT_TIMEOUT=${NITROS9REPL_BOOT_TIMEOUT:-120}
 KEY_DELAY=${NITROS9REPL_KEY_DELAY:-0.3}
 BECKER_PORT=${NITROS9REPL_BECKER_PORT:-65504}
-CHAN_PORT=${NITROS9REPL_CHAN_PORT:-6811}   # /N1 = wire channel 1 = base 6810 + 1
+# Port the guest's inetd asks the DriveWire host to listen on. Must match the
+# first field of the active line in the disk's /DD/SYS/inetd.conf.
+CHAN_PORT=${NITROS9REPL_CHAN_PORT:-6811}
 
 # drivewire-cli binary: env override, else newest Debug build in DerivedData.
 find_cli() {
@@ -82,8 +92,9 @@ pane() {
 at_prompt() {
     local last
     last=$(pane | grep -v '^[[:space:]]*$' | tail -1 | sed 's/[[:space:]]*$//')
-    # EOU Shell+ prompt: {N1|07}/DD:  (pid and current dir vary)
-    printf '%s' "$last" | grep -qE '^\{N1\|[0-9A-Fa-f]+\}[^ ]*:$'
+    # EOU Shell+ prompt: {N|07}/DD:  (device, pid and current dir all vary --
+    # inetd opens /N and the multiplexer hands out whichever channel is free)
+    printf '%s' "$last" | grep -qE '^\{N[0-9]*\|[0-9A-Fa-f]+\}[^ ]*:$'
 }
 
 wait_prompt() {
@@ -137,24 +148,31 @@ send_one_key() {
         Enter|Return|enter)  tmux send-keys -t "$SESSION:chan" "Enter" ;;
         Space|space)         tmux send-keys -t "$SESSION:chan" " " ;;
         # Escape is OS-9's default SCF end-of-file character: sending one to
-        # a program reading /n1 is a deliberate EOF (the /n1 shell itself
-        # exits on it, and only `restart` brings it back).
+        # the session is a deliberate EOF (the shell exits on it; the next
+        # `send` reconnects and inetd forks a new one).
         Escape|ESC|escape)   tmux send-keys -t "$SESSION:chan" "Escape" ;;
         C-*)                 tmux send-keys -t "$SESSION:chan" "$k" ;;
         *)                   tmux send-keys -t "$SESSION:chan" -l -- "$(tmux_escape "$k")" ;;
     esac
 }
 
-# The /N1 bridge pane the REPL types into and reads from.
+# The session pane the REPL types into and reads from.
 #   -icrnl -icanon: Enter reaches OS-9 as a bare CR, unbuffered
-#   -echo: no local echo (the guest doesn't echo either; delta starts at
-#          the prompt row)
-#   perl: converts OS-9's CR-only output to NL *unbuffered* (tr's
-#         line-buffered stdout would hold back the trailing prompt);
-#         the pane pty's default onlcr then renders NL as CRNL.
+#   -echo: no local echo. inetd turns the guest's own echo ON (PD.EKO) for
+#          the session it forks, so local echo too would double every keystroke.
+#   retry loop: the port does not exist until the guest has booted far enough
+#          for inetd to run and ask the host to listen on it, so a single nc
+#          at start would just be refused. Retry until one connects; nc's
+#          "Connection refused" goes to /dev/null so it never reaches the pane
+#          and confuses at_prompt/delta.
+#   perl: converts OS-9 line ends to NL *unbuffered* (tr's line-buffered
+#         stdout would hold back the trailing prompt). inetd also turns auto
+#         line feed ON (PD.ALF), so the guest sends CR LF; dropping LF and
+#         mapping CR to NL yields exactly one newline per line and is safe
+#         across sysread chunk boundaries (a plain tr would double-space).
 open_chan_window() {
     tmux new-window -t "$SESSION" -n chan \
-        "stty -icrnl -icanon -echo; nc 127.0.0.1 $CHAN_PORT | perl -e '\$|=1; while (sysread(STDIN,\$b,4096)) { \$b =~ tr/\\r/\\n/; print \$b }'"
+        "stty -icrnl -icanon -echo; while ! nc 127.0.0.1 $CHAN_PORT 2>/dev/null; do sleep 0.5; done | perl -e '\$|=1; while (sysread(STDIN,\$b,4096)) { \$b =~ tr/\\n//d; \$b =~ tr/\\r/\\n/; print \$b }'"
 }
 
 # The server allows one client per channel: a `connect` displaces the chan
@@ -191,11 +209,11 @@ cmd_start() {
 
     # Window 0 "server": the DriveWire host, verbose protocol log.
     tmux new-session -d -s "$SESSION" -n server -x 220 -y 60 \
-        "'$cli' --becker-port $BECKER_PORT --channel-port-base $(( CHAN_PORT - 1 )) --verbose"
+        "'$cli' --tcp-port $BECKER_PORT --verbose"
     printf '[starting drivewire-cli...]\n'
     local i=0
     while [ $i -lt 35 ]; do
-        tmux capture-pane -t "$SESSION:server" -p 2>/dev/null | grep -q 'DriveWire listening' && break
+        tmux capture-pane -t "$SESSION:server" -p 2>/dev/null | grep -q 'listening on port' && break
         sleep 0.15; i=$(( i + 1 ))
     done
 
@@ -223,7 +241,7 @@ cmd_start() {
          -becker-port $BECKER_PORT -type 'DOS 0\\r\\r' $ui $NITROS9REPL_EXTRA_XROAR"
     printf '[booting NitrOS-9 under XRoar (up to %ss)...]\n' "$BOOT_TIMEOUT"
 
-    # Window 2 "chan": the /N1 bridge.
+    # Window 2 "chan": the inetd session client (retries until inetd listens).
     open_chan_window
 
     if [ -n "$NITROS9REPL_GUI" ]; then
@@ -243,10 +261,10 @@ cmd_start() {
     fi
 
     if wait_prompt "$BOOT_TIMEOUT"; then
-        printf '[ready — {N1|..} shell prompt below]\n'
+        printf '[ready — shell prompt below]\n'
         pane | grep -v '^[[:space:]]*$' | tail -4
     else
-        printf '[boot did not reach the /N1 prompt — check `snap` and the server window]\n' >&2
+        printf '[boot did not reach a shell prompt — check `snap` and the server window]\n' >&2
         printf '[known transient: XRoar sometimes boots stuck ("bad data read" + frozen);\n' >&2
         printf ' a plain `restart` usually clears it]\n' >&2
         return 1
@@ -317,16 +335,19 @@ cmd_peek() {
 # shell read EOF and exit — normal OS-9 behavior, but since startup only
 # launches that shell once, recovering means a full `restart`.
 cmd_connect() {
-    printf '[connecting to /N1 on port %s — Ctrl-C to detach, session survives]\n' "$CHAN_PORT"
+    printf '[connecting to the guest shell on port %s — Ctrl-C to detach]\n' "$CHAN_PORT"
+    printf '[inetd forks a shell per connection, so detaching ends this one]\n'
     printf '[line-oriented: local editing works; Esc/arrow keys are filtered]\n'
     perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\n/\r/; $b =~ tr/\x20-\x7e\r//cd; print $b }' \
         | nc 127.0.0.1 "$CHAN_PORT" \
-        | perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\r/\n/; print $b }'
+        | perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\n//d; $b =~ tr/\r/\n/; print $b }'
 }
 
 cmd_server() {
     alive || { printf '[no session running]\n' >&2; return 1; }
-    tmux capture-pane -t "$SESSION:server" -p -S -200
+    # --verbose logs every SERREAD poll, so the interesting lines (the
+    # tcp listen/join handshake) scroll far out of a short window.
+    tmux capture-pane -t "$SESSION:server" -p -S -5000
 }
 
 cmd_stop() {
@@ -354,12 +375,12 @@ case "${1:-help}" in
     *)
         printf 'Usage: nitros9repl.sh {start|send <cmd>|key <keys...>|snap [label]|peek|connect|server|stop|restart}\n'
         printf '\n'
-        printf '  start            boot drivewire-cli + XRoar, wait for the /N1 shell prompt\n'
+        printf '  start            boot drivewire-cli + XRoar, wait for the inetd shell prompt\n'
         printf '  send CMD         send command, wait for prompt, print new output\n'
         printf '  key K [K...]     send raw keystrokes (no Enter); special: Enter Space C-x\n'
         printf '  snap [label]     print labeled snapshot of the channel pane\n'
         printf '  peek             show full current channel pane\n'
-        printf '  connect          interactive /N1 session in your own terminal (Ctrl-C detaches)\n'
+        printf '  connect          interactive session in your own terminal (Ctrl-C detaches)\n'
         printf '  server           show the DriveWire protocol log\n'
         printf '  stop             kill the session (server + XRoar)\n'
         printf '  restart          stop + start\n'
