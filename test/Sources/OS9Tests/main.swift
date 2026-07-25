@@ -152,34 +152,42 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
     // each other's, and left h8/h9/ha/hb/hc lying about after a killed run.
     process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
 
+    // `currentDirectoryURL` above only sets the cwd of the *client* process. In
+    // container mode that client is `docker`/`container`, so it says nothing
+    // about where os9exec runs INSIDE the container -- there the cwd is the
+    // image's `WORKDIR /work`, which is container-local and dies with `--rm`.
+    // That is why the several `fs: permission` tests that share one `mount -k`
+    // device used to break in container mode while working locally: the image
+    // landed in /work and vanished between tests, and any test asserting
+    // `contains "Error #"` then PASSED for the wrong reason, because a missing
+    // device errors too. `-w` puts the container's cwd on the bind-mounted
+    // scratch so `mount -k` images persist across the per-test containers,
+    // exactly as they do locally.
+    //
+    // Pointing the cwd at a bind mount used to fail with
+    // `mount -k: can't create '/?/h9'` (E_BPNAM) -- that was StartDir()
+    // rebuilding the cwd by matching st_ino against d_ino, which legitimately
+    // differ at a mount point. Fixed in 5c662ca (getcwd), so this is safe now.
+    // Not "/" either, which would collide with the OS-9 device namespace (see
+    // the WORKDIR comment in docker/Dockerfile).
+    let containerRunArgs = [
+        "--rm",
+        "-i",
+        "--name", containerName,
+        "-v", disk + ":/dd",
+        "-v", scratchDisk + ":" + scratch,
+        "-w", scratch,
+        "-e", "OS9H\(scratchDev.dropFirst())=" + scratch,
+    ]
+
     if let image = dockerImage {
         // Run via Docker: mount local dd directory and pipe stdin/stdout
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [
-            "docker",
-            "run",
-            "--rm",
-            "-i",
-            "--name", containerName,
-            "-v", disk + ":/dd",
-            "-v", scratchDisk + ":" + scratch,
-            "-e", "OS9H\(scratchDev.dropFirst())=" + scratch,
-            image
-        ] + speedFlag + ["shell"]
+        process.arguments = ["docker", "run"] + containerRunArgs + [image] + speedFlag + ["shell"]
     } else if let image = containerImage {
         // Run via Apple Container: mount local dd directory and pipe stdin/stdout
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [
-            "container",
-            "run",
-            "--rm",
-            "-i",
-            "--name", containerName,
-            "-v", disk + ":/dd",
-            "-v", scratchDisk + ":" + scratch,
-            "-e", "OS9H\(scratchDev.dropFirst())=" + scratch,
-            image
-        ] + speedFlag + ["shell"]
+        process.arguments = ["container", "run"] + containerRunArgs + [image] + speedFlag + ["shell"]
     } else {
         // Run locally: OS9DISK points straight at the repo-root h0 dir.
         process.executableURL = execURL
@@ -878,167 +886,6 @@ if !containerized {
     try? FileManager.default.removeItem(atPath: fsHostDir)
     try? FileManager.default.removeItem(atPath: canaryHost)
 
-    // ---- permissions: ENFORCED on RBF images (real ownership + attribute bits) ----
-    // claude (1.7) and dog (1.3) are blank-password non-super accounts already in
-    // this disk's /dd/SYS/password -- see os9-dev skill's REPL notes for how this
-    // was live-verified (login really does F$SUser to a distinct Grp.Usr). su (0.0)
-    // is just this suite's default top-level session -- no login needed for it.
-    let permDev     = "h8"
-    let permDevPath = "/\(permDev)"
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + permDev)
-
-    // NOTE: every sequence below that ends still logged in as claude/dog closes
-    // with an explicit "logout" before the run/check helpers' implicit final
-    // ESC. Confirmed via direct os9exec REPL runs (see task-2-report.md): login
-    // forks a nested "claude:"/"dog:" shell, and the harness only sends ONE
-    // terminating ESC. If the sequence ends inside that nested shell, the ESC
-    // is consumed there and the outer top-level "$" shell hangs forever waiting
-    // for more input that will never come -- the process times out and os9()
-    // returns the literal string "(timeout)", which trivially fails a
-    // `contains: "Error #"` check and trivially PASSES a `!contains("Error #")`
-    // check, silently masking the real result either way. This is a harness/
-    // login-nesting artifact, unrelated to permission enforcement -- adding the
-    // trailing "logout" (already used correctly elsewhere in this block) fixes
-    // it and lets the real output flow through to the assertions.
-    run("fs: permission — claude creates+owns a file, can read it back",
-        expectation: "dump of a freshly created file shows its bytes to its own creator",
-        commands: ["mount -k=200K \(permDev)", "chd \(permDevPath)",
-                   "login claude", "chd \(permDevPath)",
-                   "echo abc >f", "dump f", "logout"]) { $0.contains("6162 63") }
-
-    check("fs: permission — owner locks self out by clearing owner-read",
-        contains: "Error #",
-        "chd \(permDevPath)", "login claude", "chd \(permDevPath)",
-        "attr f -nr", "dump f", "logout")
-
-    check("fs: permission — super-user still bypasses every check",
-        contains: "6162 63",
-        "chd \(permDevPath)", "dump f")
-
-    check("fs: permission — non-owner (dog) blocked from a file with no public bits",
-        contains: "Error #",
-        "chd \(permDevPath)", "login dog", "chd \(permDevPath)", "dump f", "logout")
-
-    check("fs: permission — owner restores public-read, non-owner can now read",
-        contains: "6162 63",
-        "chd \(permDevPath)", "login claude", "chd \(permDevPath)", "attr f -pr", "logout",
-        "login dog", "chd \(permDevPath)", "dump f", "logout")
-
-    check("fs: permission — non-owner cannot change attributes on a file they don't own",
-        contains: "Error #",
-        "chd \(permDevPath)", "login dog", "chd \(permDevPath)", "attr f -nr", "logout")
-
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + permDev)
-
-    // ---- permissions: file-level write bit (has_open_perm's write path) ----
-    // `>` redirection always requests create, so re-running it against a file
-    // that already exists hits E_CEF ("creating existing file") before the
-    // write-bit check is ever reached -- that would pass trivially regardless
-    // of the write bit, which is not what we want to test. `touch` opens an
-    // EXISTING file for write without requesting create, so it lands squarely
-    // on has_open_perm's write path (live-verified: E_FNA when owner-write is
-    // cleared, succeeds when it's set).
-    let filePermDev     = "hc"
-    let filePermDevPath = "/\(filePermDev)"
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + filePermDev)
-
-    run("fs: permission — owner locks self out of writing own file (write bit via touch)",
-        expectation: "clearing only owner-write blocks touch (open-for-write) on the owner's own file",
-        commands: ["mount -k=200K \(filePermDev)", "chd \(filePermDevPath)",
-                   "login claude", "chd \(filePermDevPath)",
-                   "echo abc >f", "attr f -nw", "touch f", "logout"]) { $0.contains("Error #") }
-
-    check("fs: permission — owner can still read that same file (write lockout is write-specific)",
-        contains: "6162 63",
-        "chd \(filePermDevPath)", "login claude", "chd \(filePermDevPath)", "dump f", "logout")
-
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + filePermDev)
-
-    // ---- permissions: directories (read gates traversal, write gates create/delete) ----
-    let dirPermDev  = "ha"
-    let dirPermPath = "/\(dirPermDev)"
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + dirPermDev)
-
-    run("fs: permission dir — dog can create inside claude's dir while public r+w are set",
-        expectation: "makdir's default attrs (owner+public rwx) let a non-owner create inside",
-        commands: ["mount -k=200K \(dirPermDev)", "chd \(dirPermPath)",
-                   "login claude", "chd \(dirPermPath)", "makdir sub", "logout",
-                   "login dog", "chd \(dirPermPath)/sub", "echo x >g",
-                   "logout"]) { !$0.contains("Error #") }
-
-    check("fs: permission dir — write blocked once public-write is cleared",
-        contains: "Error #",
-        "chd \(dirPermPath)", "login claude", "chd \(dirPermPath)", "attr sub -npw", "logout",
-        "login dog", "chd \(dirPermPath)/sub", "echo x >g2", "logout")
-
-    check("fs: permission dir — directory itself unreachable once public-read is also cleared",
-        contains: "Error #",
-        "chd \(dirPermPath)", "login claude", "chd \(dirPermPath)", "attr sub -npr", "logout",
-        "login dog", "chd \(dirPermPath)/sub", "logout")
-
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + dirPermDev)
-
-    // ---- permissions: pRdelete's parent-directory write check ----
-    // Deletion is gated on the PARENT DIRECTORY's write permission, not on who
-    // owns the file being deleted (live-verified below): dog lacks public-write
-    // on claude's "sub2", so dog's "del f" is blocked even though dog can still
-    // see/traverse into sub2 (public-read stays set). claude, who has owner-write
-    // on the directory, deletes the same file with no trouble -- the positive
-    // control that proves the negative result above isn't vacuous.
-    let delDev     = "hd"
-    let delDevPath = "/\(delDev)"
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + delDev)
-
-    run("fs: permission del — dog blocked from deleting a file in claude's dir (no public-write)",
-        expectation: "pRdelete's parent-directory write check rejects a non-owner without dir write",
-        commands: ["mount -k=200K \(delDev)", "chd \(delDevPath)",
-                   "login claude", "chd \(delDevPath)", "makdir sub2", "chd sub2", "echo abc >f",
-                   "chd ..", "attr sub2 -npw", "logout",
-                   "login dog", "chd \(delDevPath)/sub2", "del f", "logout"]) {
-        $0.contains("Error #")
-    }
-
-    check("fs: permission del — claude (dir owner, has write) deletes the same file fine",
-        absent: "Error #",
-        "chd \(delDevPath)/sub2", "login claude", "chd \(delDevPath)/sub2", "del f", "logout")
-
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + delDev)
-
-    // ---- permissions: RAM disk (mount -r) backed RBF gets identical enforcement ----
-    // A RAM disk is still a genuine RBF filesystem (same file_rbf.c path as an
-    // on-disk image, just backed by the emulator's own memory arena instead of a
-    // host file) -- this proves enforcement isn't accidentally specific to
-    // file-backed images. Each test below is fully self-contained (mounts its
-    // own fresh /ram7, does its own login(s), unmounts at the end): unlike a
-    // `mount -k` image, a RAM disk has no host file backing it, so nothing
-    // persists between separate os9exec processes -- each `run()`/`check()`
-    // call here is its own process and must build the whole scenario itself.
-    // All four scenarios below were first live-verified by hand via
-    // tools/os9repl.sh (see the os9-dev skill's REPL notes) before being
-    // written here, including the "logout" gotcha noted above.
-    run("fs: permission ramdisk — claude creates+owns a file, can read it back",
-        expectation: "dump of a freshly created file on a RAM-backed RBF device shows its bytes to its own creator",
-        commands: ["mount -r=200 /ram7", "chd /ram7",
-                   "login claude", "chd /ram7",
-                   "echo abc >f", "dump f", "logout", "unmount ram7"]) { $0.contains("6162 63") }
-
-    check("fs: permission ramdisk — owner locks self out by clearing owner-read",
-        contains: "Error #",
-        "mount -r=200 /ram7", "chd /ram7", "login claude", "chd /ram7",
-        "echo abc >f", "attr f -nr", "dump f", "logout", "unmount ram7")
-
-    check("fs: permission ramdisk — super-user still bypasses even after owner-read is cleared",
-        contains: "6162 63",
-        "mount -r=200 /ram7", "chd /ram7", "login claude", "chd /ram7",
-        "echo abc >f", "attr f -nr", "logout",
-        "chd /ram7", "dump f", "unmount ram7")
-
-    check("fs: permission ramdisk — non-owner (dog) blocked from a file with no public bits",
-        contains: "Error #",
-        "mount -r=200 /ram7", "chd /ram7", "login claude", "chd /ram7",
-        "echo abc >f", "logout",
-        "login dog", "chd /ram7", "dump f", "logout", "unmount ram7")
-
     // ---- host-native devices: real host permissions, best-effort per platform ----
     // attr's own F$Open requests neither read nor write (mode==0 -- it only
     // needs a path number for the GetStat/SetStat that follows), so a real
@@ -1062,6 +909,183 @@ if !containerized {
         "attr f -nr -nw -ne -npr -npw -npe", "attr f -r -pr", "dump f")
     try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
 }
+
+// ── permissions on RBF images: os9exec's OWN enforcement, host-independent ───
+// Split out of the local-only block above (2026-07-25) so container mode runs
+// them too. These assert OS-9 permission semantics: they provision their own
+// RBF image with `mount -k`, log in as OS-9 identities from /dd/SYS/password,
+// and set OS-9 attribute bits. Enforcement is os9exec's RBF code reading owner
+// IDs and attribute bytes from INSIDE the image, so the host filesystem and the
+// container's uid are irrelevant -- running as root does NOT make these vacuous,
+// unlike the host-native permission checks that remain local-only (a container
+// bind mount on macOS is type `fakeowner` and enforces no mode bits at all).
+//
+// They share one `mount -k` device across several separate os9exec runs, which
+// only works in container mode because the container's cwd is now the
+// bind-mounted scratch (`-w` in os9(), above) -- without it the image landed in
+// the container-local /work and vanished between the per-test containers, and
+// every `contains "Error #"` check passed for the wrong reason.
+// ---- permissions: ENFORCED on RBF images (real ownership + attribute bits) ----
+// claude (1.7) and dog (1.3) are blank-password non-super accounts already in
+// this disk's /dd/SYS/password -- see os9-dev skill's REPL notes for how this
+// was live-verified (login really does F$SUser to a distinct Grp.Usr). su (0.0)
+// is just this suite's default top-level session -- no login needed for it.
+let permDev     = "h8"
+let permDevPath = "/\(permDev)"
+try? FileManager.default.removeItem(atPath: scratchDisk + "/" + permDev)
+
+// NOTE: every sequence below that ends still logged in as claude/dog closes
+// with an explicit "logout" before the run/check helpers' implicit final
+// ESC. Confirmed via direct os9exec REPL runs (see task-2-report.md): login
+// forks a nested "claude:"/"dog:" shell, and the harness only sends ONE
+// terminating ESC. If the sequence ends inside that nested shell, the ESC
+// is consumed there and the outer top-level "$" shell hangs forever waiting
+// for more input that will never come -- the process times out and os9()
+// returns the literal string "(timeout)", which trivially fails a
+// `contains: "Error #"` check and trivially PASSES a `!contains("Error #")`
+// check, silently masking the real result either way. This is a harness/
+// login-nesting artifact, unrelated to permission enforcement -- adding the
+// trailing "logout" (already used correctly elsewhere in this block) fixes
+// it and lets the real output flow through to the assertions.
+run("fs: permission — claude creates+owns a file, can read it back",
+    expectation: "dump of a freshly created file shows its bytes to its own creator",
+    commands: ["mount -k=200K \(permDev)", "chd \(permDevPath)",
+               "login claude", "chd \(permDevPath)",
+               "echo abc >f", "dump f", "logout"]) { $0.contains("6162 63") }
+
+check("fs: permission — owner locks self out by clearing owner-read",
+    contains: "Error #",
+    "chd \(permDevPath)", "login claude", "chd \(permDevPath)",
+    "attr f -nr", "dump f", "logout")
+
+check("fs: permission — super-user still bypasses every check",
+    contains: "6162 63",
+    "chd \(permDevPath)", "dump f")
+
+check("fs: permission — non-owner (dog) blocked from a file with no public bits",
+    contains: "Error #",
+    "chd \(permDevPath)", "login dog", "chd \(permDevPath)", "dump f", "logout")
+
+check("fs: permission — owner restores public-read, non-owner can now read",
+    contains: "6162 63",
+    "chd \(permDevPath)", "login claude", "chd \(permDevPath)", "attr f -pr", "logout",
+    "login dog", "chd \(permDevPath)", "dump f", "logout")
+
+check("fs: permission — non-owner cannot change attributes on a file they don't own",
+    contains: "Error #",
+    "chd \(permDevPath)", "login dog", "chd \(permDevPath)", "attr f -nr", "logout")
+
+try? FileManager.default.removeItem(atPath: scratchDisk + "/" + permDev)
+
+// ---- permissions: file-level write bit (has_open_perm's write path) ----
+// `>` redirection always requests create, so re-running it against a file
+// that already exists hits E_CEF ("creating existing file") before the
+// write-bit check is ever reached -- that would pass trivially regardless
+// of the write bit, which is not what we want to test. `touch` opens an
+// EXISTING file for write without requesting create, so it lands squarely
+// on has_open_perm's write path (live-verified: E_FNA when owner-write is
+// cleared, succeeds when it's set).
+let filePermDev     = "hc"
+let filePermDevPath = "/\(filePermDev)"
+try? FileManager.default.removeItem(atPath: scratchDisk + "/" + filePermDev)
+
+run("fs: permission — owner locks self out of writing own file (write bit via touch)",
+    expectation: "clearing only owner-write blocks touch (open-for-write) on the owner's own file",
+    commands: ["mount -k=200K \(filePermDev)", "chd \(filePermDevPath)",
+               "login claude", "chd \(filePermDevPath)",
+               "echo abc >f", "attr f -nw", "touch f", "logout"]) { $0.contains("Error #") }
+
+check("fs: permission — owner can still read that same file (write lockout is write-specific)",
+    contains: "6162 63",
+    "chd \(filePermDevPath)", "login claude", "chd \(filePermDevPath)", "dump f", "logout")
+
+try? FileManager.default.removeItem(atPath: scratchDisk + "/" + filePermDev)
+
+// ---- permissions: directories (read gates traversal, write gates create/delete) ----
+let dirPermDev  = "ha"
+let dirPermPath = "/\(dirPermDev)"
+try? FileManager.default.removeItem(atPath: scratchDisk + "/" + dirPermDev)
+
+run("fs: permission dir — dog can create inside claude's dir while public r+w are set",
+    expectation: "makdir's default attrs (owner+public rwx) let a non-owner create inside",
+    commands: ["mount -k=200K \(dirPermDev)", "chd \(dirPermPath)",
+               "login claude", "chd \(dirPermPath)", "makdir sub", "logout",
+               "login dog", "chd \(dirPermPath)/sub", "echo x >g",
+               "logout"]) { !$0.contains("Error #") }
+
+check("fs: permission dir — write blocked once public-write is cleared",
+    contains: "Error #",
+    "chd \(dirPermPath)", "login claude", "chd \(dirPermPath)", "attr sub -npw", "logout",
+    "login dog", "chd \(dirPermPath)/sub", "echo x >g2", "logout")
+
+check("fs: permission dir — directory itself unreachable once public-read is also cleared",
+    contains: "Error #",
+    "chd \(dirPermPath)", "login claude", "chd \(dirPermPath)", "attr sub -npr", "logout",
+    "login dog", "chd \(dirPermPath)/sub", "logout")
+
+try? FileManager.default.removeItem(atPath: scratchDisk + "/" + dirPermDev)
+
+// ---- permissions: pRdelete's parent-directory write check ----
+// Deletion is gated on the PARENT DIRECTORY's write permission, not on who
+// owns the file being deleted (live-verified below): dog lacks public-write
+// on claude's "sub2", so dog's "del f" is blocked even though dog can still
+// see/traverse into sub2 (public-read stays set). claude, who has owner-write
+// on the directory, deletes the same file with no trouble -- the positive
+// control that proves the negative result above isn't vacuous.
+let delDev     = "hd"
+let delDevPath = "/\(delDev)"
+try? FileManager.default.removeItem(atPath: scratchDisk + "/" + delDev)
+
+run("fs: permission del — dog blocked from deleting a file in claude's dir (no public-write)",
+    expectation: "pRdelete's parent-directory write check rejects a non-owner without dir write",
+    commands: ["mount -k=200K \(delDev)", "chd \(delDevPath)",
+               "login claude", "chd \(delDevPath)", "makdir sub2", "chd sub2", "echo abc >f",
+               "chd ..", "attr sub2 -npw", "logout",
+               "login dog", "chd \(delDevPath)/sub2", "del f", "logout"]) {
+    $0.contains("Error #")
+}
+
+check("fs: permission del — claude (dir owner, has write) deletes the same file fine",
+    absent: "Error #",
+    "chd \(delDevPath)/sub2", "login claude", "chd \(delDevPath)/sub2", "del f", "logout")
+
+try? FileManager.default.removeItem(atPath: scratchDisk + "/" + delDev)
+
+// ---- permissions: RAM disk (mount -r) backed RBF gets identical enforcement ----
+// A RAM disk is still a genuine RBF filesystem (same file_rbf.c path as an
+// on-disk image, just backed by the emulator's own memory arena instead of a
+// host file) -- this proves enforcement isn't accidentally specific to
+// file-backed images. Each test below is fully self-contained (mounts its
+// own fresh /ram7, does its own login(s), unmounts at the end): unlike a
+// `mount -k` image, a RAM disk has no host file backing it, so nothing
+// persists between separate os9exec processes -- each `run()`/`check()`
+// call here is its own process and must build the whole scenario itself.
+// All four scenarios below were first live-verified by hand via
+// tools/os9repl.sh (see the os9-dev skill's REPL notes) before being
+// written here, including the "logout" gotcha noted above.
+run("fs: permission ramdisk — claude creates+owns a file, can read it back",
+    expectation: "dump of a freshly created file on a RAM-backed RBF device shows its bytes to its own creator",
+    commands: ["mount -r=200 /ram7", "chd /ram7",
+               "login claude", "chd /ram7",
+               "echo abc >f", "dump f", "logout", "unmount ram7"]) { $0.contains("6162 63") }
+
+check("fs: permission ramdisk — owner locks self out by clearing owner-read",
+    contains: "Error #",
+    "mount -r=200 /ram7", "chd /ram7", "login claude", "chd /ram7",
+    "echo abc >f", "attr f -nr", "dump f", "logout", "unmount ram7")
+
+check("fs: permission ramdisk — super-user still bypasses even after owner-read is cleared",
+    contains: "6162 63",
+    "mount -r=200 /ram7", "chd /ram7", "login claude", "chd /ram7",
+    "echo abc >f", "attr f -nr", "logout",
+    "chd /ram7", "dump f", "unmount ram7")
+
+check("fs: permission ramdisk — non-owner (dog) blocked from a file with no public bits",
+    contains: "Error #",
+    "mount -r=200 /ram7", "chd /ram7", "login claude", "chd /ram7",
+    "echo abc >f", "logout",
+    "login dog", "chd /ram7", "dump f", "logout", "unmount ram7")
+
 
 // ── F$STrap: exception-handler dispatch across a run of vectors ───────────────
 // Regression for the BASIC09 REAL/0 crash family.  Installs ONE F$STrap handler
