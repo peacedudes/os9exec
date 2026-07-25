@@ -1,0 +1,58 @@
+* buflen.a -- throwaway smoke test proving report.i's 128-byte OUTBUF.
+* Development scaffolding, not a conformance test: it asserts nothing
+* about OS-9 and must never ship (SRC/ contains only tests that ship,
+* dev/ never gets staged -- see task-2-report.md). Its lines carry no
+* RESULT prefix and no tNN id so they can never be mistaken for, or
+* parsed as, a conformance result.
+*
+* Demonstrates, on a real guest, that a line at least as long as the
+* spec's longest example (73 characters) fits in OUTBUF without
+* overwriting VALUE at offset 128. report.i originally put VALUE at
+* offset 60; a line over ~60 bytes -- well within what the real report
+* format produces -- would have silently overwritten VALUE, then DIGIT,
+* ERRB and PATHNUM. This test stores a known value in VALUE,u BEFORE
+* emitting a long line, then reads VALUE,u back (via prdec, into a
+* second emitted line) to prove it survived untouched.
+        nam DevBuflen
+        mod eom,nm,$11,$81,start,$0100
+nm      fcs "DevBuflen"
+        use report.i
+start   equ *
+* Sentinel: a known value in VALUE,u, set before the long line below is
+* built or emitted.
+        ldd #42
+        std VALUE,u
+
+* Line 1: 92 bytes (comfortably over the spec's 73-byte longest example),
+* built and emitted the ordinary way.
+        leax OUTBUF,u
+        leay MSG,pcr
+        ldb #MSGL
+        lbsr copys
+        lbsr emit
+
+* Line 2: read VALUE,u back with prdec and emit it. If OUTBUF were still
+* only 60 bytes, line 1 above would already have clobbered the sentinel;
+* seeing "00042" here on the guest proves it did not.
+        leax OUTBUF,u
+        leay SURV,pcr
+        ldb #SURVL
+        lbsr copys
+        lbsr prdec
+        leay TAIL,pcr
+        ldb #TAILL
+        lbsr copys
+        lbsr emit
+
+        clrb
+        swi2
+        fcb $06
+
+MSG     fcc "SMOKE buflen ok obs=00042 exp=00042  buffer holds a full seventy three character line intact"
+MSGL    equ *-MSG
+SURV    fcc "SMOKE buflen survivor="
+SURVL   equ *-SURV
+TAIL    fcc "  VALUE unclobbered by the 92-byte line above"
+TAILL   equ *-TAIL
+        emod
+eom     equ *

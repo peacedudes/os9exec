@@ -1,0 +1,23 @@
+* smoke.a -- throwaway smoke test for report.i's emit routine.
+* Emits one known line and exits. Development scaffolding, not a
+* conformance test: it asserts nothing about OS-9 and must never ship
+* (SRC/ contains only tests that ship; dev/ never gets staged -- see
+* task-2-report.md). Its line carries no RESULT prefix and no tNN id so
+* it can never be mistaken for, or parsed as, a conformance result.
+        nam DevSmoke
+        mod eom,nm,$11,$81,start,$0100
+nm      fcs "DevSmoke"
+        use report.i
+start   equ *
+        leax OUTBUF,u
+        leay MSG,pcr
+        ldb #MSGL
+        lbsr copys
+        lbsr emit
+        clrb
+        swi2
+        fcb $06
+MSG     fcc "SMOKE emitter ok obs=00001 exp=00001"
+MSGL    equ *-MSG
+        emod
+eom     equ *
