@@ -9,8 +9,9 @@
 # listens on the becker port; XRoar's CoCo3 connects to it; NitrOS-9's
 # startup runs `inetd&`, which reads /DD/SYS/inetd.conf and asks the server
 # to `tcp listen 6811`. Connecting to that port makes inetd join the
-# accepted connection to a fresh virtual serial channel and fork a `shell`
-# onto it. The REPL talks to that port with nc.
+# accepted connection to a fresh virtual serial channel and fork `login`
+# onto it. The REPL talks to that port with nc, answering the login prompt
+# with $NITROS9REPL_USER (default USER1, no password on the stock disk).
 #
 # Both halves are stock: NitrOS-9's own inetd/lib/net.as speaks the DriveWire
 # `tcp listen`/`tcp join` command protocol, and upstream DriveWire implements
@@ -39,11 +40,16 @@
 #     the guest echoes what you type and the channel pane does not; `send`
 #     output therefore starts at the prompt row, which shows the command.
 #     (`connect` relies on the same guest-side echo.)
-#   - Each TCP connection is its own session: inetd forks a new shell per
-#     accepted connection, so disconnecting ends that shell and reconnecting
-#     starts a fresh one (new pid, cwd back at /DD). Nothing is replayed.
+#   - Each TCP connection is its own session: inetd forks a new login per
+#     accepted connection, so disconnecting ends that session and reconnecting
+#     logs in again (new pid). Nothing is replayed.
+#   - Logging in is not just tidiness. The session's user number, execution
+#     directory and data directory all come from that user's /DD/SYS/password
+#     entry, so a logged-in session owns what it creates. A bare `shell` in
+#     inetd.conf runs as the unauthenticated boot identity and leaves files a
+#     later session cannot rewrite (E$FNA, 214).
 #   - `connect` displaces the scripted pane's nc; the next `send` reconnects,
-#     which under inetd means a new shell rather than the same one.
+#     which under inetd means a new login rather than the same session.
 #   - Escape ($1B) is OS-9's default SCF end-of-file character, so the shell
 #     exits normally when it reads one. Under inetd that is recoverable
 #     without a restart: the next `send` opens a new connection and inetd
@@ -71,6 +77,16 @@ BECKER_PORT=${NITROS9REPL_BECKER_PORT:-65504}
 # Port the guest's inetd asks the DriveWire host to listen on. Must match the
 # first field of the active line in the disk's /DD/SYS/inetd.conf.
 CHAN_PORT=${NITROS9REPL_CHAN_PORT:-6811}
+# Credentials for the `login` that inetd.conf spawns. Must name an entry in the
+# disk's /DD/SYS/password; USER1 there has an empty password field, so login
+# never asks for one and LOGIN_PASSWORD goes unused.
+LOGIN_USER=${NITROS9REPL_USER:-USER1}
+LOGIN_PASSWORD=${NITROS9REPL_PASSWORD:-}
+# The server's protocol log, mirrored to a file as well as its tmux pane. If
+# drivewire-cli ever exits unexpectedly its window closes and the pane's
+# scrollback goes with it -- taking the only record of what it was doing. The
+# file survives that, so `server` can still show the run's final moments.
+SERVER_LOG="${NITROS9REPL_SERVER_LOG:-${TMPDIR:-/tmp}/nitros9repl-$SESSION.log}"
 
 # drivewire-cli binary: env override, else newest Debug build in DerivedData.
 find_cli() {
@@ -84,25 +100,54 @@ alive() {
     tmux has-session -t "$SESSION" 2>/dev/null
 }
 
+# drivewire-cli exiting closes only its own window, leaving the session (and
+# so `alive`) intact -- ask about the window when the server is the question.
+server_alive() {
+    tmux list-windows -t "$SESSION" -F '#W' 2>/dev/null | grep -qx server
+}
+
 # The channel pane (window "chan") is the one the REPL reads and types into.
 pane() {
     tmux capture-pane -t "$SESSION:chan" -p -S -500 2>/dev/null || true
 }
 
-at_prompt() {
-    local last
-    last=$(pane | grep -v '^[[:space:]]*$' | tail -1 | sed 's/[[:space:]]*$//')
-    # EOU Shell+ prompt: {N|07}/DD:  (device, pid and current dir all vary --
-    # inetd opens /N and the multiplexer hands out whichever channel is free)
-    printf '%s' "$last" | grep -qE '^\{N[0-9]*\|[0-9A-Fa-f]+\}[^ ]*:$'
+# Last non-blank pane row, trailing blanks stripped. Every prompt this script
+# gates on is unterminated, so it is always the final row.
+last_line() {
+    pane | grep -v '^[[:space:]]*$' | tail -1 | sed 's/[[:space:]]*$//'
 }
 
+at_prompt() {
+    # EOU Shell+ prompt: {N|07}/DD:  (device, pid and current dir all vary --
+    # inetd opens /N and the multiplexer hands out whichever channel is free)
+    printf '%s' "$(last_line)" | grep -qE '^\{N[0-9]*\|[0-9A-Fa-f]+\}[^ ]*:$'
+}
+
+at_login_prompt()    { printf '%s' "$(last_line)" | grep -q 'User name?:$'; }
+at_password_prompt() { printf '%s' "$(last_line)" | grep -q 'Password:$'; }
+
+# Wait for a usable shell prompt, answering inetd's `login` on the way if the
+# disk's inetd.conf spawns one. Each connection gets its own login, so this
+# runs on every (re)connect, not just at boot. It is also correct against a
+# conf line that spawns a bare `shell`: the login branches simply never fire.
+#
+# Answers at most once each, so a rejected name or password surfaces as a
+# timeout with the pane dumped rather than an endless retry loop.
 wait_prompt() {
     local limit_s="${1:-$TIMEOUT}"
-    local i=0 limit=$(( limit_s * 7 ))
+    local i=0 limit=$(( limit_s * 7 )) sent_user="" sent_pass=""
     while [ $i -lt $limit ]; do
         alive || { printf '[session exited]\n' >&2; return 1; }
         at_prompt && return 0
+        if [ -z "$sent_user" ] && at_login_prompt; then
+            tmux send-keys -t "$SESSION:chan" -l -- "$LOGIN_USER"
+            tmux send-keys -t "$SESSION:chan" Enter
+            sent_user=1
+        elif [ -n "$sent_user" ] && [ -z "$sent_pass" ] && at_password_prompt; then
+            tmux send-keys -t "$SESSION:chan" -l -- "$LOGIN_PASSWORD"
+            tmux send-keys -t "$SESSION:chan" Enter
+            sent_pass=1
+        fi
         sleep 0.15
         i=$(( i + 1 ))
     done
@@ -182,9 +227,10 @@ ensure_chan() {
     tmux list-windows -t "$SESSION" -F '#W' 2>/dev/null | grep -qx chan && return 0
     open_chan_window
     sleep 0.5
-    # A fresh pane is blank (the previous client consumed the last prompt);
-    # a bare Enter elicits a new one from the shell.
-    at_prompt || tmux send-keys -t "$SESSION:chan" Enter
+    # No blind Enter to elicit a prompt: inetd forks a fresh login/shell per
+    # connection, which announces itself unprompted. An Enter sent at the
+    # "User name?:" prompt would just earn a "Who?" and another prompt.
+    # wait_prompt (called next by every caller) drives the login.
 }
 
 # ── subcommands ───────────────────────────────────────────────────────────────
@@ -208,8 +254,9 @@ cmd_start() {
     fi
 
     # Window 0 "server": the DriveWire host, verbose protocol log.
+    : > "$SERVER_LOG"
     tmux new-session -d -s "$SESSION" -n server -x 220 -y 60 \
-        "'$cli' --tcp-port $BECKER_PORT --verbose"
+        "'$cli' --tcp-port $BECKER_PORT --verbose 2>&1 | tee '$SERVER_LOG'"
     printf '[starting drivewire-cli...]\n'
     local i=0
     while [ $i -lt 35 ]; do
@@ -343,10 +390,21 @@ cmd_connect() {
         | perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\n//d; $b =~ tr/\r/\n/; print $b }'
 }
 
+# Prefer the log file over the pane: it holds the whole run rather than the
+# last few thousand rows, and it still exists if the server died and took its
+# window with it. --verbose logs every SERREAD poll, so the interesting lines
+# (the tcp listen/join handshake) scroll far out of a short capture.
 cmd_server() {
-    alive || { printf '[no session running]\n' >&2; return 1; }
-    # --verbose logs every SERREAD poll, so the interesting lines (the
-    # tcp listen/join handshake) scroll far out of a short window.
+    if [ -s "$SERVER_LOG" ]; then
+        cat "$SERVER_LOG"
+        # Test the server WINDOW, not the session: drivewire-cli exiting closes
+        # only its own window, and the surviving xroar window keeps `alive`
+        # true -- so `alive` here would never report the very failure this
+        # log exists to catch.
+        server_alive || printf '[server is NOT running — log above is from the dead run]\n' >&2
+        return 0
+    fi
+    server_alive || { printf '[server not running and no log at %s]\n' "$SERVER_LOG" >&2; return 1; }
     tmux capture-pane -t "$SESSION:server" -p -S -5000
 }
 
