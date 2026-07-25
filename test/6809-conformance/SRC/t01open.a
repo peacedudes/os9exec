@@ -1,0 +1,62 @@
+* t01open.a -- conformance test t01: I$Open of an absent pathlist.
+* Claim (see DOCS/claims.md for the citation): opening a pathlist that
+* does not exist reports E$PNNF (216). Opens a path that cannot exist
+* under a fresh SCRATCH directory, then compares the returned error code
+* against EXPECT. Emits exactly one RESULT t01 line via report.i's emit.
+        nam ConfT01
+        mod eom,nm,$11,$81,start,$0100
+nm      fcs /ConfT01/
+        use report.i
+EXPECT  equ 216
+start   equ *
+        leax fname,pcr
+        lda #1               read access
+        swi2
+        fcb $84              I$Open
+        bcc opened           no error at all -- that is a FAIL
+        stb ERRB,u
+        cmpb #EXPECT
+        beq pass
+        bra fail
+opened  equ *
+        clr ERRB,u           open succeeded: observed "error" is 0
+fail    equ *
+        leax OUTBUF,u
+        leay FAILM,pcr
+        ldb #FAILML
+        lbsr copys
+        bra tail
+pass    equ *
+        leax OUTBUF,u
+        leay PASSM,pcr
+        ldb #PASSML
+        lbsr copys
+tail    equ *
+        clra
+        ldb ERRB,u
+        std VALUE,u
+        lbsr prdec
+        leay EXPM,pcr
+        ldb #EXPML
+        lbsr copys
+        ldd #EXPECT
+        std VALUE,u
+        lbsr prdec
+        leay DESC,pcr
+        ldb #DESCL
+        lbsr copys
+        lbsr emit
+        clrb
+        swi2
+        fcb $06
+fname   fcs "SCRATCH/nosuchfile"
+PASSM   fcc /RESULT t01 PASS  obs=/
+PASSML  equ *-PASSM
+FAILM   fcc /RESULT t01 FAIL  obs=/
+FAILML  equ *-FAILM
+EXPM    fcc / exp=/
+EXPML   equ *-EXPM
+DESC    fcc /  I$Open of an absent pathlist reports E$PNNF/
+DESCL   equ *-DESC
+        emod
+eom     equ *

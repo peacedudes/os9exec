@@ -7,15 +7,33 @@ STAGE="$OUT/stage"          # host-native tree os9exec sees as /h1
 IMGDIR="$OUT/dev"           # os9exec startPath: the image appears here as h7
 ACCT=${CONF_ACCT:-claude}   # non-super account in h0/SYS/password (1.7)
 
-rm -rf "$OUT"; mkdir -p "$STAGE" "$IMGDIR"
+rm -rf "$OUT"; mkdir -p "$STAGE" "$IMGDIR" "$STAGE/CMDS" "$STAGE/SRC"
 ln -s "$REPO/h0" "$IMGDIR/h0"
 ln -s "$STAGE"   "$IMGDIR/h1"
+
+TESTSRC="$REPO/test/6809-conformance/SRC"
+
+# --- assemble every shipped test, stage the shippable sources ---
+# SRC/ contains only files that ship (dev/ scaffolding never does); both
+# loops below wildcard over it so a new test needs no build-script edit.
+for a in "$TESTSRC"/*.a; do
+  b=$(basename "$a" .a)
+  lwasm --format=os9 -I "$TESTSRC" --output="$STAGE/CMDS/$b" "$a"
+done
+for s in "$TESTSRC"/*; do
+  tr '\n' '\r' < "$s" > "$STAGE/SRC/$(basename "$s")"   # OS-9 text is CR-only
+done
 
 # --- the os9exec build procedure, CR-only (LF would make it ONE line) ---
 {
   echo "mount -k=360k h7"
   echo "login $ACCT"
   for d in CMDS SRC DOCS SCRATCH RESULTS; do echo "makdir /h7/$d"; done
+  for m in "$STAGE"/CMDS/*; do
+    b=$(basename "$m")
+    echo "copy /h1/CMDS/$b /h7/CMDS/$b"
+    echo "attr /h7/CMDS/$b -e -pe -pr"    # 68k spelling: -e SETS, -ne clears
+  done
   echo "echo BUILD-STRUCTURE-DONE"
   echo "dir -e /h7"
 } | tr '\n' '\r' > "$STAGE/mkimg"
