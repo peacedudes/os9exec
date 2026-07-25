@@ -49,7 +49,16 @@ Consequences, all of them load-bearing:
 - A test whose baseline is uncertain still ships. Those are the interesting
   ones.
 
-## Scope: the vertical slice
+## Scope: two phases, both committed
+
+Phase 1 is a vertical slice that proves the machinery. Phase 2 adds record
+locking, which is not optional — verifying that RBF's automatic locking
+behaves as documented is a required outcome of this work, and it is the
+single most valuable thing the image can ask of real hardware. It is second
+only because it needs multi-process choreography working guest-side, which is
+the hardest machinery to trust.
+
+### Phase 1 — the vertical slice
 
 Roughly ten tests, chosen to exercise every part of the machinery before any
 scale-up — an assembly module, a BASIC09 procedure, a positive verdict, a
@@ -73,6 +82,39 @@ Final selection happens at implementation time and is governed by the citation
 rule above: a slot whose documentation cannot be pinned is replaced, not
 guessed. The mix of mechanisms is the requirement; the individual claims are
 not.
+
+### Phase 2 — record locking
+
+RBF locks byte ranges with no call at all, as a side effect of ordinary reads
+and writes on a path opened for **update**. That is a documented design
+promise, not an implementation detail, and it is exactly the kind of claim
+that a reimplementation can appear to honour while diverging under contention.
+
+Three tests, each asserting a documented behaviour:
+
+| Claim under test | Shape |
+|---|---|
+| **Lost-update races cannot corrupt an update.** Two processes each doing read-modify-write on the same record are serialized by the read's automatic lock and the write's release | Two racers, a fixed number of increments each; the final value must equal the total exactly |
+| **The EOF lock.** A write landing at current EOF takes a ghost lock where no data exists yet, so a reader that catches up waits at the edge instead of mistaking "caught up" for "writer finished" — while the real content stays readable throughout | Slow producer, following consumer; the consumer must block at the edge, not read short |
+| **Only update-mode opens participate.** Read-only and write-only paths take no lock and wait on nothing — deliberate, so two independent appenders interleave freely rather than excluding each other | Two write-only appenders must both complete without blocking |
+
+Two hard-won constraints carried over from the existing `rl-*` work — the
+lessons travel even though the files do not:
+
+- **Each racer must self-report its own completion.** Reading the shared
+  counter alone cannot distinguish a lost update from a racer that had not
+  finished yet, and at these speeds the shell returns long before a
+  backgrounded racer is done. Every short read then looks like data loss. A
+  run only counts when every racer has declared itself finished.
+- **Every run must prove its own preconditions.** A producer left over from a
+  previous run holding the data file open makes the setup step fail, leaves a
+  stale file in place, and produces numbers that look exactly like results.
+  The test verifies its data file really was recreated by this run before it
+  believes any count.
+
+A timing-sensitive test that cannot establish its preconditions reports
+`ERROR`, never `FAIL` — a fact about our harness must never be reported as a
+fact about his system.
 
 ## The test contract
 
@@ -230,13 +272,17 @@ one line per test, diffable against ours.
 - **`1.7` may collide** with a real account on the target system, silently
   changing which permission bits apply. Mitigated by recording both the file
   owner and the running user in the report.
+- **Phase 2 runs on hardware of unknown speed.** A real machine may be far
+  faster or slower than our emulated one, so any test that depends on a racer
+  still running when another starts is fragile. Mitigated by self-reported
+  completion rather than sleeps, and by the rule that a test unable to
+  establish its preconditions reports `ERROR` rather than `FAIL`.
 - **The suite may be run write-protected**, in which case `RESULTS/report`
   cannot be written. The runner prints the same lines to the terminal, so the
   run is still recoverable by capture.
 
 ## Follow-on, explicitly out of scope here
 
-Scale-up beyond the slice; porting or rewriting the `rl-*` record-locking
-scenarios as citation-backed conformance tests; a 68k sibling image. Each is
-its own spec once the machinery has been proven by a real run on someone
-else's hardware.
+Scale-up beyond phases 1 and 2, and a **68k sibling image — a separate
+session's work**, not this one's. Each is its own spec once the machinery has
+been proven by a real run on someone else's hardware.
