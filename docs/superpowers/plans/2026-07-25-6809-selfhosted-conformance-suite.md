@@ -29,6 +29,8 @@
 
 **Suite sources — the thing that ships (new):**
 
+**`SRC/` contains only tests that ship.** The build stages `SRC/*.a` and `SRC/*.bas` with a wildcard, so anything left there reaches the recipient's machine. Development scaffolding — smoke modules, buffer probes, anything that emits a `RESULT` line without asserting a documented OS-9 behaviour — lives in `test/6809-conformance/dev/` and is never staged. A smoke module that shipped would add a fabricated `PASS` to a report whose only value is truthful accounting, and would consume a test number reserved for a real claim.
+
 - `test/6809-conformance/SRC/report.i` — shared assembly include: the result-line emitter. One responsibility: turn a verdict plus two numbers into a `RESULT` line on stdout.
 - `test/6809-conformance/SRC/t01open.a` … `t0Nxxx.a` — one file per assembly test.
 - `test/6809-conformance/SRC/t0Nxxx.bas` — one file per BASIC09 test.
@@ -220,12 +222,12 @@ Verify the length on the guest in Step 3 rather than trusting it — a wrong cou
 
 - [ ] **Step 2: Assemble a smoke module that uses it**
 
-Create a throwaway `SRC/t00smoke.a` that emits one known line:
+Create `dev/smoke.a` — in `dev/`, **not** `SRC/`, because it asserts nothing about OS-9 and must never ship. It emits one known line:
 
 ```
-        nam ConfT00
+        nam DevSmoke
         mod eom,nm,$11,$81,start,$0100
-nm      fcs /ConfT00/
+nm      fcs /DevSmoke/
         use report.i
 start   equ *
         leax OUTBUF,u
@@ -236,7 +238,7 @@ start   equ *
         clrb
         swi2
         fcb $06
-MSG     fcc /RESULT t00 PASS  obs=00001 exp=00001  emitter smoke test/
+MSG     fcc /SMOKE emitter ok obs=00001 exp=00001/
 MSGL    equ *-MSG
         emod
 eom     equ *
@@ -244,19 +246,19 @@ eom     equ *
 
 - [ ] **Step 3: Run it and verify the output is exact**
 
-Run: `lwasm --format=os9 -I test/6809-conformance/SRC --output=/tmp/t00smoke test/6809-conformance/SRC/t00smoke.a`
-Then `/usr/local/bin/os9 ident /tmp/t00smoke` — expected: `Good` CRC.
+Run: `lwasm --format=os9 -I test/6809-conformance/SRC --output=/tmp/smoke test/6809-conformance/dev/smoke.a`
+Then `/usr/local/bin/os9 ident /tmp/smoke` — expected: `Good` CRC.
 
 Copy it onto a scratch image, serve it to NitrOS-9 via `tools/nitros9repl.sh`, and run it.
 Expected, byte for byte, with no trailing padding:
-`RESULT t00 PASS  obs=00001 exp=00001  emitter smoke test`
+`SMOKE emitter ok obs=00001 exp=00001`
 
 If the line is padded or truncated, the length arithmetic in `emit` is wrong. Fix it here — every later task depends on it.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add test/6809-conformance/SRC/report.i test/6809-conformance/SRC/t00smoke.a
+git add test/6809-conformance/SRC/report.i test/6809-conformance/dev/
 git commit -m "Tests: shared result-line emitter for the 6809 conformance suite"
 ```
 
