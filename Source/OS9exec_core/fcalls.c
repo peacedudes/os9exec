@@ -2156,7 +2156,16 @@ os9err OS9_F_PrsNam( regs_type *rp, _pid_ )
     }
     if (!IN_ARENA(p)) return os9error(E_BPADDR); /* name ran to the arena end with no terminator */
     if (n==0) return os9error(E_BNAM); /* null name is bad name */
-    debugprintf(dbgFiles,dbgDeep,("# F$PrsNam: a0='%s', a1='%s', terminator='%c'\n",(char*)FROM68K(rp->a[0]),p,*p));
+    /* Show the terminator as a substituted char PLUS its hex value: the common
+     * end-of-pathlist case has *p==NUL, and a raw '%c' put that NUL straight
+     * into the message -- debugprintf formats with vsnprintf and then emits
+     * "%s", so the embedded NUL truncated the line at that point and ate the
+     * closing quote and the newline, splicing the next trace line onto this
+     * one. */
+    debugprintf(dbgFiles,dbgDeep,("# F$PrsNam: a0='%s', a1='%s', terminator='%c' ($%02X)\n",
+                                    (char*)FROM68K(rp->a[0]),p,
+                                    isprint((unsigned char)*p) ? *p : '.',
+                                    (unsigned char)*p));
     rp->a[1]=TO68K(p); /* pointer to terminator */
     retbyte(rp->d[0])=(unsigned char) *p; /* terminator */
     retword(rp->d[1])=n; /* size of path element */
