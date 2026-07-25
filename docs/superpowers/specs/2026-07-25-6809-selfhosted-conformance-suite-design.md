@@ -122,9 +122,15 @@ Every test is a standalone program that writes exactly one result line to
 standard output and exits:
 
 ```
-RESULT t03 PASS  obs=211 exp=211  I$Read at EOF reports E$EOF
-RESULT t04 FAIL  obs=203 exp=211  I$Read past EOF on a read-only path
+RESULT t03 PASS  obs=00211 exp=00211  I$Read at EOF reports E$EOF
+RESULT t04 FAIL  obs=00203 exp=00211  I$Read past EOF on a read-only path
 ```
+
+Numeric fields are **five digits, zero-padded** — fixed-width columns diff
+cleanly, and the emitter's decimal routine produces that form natively. The
+line buffer holds 128 bytes, which is the constraint on how long a
+description may be; a test whose line would exceed it is a test whose
+description needs shortening, not a buffer to be enlarged silently.
 
 - **Verdicts:** `PASS`, `FAIL`, `SKIP` (a prerequisite is absent — the reason
   is stated), `ERROR` (the test itself broke, which is not a finding about the

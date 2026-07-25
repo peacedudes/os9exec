@@ -190,7 +190,9 @@ Every test's output goes through one routine, so the report format is defined in
 
 **Interfaces:**
 - Produces: `emit` — call with `X` pointing at the assembled line in `OUTBUF`, having been advanced past the last character. Writes the line plus a CR to path 1 and returns. Also `copys` (copy `B` bytes from `Y` to `X`) and `prdec` (append `VALUE,u` as decimal at `X`).
-- Data-area offsets `OUTBUF=0`, `VALUE=60`, `DIGIT=62`, `ERRB=63`, `PATHNUM=64` are fixed here and used unchanged by every test.
+- Data-area offsets `OUTBUF=0`, `VALUE=128`, `DIGIT=130`, `ERRB=131`, `PATHNUM=132` are fixed here and used unchanged by every test. All fit the module's 256-byte data area (`$0100`).
+
+**The buffer is 128 bytes and that number is load-bearing.** A result line is written into `OUTBUF` at offset 0; the first scalar sits immediately after it. With five-digit numeric fields, `RESULT tNN VERDICT  obs=00000 exp=00000  ` costs 39 bytes before the description begins, and the spec's own example lines run to 73 characters. If the buffer were 60 bytes — the value the corpus's short-line helpers used — a normal-length description would silently overwrite `VALUE`, then `DIGIT`, `ERRB` and `PATHNUM`. A corrupted `PATHNUM` means a botched `I$Close` after the line is emitted, on the recipient's machine, long after anyone is watching. Any later change to these offsets must keep `OUTBUF` at least as long as the longest line the format can produce.
 
 - [ ] **Step 1: Write the include**
 
@@ -214,7 +216,7 @@ emit    lda #$0D
 
 Verify the length on the guest in Step 3 rather than trusting it — a wrong count silently truncates or over-runs every report line in the suite.
 
-2. `prdec` emits five digits with leading zeros (`00216`). Keep it — fixed-width fields make the report easier to diff — and document that in `DOCS/claims`.
+2. `prdec` emits five digits with leading zeros (`00216`). Keep it — fixed-width fields make the report easier to diff. It is recorded in the spec's test contract; the `DOCS/claims` file that also states it is created in Task 3, so there is nothing to write here.
 
 - [ ] **Step 2: Assemble a smoke module that uses it**
 
