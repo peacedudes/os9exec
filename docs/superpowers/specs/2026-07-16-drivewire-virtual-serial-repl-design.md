@@ -1,5 +1,17 @@
 # DriveWire virtual serial → NitrOS-9 REPL — design
 
+> **SUPERSEDED 2026-07-25 — do not follow this.** The DriveWire fork described
+> here no longer exists. Upstream implemented the same capability itself via the
+> canonical `tcp connect|listen|join|kill` command API — the vocabulary
+> NitrOS-9's own `inetd` and `lib/net.as` have always spoken — so the 6809 REPL
+> now runs on **stock** drpitre/drivewire `main` with no patch at all. PRs #6
+> and #7 are closed; both branches are deleted locally and on the fork (the
+> commits survive as `refs/pull/{6,7}/head` upstream).
+>
+> Kept for the protocol findings, which still hold: OP_DWINIT must be answered
+> with a non-zero byte, and a SERWRITEM to an unopened channel carries no count
+> byte. For the current setup see `tools/nitros9repl.sh` and the README.
+
 Date: 2026-07-16
 Status: approved (user: "just go")
 
