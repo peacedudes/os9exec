@@ -368,6 +368,17 @@ In `build-image.sh`, before the os9exec step, assemble every `SRC/*.a` into `$ST
 
 Note the inversion: on 68k `-e` sets and `-ne` clears; on 6809 it is the other way round. The build runs under os9exec, so 68k spelling applies.
 
+- [ ] **Step 4b: Make a failed install detectable**
+
+**The OS-9 shell does not abort a procedure when a command fails.** A `copy` whose source is missing prints `Error #000:216` and the procedure runs on to completion, leaving the destination empty — verified directly. So the build's `BUILD-STRUCTURE-DONE` marker proves only that the procedure *ran*, never that it *worked*, and a test that silently failed to install is invisible: its line is simply absent from the report, which reads as a shorter suite rather than as a fault.
+
+Close it in two places:
+
+1. `build-image.sh` writes a manifest as it stages — one line per module, `<name> <bytes>` — to `build/selfhost6809/manifest.txt`.
+2. `verify-image.sh` reads the manifest and asserts, for every entry, that the module exists in `CMDS/` on the image with a matching byte count, and that `build.log` contains no line matching `Error #`.
+
+Prove both can fail before believing them: delete one staged module after the copy loop and confirm the manifest check reports it; inject a line containing `Error #` into a copy of the log and confirm that check reports it too.
+
 - [ ] **Step 5: Build and verify**
 
 Run: `make selfhost-6809`
