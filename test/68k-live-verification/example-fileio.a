@@ -1,0 +1,124 @@
+* example-fileio.a -- worked example for os9-dev's 68k/os9-68k-assembly.md.
+*
+* Smallest real program that exercises the three things that file states
+* but never shows: psect boilerplate, the TRAP #0 calling sequence, and
+* the carry/d1.w error convention.
+*
+* Happy path: create a file, write one line to it, close it.
+* Error path: open a file that does not exist, and report why.
+
+Prgrm     set 1
+Objct     set 1
+ReEnt     set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev  set (ReEnt<<8)+1
+
+ICreate   set $83
+IOpen     set $84
+IWrite    set $8A
+IClose    set $8F
+FPErr     set $0F
+FExit     set $06
+
+READ      set 1          access mode: read
+WRITE     set 2          access mode: write
+ATTRS     set $03        new file attributes: owner read + owner write
+STDOUT    set 1          path 1 is always standard output
+
+ psect exfileio,Type_Lang,Attr_Rev,0,1024,start
+
+start
+* --- happy path -----------------------------------------------------
+* I$Create(d0.b=mode, d1.b=attrs, d2.l=size hint, (a0)=path) -> d0.w=path
+ lea    fname(pc),a0
+ moveq  #WRITE,d0
+ moveq  #ATTRS,d1
+ moveq  #0,d2
+ trap   #0
+ dc.w   ICreate
+ bcs    failed
+ move.w d0,d7           keep the path number; d0 is scratch from here on
+
+* I$Write(d0.w=path, d1.l=count, (a0)=buffer)
+ move.w d7,d0
+ lea    line(pc),a0
+ move.l #linelen,d1
+ trap   #0
+ dc.w   IWrite
+ bcs    failed
+
+* I$Close(d0.w=path)
+ move.w d7,d0
+ trap   #0
+ dc.w   IClose
+ bcs    failed
+
+ lea    okmsg(pc),a0
+ move.l #okmsglen,d1
+ move.w #STDOUT,d0
+ trap   #0
+ dc.w   IWrite
+
+* --- error path -----------------------------------------------------
+* Carry SET means the call failed and d1.w holds the error code.
+ lea    missing(pc),a0
+ moveq  #READ,d0
+ trap   #0
+ dc.w   IOpen
+ bcc    unexpected       succeeding here is itself the failure
+ move.w d1,d6            save the code before anything else clobbers d1
+
+ lea    experr(pc),a0
+ move.l #experrlen,d1
+ move.w #STDOUT,d0
+ trap   #0
+ dc.w   IWrite
+
+* F$PErr(d0.w=error-message file path, 0=none; d1.w=error code)
+ move.w d6,d1
+ moveq  #0,d0
+ trap   #0
+ dc.w   FPErr
+
+ moveq  #0,d1
+ trap   #0
+ dc.w   FExit
+
+unexpected
+ lea    unexpmsg(pc),a0
+ move.l #unexplen,d1
+ move.w #STDOUT,d0
+ trap   #0
+ dc.w   IWrite
+ moveq  #1,d1
+ trap   #0
+ dc.w   FExit
+
+failed
+ move.w d1,d6
+ lea    failmsg(pc),a0
+ move.l #faillen,d1
+ move.w #STDOUT,d0
+ trap   #0
+ dc.w   IWrite
+ move.w d6,d1
+ moveq  #0,d0
+ trap   #0
+ dc.w   FPErr
+ moveq  #1,d1
+ trap   #0
+ dc.w   FExit
+
+fname    dc.b "exfile.txt",0
+missing  dc.b "no.such.file",0
+line     dc.b "written by example-fileio",13
+linelen  equ *-line
+okmsg    dc.b "PASS create/write/close",13,10
+okmsglen equ *-okmsg
+experr   dc.b "PASS open of a missing file failed as expected: "
+experrlen equ *-experr
+unexpmsg dc.b "FAIL open of a missing file succeeded",13,10
+unexplen equ *-unexpmsg
+failmsg  dc.b "FAIL happy path: "
+faillen  equ *-failmsg
+ ends
