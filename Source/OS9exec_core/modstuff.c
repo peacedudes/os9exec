@@ -706,23 +706,63 @@ int NextFreeModuleId( char* name )
 
 
 
+static void init_setname( mod_exec* mh, uint32_t off, const char* s,
+                          uint32_t slotmax, const char* what )
+/* Copy one namestring into the "init" module, but only where it provably fits.
+ *
+ * This used to be a bare strcpy() per name. Two of the three destination
+ * offsets are read out of the module image (0x50, 0x5A), so for an "init"
+ * module loaded from a FILE they are file-controlled, and the copy wrote up to
+ * 18 bytes at mh + <any 16-bit value>. Demonstrated: a 366-byte module whose
+ * 0x50 word said 65280 -- blessed with a good CRC and good parity by OS-9's own
+ * fixmod, so nothing upstream rejected it -- put hw_name 64914 bytes past the
+ * end of its allocation. (Parity covers only the first 24 words, so patching
+ * 0x50 does not disturb it, and load_module() verifies sync/parity/size/CRC but
+ * never these two offsets.) load_module() already bounds the module's own name
+ * offset against M$Size this same way; this applies that rule to the rest.
+ *
+ * `slotmax` is the structurally-known extent of the slot when there is one --
+ * hw_site's is fixed at 0x4C and only reaches 0x50, where the hw_name offset
+ * word itself lives, so an over-long hw_site would rewrite the very offset used
+ * for the next copy. Pass 0 when only the module bound applies.
+ */
+{
+    uint32_t modsize= os9_long( mh->_mh._msize );
+    uint32_t n      = (uint32_t)strlen(s)+1; /* including the NUL */
+
+    if (off==0 || off>=modsize || n>modsize-off || (slotmax!=0 && n>slotmax)) {
+        debugprintf(dbgModules,dbgNorm,
+          ("# adapt_init: %s slot at $%X + %u does not fit module size $%X"
+           " (slotmax=%u) -- not copied\n",
+             what, (unsigned)off,(unsigned)n, (unsigned)modsize,(unsigned)slotmax));
+        return;
+    }
+
+    memcpy( (char*)mh+off, s, n );
+} /* init_setname */
+
+
 static void adapt_init( mod_exec* mh )
 /* special treatment for the "init" module: set version+revision */
 /* and connect it to the globals */
 {
     byte*   bp;
-    char*   nm;
     ushort* sp;
-    
+
     bp= (byte*)  mh + 0x57; *bp= exec_version;
     bp= (byte*)  mh + 0x58; *bp= exec_revision;
     bp= (byte*)  mh + 0x59; *bp= 0;
 
-    nm= (char*)  mh + 0x4c;          strcpy( nm,hw_site );
+    /* The three namestrings go through init_setname(), never a bare strcpy:
+     * two of the destinations are 16-bit offsets read OUT OF the module image
+     * itself (0x50, 0x5A). For the built-in Init_mod template those are the
+     * trusted constants 0x84/0x95, but adapt_init() also runs on an "init"
+     * module loaded from a FILE, where they are whatever the file says. */
+    init_setname( mh, 0x4c,                                       hw_site, 0x50-0x4c, "hw_site" );
     bp= (byte*)  mh + 0x50;     sp= (ushort*)bp;
-    nm= (char*)  mh + os9_word(*sp); strcpy( nm,hw_name );
+    init_setname( mh, os9_word(*sp),                              hw_name, 0,         "hw_name" );
     bp= (byte*)  mh + 0x5A;     sp= (ushort*)bp;
-    nm= (char*)  mh + os9_word(*sp); strcpy( nm,sw_name );
+    init_setname( mh, os9_word(*sp),                              sw_name, 0,         "sw_name" );
     init_module= mh;
     mod_crc    ( mh );
 } /* adapt_init */
