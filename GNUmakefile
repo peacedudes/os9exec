@@ -189,6 +189,13 @@ hammer-soak: $(EXE)
 hammer-6809:
 	swift run --package-path test RBFHammer --target 6809 --iterations 5 --jobs 2
 
+# Self-hosted OS-9/6809 conformance suite: builds a small RBF image
+# (build/selfhost6809/conf6809.dsk) that anyone with real 6809 hardware can
+# mount and run. See .superpowers/sdd/2026-07-25-6809-selfhosted-conformance-suite/.
+selfhost-6809:
+	./tools/selfhost6809/build-image.sh
+	./tools/selfhost6809/verify-image.sh build/selfhost6809/conf6809.dsk
+
 # Run the same integration suite against a real Linux build, in Docker.
 #
 # Worth doing even from macOS -- the platforms disagree in ways that hide bugs:
