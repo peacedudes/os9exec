@@ -128,7 +128,9 @@ public struct Adapter6809: Adapter {
         /// XRoar's DriveWire becker port.
         let beckerPort: Int
 
-        /// The port the `/N1` shell channel is re-exposed on.
+        /// The port the guest's inetd listens on. nitros9repl.sh rewrites the
+        /// clone's SYS/inetd.conf to match, since the guest picks the port and
+        /// the listen socket is bound host-side (so concurrent runs must differ).
         let chanPort: Int
 
         /// Where the partition is staged while ToolShed edits it.

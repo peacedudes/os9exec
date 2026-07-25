@@ -401,7 +401,7 @@ Requires `tmux` (`brew install tmux`).
 `tools/nitros9repl.sh` provides the same interface against a *real NitrOS-9
 system* running on an emulated CoCo3 — XRoar's "becker port" tunnels
 DriveWire over TCP to a DriveWire server, and the guest's own `inetd` asks
-that server to listen on a port and forks a shell onto each connection:
+that server to listen on a port and forks a login onto each connection:
 
 ```sh
 ./tools/nitros9repl.sh start            # boot server + XRoar to a shell (~40s)

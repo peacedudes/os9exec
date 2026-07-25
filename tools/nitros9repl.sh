@@ -18,7 +18,7 @@
 # the host side of it. Nothing here needs a patched DriveWire build.
 #
 # Usage:
-#   ./tools/nitros9repl.sh start          boot server + XRoar, wait for the inetd shell
+#   ./tools/nitros9repl.sh start          boot server + XRoar, log in, wait for the shell
 #   ./tools/nitros9repl.sh send <cmd>     send one command, wait for prompt, print new output
 #   ./tools/nitros9repl.sh key <keys...>  send raw keystrokes (no Enter); special: Enter Space C-x
 #   ./tools/nitros9repl.sh snap [label]   print labeled snapshot of the channel pane
@@ -30,7 +30,7 @@
 #   ./tools/nitros9repl.sh restart        stop + start
 #
 # Recognised prompt ("ready for next input"):
-#   {N|NN}path:     the EOU Shell+ prompt on the session channel, e.g. {N|07}/DD:
+#   {Nn|PP}path:    the EOU Shell+ prompt on the session channel, e.g. {N2|09}/DD:
 #
 # Notes:
 #   - OS-9 wants CR line endings; the channel pane runs `stty -icrnl -icanon`
@@ -88,6 +88,49 @@ LOGIN_PASSWORD=${NITROS9REPL_PASSWORD:-}
 # file survives that, so `server` can still show the run's final moments.
 SERVER_LOG="${NITROS9REPL_SERVER_LOG:-${TMPDIR:-/tmp}/nitros9repl-$SESSION.log}"
 
+# Host-side disk surgery, for keeping the guest's inetd.conf in step with
+# CHAN_PORT. The RBF partition starts this many 512-byte sectors into the .ide
+# container; ToolShed's `os9` reads that partition but not the container.
+PARTITION_LBA=${NITROS9REPL_PARTITION_LBA:-632}
+TOOLSHED=${TOOLSHED:-os9}
+
+# The guest decides the listen port: inetd reads it from the disk's own
+# /DD/SYS/inetd.conf and asks the server for it. So a caller that overrides
+# CHAN_PORT -- which concurrent runs MUST do, because the listen socket is
+# bound on the host and two runs asking for one port collide -- needs the disk
+# to agree, or it connects to a port nothing listens on and simply hangs.
+# Reconcile here so no caller has to know that. A no-op when they already match,
+# which is the normal interactive case; it never writes to the disk then.
+sync_chan_port() {
+    local img="$DISKDIR/68IDE.ide" work port
+    command -v "$TOOLSHED" >/dev/null 2>&1 || {
+        printf '[%s not on PATH — cannot verify the disk inetd port]\n' "$TOOLSHED" >&2
+        return 0
+    }
+    work=$(mktemp -d) || return 0
+    if ! dd if="$img" of="$work/p.img" bs=512 skip="$PARTITION_LBA" 2>/dev/null ||
+       ! "$TOOLSHED" copy -l "$work/p.img,SYS/inetd.conf" "$work/conf" 2>/dev/null; then
+        printf '[could not read SYS/inetd.conf from %s — is inetd configured?]\n' "$img" >&2
+        rm -rf "$work"; return 0
+    fi
+    port=$(grep -vE '^[[:space:]]*(#|$)' "$work/conf" | head -1 | cut -d, -f1 | awk '{print $1}')
+    if [ "$port" = "$CHAN_PORT" ]; then rm -rf "$work"; return 0; fi
+
+    printf '[disk inetd.conf listens on %s — rewriting it to %s]\n' "${port:-<none>}" "$CHAN_PORT"
+    sed -E "s/^[[:space:]]*${port}([[:space:]]*,)/${CHAN_PORT}\1/" "$work/conf" > "$work/conf.new"
+    # `os9 copy -r` can update a file's size while leaving stale data blocks, so
+    # delete and write fresh, then read back and compare rather than trusting it.
+    "$TOOLSHED" del "$work/p.img,SYS/inetd.conf" >/dev/null 2>&1
+    if ! "$TOOLSHED" copy -l "$work/conf.new" "$work/p.img,SYS/inetd.conf" 2>/dev/null ||
+       ! "$TOOLSHED" copy -l "$work/p.img,SYS/inetd.conf" "$work/conf.back" 2>/dev/null ||
+       ! cmp -s "$work/conf.new" "$work/conf.back"; then
+        printf '[FAILED to rewrite inetd.conf to port %s — disk left untouched]\n' "$CHAN_PORT" >&2
+        rm -rf "$work"; return 1
+    fi
+    dd if="$work/p.img" of="$img" bs=512 seek="$PARTITION_LBA" conv=notrunc 2>/dev/null
+    rm -rf "$work"
+}
+
 # drivewire-cli binary: env override, else newest Debug build in DerivedData.
 find_cli() {
     if [ -n "$DWCLI" ] && [ -x "$DWCLI" ]; then printf '%s' "$DWCLI"; return; fi
@@ -118,7 +161,7 @@ last_line() {
 }
 
 at_prompt() {
-    # EOU Shell+ prompt: {N|07}/DD:  (device, pid and current dir all vary --
+    # EOU Shell+ prompt: {N2|09}/DD:  (device, pid and current dir all vary --
     # inetd opens /N and the multiplexer hands out whichever channel is free)
     printf '%s' "$(last_line)" | grep -qE '^\{N[0-9]*\|[0-9A-Fa-f]+\}[^ ]*:$'
 }
@@ -254,6 +297,8 @@ cmd_start() {
     fi
 
     # Window 0 "server": the DriveWire host, verbose protocol log.
+    sync_chan_port || return 1
+
     : > "$SERVER_LOG"
     tmux new-session -d -s "$SESSION" -n server -x 220 -y 60 \
         "'$cli' --tcp-port $BECKER_PORT --verbose 2>&1 | tee '$SERVER_LOG'"
@@ -383,7 +428,7 @@ cmd_peek() {
 # launches that shell once, recovering means a full `restart`.
 cmd_connect() {
     printf '[connecting to the guest shell on port %s — Ctrl-C to detach]\n' "$CHAN_PORT"
-    printf '[inetd forks a shell per connection, so detaching ends this one]\n'
+    printf '[inetd forks a login per connection, so detaching ends this one]\n'
     printf '[line-oriented: local editing works; Esc/arrow keys are filtered]\n'
     perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\n/\r/; $b =~ tr/\x20-\x7e\r//cd; print $b }' \
         | nc 127.0.0.1 "$CHAN_PORT" \
@@ -433,7 +478,7 @@ case "${1:-help}" in
     *)
         printf 'Usage: nitros9repl.sh {start|send <cmd>|key <keys...>|snap [label]|peek|connect|server|stop|restart}\n'
         printf '\n'
-        printf '  start            boot drivewire-cli + XRoar, wait for the inetd shell prompt\n'
+        printf '  start            boot drivewire-cli + XRoar, log in, wait for the shell prompt\n'
         printf '  send CMD         send command, wait for prompt, print new output\n'
         printf '  key K [K...]     send raw keystrokes (no Enter); special: Enter Space C-x\n'
         printf '  snap [label]     print labeled snapshot of the channel pane\n'
