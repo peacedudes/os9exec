@@ -4,8 +4,9 @@
 # The DriveWire REPL (tools/nitros9repl.sh) is a text channel: it can drive a
 # NitrOS-9 shell but cannot observe a *screen*, which is why the 6809 graphics
 # notes in the os9-dev skill are almost entirely unverified.  This tool closes
-# that gap.  Together the two give a full loop: send commands over the /N1
-# REPL, press keys with `key`/`type` here, and see the result with `shot`.
+# that gap.  Together the two give a full loop: send commands over the
+# DriveWire REPL, press keys with `key`/`type` here, and see the result
+# with `shot`.
 #
 # Usage:
 #   ./tools/cocoscreen.sh shot [file]     capture the screen to a PNG (prints the path)

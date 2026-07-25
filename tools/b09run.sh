@@ -122,7 +122,8 @@ $written"
 fi
 
 if [ -n "$background" ]; then
-    # A backgrounded BASIC09 inherits /N1 for output, and its prompts then
+    # A backgrounded BASIC09 inherits the session channel for output, and its
+    # prompts then
     # interleave with the REPL's own channel and wreck it (the REPL ends up
     # parked at a stray `B:` prompt).  Send both stdout and stderr to /nil.
     # Note OS-9 spells stderr `>>`.  Append is `>+` (`>-` truncates); `>>>`
