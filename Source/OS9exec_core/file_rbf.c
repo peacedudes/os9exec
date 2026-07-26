@@ -792,30 +792,63 @@ static void LockDrop( syspath_typ* spP )
     spP->u.rbf.lockEnd= 0;
 } /* LockDrop */
 
-static ushort WriterOnFile( syspath_typ* spP )
-/* the process writing this file through one of the other paths, 0 if none.
- * Which process it is matters: waiting for one's own process to write more is
- * waiting for oneself, since the wait is what stops it getting there. */
+/* The EOF lock. Quoting the v2.4 Technical Manual (ch.7, "End of File Lock")
+ * because every word of it is load-bearing:
+ *
+ *   "An EOF lock occurs when the user reads or writes data at the end of file.
+ *    The user keeps the end of file locked until a read or write is performed
+ *    that is not at the end of the file. EOF lock is the only time that a
+ *    write call automatically causes lock out of any part of the file. This
+ *    avoids problems that could occur when two users try to simultaneously
+ *    extend a file."
+ *
+ *   "An extremely useful side effect occurs when a program creates a file for
+ *    sequential output. As soon as the file is created, EOF lock is gained,
+ *    and no other process is able to pass the writer in processing the file.
+ *    ... if you redirect an assembly listing to a disk file, a spooler utility
+ *    can open and begin listing the file before the assembler has written even
+ *    the first line of output. Record locking always keeps the spooler one
+ *    step behind the assembler."
+ *
+ * Three consequences this code has to get right:
+ *
+ * 1. It is NOT gated on update mode. Update mode governs the RECORD lock a
+ *    read takes (ch.7, "Record Locking"); the EOF lock is the one lock a
+ *    plain write-only path acquires, which is exactly what makes the spooler
+ *    example work -- an assembler redirecting its listing opened that file
+ *    for sequential output, not for update.
+ * 2. It is HELD, not re-taken per write: released by an access that is not at
+ *    the end of the file, so a run of appends keeps it throughout.
+ * 3. It is separate state from lockBeg/lockEnd. Letting a record go does not
+ *    let the end of the file go.
+ *
+ * Only paths that could actually extend the file take it. The manual's "reads
+ * or writes" is about the position, not a licence for a read-only follower to
+ * lock the end -- if it did, the spooler would block the assembler, inverting
+ * the very example the feature exists to serve. A reader still WAITS on it.
+ *
+ * End of file is a lock to acquire, not a condition to compute. This used to
+ * be computed -- "is any update-mode path open for writing?" -- which both
+ * made write-only appenders invisible to a follower and made a writer that
+ * never went near the end block one forever. */
+
+static ushort EofLockHolder( syspath_typ* spP )
+/* the process holding this file's end through one of the other paths, 0 if
+ * none. Which process it is matters: waiting for one's own process to write
+ * more is waiting for oneself, since the wait is what stops it getting there. */
 {
     syspath_typ* spK;
     ushort       k= spP->u.rbf.sameFile;
 
     while (k!=spP->nr && k!=0) {
              spK= &syspaths[k];
-      /* UPDATE mode, not merely write. Locking belongs to update-mode opens
-       * and nothing else -- one rule, easy to state and easy to reason about.
-       * A plain write-only appender therefore never makes a reader wait: two
-       * programs appending to one log cannot get in each other's way even by
-       * accident, which is worth more than making tail-style following work
-       * for a writer that never asked to participate. A writer that DOES want
-       * a reader to follow it opens for update and gets it. */
-      if (   spK->u.rbf.updMode) return spK->u.rbf.ownPid;
+      if (   spK->u.rbf.eofLock) return spK->u.rbf.ownPid;
 
       k= spK->u.rbf.sameFile;
     } // while
 
     return 0;
-} /* WriterOnFile */
+} /* EofLockHolder */
 
 static Boolean WaitExpired( syspath_typ* spP )
 /* has this path waited as long as SS_Ticks said it was willing to? Only ever
@@ -2911,11 +2944,11 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
             else {
               if (rOK)    break; /* reading is ok so far */
 
-              /* nothing here yet -- but if another path still has the file
-               * open for writing, this is not the end of it, so wait for the
-               * next write rather than reporting one */
+              /* nothing here yet -- but if another path holds the end of this
+               * file, this is not the end of it, so wait for the next write
+               * rather than reporting one */
               if (!spP->rawMode) {
-                  ushort wpid= WriterOnFile( spP );
+                  ushort wpid= EofLockHolder( spP );
 
                   if (wpid!=0 && wpid==currentpid) {
                       err= E_DEADLK; break; /* the writer is us: we would be
@@ -3072,10 +3105,26 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     
     if (!spP->rawMode && *lenP==0 && sv==rbf->currPos) {
         LockDrop  ( spP ); /* a zero-byte read or write drops everything this
-                            * path holds, whatever it was holding it for */
+                            * path holds, whatever it was holding it for --
+                            * the end of the file included */
+        rbf->eofLock= false;
         WakeOnFile( spP );
     }
     else if (!spP->rawMode && !err) {
+      /* The EOF lock, per ch.7: gained by an access AT the end of the file,
+       * kept until an access that is NOT at the end. Only a path that could
+       * extend the file takes it; a reader merely waits on it. Evaluated for
+       * reads too, so that seeking back into the middle and reading drops it,
+       * which is what "a read or write that is not at the end" says. */
+      if (rbf->wMode) {
+          Boolean atEnd= (rbf->currPos >= FDSize( spP ));
+
+          if (atEnd!=rbf->eofLock) {
+              rbf->eofLock= atEnd;
+              if (!atEnd) WakeOnFile( spP ); /* the end is free again */
+          } // if
+      } // if
+
       if (wMode) {           /* the write releases what the read took */
           LockDrop  ( spP );
           WakeOnFile( spP ); /* whoever was waiting on it can go */
@@ -3388,6 +3437,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     rbf->updMode = false;
     rbf->lockBeg = 0;
     rbf->lockEnd = 0;
+    rbf->eofLock = false;
 
         root= IsRoot( pathname ); /* root path must be a directory */
     if (root && isFile) return E_FNA;
@@ -3418,6 +3468,14 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     rbf->diskID= dev->last_diskID;
     rbf->wMode = IsWrite(*modeP);
     rbf->updMode= IsRW(*modeP); /* read+write: a read here locks what it read */
+
+    /* "As soon as the file is created, EOF lock is gained" -- ch.7. A file
+     * just created is empty, so its creator is standing at its end by
+     * definition, and this is what lets a spooler open the listing and wait
+     * before the assembler has written a single line. An ordinary open of an
+     * existing file takes nothing here: it gains the lock when an access
+     * actually lands at the end, which DoAccess decides. */
+    rbf->eofLock= cre && rbf->wMode;
 //  printf( "GetBuffers %08X %08X\n", spP->fd_sct, spP->rw_sct );
     GetBuffers ( dev,spP ); /* get the internal buffer structures now */
     spP->rw_nr = 0;         /* undefined */
@@ -3629,7 +3687,11 @@ os9err pRclose( ushort pid, syspath_typ* spP )
     
     /* before leaving the ring: anyone waiting on this file must look again --
      * if this was the writer they were waiting for, there is nothing more
-     * coming and what they will now see is a genuine end of file */
+     * coming and what they will now see is a genuine end of file.
+     * Dropping the end of the file BEFORE the wake, not after: a follower
+     * woken while this path still held it would look, still find it held, and
+     * go straight back to sleep with nothing left alive to wake it again. */
+    rbf->eofLock=  false;
     WakeOnFile    ( spP );
 
     ReleaseBuffers( spP );

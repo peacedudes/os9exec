@@ -814,6 +814,10 @@ typedef struct {
             Boolean   updMode;      // opened for update: reads lock what they read
             uint32_t  lockBeg;      // record this path holds: first byte ...
             uint32_t  lockEnd;      // ... and one past the last (equal: none)
+            Boolean   eofLock;      // holds the end of the file (see file_rbf.c).
+                                    // Separate state from lockBeg/lockEnd on
+                                    // purpose: letting a record go does not let
+                                    // the end of the file go.
         } rbf_typ;
 
 /* variant for SCF objects */

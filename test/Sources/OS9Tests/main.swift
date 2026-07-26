@@ -2850,6 +2850,42 @@ if !containerized {
     }
 }
 
+// ── RBF EOF lock: a WRITE-only producer holds the end of the file ────────────
+// v2.4 Technical Manual, ch.7 "End of File Lock": an EOF lock occurs when the
+// user reads or writes data at the end of file, is kept "until a read or write
+// is performed that is not at the end of the file", and "is the only time that
+// a write call automatically causes lock out of any part of the file". The
+// manual's own example is a spooler listing a file the assembler is still
+// writing -- and an assembler redirecting output opened that file for
+// SEQUENTIAL OUTPUT, not for update. So the lock cannot be gated on update
+// mode, which is what os9exec used to do (it asked "is any update-mode path
+// open for writing?" instead of "does anyone hold the end?").
+//
+// The shell's `>` is a write-only open, so this is the manual's example almost
+// literally: a producer writes one line, waits, writes a second, closes; a
+// read-only `list` starts in between. Passing means the reader waited at the
+// edge rather than calling the gap end-of-file. Deliberately on a `mount -k`
+// RBF image -- this lock lives in file_rbf.c and a host directory never
+// reaches it.
+if !containerized {
+    let prod = ["echo EOFLK-one", "sleep 4", "echo EOFLK-two"]
+        .joined(separator: "\r") + "\r"          // OS-9 lines end in CR
+    try? prod.write(toFile: scratchDisk + "/prod", atomically: true, encoding: .utf8)
+
+    run("rbf eof lock: a read-only reader follows a write-only producer",
+        expectation: "list waits at end of file and returns both lines",
+        commands: ["mount -k=360k h7",
+                   "shell <\(scratch)/prod >/h7/spool &",
+                   "sleep 1",
+                   "list /h7/spool",
+                   "sleep 3"],
+        timeout: 60) {
+            $0.contains("EOFLK-one") && $0.contains("EOFLK-two")
+        }
+
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/prod")
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us
