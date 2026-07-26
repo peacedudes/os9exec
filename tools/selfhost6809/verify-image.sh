@@ -68,13 +68,15 @@ for f in readme runall runone rebuild; do
     printf '%s\n' "$listing" | grep -aq "[[:space:]]$f\$" || fail "missing file $f"
 done
 
-# runone and runall must invoke the same set of tests. The shell has no
-# positional-parameter substitution, so runone is hand-maintained in lockstep
-# with runall; without this check a test added to one and forgotten in the
-# other drifts silently forever, with no failure signal anywhere.
+# runall, runone and rebuild must all invoke the same set of tests. The shell
+# has no positional-parameter substitution, so all three are hand-maintained
+# in lockstep; without this check a test added to some but not all of them
+# drifts silently forever, with no failure signal anywhere.
 ra=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/runall" | sort)
 ro=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/runone" | sort)
+rb=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/rebuild" | sort)
 [ "$ra" = "$ro" ] || fail "runall and runone invoke different tests"
+[ "$ra" = "$rb" ] || fail "runall and rebuild invoke different tests"
 
 # Public read, or the disk is unreadable to anyone but our build account.
 for f in readme runall runone rebuild; do

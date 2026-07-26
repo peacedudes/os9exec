@@ -6,18 +6,25 @@ attr /x0/REBUILT/t01open e pe pw pr
 IF -R /x0/REBUILT/tally
 del /x0/REBUILT/tally
 ENDIF
+IF -R /x0/REBUILT/t02int
+del /x0/REBUILT/t02int
+ENDIF
 echo LOAD /x0/SRC/tally.bas >-/x0/SCRATCH/rbpack.tmp
 echo CHX /x0/REBUILT >+/x0/SCRATCH/rbpack.tmp
 echo PACK tally >+/x0/SCRATCH/rbpack.tmp
+echo LOAD /x0/SRC/t02int.bas >+/x0/SCRATCH/rbpack.tmp
+echo PACK t02int >+/x0/SCRATCH/rbpack.tmp
 echo BYE >+/x0/SCRATCH/rbpack.tmp
 /DD/CMDS/basic09 </x0/SCRATCH/rbpack.tmp
 attr /x0/REBUILT/tally e pe pw pr
+attr /x0/REBUILT/t02int e pe pw pr
 del /x0/SCRATCH/rbpack.tmp
 chd /x0
 echo RUN rebuilt >+/x0/RESULTS/report
 procs >+/x0/RESULTS/report
 chx /x0/REBUILT
 t01open >+/x0/RESULTS/report
+t02int >+/x0/RESULTS/report
 tally
 ELSE
 echo CONF6809 rebuild: basic09 not found on this system -- nothing written to REBUILT/

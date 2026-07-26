@@ -2,4 +2,5 @@ echo CONF6809 run starting
 echo RUN prebuilt >+/x0/RESULTS/report
 procs >+/x0/RESULTS/report
 t01open >+/x0/RESULTS/report
+t02int >+/x0/RESULTS/report
 tally
