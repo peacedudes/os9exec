@@ -421,15 +421,19 @@ git commit -m "Tests: first 6809 conformance test -- I\$Open of an absent pathli
 ```
 echo CONF6809 run starting
 procs
-t01open >>/x0/RESULTS/report
+t01open >+/x0/RESULTS/report
 tally
 ```
 
-`procs` prints the `Grp.Usr` of the running process — that is how the report records who ran it. Confirm on the guest that `>>` appends rather than truncating: on OS-9 `>>` redirects **stderr**, not append. Use the correct append form for this shell, verified live, and record which it is in the readme.
+**The append form is `>+`, and this is documented, not a thing to discover.** On OS-9 `>` redirects stdout but *fails if the file already exists*; `>>` redirects **stderr**, not append; `>+` appends to an existing file or creates it; `>-` truncates or creates. The Unix reflex that `>>` appends is the trap — using it here would send each test's stderr to the report while the `RESULT` line went to the terminal, producing an empty report that looks like a suite that ran. Source: the skill's `common/os9-tools-and-shell.md` redirection table and `common/unix-differences.md`, both `Live`-tagged on 68k and NitrOS-9.
 
-- [ ] **Step 2: Verify the redirection form on the guest before relying on it**
+`procs` prints the `Grp.Usr` of the running process — that is how the report records who ran it.
 
-Run a two-line procedure on NitrOS-9 that writes twice to the same path, then `list` it. Expected: both lines present. If only the second survives, the form is truncating — fix it before any test result is written through it.
+- [ ] **Step 2: Confirm the documented append behaviour on the guest**
+
+Run a two-line procedure on NitrOS-9 that writes twice to the same path with `>+`, then `list` it. Expected: both lines present, in order. This confirms the documented behaviour on this guest; it is not an investigation, and if it disagrees with the documentation that disagreement is itself the finding — report it rather than quietly switching forms.
+
+Also confirm the negative, so nobody re-derives it later: the same procedure using `>>` puts nothing on stdout's path, because `>>` is stderr.
 
 - [ ] **Step 3: Write the tally program — and establish the BASIC09 pack pipeline here**
 
