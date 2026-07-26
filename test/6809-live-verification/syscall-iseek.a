@@ -7,6 +7,15 @@
 * earlier syscall test) via X:U=0:5 and confirms the next read lands on
 * "WORLD" -- proof the X:U convention is what's actually consulted.
 * Pre-req: synctest.dat must already exist with content "HELLOWORLD".
+*
+* RESOLVED 2026-07-25 -- there is no divergence, and the "D or X:D"
+* premise above is simply wrong. The System Programmers Manual 11.3.14
+* (p.109) states the split outright: (X) = M.S. 16 bits, (U) = L.S. 16
+* bits, cross-checked against the Rev F1 1983 edition. The manual, the
+* NitrOS-9 source and this live test all agree on X:U. The skill has
+* since been corrected and now documents X:U with that citation; this
+* header was left stale and misled a later session into briefing an
+* agent to go hunting for the mismatch. Nothing to chase here.
 
  nam SysSeekTest
  mod eom,nm,$11,$81,start,$0100
