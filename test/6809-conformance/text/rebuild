@@ -3,6 +3,8 @@ IF -R /DD/CMDS/basic09
 chd /x0/SRC
 /DD/CMDS/asm t01open.a -O=/x0/REBUILT/t01open E
 attr /x0/REBUILT/t01open e pe pw pr
+/DD/CMDS/asm t03eof.a -O=/x0/REBUILT/t03eof E
+attr /x0/REBUILT/t03eof e pe pw pr
 IF -R /x0/REBUILT/tally
 del /x0/REBUILT/tally
 ENDIF
@@ -25,6 +27,7 @@ procs >+/x0/RESULTS/report
 chx /x0/REBUILT
 t01open >+/x0/RESULTS/report
 t02int >+/x0/RESULTS/report
+t03eof >+/x0/RESULTS/report
 tally
 ELSE
 echo CONF6809 rebuild: basic09 not found on this system -- nothing written to REBUILT/

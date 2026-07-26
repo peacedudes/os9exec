@@ -1,0 +1,153 @@
+* t03eof.a -- conformance test t03: I$Read at end of file reports E$EOF.
+* Claim (see DOCS/claims.md for the citation): once all data in a file has
+* been read, the next I$Read reports E$EOF (211). Creates its own fixture
+* in SCRATCH/ with I$Create, writes a short known record with I$Write,
+* closes it, reopens it for read, reads the record back successfully, then
+* reads again -- that second read is the call under test. Deletes the
+* fixture before exiting so reruns are clean. Emits exactly one RESULT
+* t03 line via report.i's emit. Uses long branches throughout (lbra/lbcc/
+* lbcs/lbeq) rather than short ones -- this module is long enough that a
+* short branch's +-127 byte range is not a safe assumption; see
+* syscall-flink-ffork-fwait.a's header comment (test/6809-live-verification)
+* for the same convention and its reason.
+        nam ConfT03
+        mod eom,nm,$11,$81,start,$0100
+nm      fcs /ConfT03/
+        use report.i
+EXPECT   equ 211
+OPENFLAG equ 133
+RBUF     equ 134
+start   equ *
+        clr OPENFLAG,u
+* best-effort cleanup of any fixture left behind by a crashed prior run;
+* the outcome is not checked -- I$Delete failing because nothing is there
+* yet is the expected common case.
+        leax fname,pcr
+        swi2
+        fcb $87                I$Delete
+
+* --- I$Create(A=write-only, B=owner read+write, X=pathlist) ---
+        leax fname,pcr
+        lda #2
+        ldb #3
+        swi2
+        fcb $83                I$Create
+        lbcs sfail
+        sta PATHNUM,u
+        ldb #1
+        stb OPENFLAG,u
+
+* --- I$Write the fixture's known short record ---
+        leax wdata,pcr
+        ldy #wdatal
+        lda PATHNUM,u
+        swi2
+        fcb $8A                I$Write
+        lbcs sfail
+
+* --- I$Close, then reopen for read ---
+        lda PATHNUM,u
+        swi2
+        fcb $8F                I$Close
+        lbcs sfail
+        clr OPENFLAG,u
+
+        leax fname,pcr
+        lda #1                 read mode
+        swi2
+        fcb $84                I$Open
+        lbcs sfail
+        sta PATHNUM,u
+        ldb #1
+        stb OPENFLAG,u
+
+* --- I$Read the record just written -- expected to succeed ---
+        leax RBUF,u
+        ldy #wdatal
+        lda PATHNUM,u
+        swi2
+        fcb $89                I$Read
+        lbcs sfail
+
+* --- I$Read again at end of file -- THE CALL UNDER TEST ---
+        leax RBUF,u
+        ldy #wdatal
+        lda PATHNUM,u
+        swi2
+        fcb $89                I$Read
+        lbcc noerr             no error at all -- that is a FAIL
+        stb ERRB,u
+        lbra cleanup
+noerr   equ *
+        clr ERRB,u             read succeeded: observed "error" is 0
+cleanup equ *
+        lda OPENFLAG,u
+        lbeq cleanup2
+        lda PATHNUM,u
+        swi2
+        fcb $8F                I$Close
+        clr OPENFLAG,u
+cleanup2 equ *
+        leax fname,pcr
+        swi2
+        fcb $87                I$Delete
+        ldb ERRB,u
+        cmpb #EXPECT
+        lbeq pass
+        lbra fail
+
+sfail equ *
+        stb ERRB,u
+        lda OPENFLAG,u
+        lbeq sfail2
+        lda PATHNUM,u
+        swi2
+        fcb $8F                I$Close
+        clr OPENFLAG,u
+sfail2 equ *
+        leax fname,pcr
+        swi2
+        fcb $87                I$Delete
+
+fail    equ *
+        leax OUTBUF,u
+        leay FAILM,pcr
+        ldb #FAILML
+        lbsr copys
+        lbra tail
+pass    equ *
+        leax OUTBUF,u
+        leay PASSM,pcr
+        ldb #PASSML
+        lbsr copys
+tail    equ *
+        clra
+        ldb ERRB,u
+        std VALUE,u
+        lbsr prdec
+        leay EXPM,pcr
+        ldb #EXPML
+        lbsr copys
+        ldd #EXPECT
+        std VALUE,u
+        lbsr prdec
+        leay DESC,pcr
+        ldb #DESCL
+        lbsr copys
+        lbsr emit
+        clrb
+        swi2
+        fcb $06
+fname   fcs "SCRATCH/t03eof.dat"
+wdata   fcc /T3RECORD/
+wdatal  equ *-wdata
+PASSM   fcc /RESULT t03 PASS  obs=/
+PASSML  equ *-PASSM
+FAILM   fcc /RESULT t03 FAIL  obs=/
+FAILML  equ *-FAILM
+EXPM    fcc / exp=/
+EXPML   equ *-EXPM
+DESC    fcc /  I$Read at end of file reports E$EOF/
+DESCL   equ *-DESC
+        emod
+eom     equ *
