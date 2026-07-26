@@ -57,7 +57,11 @@ channel_tail() {
 }
 
 at_shell_prompt() {
-    channel_tail | grep -qE '^\{N1\|[0-9A-Fa-f]+\}[^ ]*:$'
+    # The channel number is whatever the guest's inetd handed out this boot --
+    # N1 only on a first connection.  Hardcoding it made the gate silently miss
+    # every prompt on a session that got N2 or higher, which reads as "BASIC09
+    # never came back" rather than "the harness is looking for the wrong name".
+    channel_tail | grep -qE '^\{N[0-9]+\|[0-9A-Fa-f]+\}[^ ]*:$'
 }
 
 # `bye` leaves BASIC09's command prompt.  Nothing reliably leaves the debugger
