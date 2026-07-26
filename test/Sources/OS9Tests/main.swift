@@ -2687,9 +2687,13 @@ do {
 // Fixtures are built here from a real module so the corruption is the ONLY
 // difference: one flipped bit in the body (CRC alone) and one in the header
 // (parity). The unmodified copy is the control -- without it a "wrong error
-// code" test would pass just as well on a module that never loads at all.
-// Skipped under a container, where the module source is not mounted.
-if !containerized, let goodModule = FileManager.default.contents(atPath: diskPath + "/CMDS/list") {
+// code" test would pass just as well on a module that never loads at all, and
+// it is also what keeps this honest in a container, where a macOS bind mount
+// can ignore the execute bit the fixtures are given (project memory
+// docker-macos-bindmount-ignores-permissions): if that ever bites, every case
+// collapses to E_FNA and the control fails first. Measured, not assumed --
+// `make test-linux` runs all four green.
+if let goodModule = FileManager.default.contents(atPath: diskPath + "/CMDS/list") {
     func plant(_ name: String, _ bytes: [UInt8]) {
         let path = scratchDisk + "/" + name
         // host-native devices carry the real execute bit, and load opens with
