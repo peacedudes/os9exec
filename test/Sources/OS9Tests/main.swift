@@ -139,7 +139,15 @@ func killContainer(_ name: String) {
 func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bool = false,
          disk: String = diskPath) -> String {
     let setup  = "chx \(sdkCmds)\nload math cio\n"
-    let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n"
+    // ESC then Ctrl-D: EOF is a per-path setting, not a constant. A site whose
+    // `.login` runs `tmode eof=04` (a normal thing to do -- it matches Unix)
+    // makes EOF Ctrl-D, and because tmode acts on the PATH the change outlives
+    // the login shell. A harness that sent only ESC would then sit at a live
+    // prompt until it timed out, looking like a hang in whatever it last ran.
+    // Sending both costs one stray line in whichever mode is not in force.
+    // One write, not two: after the emulator acts on the first terminator it is
+    // gone, and a follow-up write to the closed pipe would raise EPIPE here.
+    let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n\u{04}\n"
 
     let process = Process()
     // The system tick is on by default in the emulator, so the suite runs

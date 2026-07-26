@@ -57,8 +57,9 @@ public struct OS9Runner {
     /// Runs `staged` against a fresh `os9exec -r shell`, using
     /// `scratchDir` (a directory the caller creates and owns) as the `/h5`
     /// device. Every staged chunk after the last real one is followed by
-    /// ESC (`\u{1B}`), matching `OS9Tests`' own end-of-input convention, so
-    /// callers don't need to append it themselves.
+    /// ESC (`\u{1B}`) *and* Ctrl-D (`\u{04}`), matching `OS9Tests`' own
+    /// end-of-input convention, so callers don't need to append it themselves.
+    /// Both are sent because EOF is a per-path setting, not a fixed character.
     public func run(staged: [StagedInput], scratchDir: URL, timeout: TimeInterval) -> RunOutcome {
         let process = Process()
         process.executableURL = execURL
@@ -98,7 +99,10 @@ public struct OS9Runner {
             if chunk.delay > 0 { Thread.sleep(forTimeInterval: chunk.delay) }
             stdinPipe.fileHandleForWriting.write(Data(chunk.text.utf8))
         }
-        stdinPipe.fileHandleForWriting.write(Data("\u{1B}\n".utf8))
+        // ESC then Ctrl-D in ONE write -- see the note in OS9Tests/main.swift:
+        // EOF is a per-path setting a `.login` may have moved to Ctrl-D, and a
+        // second write would hit EPIPE once the first terminator has landed.
+        stdinPipe.fileHandleForWriting.write(Data("\u{1B}\n\u{04}\n".utf8))
         stdinPipe.fileHandleForWriting.closeFile()
 
         let timedOut = readGroup.wait(timeout: .now() + timeout) == .timedOut

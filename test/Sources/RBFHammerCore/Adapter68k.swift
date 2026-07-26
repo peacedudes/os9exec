@@ -168,7 +168,8 @@ public struct Adapter68k: Adapter {
         process.standardError = output
 
         try process.run()
-        let script = commands(for: scenario).joined(separator: "\n") + "\n\u{1B}\n"
+        // ESC then Ctrl-D in one write -- see the note in OS9Tests/main.swift.
+        let script = commands(for: scenario).joined(separator: "\n") + "\n\u{1B}\n\u{04}\n"
         input.fileHandleForWriting.write(Data(script.utf8))
         input.fileHandleForWriting.closeFile()
 
