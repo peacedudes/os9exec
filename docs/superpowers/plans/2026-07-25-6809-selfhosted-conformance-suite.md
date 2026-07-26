@@ -431,13 +431,22 @@ tally
 
 Run a two-line procedure on NitrOS-9 that writes twice to the same path, then `list` it. Expected: both lines present. If only the second survives, the form is truncating — fix it before any test result is written through it.
 
-- [ ] **Step 3: Write the tally program**
+- [ ] **Step 3: Write the tally program — and establish the BASIC09 pack pipeline here**
 
 `SRC/tally.bas` opens `/x0/RESULTS/report`, counts lines containing each verdict, and prints:
 
 ```
 CONF6809 totals: PASS=n FAIL=n SKIP=n ERROR=n
 ```
+
+This is the suite's **first BASIC09 artifact**, so the pack pipeline is built here rather than in Task 5. There is no host-side BASIC09: packing requires a booted guest, via `tools/nitros9repl.sh` and `tools/b09run.sh`. Two known traps, both of which have cost time before:
+
+- **`PACK` writes to the execution directory (CHX), not the data directory.** If the output "didn't appear", look in CHX.
+- **A second `PACK` of the same procedure in one session fails with error 51.** Packing converts the in-workspace copy too, so there is no source structure left for the extra compiler pass. Pack once per fresh session.
+
+Commit the packed module alongside its source: the step needs a booted guest, so a build must not depend on XRoar being available whenever a module has not changed.
+
+Extend `build-image.sh` to stage `SRC/*.bas` sources and their packed modules the same way it stages assembly tests, including the manifest entry and byte-count check.
 
 - [ ] **Step 4: Run the whole thing end to end**
 
@@ -517,9 +526,9 @@ It must print exactly one line in the standard format, e.g.
 `PRINT "RESULT t02 PASS  obs="; obs; " exp="; exp; "  INTEGER is 16-bit on 6809"`
 Match the field layout of the assembly tests so one parser handles both.
 
-- [ ] **Step 2: Pack it on the live guest**
+- [ ] **Step 2: Pack it using the pipeline established in Task 4**
 
-There is no host-side BASIC09. Use `tools/nitros9repl.sh` and `tools/b09run.sh`. Beware two known traps: `PACK` writes to the **execution** directory, not the data directory; and a second `PACK` of the same procedure in one session fails with error 51, because packing converts the in-workspace copy too. Pack once per fresh session.
+Task 4 built the BASIC09 pack path for `tally.bas`; follow it. The same two traps apply: `PACK` writes to the **execution** directory, not the data directory, and a second `PACK` of the same procedure in one session fails with error 51 because packing converts the in-workspace copy too. Pack once per fresh session.
 
 - [ ] **Step 3: Commit the packed module alongside the source**
 
