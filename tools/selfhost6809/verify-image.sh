@@ -78,6 +78,15 @@ rb=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/rebuild" | sort)
 [ "$ra" = "$ro" ] || fail "runall and runone invoke different tests"
 [ "$ra" = "$rb" ] || fail "runall and rebuild invoke different tests"
 
+# claims.md must cite the manual, not quote it. A quoted document or section
+# title (a handful of words) keeps a citation checkable; a quoted sentence is
+# a verbatim lift of copyrighted Microware text -- forbidden by this file's
+# own header and already the subject of one prior fix (commit 75de504, a
+# two-word lift). Six words is the line between the two.
+long=$(grep -oE '"[^"]*"' "$SRCDIR/DOCS/claims.md" \
+       | awk '{ gsub(/"/,""); if (NF>6) print }')
+[ -z "$long" ] || fail "claims.md quotes verbatim text: $long"
+
 # Public read, or the disk is unreadable to anyone but our build account.
 for f in readme runall runone rebuild; do
     printf '%s\n' "$listing" | grep -a "[[:space:]]$f\$" | grep -aq '\-\-\-\-r' \
