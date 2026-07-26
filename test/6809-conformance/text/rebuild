@@ -20,6 +20,9 @@ ENDIF
 IF -R /x0/REBUILT/t07div0
 del /x0/REBUILT/t07div0
 ENDIF
+IF -R /x0/REBUILT/t08extend
+del /x0/REBUILT/t08extend
+ENDIF
 echo LOAD /x0/SRC/tally.bas >-/x0/SCRATCH/rbpack.tmp
 echo CHX /x0/REBUILT >+/x0/SCRATCH/rbpack.tmp
 echo PACK tally >+/x0/SCRATCH/rbpack.tmp
@@ -27,11 +30,14 @@ echo LOAD /x0/SRC/t02int.bas >+/x0/SCRATCH/rbpack.tmp
 echo PACK t02int >+/x0/SCRATCH/rbpack.tmp
 echo LOAD /x0/SRC/t07div0.bas >+/x0/SCRATCH/rbpack.tmp
 echo PACK t07div0 >+/x0/SCRATCH/rbpack.tmp
+echo LOAD /x0/SRC/t08extend.bas >+/x0/SCRATCH/rbpack.tmp
+echo PACK t08extend >+/x0/SCRATCH/rbpack.tmp
 echo BYE >+/x0/SCRATCH/rbpack.tmp
 /DD/CMDS/basic09 </x0/SCRATCH/rbpack.tmp
 attr /x0/REBUILT/tally e pe pw pr
 attr /x0/REBUILT/t02int e pe pw pr
 attr /x0/REBUILT/t07div0 e pe pw pr
+attr /x0/REBUILT/t08extend e pe pw pr
 del /x0/SCRATCH/rbpack.tmp
 chd /x0
 echo RUN rebuilt >+/x0/RESULTS/report
@@ -44,6 +50,7 @@ t04bmode >+/x0/RESULTS/report
 t05fna >+/x0/RESULTS/report
 t06seek >+/x0/RESULTS/report
 t07div0 >+/x0/RESULTS/report
+t08extend >+/x0/RESULTS/report
 tally
 ELSE
 echo CONF6809 rebuild: basic09 not found on this system -- nothing written to REBUILT/
