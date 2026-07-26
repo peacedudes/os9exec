@@ -31,10 +31,10 @@ records who ran it, then one RESULT line per test) and whatever a
 test's own SCRATCH/ working files were. Nothing outside this disk is
 ever touched; no test writes to /dd.
 
-runone reruns the shipped tests one at a time (today: just t01open)
-without the "procs" header, appending to the same report -- useful for
-rechecking a single test after a partial run. runall and runone always
-invoke the same set of tests; the build verifies this.
+runone reruns the same set of shipped tests as runall, without the
+"procs" header, appending to the same report -- useful for rechecking
+after a partial run. runall, runone and rebuild always invoke the same
+set of tests; the build verifies this.
 
 tally reads RESULTS/report and prints:
 
