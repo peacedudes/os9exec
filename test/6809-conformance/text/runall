@@ -1,0 +1,4 @@
+echo CONF6809 run starting
+procs
+t01open >+/x0/RESULTS/report
+tally

@@ -1,0 +1,64 @@
+CONF6809 -- an OS-9/6809 conformance suite
+
+What this is: a small set of standalone tests, each checking one
+documented Microware OS-9 behaviour against what this system actually
+does. Every test prints exactly one RESULT line (PASS, FAIL, SKIP or
+ERROR); see DOCS/claims for the manual citation behind each one. This
+is not a regression suite for any particular emulator -- it exists to
+compare real hardware against the documentation.
+
+How to run it, from the OS-9 shell, after mounting this disk as /x0:
+
+    chd /x0
+    load procs
+    load runb
+    chx /x0/CMDS
+    runall
+
+The "load" lines matter and are not cosmetic: this account has no PATH
+set, so once "chx /x0/CMDS" points command lookup at this disk's
+own CMDS/, "procs" (runall's own first real step) and the packed BASIC09
+"tally" (which needs RunB to run it) both become unfindable unless they
+are already memory-resident first. "load" makes each one resident before
+CHX moves away from wherever they normally live, so both keep working
+afterward regardless of CHX. Confirmed live: skipping either "load" line
+reproduces "Error #216 - Path Name Not Found" partway through the run --
+see task-4-report.md.
+
+What it writes: everything lands under /x0 -- RESULTS/report (one
+RESULT line per test, plus the process list from "procs" so the report
+records who ran it) and whatever a test's own SCRATCH/ working files
+were. Nothing outside this disk is ever touched; no test writes to /dd.
+
+runone reruns the shipped tests one at a time (today: just t01open)
+without the "procs" header, appending to the same report -- useful for
+rechecking a single test after a partial run.
+
+tally reads RESULTS/report and prints:
+
+    CONF6809 totals: PASS=n FAIL=n SKIP=n ERROR=n
+
+Redirection note, since the Unix habit is wrong here: on this shell
+">>" redirects standard ERROR, not append. ">" fails if the target
+already exists. This suite's own procedures use ">+" (append to an
+existing file, or create it) for every RESULT-line write, and that
+form was confirmed live before it was relied on -- both a two-line
+append-in-order check and the negative (">>" puts nothing on the
+stdout path) -- see task-4-report.md.
+
+Rebuilding: CMDS/ ships prebuilt so the suite runs with nothing but a
+shell. SRC/ carries the exact sources CMDS/ was built from. Running
+"rebuild" reassembles SRC/*.a with this system's own asm and repacks
+SRC/*.bas with its own basic09, writes the results into CMDS/, then
+runs runall again. If this system has no asm or basic09 at
+/DD/CMDS, rebuild prints one line saying so and leaves CMDS/
+completely untouched -- a half-finished rebuild would otherwise mix
+our modules with this system's own, with no way to tell which produced
+which result. Run "rebuild" after the setup above (it calls runall
+itself at the end, and that needs "procs"/RunB already resident same
+as any other run).
+
+A difference between the prebuilt run's report and the rebuilt run's
+report is itself a finding, not noise -- please send back BOTH
+RESULTS/report captures (copy the first elsewhere before rebuilding),
+or just the whole disk image.

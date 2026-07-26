@@ -61,5 +61,46 @@ else
     fail "build log not found at $BUILDLOG"
 fi
 
+# Every required top-level file is present, lowercase per OS-9 convention.
+for f in readme runall runone rebuild; do
+    printf '%s\n' "$listing" | grep -aq "[[:space:]]$f\$" || fail "missing file $f"
+done
+
+# Public read, or the disk is unreadable to anyone but our build account.
+for f in readme runall; do
+    printf '%s\n' "$listing" | grep -a "[[:space:]]$f\$" | grep -aq '\-\-\-\-r' \
+        || fail "$f lacks public read"
+done
+
+# Text files carry no non-ASCII bytes and no LF. Extract and check the real
+# bytes: assembled modules legitimately contain high bytes, so this is
+# per-file, never a scan of the whole image.
+tmp=$(mktemp -d)
+for f in readme runall runone rebuild; do
+    if ! "$OS9" copy "$IMG,/$f" "$tmp/$f" >/dev/null 2>&1; then
+        fail "cannot extract $f"; continue
+    fi
+    # grep exits 0 = found, 1 = not found, >=2 = error. Treat an error as a
+    # failed assertion: `grep ... && fail` alone silently passes on exit 2,
+    # which is a check that cannot fail.
+    LC_ALL=C grep -q $'[\x80-\xff]' "$tmp/$f"
+    case $? in 0) fail "$f contains non-ASCII bytes";; 1) ;; *) fail "cannot scan $f";; esac
+    # NOT `grep -q $'\n' "$tmp/$f"` as originally specified: on this host's
+    # BSD grep (2.6.0-FreeBSD, macOS default), `grep` splits input into
+    # records on \n before matching, so a pattern that IS the record
+    # separator matches every file -- proven live, including a file with
+    # zero bytes of any kind. That is a check that cannot NOT fire: it
+    # would flag every genuinely CR-only file as a false failure, which is
+    # the same "vacuous check" defect as a check that can never fail, just
+    # inverted. `wc -l` counts raw \n bytes directly and is unambiguous.
+    lf_count=$(LC_ALL=C wc -l < "$tmp/$f" 2>/dev/null | tr -d ' ')
+    case "$lf_count" in
+        '') fail "cannot scan $f" ;;
+        0) ;;
+        *) fail "$f contains LF -- must be CR-only" ;;
+    esac
+done
+rm -rf "$tmp"
+
 if [ "$fails" -eq 0 ]; then printf 'VERIFY-OK %s\n' "$IMG"; exit 0; fi
 printf 'VERIFY-FAILED %d assertion(s)\n' "$fails"; exit 1

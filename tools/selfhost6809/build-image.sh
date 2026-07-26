@@ -12,6 +12,7 @@ ln -s "$REPO/h0" "$IMGDIR/h0"
 ln -s "$STAGE"   "$IMGDIR/h1"
 
 TESTSRC="$REPO/test/6809-conformance/SRC"
+TEXTSRC="$REPO/test/6809-conformance/text"
 MANIFEST="$OUT/manifest.txt"
 
 # --- assemble every shipped test, stage the shippable sources ---
@@ -28,8 +29,29 @@ for a in "$TESTSRC"/*.a; do
   bytes=$(wc -c < "$STAGE/CMDS/$b" | tr -d ' ')
   echo "$b $bytes" >> "$MANIFEST"
 done
-for s in "$TESTSRC"/*; do
+# BASIC09 sources have no host-side compiler (see task-4-report.md): the
+# packed module for each SRC/<name>.bas is committed alongside it as
+# SRC/<name>.pack, built once on a live NitrOS-9 guest. Installed raw --
+# packing already happened when the .pack file was committed, so this needs
+# no guest and no XRoar for an ordinary build.
+for p in "$TESTSRC"/*.pack; do
+  [ -e "$p" ] || continue
+  b=$(basename "$p" .pack)
+  cp "$p" "$STAGE/CMDS/$b"
+  bytes=$(wc -c < "$STAGE/CMDS/$b" | tr -d ' ')
+  echo "$b $bytes" >> "$MANIFEST"
+done
+# Stage the shippable text sources (assembly + BASIC09) as CR-only. Glob by
+# known text extensions, not a bare `*` -- SRC/ also holds the packed .pack
+# binaries staged above, and CR-converting one of those would corrupt it.
+for s in "$TESTSRC"/*.a "$TESTSRC"/*.i "$TESTSRC"/*.bas; do
+  [ -e "$s" ] || continue
   tr '\n' '\r' < "$s" > "$STAGE/SRC/$(basename "$s")"   # OS-9 text is CR-only
+done
+
+# --- stage the top-level runner text files, CR-only ---
+for t in "$TEXTSRC"/*; do
+  tr '\n' '\r' < "$t" > "$STAGE/$(basename "$t")"
 done
 
 # --- the os9exec build procedure, CR-only (LF would make it ONE line) ---
@@ -49,7 +71,27 @@ done
     # build.log gained a spurious Error # line. -n sidesteps the whole-FD
     # replication; the explicit attr below sets what the module needs.
     echo "copy -n /h1/CMDS/$b /h7/CMDS/$b"
-    echo "attr /h7/CMDS/$b -e -pe -pr"    # 68k spelling: -e SETS, -ne clears
+    # 68k spelling: -e SETS, -ne clears. Public write is here too, unlike a
+    # plain shipped module: `rebuild` (task-4-report.md) replaces this exact
+    # file as whatever account the recipient is, not our build account, and
+    # OS-9 lets only the owner (or super) overwrite a file otherwise -- see
+    # task-4-report.md for the live proof this fails without it.
+    echo "attr /h7/CMDS/$b -e -pe -pw -pr"
+  done
+  for t in "$TEXTSRC"/*; do
+    b=$(basename "$t")
+    echo "copy -n /h1/$b /h7/$b"          # same -n reasoning as CMDS above
+    echo "attr /h7/$b -pr"                # public read: readable by anyone
+  done
+  # SRC/ itself: Task 3 staged it host-side only ($STAGE/SRC) and left the
+  # on-image copy for this task (see task-3-report.md). `rebuild` reads
+  # these files on the RECIPIENT's own disk, as whatever account he is --
+  # not our build account -- so they need public read same as everything
+  # else, not just to exist.
+  for s in "$STAGE"/SRC/*; do
+    b=$(basename "$s")
+    echo "copy -n /h1/SRC/$b /h7/SRC/$b"  # same -n reasoning as CMDS above
+    echo "attr /h7/SRC/$b -pr"
   done
   echo "echo BUILD-STRUCTURE-DONE"
   echo "dir -e /h7"
