@@ -12,13 +12,21 @@ ln -s "$REPO/h0" "$IMGDIR/h0"
 ln -s "$STAGE"   "$IMGDIR/h1"
 
 TESTSRC="$REPO/test/6809-conformance/SRC"
+MANIFEST="$OUT/manifest.txt"
 
 # --- assemble every shipped test, stage the shippable sources ---
 # SRC/ contains only files that ship (dev/ scaffolding never does); both
 # loops below wildcard over it so a new test needs no build-script edit.
+# manifest.txt records "<name> <bytes>" per module -- verify-image.sh uses
+# it to prove each one actually landed on the image, not just that the
+# build procedure ran (a failed `copy` does not abort the procedure; see
+# task-3-report.md fix round 1).
+: > "$MANIFEST"
 for a in "$TESTSRC"/*.a; do
   b=$(basename "$a" .a)
   lwasm --format=os9 -I "$TESTSRC" --output="$STAGE/CMDS/$b" "$a"
+  bytes=$(wc -c < "$STAGE/CMDS/$b" | tr -d ' ')
+  echo "$b $bytes" >> "$MANIFEST"
 done
 for s in "$TESTSRC"/*; do
   tr '\n' '\r' < "$s" > "$STAGE/SRC/$(basename "$s")"   # OS-9 text is CR-only
@@ -31,7 +39,16 @@ done
   for d in CMDS SRC DOCS SCRATCH RESULTS; do echo "makdir /h7/$d"; done
   for m in "$STAGE"/CMDS/*; do
     b=$(basename "$m")
-    echo "copy /h1/CMDS/$b /h7/CMDS/$b"
+    # -n: create a fresh destination FD instead of replaying the source's
+    # whole FD sector. Host-mounted /h1 synthesizes owner 0.0 (superuser)
+    # for every file it has no real OS-9 ownership concept for; without -n,
+    # copy tries to replicate that owner onto the new file on /h7 via one
+    # SS.FD PutStat, which os9exec's RBF handler refuses for a non-super
+    # caller whose real owner differs from 0 (E$PERMIT, 164) -- the file's
+    # bytes are already written by then, so the copy still "worked", but
+    # build.log gained a spurious Error # line. -n sidesteps the whole-FD
+    # replication; the explicit attr below sets what the module needs.
+    echo "copy -n /h1/CMDS/$b /h7/CMDS/$b"
     echo "attr /h7/CMDS/$b -e -pe -pr"    # 68k spelling: -e SETS, -ne clears
   done
   echo "echo BUILD-STRUCTURE-DONE"
