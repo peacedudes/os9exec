@@ -25,18 +25,24 @@ afterward regardless of CHX. Confirmed live: skipping either "load" line
 reproduces "Error #216 - Path Name Not Found" partway through the run --
 see task-4-report.md.
 
-What it writes: everything lands under /x0 -- RESULTS/report (one
-RESULT line per test, plus the process list from "procs" so the report
-records who ran it) and whatever a test's own SCRATCH/ working files
-were. Nothing outside this disk is ever touched; no test writes to /dd.
+What it writes: everything lands under /x0 -- RESULTS/report (a RUN
+line naming the run, the process list from "procs" so the report
+records who ran it, then one RESULT line per test) and whatever a
+test's own SCRATCH/ working files were. Nothing outside this disk is
+ever touched; no test writes to /dd.
 
 runone reruns the shipped tests one at a time (today: just t01open)
 without the "procs" header, appending to the same report -- useful for
-rechecking a single test after a partial run.
+rechecking a single test after a partial run. runall and runone always
+invoke the same set of tests; the build verifies this.
 
 tally reads RESULTS/report and prints:
 
     CONF6809 totals: PASS=n FAIL=n SKIP=n ERROR=n
+
+It counts every RESULT line in the file regardless of which run wrote
+it, so run it right after the run you care about if you want that
+run's own totals.
 
 Redirection note, since the Unix habit is wrong here: on this shell
 ">>" redirects standard ERROR, not append. ">" fails if the target
@@ -48,17 +54,28 @@ stdout path) -- see task-4-report.md.
 
 Rebuilding: CMDS/ ships prebuilt so the suite runs with nothing but a
 shell. SRC/ carries the exact sources CMDS/ was built from. Running
-"rebuild" reassembles SRC/*.a with this system's own asm and repacks
-SRC/*.bas with its own basic09, writes the results into CMDS/, then
-runs runall again. If this system has no asm or basic09 at
-/DD/CMDS, rebuild prints one line saying so and leaves CMDS/
-completely untouched -- a half-finished rebuild would otherwise mix
-our modules with this system's own, with no way to tell which produced
-which result. Run "rebuild" after the setup above (it calls runall
-itself at the end, and that needs "procs"/RunB already resident same
-as any other run).
+"rebuild" (after the setup above -- it needs "procs"/RunB resident
+same as any other run) reassembles SRC/*.a with this system's own asm
+and repacks SRC/*.bas with its own basic09, writing the results into
+REBUILT/ -- never into CMDS/ -- then runs the rebuilt suite from
+there. CMDS/ is never modified, by any path: a recipient whose asm or
+basic09 is present but produces something incompatible -- the case
+most worth hearing about -- still ends up with a working prebuilt
+CMDS/ *and* whatever REBUILT/ turned out to be, never neither. If this
+system has no asm or basic09 at /DD/CMDS, rebuild prints one line
+saying so and writes nothing to REBUILT/.
 
-A difference between the prebuilt run's report and the rebuilt run's
-report is itself a finding, not noise -- please send back BOTH
-RESULTS/report captures (copy the first elsewhere before rebuilding),
-or just the whole disk image.
+Each run, prebuilt or rebuilt, starts by writing a boundary line --
+"RUN prebuilt" or "RUN rebuilt" -- into RESULTS/report before anything
+else. The report is append-only, so this is the only thing that lets
+a later reader split a report containing both runs back into two.
+Please send back the whole report, both runs included (or just the
+whole disk image), not a hand-trimmed excerpt.
+
+"rebuild" needs a shell with IF/ELSE/ENDIF (Shell+ or equivalent) to
+guard against a missing asm or basic09; runall and runone deliberately
+use no conditionals at all, so the core suite runs on the plainest
+shell that can read a procedure file. If your shell does not recognise
+a keyword, it prints "WHAT?" instead of running that line -- if you
+see that from "rebuild", it means your shell lacks IF/ELSE/ENDIF, not
+that the disk is broken; runall and runone should never produce it.

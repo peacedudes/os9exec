@@ -58,7 +58,7 @@ done
 {
   echo "mount -k=360k h7"
   echo "login $ACCT"
-  for d in CMDS SRC DOCS SCRATCH RESULTS; do echo "makdir /h7/$d"; done
+  for d in CMDS SRC DOCS SCRATCH RESULTS REBUILT; do echo "makdir /h7/$d"; done
   for m in "$STAGE"/CMDS/*; do
     b=$(basename "$m")
     # -n: create a fresh destination FD instead of replaying the source's

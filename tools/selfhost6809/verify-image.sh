@@ -5,6 +5,8 @@
 set -uo pipefail
 IMG="${1:?usage: verify-image.sh <image>}"
 OS9=${OS9:-/usr/local/bin/os9}
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+SRCDIR="$REPO/test/6809-conformance"
 fails=0
 fail() { printf 'ASSERT-FAIL %s\n' "$*"; fails=$((fails+1)); }
 
@@ -13,7 +15,7 @@ fail() { printf 'ASSERT-FAIL %s\n' "$*"; fails=$((fails+1)); }
 listing=$("$OS9" dir -e "$IMG," 2>&1)
 
 # Every required directory is present.
-for d in CMDS SRC DOCS SCRATCH RESULTS; do
+for d in CMDS SRC DOCS SCRATCH RESULTS REBUILT; do
     printf '%s\n' "$listing" | grep -aq "[[:space:]]$d\$" || fail "missing directory $d"
 done
 
@@ -66,8 +68,16 @@ for f in readme runall runone rebuild; do
     printf '%s\n' "$listing" | grep -aq "[[:space:]]$f\$" || fail "missing file $f"
 done
 
+# runone and runall must invoke the same set of tests. The shell has no
+# positional-parameter substitution, so runone is hand-maintained in lockstep
+# with runall; without this check a test added to one and forgotten in the
+# other drifts silently forever, with no failure signal anywhere.
+ra=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/runall" | sort)
+ro=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/runone" | sort)
+[ "$ra" = "$ro" ] || fail "runall and runone invoke different tests"
+
 # Public read, or the disk is unreadable to anyone but our build account.
-for f in readme runall; do
+for f in readme runall runone rebuild; do
     printf '%s\n' "$listing" | grep -a "[[:space:]]$f\$" | grep -aq '\-\-\-\-r' \
         || fail "$f lacks public read"
 done

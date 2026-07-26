@@ -1,4 +1,5 @@
 echo CONF6809 run starting
-procs
+echo RUN prebuilt >+/x0/RESULTS/report
+procs >+/x0/RESULTS/report
 t01open >+/x0/RESULTS/report
 tally
