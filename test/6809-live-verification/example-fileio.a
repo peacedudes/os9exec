@@ -1,0 +1,102 @@
+        nam ExFileI
+* Constants are defined here rather than pulled from /dd/defs/os9defs.a,
+* which is RMA-format and cannot be assembled by asm.
+Prgrm   equ $10
+Objct   equ $01
+ReEnt   equ $80
+ICreat  equ $83
+IOpen   equ $84
+IWrite  equ $8A
+IClose  equ $8F
+FPErr   equ $0F
+FExit   equ $06
+READ    equ 1
+WRITE   equ 2
+ATTRS   equ $03
+* Data area: offsets from U. Its size is the mod directive's last operand.
+        org 0
+path    rmb 1
+        rmb 200
+size    equ .
+        mod eom,name,Prgrm+Objct,ReEnt+1,start,size
+name    fcs /ExFileI/
+* --- happy path: create, write one line, close ---
+start   leax fname,pcr
+        lda #WRITE
+        ldb #ATTRS
+        swi2
+        fcb ICreat
+        bcs failed
+        sta path,u
+        leax line,pcr
+        ldy #linelen
+        lda path,u
+        swi2
+        fcb IWrite
+        bcs failed
+        lda path,u
+        swi2
+        fcb IClose
+        bcs failed
+        leax okmsg,pcr
+        ldy #okmsgln
+        lda #1
+        swi2
+        fcb IWrite
+* --- error path: open a file that is not there ---
+        leax missing,pcr
+        lda #READ
+        swi2
+        fcb IOpen
+        bcc unexpec
+        pshs b
+        leax experr,pcr
+        ldy #experrl
+        lda #1
+        swi2
+        fcb IWrite
+        puls b
+        swi2
+        fcb FPErr
+        clrb
+        swi2
+        fcb FExit
+unexpec leax unexmsg,pcr
+        ldy #unexln
+        lda #1
+        swi2
+        fcb IWrite
+        ldb #1
+        swi2
+        fcb FExit
+failed  pshs b
+        leax failmsg,pcr
+        ldy #failln
+        lda #1
+        swi2
+        fcb IWrite
+        puls b
+        swi2
+        fcb FPErr
+        ldb #1
+        swi2
+        fcb FExit
+fname   fcc /exfile.txt/
+        fcb $0D
+missing fcc /no.such.file/
+        fcb $0D
+line    fcc /written by exfilei/
+        fcb $0D
+linelen equ *-line
+okmsg   fcc /PASS create-write-close/
+        fcb $0D
+okmsgln equ *-okmsg
+experr  fcc /PASS open of a missing file: /
+experrl equ *-experr
+unexmsg fcc /FAIL open of a missing file succeeded/
+        fcb $0D
+unexln  equ *-unexmsg
+failmsg fcc /FAIL happy path: /
+failln  equ *-failmsg
+        emod
+eom     equ *
