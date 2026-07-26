@@ -1,0 +1,115 @@
+* t05fna.a -- conformance test t05: opening a file without adequate
+* permission reports E$FNA.
+* Claim (see DOCS/claims.md for the citation): I$Open of a file whose
+* attributes forbid the caller's requested access reports E$FNA (214).
+* The target, SCRATCH/denied, is placed on the image at build time
+* (build-image.sh) owned by the build account with public read cleared
+* (attr ... -npr, 68k spelling). This test creates and deletes nothing
+* of its own; the fixture ships with the image.
+*
+* Guard: Microware's OS-9/6809 password file defines a single flat user
+* ID, 0 to 65535, with ID 0 as the superuser (see DOCS/claims.md); a
+* superuser bypasses permission checks by design, so on such an account
+* this test's I$Open would succeed and a plain FAIL would misreport a
+* fact about the operator as a fact about the system. F$ID returns that
+* identity in Y. Live-checked against this suite's own guest (NitrOS-9)
+* before shipping: /DD/SYS/password holds flat, ungrouped IDs (the
+* stock disk's own entries read "...,0,...", "...,1,...", "...,2,...",
+* not a group.user pair) -- an earlier draft of this guard tested only
+* Y's high byte on the (wrong, 68k-derived) assumption that 6809 packs
+* group.user the way OS-9/68000 does, and that draft SKIPped every
+* account on this guest, including ordinary logged-in users, because
+* every ID here is under 256. CMPY against zero, checking the whole
+* register, is what the manual's own definition and this guest's own
+* password file both actually call for.
+*
+* Emits exactly one RESULT t05 line via report.i's emit, or one SKIP
+* line if the guard fires. Long branches throughout for the same
+* range-safety reason as t03eof.a/t04bmode.a.
+        nam ConfT05
+        mod eom,nm,$11,$81,start,$0100
+nm      fcs /ConfT05/
+        use report.i
+EXPECT  equ 214
+start   equ *
+
+* --- guard: F$ID, then test the whole 16-bit Y for zero ---
+        swi2
+        fcb $0C                F$ID
+        cmpy #0                  Y is the flat user ID; CMPY leaves it intact
+        lbeq skip                ID 0 -- superuser, guard fires
+
+* --- I$Open(A=1 read, X=pathlist) -- THE CALL UNDER TEST ---
+        leax fname,pcr
+        lda #1                   read access
+        swi2
+        fcb $84                I$Open
+        lbcc opened              no error at all -- that is a FAIL
+        stb ERRB,u
+        lbra check
+opened  equ *
+* Open succeeded against a permission-denied fixture: close it (best
+* effort) so a rerun does not leak a path number, then report the
+* vacuous "error" 0 as observed.
+        sta PATHNUM,u
+        swi2
+        fcb $8F                I$Close
+        clr ERRB,u
+check   equ *
+        ldb ERRB,u
+        cmpb #EXPECT
+        lbeq pass
+        lbra fail
+
+skip    equ *
+        leax OUTBUF,u
+        leay SKIPM,pcr
+        ldb #SKIPML
+        lbsr copys
+        lbsr emit
+        clrb
+        swi2
+        fcb $06
+
+fail    equ *
+        leax OUTBUF,u
+        leay FAILM,pcr
+        ldb #FAILML
+        lbsr copys
+        lbra tail
+pass    equ *
+        leax OUTBUF,u
+        leay PASSM,pcr
+        ldb #PASSML
+        lbsr copys
+tail    equ *
+        clra
+        ldb ERRB,u
+        std VALUE,u
+        lbsr prdec
+        leay EXPM,pcr
+        ldb #EXPML
+        lbsr copys
+        ldd #EXPECT
+        std VALUE,u
+        lbsr prdec
+        leay DESC,pcr
+        ldb #DESCL
+        lbsr copys
+        lbsr emit
+        clrb
+        swi2
+        fcb $06
+fname   fcs "SCRATCH/denied"
+PASSM   fcc /RESULT t05 PASS  obs=/
+PASSML  equ *-PASSM
+FAILM   fcc /RESULT t05 FAIL  obs=/
+FAILML  equ *-FAILM
+EXPM    fcc / exp=/
+EXPML   equ *-EXPM
+DESC    fcc /  I$Open without permission reports E$FNA/
+DESCL   equ *-DESC
+SKIPM   fcc /RESULT t05 SKIP  operator is group 0 (superuser) -- guard bypassed/
+SKIPML  equ *-SKIPM
+        emod
+eom     equ *

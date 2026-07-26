@@ -7,9 +7,17 @@ STAGE="$OUT/stage"          # host-native tree os9exec sees as /h1
 IMGDIR="$OUT/dev"           # os9exec startPath: the image appears here as h7
 ACCT=${CONF_ACCT:-claude}   # non-super account in h0/SYS/password (1.7)
 
-rm -rf "$OUT"; mkdir -p "$STAGE" "$IMGDIR" "$STAGE/CMDS" "$STAGE/SRC"
+rm -rf "$OUT"; mkdir -p "$STAGE" "$IMGDIR" "$STAGE/CMDS" "$STAGE/SRC" "$STAGE/SCRATCH"
 ln -s "$REPO/h0" "$IMGDIR/h0"
 ln -s "$STAGE"   "$IMGDIR/h1"
+
+# t05fna's fixture: a file that exists but that t05fna must not be able to
+# open. Content is irrelevant -- the test never reads it -- only that it
+# exists and, once copied onto the image below with -npr, is owned by the
+# build account with no public read. CR-only, matching every other staged
+# text file's convention on this image.
+printf 'This file backs test t05fna. It exists only to be denied.\n' \
+  | tr '\n' '\r' > "$STAGE/SCRATCH/denied"
 
 TESTSRC="$REPO/test/6809-conformance/SRC"
 TEXTSRC="$REPO/test/6809-conformance/text"
@@ -59,6 +67,14 @@ done
   echo "mount -k=360k h7"
   echo "login $ACCT"
   for d in CMDS SRC DOCS SCRATCH RESULTS REBUILT; do echo "makdir /h7/$d"; done
+  # t05fna's fixture (Step 3): owned by this build account, public read
+  # cleared -- -n same reasoning as every other copy below (a fresh FD,
+  # not the host mount's synthesized 0.0 ownership); -npr is the 68k
+  # spelling that CLEARS public read (6809's own attr inverts this, see
+  # references/6809/utility-usage.md). t05fna assumes the account that
+  # runs the suite is neither $ACCT nor in group 0 -- see DOCS/claims.md.
+  echo "copy -n /h1/SCRATCH/denied /h7/SCRATCH/denied"
+  echo "attr /h7/SCRATCH/denied -npr"
   for m in "$STAGE"/CMDS/*; do
     b=$(basename "$m")
     # -n: create a fresh destination FD instead of replaying the source's
