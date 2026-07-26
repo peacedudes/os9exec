@@ -1,0 +1,142 @@
+* t04bmode.a -- conformance test t04: writing to a path opened read-only
+* reports E$BMode.
+* Claim (see DOCS/claims.md for the citation): I$Write against a path that
+* was opened in read mode (not write or update) reports E$BMode (203).
+* Creates its own fixture in SCRATCH/ with I$Create, writes it, closes it,
+* reopens it with I$Open A=1 (read), then attempts I$Write -- that attempt
+* is the call under test. Uses a disk file throughout, never a console
+* path: console/SCF paths are exempt from the mode check (see
+* references/common/error-codes.md) and would pass this test vacuously.
+* Deletes the fixture before exiting so reruns are clean. Emits exactly
+* one RESULT t04 line via report.i's emit. Long branches throughout for
+* the same range-safety reason as t03eof.a.
+        nam ConfT04
+        mod eom,nm,$11,$81,start,$0100
+nm      fcs /ConfT04/
+        use report.i
+EXPECT   equ 203
+OPENFLAG equ 133
+start   equ *
+        clr OPENFLAG,u
+* best-effort cleanup of any fixture left behind by a crashed prior run
+        leax fname,pcr
+        swi2
+        fcb $87                I$Delete
+
+* --- I$Create(A=write-only, B=owner read+write, X=pathlist) ---
+        leax fname,pcr
+        lda #2
+        ldb #3
+        swi2
+        fcb $83                I$Create
+        lbcs sfail
+        sta PATHNUM,u
+        ldb #1
+        stb OPENFLAG,u
+
+* --- I$Write the fixture's own content ---
+        leax wdata,pcr
+        ldy #wdatal
+        lda PATHNUM,u
+        swi2
+        fcb $8A                I$Write
+        lbcs sfail
+
+* --- I$Close, then reopen read-only ---
+        lda PATHNUM,u
+        swi2
+        fcb $8F                I$Close
+        lbcs sfail
+        clr OPENFLAG,u
+
+        leax fname,pcr
+        lda #1                 read mode
+        swi2
+        fcb $84                I$Open
+        lbcs sfail
+        sta PATHNUM,u
+        ldb #1
+        stb OPENFLAG,u
+
+* --- I$Write to the read-only path -- THE CALL UNDER TEST ---
+        leax wdata,pcr
+        ldy #wdatal
+        lda PATHNUM,u
+        swi2
+        fcb $8A                I$Write
+        lbcc noerr             no error at all -- that is a FAIL
+        stb ERRB,u
+        lbra cleanup
+noerr   equ *
+        clr ERRB,u             write succeeded: observed "error" is 0
+cleanup equ *
+        lda OPENFLAG,u
+        lbeq cleanup2
+        lda PATHNUM,u
+        swi2
+        fcb $8F                I$Close
+        clr OPENFLAG,u
+cleanup2 equ *
+        leax fname,pcr
+        swi2
+        fcb $87                I$Delete
+        ldb ERRB,u
+        cmpb #EXPECT
+        lbeq pass
+        lbra fail
+
+sfail equ *
+        stb ERRB,u
+        lda OPENFLAG,u
+        lbeq sfail2
+        lda PATHNUM,u
+        swi2
+        fcb $8F                I$Close
+        clr OPENFLAG,u
+sfail2 equ *
+        leax fname,pcr
+        swi2
+        fcb $87                I$Delete
+
+fail    equ *
+        leax OUTBUF,u
+        leay FAILM,pcr
+        ldb #FAILML
+        lbsr copys
+        lbra tail
+pass    equ *
+        leax OUTBUF,u
+        leay PASSM,pcr
+        ldb #PASSML
+        lbsr copys
+tail    equ *
+        clra
+        ldb ERRB,u
+        std VALUE,u
+        lbsr prdec
+        leay EXPM,pcr
+        ldb #EXPML
+        lbsr copys
+        ldd #EXPECT
+        std VALUE,u
+        lbsr prdec
+        leay DESC,pcr
+        ldb #DESCL
+        lbsr copys
+        lbsr emit
+        clrb
+        swi2
+        fcb $06
+fname   fcs "SCRATCH/t04bmode.dat"
+wdata   fcc /T4RECORD/
+wdatal  equ *-wdata
+PASSM   fcc /RESULT t04 PASS  obs=/
+PASSML  equ *-PASSM
+FAILM   fcc /RESULT t04 FAIL  obs=/
+FAILML  equ *-FAILM
+EXPM    fcc / exp=/
+EXPML   equ *-EXPM
+DESC    fcc /  writing to a path opened read-only reports E$BMode/
+DESCL   equ *-DESC
+        emod
+eom     equ *

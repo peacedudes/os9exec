@@ -5,6 +5,8 @@ chd /x0/SRC
 attr /x0/REBUILT/t01open e pe pw pr
 /DD/CMDS/asm t03eof.a -O=/x0/REBUILT/t03eof E
 attr /x0/REBUILT/t03eof e pe pw pr
+/DD/CMDS/asm t04bmode.a -O=/x0/REBUILT/t04bmode E
+attr /x0/REBUILT/t04bmode e pe pw pr
 IF -R /x0/REBUILT/tally
 del /x0/REBUILT/tally
 ENDIF
@@ -28,6 +30,7 @@ chx /x0/REBUILT
 t01open >+/x0/RESULTS/report
 t02int >+/x0/RESULTS/report
 t03eof >+/x0/RESULTS/report
+t04bmode >+/x0/RESULTS/report
 tally
 ELSE
 echo CONF6809 rebuild: basic09 not found on this system -- nothing written to REBUILT/
