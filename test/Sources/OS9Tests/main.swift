@@ -2675,6 +2675,60 @@ do {
     }
 }
 
+// ── F$Load error reporting: a damaged module must say HOW it is damaged ──────
+// A load is asked about a file NAME, so "this isn't a module" and "this module
+// is broken" used to collapse into one answer, E_FNA (214). Once the MODSYNC
+// word matches, the file IS a module and the specific check that failed is
+// known -- and 214 sends the reader to the file's attributes and owner for a
+// fault that has nothing to do with either. The v2.4 TRM gives E$BMCRC/E$BMHP
+// for F$VModul, which performs exactly this check, and says F$Load errors on
+// "a module with a bad parity or CRC".
+//
+// Fixtures are built here from a real module so the corruption is the ONLY
+// difference: one flipped bit in the body (CRC alone) and one in the header
+// (parity). The unmodified copy is the control -- without it a "wrong error
+// code" test would pass just as well on a module that never loads at all.
+// Skipped under a container, where the module source is not mounted.
+if !containerized, let goodModule = FileManager.default.contents(atPath: diskPath + "/CMDS/list") {
+    func plant(_ name: String, _ bytes: [UInt8]) {
+        let path = scratchDisk + "/" + name
+        // host-native devices carry the real execute bit, and load opens with
+        // read+exec (mode 0x05) -- without 0o755 every case below fails E_FNA
+        // for want of permission and the whole block passes for the wrong reason
+        FileManager.default.createFile(atPath: path, contents: Data(bytes),
+                                       attributes: [.posixPermissions: 0o755])
+    }
+    var body   = [UInt8](goodModule)
+    var header = [UInt8](goodModule)
+    body[200]  ^= 0x01   // past the 24-byte header: breaks the CRC only
+    header[10] ^= 0x01   // inside the header: breaks header parity
+    plant("m_good",   [UInt8](goodModule))
+    plant("m_badcrc", body)
+    plant("m_badpar", header)
+    plant("m_notmod", [UInt8]("this is plainly not a module\r".utf8))
+
+    run("modload: an untouched module still loads (control)",
+        expectation: "the fixtures differ from this ONLY by the corrupted bit",
+        commands: ["load \(scratch)/m_good"]) { !$0.contains("Error #") }
+
+    check("modload: a bad module CRC reports E_BMCRC, not E_FNA",
+        contains: "E_BMCRC", "load \(scratch)/m_badcrc")
+
+    check("modload: bad module header parity reports E_BMHP, not E_FNA",
+        contains: "E_BMHP", "load \(scratch)/m_badpar")
+
+    // The other half of the same rule: a file that was never a module keeps the
+    // old answer. On this emulator a host directory routinely holds .c/.bas/.txt
+    // beside real modules, and reporting a CRC error for those would be worse
+    // than uninformative -- E_FNA is the honest "you cannot execute this".
+    check("modload: a file that is not a module at all still reports E_FNA",
+        contains: "E_FNA", "load \(scratch)/m_notmod")
+
+    for leftover in ["m_good", "m_badcrc", "m_badpar", "m_notmod"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us

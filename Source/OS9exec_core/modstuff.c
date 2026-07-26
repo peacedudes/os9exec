@@ -982,6 +982,10 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
     ushort  mid, mid0, oldmid;
     ushort  linkmid;
     Boolean isBuiltIn;
+    /* "the file really did contain an OS-9 module": set once the MODSYNC check
+     * below has passed. It decides which error a failed load reports -- see the
+     * end of this function. */
+    Boolean wasModule= false;
     uint32_t dns1= 0, dns2= 0;
 
     #ifdef MACOS9
@@ -1347,6 +1351,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
               ("# load_module: bad modsync: %04x, E_BMID\n", sync ));
             err= E_BMID;  break;
         } /* if */
+        wasModule= true; /* past this point the file IS a module, however damaged */
 
             par= calc_parity( (ushort*)theModuleP, 24 );
         if (par!=0) {
@@ -1455,7 +1460,32 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
     
     /* --- bad module */
     release_module(mid,false); /* forget it again */
-    return os9error( linkstyle ? err:E_FNA );
+
+    /* Which error a failed LOAD reports depends on how far we got.
+     *
+     * A load is asked about a FILE NAME, and the name may be anything at all --
+     * on this emulator a host directory routinely holds .c, .bas and .txt files
+     * beside real modules, so "the sync word isn't MODSYNC" usually means "not a
+     * module file", not "a damaged module". Answering E_BMCRC there would be
+     * actively misleading and would make any command search spray module errors
+     * over ordinary files; E_FNA ("without the correct access permissions --
+     * check the file's attributes") is what OS-9 gives for a file you cannot
+     * execute, and the load path does open with mode 0x05, read+exec. That is
+     * why this collapsed to E_FNA, and for the not-a-module case it stays.
+     *
+     * But once MODSYNC has matched, that ambiguity is GONE: the file IS a module
+     * and the parity/size/CRC/name check that just failed says exactly how it is
+     * broken. Reporting E_FNA there sends the reader to the file's attributes and
+     * owner for a fault that has nothing to do with either -- live-verified: one
+     * flipped bit in a hand-built module gave 214 for a bad CRC and for bad header
+     * parity alike, with a byte-identical copy loading clean as the control. The
+     * v2.4 TRM gives E$BMCRC/E$BMHP for F$VModul, which performs precisely this
+     * check, and says F$Load errors on "a module with a bad parity or CRC"; its
+     * own definition of E$FNA rules 214 out. So pass the real error through.
+     *
+     * <linkstyle> was always exempt: a link names a module that is supposed to
+     * already be one, so its caller's intent is not in doubt. */
+    return os9error( (linkstyle || wasModule) ? err:E_FNA );
 } // load_module_local
 
 
