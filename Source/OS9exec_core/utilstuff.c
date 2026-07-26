@@ -2720,7 +2720,8 @@ Boolean RBF_ImgSize( long size )
    * *literally starts with*, if any, and copies that root's own
    * canonical (realpath'd) host path into <rootOut> (must be at least
    * PATH_MAX bytes). Returns false, leaving <rootOut> untouched, if none
-   * match.
+   * match. When roots nest, the INNERMOST (longest-matching) one wins --
+   * see the scan below.
    *
    * Deliberately does NOT realpath() <pathname> itself, unlike
    * HostPathWithinConfiguredDevice above -- this exists specifically for
@@ -2743,6 +2744,8 @@ Boolean RBF_ImgSize( long size )
       char  ch;
       char* root;
       size_t rl;
+      char   best[PATH_MAX];
+      size_t bestLen= 0;
 
       if (pathname==NULL || *pathname==NUL) return false;
 
@@ -2761,14 +2764,35 @@ Boolean RBF_ImgSize( long size )
             ( rl= strlen(root), ustrncmp( pathname,root,rl )==0 && \
               (pathname[rl]==NUL || pathname[rl]==PATHDELIM) ) )
 
-      if (DEV_MATCHES( 'd','d' )) { strcpy(rootOut,root); return true; }
-      for (ch= '0'; ch<='9'; ch++)
-          if (DEV_MATCHES( 'h',ch )) { strcpy(rootOut,root); return true; }
-      for (ch= 'a'; ch<='z'; ch++)
-          if (DEV_MATCHES( 'h',ch )) { strcpy(rootOut,root); return true; }
+      /* Keep the LONGEST match, not the first one found. Device roots can
+       * NEST -- `mount -k=0 hb` with the working directory inside h5's own
+       * host root makes <h5root>/hb a device root inside a device root -- and
+       * every enclosing root is equally a literal prefix of a path in the
+       * inner one. Returning the first match meant the scan order (dd, h0-h9,
+       * ha-hz) decided, so a path under /hb reported h5 as "the root it
+       * started in", AdjustPath's clamp then compared against the wrong root,
+       * and `..` from /hb walked straight out into h5 (live-verified before
+       * this fix: `list ../parentfile` from /hb read h5's file, and `dir ..`
+       * listed h5's root). The innermost containing root is the one the
+       * operation is actually in, and the longest matching prefix IS the
+       * innermost. <root> must be copied here and now: TwoCharDev may hand
+       * back a pointer into <tmp>, which the next iteration overwrites. */
+      #define KEEP_LONGEST \
+          if (rl>bestLen) { bestLen= rl; \
+                            strncpy( best,root,PATH_MAX-1 ); best[PATH_MAX-1]= NUL; }
 
+      if (DEV_MATCHES( 'd','d' )) KEEP_LONGEST;
+      for (ch= '0'; ch<='9'; ch++)
+          if (DEV_MATCHES( 'h',ch )) KEEP_LONGEST;
+      for (ch= 'a'; ch<='z'; ch++)
+          if (DEV_MATCHES( 'h',ch )) KEEP_LONGEST;
+
+      #undef KEEP_LONGEST
       #undef DEV_MATCHES
-      return false;
+
+      if (bestLen==0) return false;
+      strcpy( rootOut,best );
+      return true;
   } /* FindConfiguredDeviceRoot */
 
   /* Resolves an OS-9-style path to its would-be host path (same

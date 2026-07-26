@@ -226,8 +226,25 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
         // Run locally: OS9DISK points straight at the repo-root h0 dir.
         process.executableURL = execURL
         process.arguments    = speedFlag + [shellArg]
+        // OS9H5 gets the PHYSICALLY RESOLVED scratch path, not scratchDisk's own
+        // spelling. On macOS NSTemporaryDirectory() is /var/folders/... while the
+        // emulator computes its startPath (and thus every `mount -k` device root)
+        // as /private/var/folders/... -- the same directory behind a firmlink.
+        // FindConfiguredDeviceRoot compares root strings LITERALLY (deliberately
+        // -- see its own comment), so those two spellings never match each other,
+        // and h5 silently stopped being recognised as the enclosing root of a
+        // device mounted inside it. That made the nested-device-root tests below
+        // pass no matter what the emulator did: the outer root was invisible, so
+        // the very overlap they exist to test never existed. Resolving here makes
+        // both roots share one spelling, exactly as they already do under a
+        // container (where the scratch is bind-mounted at a plain /h5).
+        let resolvedScratchDisk: String = {
+            guard let r = realpath(scratchDisk, nil) else { return scratchDisk }
+            defer { free(r) }
+            return String(cString: r)
+        }()
         process.environment  = ["OS9DISK": disk,
-                                "OS9H\(scratchDev.dropFirst())": scratchDisk]
+                                "OS9H\(scratchDev.dropFirst())": resolvedScratchDisk]
     }
 
     let stdinPipe  = Pipe()
@@ -920,6 +937,44 @@ do {
 
     try? FileManager.default.removeItem(atPath: fsHostDir)
     // canaryHost is removed in the epilogue, not here -- see the note there.
+
+    // ---- nested device roots: '..' must stop at the INNERMOST root ----
+    // The scratch device's host dir is also the emulator's working directory,
+    // so `mount -k=0 he` plants a second device root INSIDE the first one --
+    // /he's host path is <h5's host root>/he. OS-9 semantics: extra ".."s at a
+    // device root are no-ops, so nothing under /he may reach h5's own files.
+    // Before the fix, AdjustPath asked which configured root a path started in
+    // and got back the FIRST prefix match in scan order (dd, h0-h9, ha-hz),
+    // which for a path under /he is the ENCLOSING h5 -- so the clamp compared
+    // against the wrong root and let '..' walk out. It now takes the longest
+    // (innermost) match. Guarded as a leak test, not a "does it error" test:
+    // asserting on the parent's CONTENT means a future regression has to
+    // actually surface h5's file to fail this, and the E_PNNF spelling is free
+    // to change.
+    let nestSecret = "NESTMARK_\(UUID().uuidString.prefix(8))"
+    let nestFile   = "nestparent\(fsRun)"
+    try? (nestSecret + "\r").write(toFile: scratchDisk + "/" + nestFile,
+                                   atomically: true, encoding: .utf8)
+
+    // Positive control FIRST: the file has to be readable through h5 itself,
+    // or both leak tests below pass on its absence -- the exact false-pass
+    // shape the canary guard above exists to prevent.
+    run("fs: nested roots — parent file IS readable from the outer device",
+        expectation: "control: h5's own file reads normally via /h5",
+        commands: ["chd \(scratch)", "list \(nestFile)"]) { $0.contains(nestSecret) }
+
+    run("fs: nested roots — '..' from the inner device cannot read the outer one",
+        expectation: "list ../\(nestFile) from /he must not surface h5's file",
+        commands: ["mount -k=0 he", "chd /he",
+                   "list ../\(nestFile)"]) { !$0.contains(nestSecret) }
+
+    run("fs: nested roots — 'dir ..' from the inner device stays inside it",
+        expectation: "dir .. from /he must not list h5's root",
+        commands: ["mount -k=0 he", "chd /he",
+                   "dir .."]) { !$0.contains(nestFile) }
+
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + nestFile)
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/he")
 
     // ---- host-native devices: attr round-trip only, NOT permission enforcement ----
     // A host directory cannot carry OS-9 ownership and attributes faithfully --
