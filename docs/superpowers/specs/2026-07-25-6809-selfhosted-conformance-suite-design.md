@@ -176,6 +176,20 @@ system's own `asm` and `basic09` and reruns the suite.
 finding** — it is the cheapest test of his toolchain we get, and it costs one
 procedure file.
 
+That only holds if both artefacts survive, so two rules are structural, not
+stylistic:
+
+- **`rebuild` never overwrites `CMDS/`.** It writes its output to a separate
+  directory and runs from there. Overwriting in place would destroy the
+  comparison the moment it is used, and a recipient whose toolchain is
+  incompatible — exactly the case worth hearing about — would be left with
+  neither a working prebuilt module nor a working rebuilt one, from a single
+  command that cannot be undone. A tool-presence check is not a
+  build-success check.
+- **Every run writes a boundary line into the report** naming which artefacts
+  produced it. Appending a second run's verdicts to the first with no marker
+  yields one file that reads as a single run and cannot be split afterwards.
+
 ## Ownership and permissions
 
 Verified live during design, and the answer to the one open question in the

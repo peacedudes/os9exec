@@ -84,7 +84,7 @@ fail() { printf 'ASSERT-FAIL %s\n' "$*"; fails=$((fails+1)); }
 listing=$("$OS9" dir -e "$IMG," 2>&1)
 
 # Every required directory is present.
-for d in CMDS SRC DOCS SCRATCH RESULTS; do
+for d in CMDS SRC DOCS SCRATCH RESULTS REBUILT; do
     printf '%s\n' "$listing" | grep -aq "[[:space:]]$d\$" || fail "missing directory $d"
 done
 
@@ -131,7 +131,7 @@ ln -s "$STAGE"   "$IMGDIR/h1"
 {
   echo "mount -k=360k h7"
   echo "login $ACCT"
-  for d in CMDS SRC DOCS SCRATCH RESULTS; do echo "makdir /h7/$d"; done
+  for d in CMDS SRC DOCS SCRATCH RESULTS REBUILT; do echo "makdir /h7/$d"; done
   echo "echo BUILD-STRUCTURE-DONE"
   echo "dir -e /h7"
 } | tr '\n' '\r' > "$STAGE/mkimg"
@@ -420,10 +420,13 @@ git commit -m "Tests: first 6809 conformance test -- I\$Open of an absent pathli
 
 ```
 echo CONF6809 run starting
-procs
+echo RUN prebuilt >+/x0/RESULTS/report
+procs >+/x0/RESULTS/report
 t01open >+/x0/RESULTS/report
 tally
 ```
+
+**Every line that belongs in the report must be redirected into it.** `procs` records who ran the suite; unredirected, it prints to the terminal and the report carries no attribution at all — while a readme claiming otherwise makes the file look attributable when it is not.
 
 **The append form is `>+`, and this is documented, not a thing to discover.** On OS-9 `>` redirects stdout but *fails if the file already exists*; `>>` redirects **stderr**, not append; `>+` appends to an existing file or creates it; `>-` truncates or creates. The Unix reflex that `>>` appends is the trap — using it here would send each test's stderr to the report while the `RESULT` line went to the terminal, producing an empty report that looks like a suite that ran. Source: the skill's `common/os9-tools-and-shell.md` redirection table and `common/unix-differences.md`, both `Live`-tagged on 68k and NitrOS-9.
 
@@ -458,9 +461,15 @@ Expected: `RESULTS/report` contains the `t01` line and the totals line reports `
 
 - [ ] **Step 5: Write the `rebuild` procedure**
 
-`text/rebuild` reassembles `SRC/*.a` with the host system's own `asm` and repacks the BASIC09 sources with its `basic09`, writing the results into `CMDS/`, then runs `runall` again. Guard it: if `asm` or `basic09` is absent, print a single line saying so and exit without touching `CMDS/` — a rebuild that half-succeeds would leave a mixture of our modules and theirs, and no way to tell which produced which result.
+`text/rebuild` reassembles `SRC/*.a` with the host system's own `asm` and repacks the BASIC09 sources with its `basic09`, **writing the results into `REBUILT/`, never into `CMDS/`**, then runs the suite from `REBUILT/`.
 
-A difference between the prebuilt run and the rebuilt run is a finding, so the readme must tell the recipient to send both reports.
+Three requirements, each with a failure it prevents:
+
+- **`CMDS/` is never modified.** Overwriting it destroys the prebuilt-versus-rebuilt comparison the first time anyone uses the feature, and a recipient whose `asm` or `basic09` is present but incompatible — the case most worth hearing about — would be left with neither a working prebuilt module nor a working rebuilt one, from one irreversible command. Note that a tool-presence guard does **not** catch this: the tools exist, they simply produce something different.
+- **Guard on tool presence anyway**: if `asm` or `basic09` is absent, print one line saying so and exit without creating anything.
+- **Write a boundary line into the report** before the run, naming which artefacts produced what follows — `RUN prebuilt` or `RUN rebuilt`. The report is append-only, so without a marker two runs merge into one indistinguishable list.
+
+The readme must tell the recipient to send the whole report, both runs included.
 
 - [ ] **Step 6: Prove SKIP works**
 
@@ -476,8 +485,16 @@ for f in readme runall runone rebuild; do
     printf '%s\n' "$listing" | grep -aq "[[:space:]]$f\$" || fail "missing file $f"
 done
 
+# runone and runall must invoke the same set of tests. The shell has no
+# positional-parameter substitution, so runone is hand-maintained in lockstep
+# with runall; without this check a test added to one and forgotten in the
+# other drifts silently forever, with no failure signal anywhere.
+ra=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/runall" | sort)
+ro=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/runone" | sort)
+[ "$ra" = "$ro" ] || fail "runall and runone invoke different tests"
+
 # Public read, or the disk is unreadable to anyone but our build account.
-for f in readme runall; do
+for f in readme runall runone rebuild; do
     printf '%s\n' "$listing" | grep -a "[[:space:]]$f\$" | grep -aq '\-\-\-\-r' \
         || fail "$f lacks public read"
 done
