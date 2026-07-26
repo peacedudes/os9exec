@@ -109,7 +109,7 @@ EXPM    fcc / exp=/
 EXPML   equ *-EXPM
 DESC    fcc /  I$Open without permission reports E$FNA/
 DESCL   equ *-DESC
-SKIPM   fcc /RESULT t05 SKIP  operator is group 0 (superuser) -- guard bypassed/
+SKIPM   fcc /RESULT t05 SKIP  operator's user ID is 0 (superuser) -- guard bypassed/
 SKIPML  equ *-SKIPM
         emod
 eom     equ *

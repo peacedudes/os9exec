@@ -19,10 +19,23 @@ for d in CMDS SRC DOCS SCRATCH RESULTS REBUILT; do
     printf '%s\n' "$listing" | grep -aq "[[:space:]]$d\$" || fail "missing directory $d"
 done
 
-# Nothing on the image is owned by group 0. Microware defines the super user
-# as ANY user in group zero, so a group-0 owner would ship privileged files.
-if printf '%s\n' "$listing" | grep -aqE '^[[:space:]]*0\.'; then
-    fail "found group-0 (super user) ownership in root listing"
+# Nothing on the image is owned by user ID 0, Microware's own superuser
+# identity on 6809 (System Programmers Manual F$ID/I$Open, and the Gimix
+# password-file field description -- see DOCS/claims.md, t05's citation):
+# a superuser-owned file would ship privileged. FD.OWN is a flat 16-bit
+# field on 6809; ToolShed's `dir -e` merely splits those same two bytes
+# into a dot-separated pair for display, the same two bytes os9exec
+# writes with real 68k group.user semantics when it builds this image.
+# So a flat ID under 256 -- e.g. this build's own non-super account,
+# 0x0107 -- displays with a zero first byte ("1.7" is fine, but so would
+# "0.5" be for account 0x0005). Testing for a "0." prefix therefore
+# rejected any ordinary owner whose ID happens to be under 256, not just
+# the superuser; it went unnoticed only because this build's account
+# happens to display as "1.7", never "0.N". What actually matters is the
+# whole 16-bit value: a genuinely flat ID of 0 displays as exactly "0.0"
+# and is what this checks for.
+if printf '%s\n' "$listing" | grep -aqE '^[[:space:]]*0\.0[[:space:]]'; then
+    fail "found user ID 0 (super user) ownership in root listing"
 fi
 
 ## Assertions added in Task 4, once the files they check exist.

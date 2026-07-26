@@ -72,7 +72,7 @@ done
   # not the host mount's synthesized 0.0 ownership); -npr is the 68k
   # spelling that CLEARS public read (6809's own attr inverts this, see
   # references/6809/utility-usage.md). t05fna assumes the account that
-  # runs the suite is neither $ACCT nor in group 0 -- see DOCS/claims.md.
+  # runs the suite is neither $ACCT nor user ID 0 -- see DOCS/claims.md.
   echo "copy -n /h1/SCRATCH/denied /h7/SCRATCH/denied"
   echo "attr /h7/SCRATCH/denied -npr"
   for m in "$STAGE"/CMDS/*; do
