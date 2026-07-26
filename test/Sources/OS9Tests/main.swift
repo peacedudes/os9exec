@@ -2733,6 +2733,39 @@ if let goodModule = FileManager.default.contents(atPath: diskPath + "/CMDS/list"
     }
 }
 
+// ── F$ID packs group in the HIGH word, not the high byte ─────────────────────
+// The TRM: d1.l is the "current process group/user number ... all word values",
+// and F$SUser, prepFork, the module header's M$Owner and `ident` all use that
+// 16/16 form. F$ID alone used the 6809-ish group<<8|user, so F$ID -> F$SUser
+// did not round-trip and anything storing the result structurally got garbage.
+//
+// Asserted through the damage it actually did rather than by reading a register:
+// `l68` stamps M$Owner from F$ID, so a module linked by claude (1.7) came out
+// owned by "0.259" ($0103 pushed into the user half). `ident` is Microware's own
+// decoder, which makes it a fair judge here. It must ALSO be a non-0.0 user --
+// as 0.0 both packings give 0 and the test would be vacuous, which is exactly
+// why the existing corpus never caught this.
+if !containerized {
+    let idSrc = ["Prgrm set 1", "Objct set 1", "ReEnt set $80",
+                 " psect idtst,(Prgrm<<8)+Objct,(ReEnt<<8)+1,0,200,start",
+                 "start", " moveq #0,d1", " trap #0", " dc.w $06", " ends"]
+        .joined(separator: "\r") + "\r"          // OS-9 lines end in CR
+    try? idSrc.write(toFile: scratchDisk + "/idtst.a", atomically: true, encoding: .utf8)
+
+    run("f$id: a module linked by claude is stamped 1.7, not 0.259",
+        expectation: "ident reports the builder's real group.user in M$Owner",
+        commands: ["login claude", "chx /dd/CMDS",
+                   "r68 \(scratch)/idtst.a -o=\(scratch)/idtst.r",
+                   "l68 \(scratch)/idtst.r -o=\(scratch)/idtst",
+                   "ident \(scratch)/idtst", "logout"]) {
+            $0.contains("Owner:") && $0.contains("1.7") && !$0.contains("0.259")
+        }
+
+    for leftover in ["idtst.a", "idtst.r", "idtst"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us

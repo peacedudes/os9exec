@@ -758,7 +758,23 @@ os9err OS9_F_ID( regs_type *rp, ushort cpid )
     procid* pd= &procs[cpid].pd;
 
     rp->d[0]= cpid; /* return current process' ID */
-    rp->d[1]= os9_word(pd->_group)<<BpB|os9_word(pd->_user);
+    /* group in the HIGH word, user in the low -- <<(2*BpB), not <<BpB.
+     *
+     * The TRM calls d1.l "current process group/user number ... all word
+     * values", and every other place this pair is packed agrees: F$SUser (just
+     * below) unpacks it with hiword()/loword(), prepFork() builds the same
+     * 16/16 form for a new process, the module header's M$Owner is group-word
+     * then user-word, and `ident` decodes it that way. Only this call used a
+     * byte-packed group<<8|user -- the 6809 shape -- so F$ID -> F$SUser did not
+     * round-trip, and any guest writing F$ID's result somewhere structural got
+     * a corrupt value.
+     *
+     * That was not theoretical: `l68` stamps M$Owner from F$ID, so a module
+     * linked by user 1.3 came out owned by "0.259" ($0103 landed in the user
+     * half). Note 0.259 has group ZERO -- with is_super() now testing the group
+     * alone, a scheme that trusted a module's owner would have treated every
+     * user-built module as privileged. */
+    rp->d[1]= os9_word(pd->_group)<<(2*BpB)|os9_word(pd->_user);
     rp->d[2]= os9_word(pd->_prior);
     return 0;
 } /* OS9_F_ID */
