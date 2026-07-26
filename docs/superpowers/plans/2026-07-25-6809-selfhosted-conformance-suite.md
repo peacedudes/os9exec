@@ -14,6 +14,16 @@
 
 - **Oracle policy.** Microware documentation is the standard. os9exec and NitrOS-9 are candidates for defect, never authorities. **No test ships without a citation** — document and section — recorded in `DOCS/claims`. A claim that cannot be pinned is dropped, not guessed.
 - **No verbatim Microware text on the image.** Cite document and section; state expectations in our own prose.
+  **Enforced mechanically, because instruction alone has already failed twice.** `verify-image.sh` fails the build if `DOCS/claims.md` contains a double-quoted span longer than six words:
+
+  ```bash
+  # A quoted document or section title keeps a citation checkable; a quoted
+  # sentence is a lift. Six words is the line between them.
+  long=$(grep -oE '"[^"]*"' "$SRCDIR/DOCS/claims.md" \
+         | awk '{ gsub(/"/,""); if (NF>6) print }')
+  [ -z "$long" ] || fail "claims.md quotes verbatim text: $long"
+  ```
+ Short quoted spans are legitimate — a document or section title is how a citation stays checkable — but a quoted *sentence* is a lift. Two successive tests reintroduced this defect after it was fixed once, each author re-quoting the manual's own error-table wording; a reviewer caught it both times, which is one reviewer away from shipping.
 - **No non-ASCII bytes anywhere on the image.**
 - **Nothing outside the suite disk is ever written.** No test touches `/dd`.
 - **Nothing runs privileged.** A test needing super reports `SKIP` with the reason.
