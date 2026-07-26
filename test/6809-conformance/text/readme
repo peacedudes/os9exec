@@ -29,7 +29,39 @@ What it writes: everything lands under /x0 -- RESULTS/report (a RUN
 line naming the run, the process list from "procs" so the report
 records who ran it, then one RESULT line per test) and whatever a
 test's own SCRATCH/ working files were. Nothing outside this disk is
-ever touched; no test writes to /dd.
+ever touched; no test writes to /dd. This was checked directly, not
+assumed: a full run, a rebuild, and a deliberate SKIP were all driven
+in one continuous session while /dd's own directory listing was
+snapshotted before and after, and it came back byte-for-byte
+unchanged.
+
+What a RESULT line means: PASS is the documented behaviour matching
+what this system actually did; FAIL is a real disagreement -- the
+system did something the cited manual passage says it should not.
+SKIP means the test could not exercise its claim at all on this run,
+most often because it needs an operator who is not this disk's
+superuser, and it says so in its own message rather than guessing;
+SKIP is not a failure and does not count against this system. ERROR
+means the test itself could not establish the situation it needed to
+check (its own setup step failed) and is also not the same thing as
+FAIL. If a shell run produces "WHAT?" from runall or runone
+themselves (not from rebuild -- see below), that is not a verdict at
+all: it means this shell did not recognise a command in the
+procedure, most likely because a "load" step was skipped or ran on
+the wrong disk.
+
+Ownership: every file this disk ships is owned by ID 1.7 ($0107 when
+read as one flat 16-bit value -- 68k-style group.user display, but
+6809's own F$ID and this suite's own guard tests read it as the
+single flat number 263, same as any other non-zero ID). This is the
+disk-building account, not a superuser or a group-privileged
+identity by either OS-9's own reading: only user ID 0 is superuser
+here (see DOCS/claims.md's t05 citation). So none of these files run
+with any elevated privilege on this system or yours; what makes them
+usable to another account at all is the public permission bits set
+on each one (readable, and for CMDS/ and the top-level procedures,
+executable) -- ordinary public-permission access, the same as any
+file you did not create yourself.
 
 runone reruns the same set of shipped tests as runall, without the
 "procs" header, appending to the same report -- useful for rechecking
@@ -69,8 +101,18 @@ Each run, prebuilt or rebuilt, starts by writing a boundary line --
 "RUN prebuilt" or "RUN rebuilt" -- into RESULTS/report before anything
 else. The report is append-only, so this is the only thing that lets
 a later reader split a report containing both runs back into two.
-Please send back the whole report, both runs included (or just the
-whole disk image), not a hand-trimmed excerpt.
+
+Sending results back: please send the whole of RESULTS/report, both
+runs included if you ran rebuild (or just the whole disk image), not
+a hand-trimmed excerpt -- "list RESULTS/report" from the OS-9 shell
+will show it on screen if you have no easier way to copy it off. The
+project lives at https://github.com/peacedudes/os9exec -- open an
+issue there and attach or paste the report, noting what real or
+emulated 6809 hardware and OS-9 version you ran it on. A FAIL is the
+most useful thing you can report: this suite exists to find exactly
+that kind of disagreement between the documentation and a real
+system, on hardware and OS-9 builds we may not have access to
+ourselves.
 
 "rebuild" needs a shell with IF/ELSE/ENDIF (Shell+ or equivalent) to
 guard against a missing asm or basic09; runall and runone deliberately

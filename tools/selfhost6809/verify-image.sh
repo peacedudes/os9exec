@@ -85,9 +85,16 @@ done
 # has no positional-parameter substitution, so all three are hand-maintained
 # in lockstep; without this check a test added to some but not all of them
 # drifts silently forever, with no failure signal anywhere.
-ra=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/runall" | sort)
-ro=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/runone" | sort)
-rb=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/rebuild" | sort)
+#
+# The pattern includes digits in the trailing run, not just [a-z]*: a test
+# name ending in a digit (t07div0) otherwise loses that digit here (becomes
+# t07div) even though all three files spell it in full and agree with each
+# other -- harmless while every name is truncated the same uniform way, but
+# two future names differing only after the truncation point would collapse
+# to one token and this check would no longer be able to tell them apart.
+ra=$(grep -aoE '^t[0-9]+[a-z0-9]*' "$SRCDIR/text/runall" | sort)
+ro=$(grep -aoE '^t[0-9]+[a-z0-9]*' "$SRCDIR/text/runone" | sort)
+rb=$(grep -aoE '^t[0-9]+[a-z0-9]*' "$SRCDIR/text/rebuild" | sort)
 [ "$ra" = "$ro" ] || fail "runall and runone invoke different tests"
 [ "$ra" = "$rb" ] || fail "runall and rebuild invoke different tests"
 
