@@ -2766,6 +2766,82 @@ if !containerized {
     }
 }
 
+// ── F$SUser enforces the TRM's three cases ───────────────────────────────────
+// v2.4 TRM, F$SUser: "User number 0.0 may change their ID to anything without
+// restriction. A primary module owned by user 0.0 may change its ID to anything
+// without restriction. Any primary module may change its user ID to match the
+// module's owner. All other attempts ... return an E$Permit error."
+//
+// Until this was enforced, F$SUser assigned from d1 and returned 0, so any
+// guest program could become 0.0 at will -- and since is_super() (group 0) is
+// the codebase's only privilege test, that bypassed the entire permission model
+// from inside. Demonstrated live before the fix; see the roadmap entry it closed.
+//
+// Both cases below run as claude (1.7) executing a module claude linked, so
+// `l68` stamps M$Owner 1.7 -- the SAME program and the SAME user, differing
+// only in the identity requested. That is what makes the pair meaningful: one
+// asserts the gate refuses, the other that it does not simply refuse everything.
+// Running as 0.0 would make both vacuous via rule 1, the same trap that let the
+// original bug sit undetected.
+if !containerized {
+    func suserSrc(_ wanted: String) -> String {
+        ["Prgrm set 1", "Objct set 1", "ReEnt set $80",
+         " psect sutst,(Prgrm<<8)+Objct,(ReEnt<<8)+1,0,200,start",
+         "start",
+         " move.l #\(wanted),d1",
+         " trap #0", " dc.w $1C",          // F$SUser
+         " bcs.s denied",
+         " lea okmsg(pc),a0", " move.l #oklen,d1", " bra.s emit",
+         "denied",
+         " lea nomsg(pc),a0", " move.l #nolen,d1",
+         "emit",
+         " move.w #1,d0", " trap #0", " dc.w $8A",   // I$Write to stdout
+         " moveq #0,d1", " trap #0", " dc.w $06",    // F$Exit
+         "okmsg dc.b \"SUSER-ALLOWED\",13,10", "oklen equ *-okmsg",
+         "nomsg dc.b \"SUSER-DENIED\",13,10", "nolen equ *-nomsg",
+         " ends"].joined(separator: "\r") + "\r"     // OS-9 lines end in CR
+    }
+
+    func buildAndRun(_ tag: String, _ wanted: String) -> [String] {
+        try? suserSrc(wanted).write(toFile: scratchDisk + "/\(tag).a",
+                                    atomically: true, encoding: .utf8)
+        return ["login claude", "chx /dd/CMDS",
+                "r68 \(scratch)/\(tag).a -o=\(scratch)/\(tag).r",
+                "l68 \(scratch)/\(tag).r -o=\(scratch)/\(tag)",
+                "\(scratch)/\(tag)", "logout"]
+    }
+
+    // Rule 1 fails (1.7 is not 0.0), rule 2 fails (module owner is 1.7, not
+    // 0.0), rule 3 fails (0.0 != the module's 1.7 owner) -> E$Permit.
+    run("f$suser: an ordinary user cannot become 0.0 just by asking",
+        expectation: "E$Permit -- none of the TRM's three cases apply",
+        commands: buildAndRun("sudeny", "$00000000")) {
+            $0.contains("SUSER-DENIED") && !$0.contains("SUSER-ALLOWED")
+        }
+
+    // Rule 3: the requested ID equals the primary module's own M$Owner (1.7).
+    run("f$suser: a primary module may take on its own module's owner",
+        expectation: "allowed -- TRM case 3, the ID matches M$Owner",
+        commands: buildAndRun("suallow", "$00010007")) {
+            $0.contains("SUSER-ALLOWED") && !$0.contains("SUSER-DENIED")
+        }
+
+    // Rule 2 is what keeps `login` working from an already-logged-in ordinary
+    // user: login's own module is owned by 0.0, so it may set any identity.
+    // Nothing else in the suite covers this -- a plain `login` from the stock
+    // top-level shell is already 0.0 and so passes under rule 1 instead.
+    run("f$suser: login still works from a non-0.0 shell (module owned by 0.0)",
+        expectation: "nested login succeeds; rule 2 applies to login itself",
+        commands: ["login claude", "login dog", "logout", "logout"]) {
+            $0.contains("dog: ")
+        }
+
+    for leftover in ["sudeny.a", "sudeny.r", "sudeny",
+                     "suallow.a", "suallow.r", "suallow"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us

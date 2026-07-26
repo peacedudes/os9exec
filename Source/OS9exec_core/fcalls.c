@@ -787,10 +787,42 @@ os9err OS9_F_SUser( regs_type *rp, ushort cpid )
  * Error:   Appropriate error code
  */
 {
-    procid* pd= &procs[cpid].pd;
-    
-    pd->_group= os9_word( hiword( rp->d[1] ) );
-    pd->_user = os9_word( loword( rp->d[1] ) );
+    process_typ* cp   = &procs[cpid];
+    procid*      pd   = &cp->pd;
+    ulong        newid= rp->d[1];
+    mod_exec*    mp;
+    ulong        owner;
+
+    /* The v2.4 TRM permits exactly three cases and returns E$Permit for
+     * everything else:
+     *   1. user number 0.0 may change their ID to anything;
+     *   2. a primary module OWNED by user 0.0 may change its ID to anything;
+     *   3. any primary module may change its ID to match the module's owner.
+     * Until this check existed, any process could simply become 0.0 -- and
+     * since is_super() is the codebase's ONLY privilege test, that made the
+     * whole permission model bypassable from inside a guest program.
+     *
+     * Rule 1 is literally 0.0, BOTH halves, and is deliberately not
+     * is_super() (group 0 alone). is_super() answers what an identity may DO;
+     * this answers who may CHANGE identity. The distinction is the TRM's, and
+     * is already spelled out in the note on is_super() in procstuff.c.
+     *
+     * Rules 2 and 3 read M$Owner ($008) from the process's primary module,
+     * packed group-word:user-word -- the same shape F$ID returns and this call
+     * consumes -- so it compares against d1.l directly with no repacking.
+     * A process with no reachable primary module satisfies neither rule and is
+     * refused: os9mod() returns NULL for an out-of-range module ID, and denial
+     * is the safe direction for a gate whose failure mode is privilege. */
+    if (os9_word(pd->_group)!=0 || os9_word(pd->_user)!=0) {
+        mp= os9mod( cp->mid );
+        if (mp==NULL) return os9error( E_PERMIT );
+
+        owner= os9_long( mp->_mh._mowner );
+        if (owner!=0 && owner!=newid) return os9error( E_PERMIT );
+    }
+
+    pd->_group= os9_word( hiword( newid ) );
+    pd->_user = os9_word( loword( newid ) );
     return 0;
 } /* OS9_F_SUser */
 
