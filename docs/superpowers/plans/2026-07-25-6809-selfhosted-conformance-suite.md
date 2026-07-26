@@ -490,8 +490,10 @@ done
 # with runall; without this check a test added to one and forgotten in the
 # other drifts silently forever, with no failure signal anywhere.
 ra=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/runall" | sort)
-ro=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/runone" | sort)
-[ "$ra" = "$ro" ] || fail "runall and runone invoke different tests"
+for other in runone rebuild; do
+    ro=$(grep -aoE '^t[0-9]+[a-z]*' "$SRCDIR/text/$other" | sort)
+    [ "$ra" = "$ro" ] || fail "runall and $other invoke different tests"
+done
 
 # Public read, or the disk is unreadable to anyone but our build account.
 for f in readme runall runone rebuild; do
