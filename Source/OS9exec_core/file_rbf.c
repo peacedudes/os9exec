@@ -3953,11 +3953,17 @@ os9err pRsetFD( _pid_, syspath_typ* spP, byte *buffer )
      * and public triplets and no group permission class, so the group byte is
      * simply the high half of the owner identity. Letting an owner move it is
      * therefore still a partial give-away (1.3 can hand a file to 2.3) -- but
-     * a deliberate one, and it cannot reach the super-user: is_super requires
-     * BOTH halves zero, so with the user half locked here a non-super owner
-     * can reach 0.3 and never 0.0. */
+     * a deliberate one. */
     if (!is_super(pid) &&
         (GET_OS9W( buffer,1 ) & 0x00FF) != (FDOwn(spP) & 0x00FF)) return E_PERMIT;
+
+    /* ...and that give-away must not reach group ZERO, which IS the super
+     * user (see is_super). Without this a plain owner could hand its own file
+     * to 0.<its user number> and then, being the new owner, keep writing it --
+     * an ordinary user minting a privileged identity out of a file it happens
+     * to own. Guarded separately from the user-half check above because that
+     * one only pins the low byte; nothing there constrains the group. */
+    if (!is_super(pid) && (GET_OS9W( buffer,1 ) & 0xFF00)==0) return E_PERMIT;
 
     memcpy( spP->fd_sct, buffer, maxbyt );  /* copy to the buffer */
     RingPublishFD( spP );  /* owner/attrs just changed for every path, not one */

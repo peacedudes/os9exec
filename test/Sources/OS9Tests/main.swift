@@ -1030,6 +1030,58 @@ check("fs: permission — non-owner cannot change attributes on a file they don'
     contains: "Error #",
     "chd \(permDevPath)", "login dog", "chd \(permDevPath)", "attr f -nr", "logout")
 
+// ---- super user is GROUP zero, whatever the user number ----
+// admin is 0.7 in this disk's /dd/SYS/password: group 0 with a NON-ZERO user
+// number, deliberately the same user half as claude (1.7), so the pair differ
+// in nothing but the group. Microware defines the super user by that half
+// alone -- "a user with a group ID of 0 is referred to as a super user"
+// (Training, OS-9 Starter) and "any process owned by group zero" (Training,
+// OS-9 Advanced) -- and makes it concrete with the password line
+// `amy,love,0.153,...`, "she will have super user privileges". os9exec used to
+// require 0.0, so 0.7 was silently an ordinary user.
+//
+// The test uses its OWN file `s`, with every public bit cleared here and now.
+// Reusing the shared `f` made it vacuous: by this point f has had public-read
+// restored, so admin read it as a member of the public and the test passed
+// even with the old 0.0-only rule still in place (verified by reverting the
+// fix -- it still passed). Nothing but super-user status can open `s`.
+run("fs: permission — group-0 super user (0.7) sees through another owner's file",
+    expectation: "0.7 dumps a 1.7-owned file that has no public bits at all",
+    commands: ["chd \(permDevPath)", "login claude", "chd \(permDevPath)",
+               "echo abc >s", "attr s -npr -npw -npe", "logout",
+               "login admin", "chd \(permDevPath)",
+               "dump s", "logout"]) { $0.contains("6162 63") }
+
+// Control for the above: the same file, same moment, read by an ordinary
+// non-owner. If this ever passes, "super user" has stopped meaning anything
+// and the test above is just measuring an unenforced permission check.
+check("fs: permission — ...while an ordinary non-owner (dog) is still refused it",
+    contains: "Error #",
+    "chd \(permDevPath)", "login dog", "chd \(permDevPath)", "dump s", "logout")
+
+// The other half of the same fix: making group 0 privileged means a non-super
+// process must not be able to PUT itself in group 0. chown writes the file
+// descriptor's owner word, and a plain owner is allowed to hand a file to
+// another group -- but not to group zero, which would mint a privileged
+// identity out of a file they merely own. Concretely here: claude is 1.7 and
+// admin is 0.7, so `chown 0.7` is claude reaching for the super-user identity
+// one group digit away from its own.
+//
+// On its OWN file `g`, not the shared `f`: f still has owner-read cleared from
+// the lockout test above, so chown could not even open it and the refusal came
+// back E_FNA -- which "contains Error #" would have accepted, passing this test
+// without ever reaching the check it exists for. Hence E_PERMIT by name, and a
+// 2.7 control proving an ordinary give-away still works.
+check("fs: permission — owner cannot give a file away to group 0",
+    contains: "E_PERMIT",
+    "chd \(permDevPath)", "login claude", "chd \(permDevPath)",
+    "echo abc >g", "chown 0.7 g", "logout")
+
+run("fs: permission — the same owner CAN give it to an ordinary group",
+    expectation: "control: chown to 2.7 succeeds, so the group-0 refusal is specific",
+    commands: ["chd \(permDevPath)", "login claude", "chd \(permDevPath)",
+               "chown 2.7 g", "logout"]) { !$0.contains("Error #") }
+
 try? FileManager.default.removeItem(atPath: scratchDisk + "/" + permDev)
 
 // ---- permissions: file-level write bit (has_open_perm's write path) ----

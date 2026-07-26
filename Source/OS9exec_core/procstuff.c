@@ -222,12 +222,37 @@
 /* ================ */
 
 int is_super(ushort pid)
-/* Returns true if process belongs to super user */
+/* Returns true if process belongs to super user.
+ *
+ * Group ZERO alone, not 0.0 -- the user half is irrelevant. Microware
+ * defines it twice: "A user with a group ID of 0 is referred to as a super
+ * user. A super user can access and manipulate any file or directory on the
+ * system regardless of the file's ownership" (Training, OS-9 Starter, Shell
+ * chapter) and "A super user process is any process owned by group zero"
+ * (Training, OS-9 Advanced, system globals chapter). The Starter volume then
+ * makes it concrete with a password-file line, `amy,love,0.153,...` -- "if
+ * user amy enters love at the password prompt, she will have super user
+ * privileges" -- so 0.153 IS a super user and only the group half decides.
+ * This used to demand BOTH halves zero; a group-0 account with a non-zero
+ * user number was silently an ordinary user (live-verified before the fix:
+ * 0.153 got E_FNA reading a 1.7-owned file with no public bits, where 0.0
+ * read it fine).
+ *
+ * NOTE this is a wider test than it looks: it is the ONLY privilege check in
+ * the codebase, gating RBF permission enforcement (file_rbf.c) and OS9STOP
+ * (intcommand.c). Anything that lets a non-super process reach group 0 is
+ * therefore a privilege escalation -- see pRsetFD, which must keep a
+ * non-super owner from writing a zero group into a file descriptor's owner
+ * word.
+ *
+ * Not to be confused with the TRM's F$SUser rule, which is about who may
+ * CHANGE identity ("user number 0.0 may change their ID to anything without
+ * restriction") rather than what an identity is privileged to do. */
 {
    process_typ*   cp = &procs[pid];
    int            reply = 0;
 
-   if (cp->pd._user == 0 && cp->pd._group == 0)
+   if (cp->pd._group == 0)
       reply = 1;
 
    return reply;
