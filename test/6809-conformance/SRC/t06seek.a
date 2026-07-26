@@ -1,0 +1,169 @@
+* t06seek.a -- conformance test t06: the I$Seek position-register
+* convention.
+* Claim (see DOCS/claims.md for the citation): I$Seek's INPUT fields
+* (System Programmers Manual 11.3.14) specify X as the most-significant
+* 16 bits and U as the least-significant 16 bits of the 32-bit desired
+* file position -- an X:U split. Creates its own fixture in SCRATCH/,
+* seeks to a known offset via X:U, reads one byte, and compares it
+* against the byte the fixture's own content puts at that offset --
+* proof the position actually lands where X:U says, not silently at 0
+* or at some other register's value. Deletes the fixture before exiting
+* so reruns are clean. Emits exactly one RESULT t06 line via report.i's
+* emit. Long branches throughout for the same range-safety reason as
+* t03eof.a/t04bmode.a.
+*
+* U is this program's own U-relative data-area base pointer, and
+* I$Seek overwrites it with the position's low word (that IS the
+* convention under test) -- so U is pushed onto the hardware stack
+* immediately before the call and pulled immediately after, before any
+* other ,u-relative reference is used again. PULS does not affect CC,
+* so the carry/B result from the swi2 survives the restore untouched.
+* This technique is carried over unchanged from
+* test/6809-live-verification/syscall-iseek.a, which established it
+* live first.
+        nam ConfT06
+        mod eom,nm,$11,$81,start,$0100
+nm      fcs /ConfT06/
+        use report.i
+EXPECT   equ 77                 ASCII 'M' -- the byte wdata puts at SEEKOFF
+SEEKOFF  equ 12                 seek target; 0 < SEEKOFF < wdatal
+OPENFLAG equ 133
+RBUF     equ 134
+start   equ *
+        clr OPENFLAG,u
+* best-effort cleanup of any fixture left behind by a crashed prior run;
+* the outcome is not checked -- I$Delete failing because nothing is
+* there yet is the expected common case.
+        leax fname,pcr
+        swi2
+        fcb $87                I$Delete
+
+* --- I$Create(A=write-only, B=owner read+write, X=pathlist) ---
+        leax fname,pcr
+        lda #2
+        ldb #3
+        swi2
+        fcb $83                I$Create
+        lbcs sfail
+        sta PATHNUM,u
+        ldb #1
+        stb OPENFLAG,u
+
+* --- I$Write the fixture's known content ---
+        leax wdata,pcr
+        ldy #wdatal
+        lda PATHNUM,u
+        swi2
+        fcb $8A                I$Write
+        lbcs sfail
+
+* --- I$Close, then reopen for read ---
+        lda PATHNUM,u
+        swi2
+        fcb $8F                I$Close
+        lbcs sfail
+        clr OPENFLAG,u
+
+        leax fname,pcr
+        lda #1                 read mode
+        swi2
+        fcb $84                I$Open
+        lbcs sfail
+        sta PATHNUM,u
+        ldb #1
+        stb OPENFLAG,u
+
+* --- I$Seek(A=path, X:U=32-bit position) -- THE CALL UNDER TEST ---
+        lda PATHNUM,u
+        pshs u
+        ldx #0
+        ldu #SEEKOFF
+        swi2
+        fcb $88                I$Seek
+        puls u
+        lbcs sfail
+
+* --- I$Read 1 byte at the sought position ---
+        leax RBUF,u
+        ldy #1
+        lda PATHNUM,u
+        swi2
+        fcb $89                I$Read
+        lbcs sfail
+
+* --- observed value is the byte actually read at the sought position ---
+        lda RBUF,u
+        sta ERRB,u
+        lbra cleanup
+
+cleanup equ *
+        lda OPENFLAG,u
+        lbeq cleanup2
+        lda PATHNUM,u
+        swi2
+        fcb $8F                I$Close
+        clr OPENFLAG,u
+cleanup2 equ *
+        leax fname,pcr
+        swi2
+        fcb $87                I$Delete
+        ldb ERRB,u
+        cmpb #EXPECT
+        lbeq pass
+        lbra fail
+
+sfail equ *
+        stb ERRB,u
+        lda OPENFLAG,u
+        lbeq sfail2
+        lda PATHNUM,u
+        swi2
+        fcb $8F                I$Close
+        clr OPENFLAG,u
+sfail2 equ *
+        leax fname,pcr
+        swi2
+        fcb $87                I$Delete
+
+fail    equ *
+        leax OUTBUF,u
+        leay FAILM,pcr
+        ldb #FAILML
+        lbsr copys
+        lbra tail
+pass    equ *
+        leax OUTBUF,u
+        leay PASSM,pcr
+        ldb #PASSML
+        lbsr copys
+tail    equ *
+        clra
+        ldb ERRB,u
+        std VALUE,u
+        lbsr prdec
+        leay EXPM,pcr
+        ldb #EXPML
+        lbsr copys
+        ldd #EXPECT
+        std VALUE,u
+        lbsr prdec
+        leay DESC,pcr
+        ldb #DESCL
+        lbsr copys
+        lbsr emit
+        clrb
+        swi2
+        fcb $06
+fname   fcs "SCRATCH/t06seek.dat"
+wdata   fcc /ABCDEFGHIJKLMNOPQRST/
+wdatal  equ *-wdata
+PASSM   fcc /RESULT t06 PASS  obs=/
+PASSML  equ *-PASSM
+FAILM   fcc /RESULT t06 FAIL  obs=/
+FAILML  equ *-FAILM
+EXPM    fcc / exp=/
+EXPML   equ *-EXPM
+DESC    fcc /  I$Seek honors the X:U 32-bit position convention/
+DESCL   equ *-DESC
+        emod
+eom     equ *
