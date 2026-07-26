@@ -612,6 +612,8 @@ For every test, in this order: pin the citation (drop the test if it cannot be p
 
 Serves the image via `NITROS9REPL_EXTRA_DWCLI="--disk0 <image>"`, logs in as a non-super user, runs `runall`, and retrieves `RESULTS/report`.
 
+**Retrieve the report through the guest, not from the image file.** A `--disk0` image served over DriveWire is not a host-side retrieval route: what the guest writes was not visible in the backing file on the host, checked mid-session and after with two independent tools (`Live`, 2026-07-25 — see the skill's `6809/using-nitros9-repl.md`). `list` the file over the channel and capture that. Reading the backing file would yield a stale or empty report and look like a suite that produced nothing.
+
 - [ ] **Step 2: Record our baseline**
 
 Run it, and record the output in `DOCS/ourruns.md`, labelled explicitly as a candidate observation from a reimplementation — not a standard.
