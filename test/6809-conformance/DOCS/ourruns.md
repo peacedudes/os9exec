@@ -39,9 +39,9 @@ RUN prebuilt
          User                     Mem Stack
 Id  PId Number  Pty Age Sts Signl Siz  Ptr   Primary Module
 --- --- ------- --- --- --- ----- --- ----- ----------------
-  3   9     1   128 131 $80    0   31 $31E2 Shell
+  3   8     1   128 131 $80    0   31 $31E2 Shell
   4   3     1   128 128 $80    0   31 $1EF3 Procs
-  9   7     1   128 129 $80    0   31 $2EE2 Shell
+  8   7     1   128 129 $80    0   31 $36E2 Shell
 RESULT t01 PASS  obs=00216 exp=00216  I$Open of an absent pathlist reports E$PNNF
 RESULT t02 PASS  obs=32768 exp=32768  INTEGER overflow on 6809 wraps modulo 65536 (32767+1=-32768)
 RESULT t03 PASS  obs=00211 exp=00211  I$Read at end of file reports E$EOF
@@ -50,9 +50,12 @@ RESULT t05 PASS  obs=00214 exp=00214  I$Open without permission reports E$FNA
 RESULT t06 PASS  obs=00077 exp=00077  I$Seek honors the X:U 32-bit position convention
 RESULT t07 PASS  obs=00045 exp=00045  INTEGER divide by zero traps into BASIC09's own error 45
 RESULT t08 PASS  obs=00054 exp=00054  a write past a seek beyond EOF extends the file
+RESULT t09 FAIL  obs=00190 exp=00200  concurrent read-modify-write on one record loses no update
+RESULT t10 PASS  obs=00007 exp=00007  a reader waits at the edge for an update-mode producer
+RESULT t11 PASS  obs=00007 exp=00007  a write-only producer holds the EOF lock as update does
 ```
 
-`tally`: `CONF6809 totals: PASS=8 FAIL=0 SKIP=0 ERROR=0`
+`tally`: `CONF6809 totals: PASS=10 FAIL=1 SKIP=0 ERROR=0`
 
 ## Rebuilt run (`rebuild`: SRC/ reassembled with this system's own `asm`,
 repacked with its own `basic09`, run from `REBUILT/`)
@@ -63,9 +66,9 @@ RUN rebuilt
          User                     Mem Stack
 Id  PId Number  Pty Age Sts Signl Siz  Ptr   Primary Module
 --- --- ------- --- --- --- ----- --- ----- ----------------
-  3   9     1   128 128 $80    0   31 $31E2 Shell
-  4   3     1   128 128 $80    0   31 $1EF3 Procs
-  9   7     1   128 131 $80    0   31 $2EE2 Shell
+  3   8     1   128 128 $80    0   31 $31E2 Shell
+  4   3     1   128 131 $80    0   31 $1EF3 Procs
+  8   7     1   128 129 $80    0   31 $36E2 Shell
 RESULT t01 PASS  obs=00216 exp=00216  I$Open of an absent pathlist reports E$PNNF
 RESULT t02 PASS  obs=32768 exp=32768  INTEGER overflow on 6809 wraps modulo 65536 (32767+1=-32768)
 RESULT t03 PASS  obs=00211 exp=00211  I$Read at end of file reports E$EOF
@@ -74,12 +77,59 @@ RESULT t05 PASS  obs=00214 exp=00214  I$Open without permission reports E$FNA
 RESULT t06 PASS  obs=00077 exp=00077  I$Seek honors the X:U 32-bit position convention
 RESULT t07 PASS  obs=00045 exp=00045  INTEGER divide by zero traps into BASIC09's own error 45
 RESULT t08 PASS  obs=00054 exp=00054  a write past a seek beyond EOF extends the file
+RESULT t09 FAIL  obs=00183 exp=00200  concurrent read-modify-write on one record loses no update
+RESULT t10 PASS  obs=00007 exp=00007  a reader waits at the edge for an update-mode producer
+RESULT t11 PASS  obs=00007 exp=00007  a write-only producer holds the EOF lock as update does
 ```
 
 `rebuild`'s own reassembly step: 5 `asm` invocations (the assembly tests),
 0 errors each (a handful of harmless warnings, the same count every time);
-4 `basic09` `PACK`s (the BASIC09 tests plus `tally`), all successful.
-Combined `tally` after both runs: `CONF6809 totals: PASS=16 FAIL=0 SKIP=0 ERROR=0`.
+10 `basic09` `PACK`s (the BASIC09 tests, their two helper processes, and
+`tally`), all successful. Each `PACK` now gets its **own** `basic09`
+invocation. They shared one before, which stopped working the moment Phase 2
+took the count from 4 to 10: the workspace filled, `LOAD` began truncating
+procedures part-way -- surfacing first as ten `Error #074 -- Undefined Line
+Number`, not as anything mentioning memory -- and only then came
+`Error #032 -- Memory Full` and a `PACK` failing with `Error #051`. One
+procedure per session also matches the documented rule that a second `PACK`
+of the same procedure in one session fails.
+Combined `tally` after both runs: `CONF6809 totals: PASS=20 FAIL=2 SKIP=0 ERROR=0`.
+
+## The t09 FAIL is real, and it is this system's, not the test's
+
+`t09` is the only test this system does not pass, and it fails the same way
+every run: the counter lands short of 200. Five runs recorded here and in the
+sessions around them gave 173, 175, 178, 183, 190 -- never 200, never the same
+number twice. That variability is itself the signature of a genuine race
+rather than a fixed off-by-something in the test.
+
+Three things separate this from a harness artifact:
+
+- **The run proves its own preconditions.** Both racers signal completion
+  through their own separate files, created after their last write, so the
+  count is only ever read once both have finished. A racer still running
+  reports `ERROR`, not `FAIL` -- a distinction this suite draws deliberately,
+  and one that fired for real during development.
+- **The contended record is not at end of file.** The fixture is two records
+  and the racers work on the first, keeping this on the ordinary record-lock
+  path rather than the separate EOF-lock mechanism `t10`/`t11` cover.
+- **Neither racer traps errors.** On this BASIC09 an untrapped error drops
+  into Debug Mode, which would visibly halt the run. Both racers finish
+  cleanly, so the lock is not erroring -- it is simply not serializing them.
+
+This has been independently root-caused in this project outside the suite:
+NitrOS-9's record-lock retry path re-presents a clobbered byte count after a
+park, degenerating into the "dismiss" request, so a woken waiter proceeds
+holding no lock at all. A four-byte register-restore fix takes the loss to
+zero across repeated runs. **That fix is not on the disk this suite was run
+against, and should not be**: what is recorded here is what a recipient
+running stock NitrOS-9 V3.3.0 will see, which is the number worth comparing
+against.
+
+`t10` and `t11` pass here, so this system honors the EOF lock in both the
+update-mode and write-only cases while failing the general record-lock case --
+the two are separate mechanisms in the implementation as well as in the
+manual.
 
 ## What this run also confirmed, beyond the two above
 
@@ -87,6 +137,16 @@ Combined `tally` after both runs: `CONF6809 totals: PASS=16 FAIL=0 SKIP=0 ERROR=
   `t01open.a`'s `EXPECT` was changed from 216 to 99, the image rebuilt, and
   run: `RESULT t01 FAIL  obs=00216 exp=00099`. Reverted and reconfirmed PASS
   before shipping.
+- **Same, for the two record-locking tests that pass here.** A test that has
+  only ever returned PASS has never shown that its comparison can come out the
+  other way. `t10eoflk` and `t11wlock` were rebuilt with `xpc = 8` in place of
+  7, packed on the guest, staged (byte counts identical, module CRCs
+  `$B12C1B`->`$15CBD5` and `$BDED82`->`$DB9DAD`, and the staged module compared
+  byte-for-byte against the perturbed build so the image could not be carrying
+  a stale copy), and run: `RESULT t10 FAIL  obs=00007 exp=00008` and
+  `RESULT t11 FAIL  obs=00007 exp=00008`. `obs` stayed at the genuinely
+  measured 7 in both, so the observation is measured rather than assumed.
+  Restored byte-exact and reconfirmed PASS before shipping.
 - **A missing prerequisite reports SKIP, not FAIL.** Logging in with a
   blank username matches this disk's own wildcard `,,0,...` `SYS/password`
   entry (flat user ID 0, this system's only superuser -- `procs` showed

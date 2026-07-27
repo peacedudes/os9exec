@@ -35,6 +35,17 @@ in one continuous session while /dd's own directory listing was
 snapshotted before and after, and it came back byte-for-byte
 unchanged.
 
+A note on the record-locking tests, because they behave unlike the
+others: three of them start a second process of their own and wait for
+it. They are the only way to check a mechanism that exists purely to
+coordinate concurrent access, so a run now takes a minute or two rather
+than seconds, most of it apparently idle, and "procs" during a run will
+show helper processes alongside the test. That is the test working, not
+a hang. Each of them also refuses to report a verdict it cannot stand
+behind: if its helper did not finish, or the situation it needed could
+not be set up, it reports ERROR rather than guessing at FAIL. A slow
+system is a reason to wait longer, never a reason to read a number.
+
 What a RESULT line means: PASS is the documented behaviour matching
 what this system actually did; FAIL is a real disagreement -- the
 system did something the cited manual passage says it should not.
