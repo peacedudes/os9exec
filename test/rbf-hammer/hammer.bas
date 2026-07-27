@@ -360,12 +360,17 @@ ELSE
       gotcount = gotcount + 1
     ENDLOOP
 120 failed = ERR
-    IF failed = 211 THEN
-      CLOSE #path
-      PRINT #2, "hammer: worker "; worker; " follow done "; gotcount
-    ELSE
-      PRINT #2, "hammer: worker "; worker; " FAIL error "; failed
-    ENDIF
+    ! Report the count whatever error ended the read, with the code alongside.
+    ! This used to report a count ONLY on 211, and print FAIL otherwise -- so a
+    ! run that ended any other way looked like "the follower never reported",
+    ! indistinguishable from a hang, and the scenario ran to its full timeout.
+    ! That is not hypothetical: a BASIC09 read running out of data on this
+    ! system routinely ends with 203, not 211, so the scenario reported a count
+    ! only intermittently and every measurement taken through it was a coin
+    ! flip. The count is the signal; the terminating code is context, not a
+    ! gate. Count stays the last token -- the host parser reads it from there.
+    CLOSE #path
+    PRINT #2, "hammer: worker "; worker; " err "; failed; " follow done "; gotcount
   ELSE
   IF role = "wobin" THEN
     ! Write-only BINARY producer for the mixed scenario (#5). CREATE the file

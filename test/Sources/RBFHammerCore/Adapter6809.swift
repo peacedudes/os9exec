@@ -81,12 +81,21 @@ public struct Adapter6809: Adapter {
     ///   - repoRoot: Directory holding `tools/nitros9repl.sh` and
     ///     `test/rbf-hammer/hammer.bas`.
     ///   - goldenMaster: Image directory to clone. Defaults to the NitrOS-9
-    ///     EOU disk the REPL normally boots.
+    ///     EOU disk the REPL normally boots, unless `RBF_GOLDEN_DEFAULT` names
+    ///     another image directory.
+    ///
+    /// `RBF_GOLDEN_DEFAULT` exists so the *whole* suite can be pointed at one
+    /// build. The per-test `RBF_GOLDEN` only reaches the probes; the pinned
+    /// tests pass `golden: nil` and so always took the stock master, which made
+    /// it impossible to run the pinned set against a candidate fix and see the
+    /// pins flip. Setting this is the supported way to A/B a boot image.
     public init(repoRoot: URL, goldenMaster: URL? = nil) throws {
         self.repoRoot = repoRoot
         let nitros9 = repoRoot.deletingLastPathComponent()
             .appendingPathComponent("os9/nitros9")
-        self.goldenMaster = goldenMaster ?? nitros9
+        let overridden = ProcessInfo.processInfo.environment["RBF_GOLDEN_DEFAULT"]
+            .map { URL(fileURLWithPath: $0) }
+        self.goldenMaster = goldenMaster ?? overridden ?? nitros9
             .appendingPathComponent("disk-images/eou_ide-v0.3-6809-xroar-dw-becker")
         self.toolShed = nitros9.appendingPathComponent("tools/toolshed/build/unix/os9/os9")
         self.template = try String(

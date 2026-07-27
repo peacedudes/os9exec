@@ -249,13 +249,13 @@ final class Scenario6809Tests: XCTestCase {
             + "elapsed=\(Int(elapsed))s")
     }
 
-    /// Runs the write-only-Creat follow scenario (blind spot #3) and returns how
-    /// many records the follower saw. A WRITE-only producer creates a file and
-    /// writes `records` records -- the first two fast, the rest paced -- while a
-    /// follower reads it to EOF after a brief nap. Stock RBF's bogus write-only
-    /// eof lock makes the follower TRAIL to the end (count == records); the
-    /// mode-gate fix stops it at the initial EOF (count small). `golden` selects
-    /// the image (nil = default stock master).
+    /// Runs the write-only-Creat follow scenario and returns how many records the
+    /// follower saw. A WRITE-only producer creates a file and writes `records`
+    /// records -- the first two fast, the rest paced -- while a follower reads it
+    /// to EOF after a brief nap. Trailing to the end (count == records) is the
+    /// DOCUMENTED behaviour and what stock does; stopping at the initial EOF
+    /// (count small) is what the withdrawn `lockmode` patch caused. `golden`
+    /// selects the image (nil = default stock master).
     private func followerRecordCount(records: Int, golden: URL?) throws -> Int? {
         let file = "/r0/wo.dat"
         let roster = [
@@ -388,28 +388,32 @@ final class Scenario6809Tests: XCTestCase {
               + "so this proved nothing; the timing needs tuning")
     }
 
-    /// ★ Blind spot #3: a WRITE-only producer must NOT make a reader follow it
-    /// past EOF. Stock NitrOS-9 RBF takes record+eof locks regardless of open
-    /// mode, so a reader trails a write-only (`>`) producer instead of stopping
-    /// at the current end -- the exact defect the `lockmode` patch fixes by
-    /// gating lock acquisition (incl. the `Creat` site) on `PD.MOD == UPDAT`.
+    /// A WRITE-only producer MUST make a reader follow it. This assertion was
+    /// inverted on 2026-07-27; it previously demanded the follower stop.
     ///
-    /// Proven teeth: on the default STOCK master the follower reaches the
-    /// producer's full count; against the combined-fix image (`RBF_GOLDEN`) it
-    /// stops at the initial EOF (measured 8 vs 2 of 8). The correct behaviour is
-    /// "stops" (count < records), asserted here and wrapped in `XCTExpectFailure`
-    /// because the default image is still stock -- so the suite catalogs the
-    /// write-only follow bug and flips loud once the fix ships in the boot image.
-    func testWriteOnlyProducerDoesNotMakeAReaderFollowOn6809() throws {
+    /// The 6809 System Programmers Manual §6.6.3 states that a program creating a
+    /// file for sequential output gains EOF Lock as soon as the file is created,
+    /// and that no other process can then pass that writer through the file. Its
+    /// own illustration is an assembly listing redirected to disk -- plain `>`
+    /// output, a write-only path -- with a spooler reading behind it. §6.6.1's
+    /// update-mode restriction is scoped to *reads* and does not reach this. The
+    /// same passage appears in the Tandy Technical Reference (:3799), the Tandy
+    /// Level Two Development System manual (:12732) and the OS-9/68000 v2.4
+    /// Technical Reference (:6307).
+    ///
+    /// So stock is right and trails to the full count. The withdrawn `lockmode`
+    /// patch gated the EOF-lock and Creat sites on `PD.MOD == UPDAT.`, which
+    /// stopped the follower at the initial EOF -- and this test, asserting the
+    /// old expectation, certified that regression as correct. Teeth: run against
+    /// `rbf.combined-fix-testdisk.mn` via `RBF_GOLDEN` and it fails (2 of 8).
+    func testWriteOnlyProducerMakesAReaderFollowOn6809() throws {
         let records = 8
         guard let count = try followerRecordCount(records: records, golden: nil) else {
             return XCTFail("follower never reported a count")
         }
-        XCTExpectFailure("stock RBF makes a reader follow a write-only producer -- lockmode bug") {
-            XCTAssertLessThan(count, records,
-                              "follower trailed the write-only producer to \(count) of \(records) "
-                            + "-- it should have stopped at the initial EOF")
-        }
+        XCTAssertEqual(count, records,
+                       "follower stopped at \(count) of \(records) behind a write-only producer "
+                     + "-- it must trail to the producer's end (SPM 6.6.3)")
     }
 
     /// CONTROL, and the one that must be read first: the identical race with NO
@@ -483,10 +487,25 @@ final class Scenario6809Tests: XCTestCase {
         // XCTExpectFailure below into an "unexpectedly passed" that says: check
         // whether RBF was fixed here.
         var lost = 0
+        var everRan = false
         for _ in 1...3 {
             let tally = try finalTally(workers: workers, increments: increments,
                                        nap: 0, role: .rmwbin, napMode: .nilWrites)
+            // A tally of exactly 0 is NOT "every update was lost" -- it is what
+            // a roster that never incremented at all looks like, and the two are
+            // indistinguishable from the counter alone. The reproduction's own
+            // measured range is ~250-300 of 800, so a full-width 800 is out of
+            // family and must not be banked as a reproduced bug. Retry; only if
+            // no try ever moved the counter do we report inconclusive.
+            if tally == 0 { continue }
+            everRan = true
             if tally < expected { lost = expected - tally; break }
+        }
+
+        guard everRan else {
+            return XCTFail("inconclusive: the counter never moved off 0 in 3 tries, so this "
+                         + "measured nothing about record locking -- check that the racers "
+                         + "actually launched before reading any verdict from this test")
         }
 
         XCTExpectFailure("stock NitrOS-9 drops binary GET/PUT updates -- live data-loss bug") {
