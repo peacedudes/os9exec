@@ -130,6 +130,35 @@ assume that base, and the shipped module carries both.
 | `rbf.combined-eoflock-testdisk.mn` | `94c4521f` | `$0C4B57` | Stock-on-disk + lostupdate regfix + re-cut lockmode + the 1-byte ChgDir accommodation. 4864 bytes. **The module the 2026-07-26 measurements were taken on — install this.** |
 | `rbf.combined-eoflock.mn` | `01d3e0de` | `$BCF3BF` | Upstream `main` + both patches, nothing else — the PR artifact. Do not install on the test disk. |
 
+### Readers are woken after EVERY write, not held until close (measured)
+
+The question this answers: does a reader queued on the EOF lock get released
+once per producer write -- so it trails the writer like a pipe -- or does it
+sleep until the producer closes and then catch up in a burst? Measured on the
+**shipping build** (stock + lost-update fix only), producer pacing ~1 record/s,
+each record carrying the second it was written and the reader printing the
+second it actually arrived:
+
+```
+live WRITE-only producer            control: same file, already closed
+record 2  written  7  read  8       record 2  written 19  read 26
+record 3  written  9  read 10       record 3  written 20  read 26
+record 4  written 10  read 11       record 4  written 21  read 26
+record 5  written 11  read 13       record 5  written 22  read 26
+record 6  written 13  read 14       record 6  written 23  read 26
+```
+
+Left: six reads at six distinct times, each 1-2s behind its own write -- the
+reader tracks the producer. Right, the negative control on a finished file:
+every read lands in the same instant. That control is what "woken only at
+close" would look like, and the live case is plainly not it. The same shape
+holds for an UPDATE producer (lags 2,2,1,1,1 across six distinct seconds).
+
+So NitrOS-9 releases and re-takes the EOF lock on each write, waking queued
+waiters every time. That is the pipe-like behaviour the mechanism was designed
+for, and it is already correct in stock -- one more reason the lock-mode patch
+had nothing to fix.
+
 ### 2026-07-27 CONCLUSION: the PR should be ONE commit, not two
 
 **Stock + the lost-update register fix alone passes all eleven conformance
