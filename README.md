@@ -110,6 +110,24 @@ You can also attach extra host directories as `/h1`, `/h2`, etc. (see [Devices](
 
 Files placed in a host directory appear immediately inside the emulator as OS-9 files, with no conversion needed for binary modules. Text files need OS-9 line endings (CR, `0x0D`) rather than Unix LF — the emulator handles this transparently for `I$ReadLn`/`I$WritLn`, but raw byte copies preserve whatever endings are in the file.
 
+**Record locking works on RBF images, not on host directories.** RBF
+implements the full mechanism — a read on an update-mode path locks the record
+it read, the next write releases it, a conflicting accessor sleeps, and a write
+landing at end of file takes the EOF lock so a reader following a producer
+waits at the edge instead of seeing a premature end of file. A host directory
+has none of it, and `SS_Lock` there currently reports success without doing
+anything.
+
+This is deliberate, not an oversight. Host directories are a convenience
+bridge with no counterpart on real OS-9, so there is no Microware behaviour to
+be faithful to; they are already lossy for file attributes and ownership for
+the same reason. A lock there could only ever be half-true anyway, since host
+tools can change the file behind the emulator's back, whereas an RBF image is
+opaque to the host. **If your program depends on record locking — including
+the automatic read-lock/write-release that makes a read-modify-write cycle
+safe — put the file in an RBF image.** On a host directory concurrent
+read-modify-write can silently lose updates.
+
 RBF disk images pointed to by `/h0`–`/hz` are auto-mounted on first access — `dir /h0/CMDS` works directly with no need to touch `/h0` first or run `mount`. Use `mount <image> <devname>` to attach an image under a name of your choosing.
 
 ### Creating new disk images
