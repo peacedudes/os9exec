@@ -1,0 +1,30 @@
+PROCEDURE t09race
+DIM path, cp: BYTE
+DIM rec(5): INTEGER
+DIM i, myid: INTEGER
+myid = 1
+ON ERROR GOTO 100
+CREATE #cp,"SCRATCH/t09c1":WRITE
+CLOSE #cp
+GOTO 200
+100 ON ERROR
+myid = 2
+CREATE #cp,"SCRATCH/t09c2":WRITE
+CLOSE #cp
+200 ON ERROR
+OPEN #path,"SCRATCH/t09.dat":UPDATE
+FOR i = 1 TO 100
+  SEEK #path,0
+  GET #path,rec
+  rec(1) = rec(1) + 1
+  SEEK #path,0
+  PUT #path,rec
+NEXT i
+CLOSE #path
+IF myid = 2 THEN 300
+CREATE #cp,"SCRATCH/t09d1":WRITE
+CLOSE #cp
+GOTO 400
+300 CREATE #cp,"SCRATCH/t09d2":WRITE
+CLOSE #cp
+400 END
