@@ -130,6 +130,46 @@ assume that base, and the shipped module carries both.
 | `rbf.combined-eoflock-testdisk.mn` | `94c4521f` | `$0C4B57` | Stock-on-disk + lostupdate regfix + re-cut lockmode + the 1-byte ChgDir accommodation. 4864 bytes. **The module the 2026-07-26 measurements were taken on — install this.** |
 | `rbf.combined-eoflock.mn` | `01d3e0de` | `$BCF3BF` | Upstream `main` + both patches, nothing else — the PR artifact. Do not install on the test disk. |
 
+### 2026-07-27 CONCLUSION: the PR should be ONE commit, not two
+
+**Stock + the lost-update register fix alone passes all eleven conformance
+tests** (11/11 on three consecutive runs, `t09 obs=200` each). The lock-mode
+patch is **not needed**, and neither of its two remaining hunks can be shown to
+change any observable behaviour:
+
+| build | t09 | t10 | t11 | totals |
+|---|---|---|---|---|
+| stock `a64547c3` | FAIL 190/200 | PASS | PASS | 10 / 1 |
+| PR #377 as it stands `9704d7df` | PASS | PASS | **FAIL** obs=2 exp=7 | 10 / 1 |
+| **lostupdate fix ONLY `8aaabd4c`** | PASS 200 | PASS | PASS | **11 / 0** |
+| lostupdate + re-cut lockmode `94c4521f` | PASS 200 | PASS | PASS | 11 / 0 |
+
+The last two are indistinguishable on every test run here. So the +14 bytes of
+lock-mode gating buys nothing measurable, and **the minimal evidenced change is
+the one-commit PR**.
+
+Why the lock-mode hunks cannot be justified:
+
+- **The EOF lock was never broken on 6809.** Stock already takes it for
+  write-only producers and creators — `t11` and `rlcreaw` pass on stock. The
+  re-cut patch's EOF hunk only stops a *read-only* path asserting the lock, and
+  no test distinguishes that. PR #377's error was breaking working behaviour,
+  so the fix is to drop that commit, not to replace it with a subtler one.
+- **The record-lock hunk (`L0BAA`) has no demonstrable effect either.** Direct
+  test (`rl-rhold.bas`, new): a read-only path GETs record 0 of a 2-record file
+  and holds it open across a 10s `F$Sleep` while an update-mode path GETs the
+  same record. The updater is **not** delayed — on stock (2s) or on the re-cut
+  build. Positive control: the same waiter *is* delayed, 5s vs 2s, by an
+  UPDATE-mode holder (`rlqhold`), so the harness can detect a held record lock.
+  Stock therefore already behaves as SPM §6.6.1 requires for this case, by some
+  route upstream of `L0BAA` that this pass did not identify — `Read`/`ReadLn`
+  both call the claim path with no `PD.MOD` check, so the mechanism is not yet
+  understood. **Not understood is not the same as broken**, and a hunk whose
+  effect cannot be demonstrated does not belong in a community PR.
+
+`docs/nitros9-rbf-lockmode.patch` and `rbf.combined-eoflock*.mn` are kept as
+the measured record of this investigation, **not as PR material**.
+
 ### Measured live, 2026-07-26/27 (NitrOS-9 L2 V3.3.0, XRoar, private image)
 
 **The decisive comparison.** The 6809 conformance suite (`test/6809-conformance`,
