@@ -130,17 +130,58 @@ assume that base, and the shipped module carries both.
 | `rbf.combined-eoflock-testdisk.mn` | `94c4521f` | `$0C4B57` | Stock-on-disk + lostupdate regfix + re-cut lockmode + the 1-byte ChgDir accommodation. 4864 bytes. **The module the 2026-07-26 measurements were taken on — install this.** |
 | `rbf.combined-eoflock.mn` | `01d3e0de` | `$BCF3BF` | Upstream `main` + both patches, nothing else — the PR artifact. Do not install on the test disk. |
 
-### Measured live, 2026-07-26 (NitrOS-9 L2 V3.3.0, XRoar, private image)
+### Measured live, 2026-07-26/27 (NitrOS-9 L2 V3.3.0, XRoar, private image)
+
+**The decisive comparison.** The 6809 conformance suite (`test/6809-conformance`,
+11 cited tests) was run against three RBF builds on the *same* disk with the
+*same* harness, only the module changing:
+
+| build | t09 lost update | t10 EOF lock, update producer | t11 EOF lock, write-only producer | totals |
+|---|---|---|---|---|
+| stock `a64547c3` | **FAIL** obs=190/200 | PASS | PASS | 10 PASS / 1 FAIL |
+| **PR #377** `9704d7df` | PASS 200 | PASS | **FAIL** obs=2, exp=7 | 10 PASS / 1 FAIL |
+| re-cut `94c4521f` | PASS 200 | PASS | PASS | **11 PASS / 0 FAIL** |
+
+PR #377 as it stands trades one defect for another: it fixes the lost update
+and breaks the write-only EOF lock. Only the re-cut build passes all eleven.
+The suite was written from the manuals independently of any of these builds.
+
+**Full conformance runs on the re-cut build:** 11/11 on four consecutive runs
+(`t09 obs=200` every time), plus a fifth via the `rebuild` path. A/B/A on one
+disk: re-cut 11/11 -> stock 10/1 -> re-cut 11/11.
+
+**Targeted cells:**
 
 | check | result |
 |---|---|
-| `rlsloww` — `WRITE` (`>`) producer | reader **follows**, 6 recs / 9s (×3) |
-| `rlslowu` — `UPDATE` (`>+`) producer | reader **follows**, 6 recs / 9s (×2) |
-| reader with no producer (falsification) | stops, 1 rec / 2s — so "follows" is a real signal |
-| A/B/A | eof-fix follows 6/9s → old all-gates build stops 2/4s → eof-fix follows 6/9s again |
-| record lock contention (`rlqhold`+`rlwait`) | waiter blocks (5s vs 2s uncontended) and reads the **post-write** value |
-| lost update (`rlrace3` pair, `rlinit2`) | 400/400, `done=2`, **0 lost** (×2) |
-| deadlock detection (`rldead1`/`rldead2`) | exactly one `E$DeadLk` #254; the other half completes |
+| `rlsloww` — `WRITE` (`>`) producer | reader **follows**, 6 recs / 9s (x3) |
+| `rlslowu` — `UPDATE` (`>+`) producer | reader **follows**, 6 recs / 9s (x2) |
+| `rlcreaw` — write-only **creator** | reader **follows** all 5, lagging 1-2s per record |
+| `rlcreau` — update creator (control) | reader **follows** all 5 |
+| reader with no producer (falsification) | stops, 1 rec / 2s |
+| reader on a finished 5-record file | reads all 5 at once, 3s — no waiting without a live writer |
+| A/B/A on the follow cell | re-cut follows 6/9s -> old all-gates build stops 2/4s -> re-cut follows again |
+| record lock contention (`rlqhold`+`rlwait`) | blocks 5s vs 2s uncontended, reads the **post-write** value, correct interleaving (x3, each on a fresh session) |
+| lost update (`rlrace3` pair, `rlinit2`) | 400/400, `done=2`, **0 lost** — 7 runs |
+| deadlock (`rldead1`/`rldead2`) | exactly one `E$DeadLk` #254, other half completes (x4) |
+| 23762-byte file copied, and copied again into a new subdirectory | both **byte-identical** to the source, module CRCs Good — ~93 sectors of write-at-EOF segment extension |
+
+**Build integrity:** applies clean to current `origin/main` (`621bcb3f`;
+`rbf.asm` is still blob `44a5479`, unchanged since the PR was raised) and the
+artifact reproduces byte-for-byte. Assembles for **both** targets — 6809
+(H6309=0) 4846->4864, and 6309 (H6309=1) 4751->4769, same +18 delta, CRC and
+parity valid on each. Level 1 has no record locking at all (`level1/modules/
+rbf.asm` contains no `EofLock`/`RcdLock`/`PE.Lock`), so the Level-2-only scope
+is complete, not an oversight.
+
+**Harness caveats, so these numbers can be read honestly:** two contention runs
+had to be discarded and re-taken — a backgrounded `rlqhold` from the previous
+iteration still held `rl.dat`, so `rlinit` did not reset it and the waiter
+appeared not to block. The tell was a "fresh" fixture reading `counter=1`. Runs
+are only reported here when the holder's own `lock held` marker appeared in the
+same output. Separately, `dir -e` on a large directory kills the DriveWire
+session (a known transport hazard, unrelated to RBF) — file comparisons here
+are host-side via ToolShed instead.
 
 Not yet covered: two write-only appenders extending one file concurrently —
 the §6.6.3 purpose the EOF lock exists for. Under this build both assert the
