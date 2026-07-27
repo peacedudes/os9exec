@@ -48,10 +48,22 @@ final class CrossCheck68kTests: XCTestCase {
         report("lost-update on 68k: counter=\(counter) of \(expected) expected, lost=\(expected - counter)")
     }
 
-    /// Bug 1 (write-only lock): a slow write-only producer, a read-only follower.
-    /// A write-only path should take NO lock, so the follower should stop at the
-    /// end that exists. If os9exec (like stock NitrOS-9) locks regardless of open
-    /// mode, the follower will TRAIL the producer to its full count instead.
+    /// A slow write-only producer, a read-only follower. The follower SHOULD
+    /// trail it to the full count.
+    ///
+    /// NOTE this expectation was inverted on 2026-07-26. It used to read "a
+    /// write-only path should take NO lock, so the follower should stop at the
+    /// end that exists", and treated trailing as the bug. That was wrong. v2.4
+    /// Technical Manual ch.7, "End of File Lock": an EOF lock occurs when the
+    /// user reads or writes at the end of file and "is the only time that a
+    /// write call automatically causes lock out of any part of the file" — no
+    /// update-mode qualifier. The manual's own worked example is a spooler
+    /// listing a file the assembler is still writing, and an assembler
+    /// redirecting its listing opened that file for sequential output, not for
+    /// update. Confirmed by the mechanism's designer. Fixed in `0eefc08`.
+    ///
+    /// So: trails to ~count => correct; stops small => the EOF lock is not
+    /// being taken on a write-only path.
     func testWriteOnlyFollowOn68k() throws {
         let file = "/h9/wo.dat"
         let records = 8
@@ -66,14 +78,19 @@ final class CrossCheck68kTests: XCTestCase {
             .first { $0.contains("follow done") }?
             .split(separator: " ").last.flatMap { Int($0) }
         report("write-only follow on 68k: follower read \(count.map(String.init) ?? "?") of \(records) "
-             + "(stops small => os9exec correct; ~\(records) => os9exec follows, bug present)")
+             + "(~\(records) => correct, EOF lock taken on a write-only path; "
+             + "stops small => EOF lock missing)")
     }
 
-    /// The CONTROL: same slow producer but opened UPDATE. A follower *should*
-    /// trail an update-mode producer (that is the legitimate slow-writer/reader
-    /// coordination). If this follows but the write-only case above does not,
-    /// os9exec is correct. If BOTH read ~0, os9exec's reader never follows a live
-    /// writer at all — a coherence gap, not the lock bug.
+    /// The CONTROL: same slow producer but opened UPDATE. A follower should
+    /// trail this one too — an update-mode path is write-capable, so an access
+    /// landing at the end takes the EOF lock exactly as the write-only case
+    /// does.
+    ///
+    /// Since 2026-07-26 both cases are expected to trail, so this no longer
+    /// discriminates open mode; it now distinguishes "the EOF lock works" from
+    /// "the reader never follows a live writer at all". BOTH ~0 is the
+    /// coherence gap, not a lock-mode question.
     func testUpdateProducerFollowOn68k() throws {
         let file = "/h9/wu.dat"
         let records = 8
