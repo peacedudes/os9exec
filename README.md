@@ -115,8 +115,10 @@ implements the full mechanism — a read on an update-mode path locks the record
 it read, the next write releases it, a conflicting accessor sleeps, and a write
 landing at end of file takes the EOF lock so a reader following a producer
 waits at the edge instead of seeing a premature end of file. A host directory
-has none of it, and `SS_Lock` there currently reports success without doing
-anything.
+has none of it. An explicit `SS_Lock` on a host *file* does report the truth —
+it fails with `E$UnkSvc`, so a program that asks for a lock finds out it did
+not get one. What is absent is the **automatic** locking, which is silent by
+nature: nobody asked, so nobody is told.
 
 This is deliberate, not an oversight. Host directories are a convenience
 bridge with no counterpart on real OS-9, so there is no Microware behaviour to
