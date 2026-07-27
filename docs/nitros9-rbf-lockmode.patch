@@ -1,30 +1,13 @@
---- rbf.stock.asm	2026-07-21 00:44:11
-+++ rbf.fix.asm	2026-07-21 00:53:43
-@@ -340,8 +340,17 @@
-                     leas      $05,s               purge sector buffer from stack
-                     ifgt      Level-1
-                     ldx       PD.Exten,y          get path extension pointer
-+* Creation is not a license to lock: only a path open for update may assert
-+* the eof lock, the same rule as the two acquire sites.  A file created
-+* write-only takes none, so a reader stops at the end that exists.  Y is
-+* still the path descriptor here; A is dead past Open1CC (clra at Open1CE).
-+                    lda       PD.MOD,y            get the open mode
-+                    anda      #UPDAT.
-+                    cmpa      #UPDAT.             both bits, not just one
-+                    bne       CreatNoL            not update: assert no eof lock
-                     lda       #EofLock            set the file to EOF lock
-                     sta       PE.Lock,x
-+CreatNoL            equ       *
-                     endc
-                     lbra      Open1CC
- * Error on FD write to disk
-@@ -2222,12 +2231,20 @@
+--- a/level2/modules/rbf.asm
++++ b/level2/modules/rbf.asm
+@@ -2228,12 +2228,21 @@
                      lbcs      L0AFF
                      ifgt      Level-1
                      pshs      u,y,x
-+* Only a path open for update may take a record lock.  A read-only path never
-+* locks, and a write-only path never locks either -- so a reader is not held
-+* off by a plain '>' producer and stops at the end of file that exists.
++* Only a path open for update may take a RECORD lock.  A read cannot be
++* required to lock what it read unless the path is able to rewrite it, so a
++* read-only or execute-only path claims nothing here.  This gate covers the
++* record lock ONLY -- the eof lock at L0BF0 has a wider rule, see there.
 +* Y is still the path descriptor here; L0BC2 restored U.
 +                    lda       PD.MOD,y            get the open mode
 +                    anda      #UPDAT.
@@ -40,17 +23,23 @@
                      puls      pc,u,y,x
                      else
                      clrb
-@@ -2259,6 +2276,13 @@
+@@ -2265,6 +2274,19 @@
                      cmpx      PD.SIZ+2,u
                      bcs       L0BF8
  L0BF0               equ       *
-+* Likewise the end-of-file lock: it means "still being written, the end is not
-+* yet known, wait".  Only an update path may assert that.  U is the path
-+* descriptor here (L0BC2 did leau ,y before switching Y to the extension).
++* The EOF lock: "the end is not known yet, someone is still writing -- wait".
++* Any path that can WRITE may assert it, not only an update path: a plain
++* write-only sequential producer ('>') holds it exactly as an update one does,
++* which is what lets a read-only consumer follow a live writer instead of
++* mistaking the current end for the final end.  A read-only path asserts
++* nothing -- it can never extend the file, and a follower that locked the end
++* would block the very producer it is following.
++* U is the path descriptor here (L0BC2 did leau ,y before switching Y to the
++* extension).  A is dead on both arms: the 6809 arm reloads it below, and
++* L0BF8 enters with lda #EofLock.
 +                    lda       PD.MOD,u            get the open mode
-+                    anda      #UPDAT.
-+                    cmpa      #UPDAT.             both bits, not just one
-+                    bne       L0C01               not update: assert no eof lock
++                    bita      #WRITE.             can this path write at all?
++                    beq       L0C01               no: assert no eof lock
                      ifne      H6309
                      oim       #EofLock,PE.Lock,y
                      else

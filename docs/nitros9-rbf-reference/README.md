@@ -3,6 +3,26 @@
 Known-good assembled RBF modules, so a new instance can confirm its build
 before trusting any measurement. Check integrity with `tools/os9modcrc.py`.
 
+> ## ⚠ 2026-07-26 — install `rbf.combined-eoflock-testdisk.mn`, not the older builds
+>
+> **Everything below dated 2026-07-20/21 gates the EOF lock on update mode.
+> That is wrong.** Four Microware manuals state that a write landing at end of
+> file gains EOF Lock in *any* write mode, that it is the only case where a
+> write locks any part of a file, that it exists to stop two users extending a
+> file at once, and that a sequential-output creator gains it on creation —
+> which is what keeps a spooler one step behind an assembler writing through
+> plain `>`. Cites: 6809 *System Programmers Manual* §6.6.1/§6.6.3/§6.6.5,
+> Tandy *Technical Reference* :3799, Tandy *Level Two Development System*
+> :12732, 68k *v2.4 Technical Reference* :6307. The designer has confirmed
+> this as the intended contract.
+>
+> So the "defect" those builds fixed — a read-only reader following a
+> write-only producer — **is the documented behaviour**. `rbf.patched*.mn` and
+> `rbf.combined-fix*.mn` are kept only as the artifacts the 2026-07-20/21
+> measurements were taken on. **Do not send them upstream.**
+>
+> See the current section at the end of this file.
+
 | file | sha1 (first 8) | CRC | parity | what it is |
 |---|---|---|---|---|
 | `rbf.stock.mn` | `a64547c3` | `$245E32` | `$16` | Stock RBF **as it exists on the test disk**. The build reproduces this byte-for-byte, which is what validates the pipeline. |
@@ -89,3 +109,44 @@ Installed into a private disk copy
 live**: clean `{N1|NN}` shell prompt, `mdir` confirms RBF resident. Functional
 A/B/A on this combined build (lock-mode + lost-update fixtures together) not
 yet run — that's the hammer session's next step, not done here.
+
+## Current build (2026-07-26) — EOF lock for any write-capable path
+
+Supersedes the combined build above. `docs/nitros9-rbf-lockmode.patch` was
+re-cut to keep one of its three gates and correct a second:
+
+| site | old gate | now | why |
+|---|---|---|---|
+| `L0BAA` RcdLock | `PD.MOD == UPDAT.` | **unchanged** | §6.6.1 restricts locking-on-*read* to update mode; that is what this site does. |
+| `L0BF0` EofLock | `PD.MOD == UPDAT.` | `bita #WRITE.` | §6.6.3: a write at end of file gains EOF Lock in any write mode. A read-only path still asserts nothing — it can never extend the file, and a follower that locked the end would block the producer it is following. |
+| `Creat131` | `PD.MOD == UPDAT.` | **gate removed** | §6.6.3: EOF Lock is gained as soon as a file is created for sequential output. Back to stock, which was right. |
+
+Net +14 bytes over `main`'s 4846 (was +24). The patch applies on top of
+`nitros9-rbf-lostupdate-regfix.patch`, not to bare `main` — its hunk offsets
+assume that base, and the shipped module carries both.
+
+| file | sha1 (first 8) | CRC | what it is |
+|---|---|---|---|
+| `rbf.combined-eoflock-testdisk.mn` | `94c4521f` | `$0C4B57` | Stock-on-disk + lostupdate regfix + re-cut lockmode + the 1-byte ChgDir accommodation. 4864 bytes. **The module the 2026-07-26 measurements were taken on — install this.** |
+| `rbf.combined-eoflock.mn` | `01d3e0de` | `$BCF3BF` | Upstream `main` + both patches, nothing else — the PR artifact. Do not install on the test disk. |
+
+### Measured live, 2026-07-26 (NitrOS-9 L2 V3.3.0, XRoar, private image)
+
+| check | result |
+|---|---|
+| `rlsloww` — `WRITE` (`>`) producer | reader **follows**, 6 recs / 9s (×3) |
+| `rlslowu` — `UPDATE` (`>+`) producer | reader **follows**, 6 recs / 9s (×2) |
+| reader with no producer (falsification) | stops, 1 rec / 2s — so "follows" is a real signal |
+| A/B/A | eof-fix follows 6/9s → old all-gates build stops 2/4s → eof-fix follows 6/9s again |
+| record lock contention (`rlqhold`+`rlwait`) | waiter blocks (5s vs 2s uncontended) and reads the **post-write** value |
+| lost update (`rlrace3` pair, `rlinit2`) | 400/400, `done=2`, **0 lost** (×2) |
+| deadlock detection (`rldead1`/`rldead2`) | exactly one `E$DeadLk` #254; the other half completes |
+
+Not yet covered: two write-only appenders extending one file concurrently —
+the §6.6.3 purpose the EOF lock exists for. Under this build both assert the
+lock, so they should serialize at the edge; the fixtures for it belong to the
+6809 conformance suite's Phase 2 (`t11`), not here.
+
+Pre-existing and untouched by this change: a reader at end of file gets
+`Error #203 - Illegal Mode` rather than an EOF indication, on this build and
+on stock alike.
