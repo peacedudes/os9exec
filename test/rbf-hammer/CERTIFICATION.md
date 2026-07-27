@@ -1,3 +1,38 @@
+> ## WITHDRAWN 2026-07-27 — do not cite this document as it stands
+>
+> Two independent problems, both found while testing a replacement RBF patch:
+>
+> 1. **One of its five validated concerns asserted the wrong behaviour.** The
+>    write-only-Creat follow row certified that a reader must STOP behind a `>`
+>    producer. The 6809 System Programmers Manual §6.6.3 says the opposite: a
+>    program creating a file for sequential output gains EOF Lock on creation and
+>    no other process can pass it -- the manual's own example is an assembler
+>    listing redirected to disk with a spooler reading behind it. Same text in
+>    three further Microware manuals. So that row certified a regression as a fix.
+>    `testWriteOnlyProducerDoesNotMakeAReaderFollowOn6809` has been inverted and
+>    renamed `...MakesAReaderFollow...`.
+>
+> 2. **The harness does not currently reproduce any of this.** On 2026-07-27 the
+>    6809 gate fails totally -- all four workers never report, `dcheck` returns
+>    nothing, ~314s to timeout -- against the shipping build, against stock, and
+>    against the DEFAULT golden master, with both the current and the pre-edit
+>    `hammer.bas`. So the failure is environmental or a harness regression since
+>    2026-07-22, not caused by any RBF module or by the recent test edits (each
+>    of those alternatives was eliminated by direct A/B).
+>
+> Three real harness defects were fixed along the way (commit `871fdb6`): the
+> follow worker reported a count only when the read ended in error 211, so a 203
+> finish was indistinguishable from a hang; the binary-RMW test read a zero
+> counter as "800 of 800 lost" when it actually means the racers never ran; and
+> the pinned tests ignored `RBF_GOLDEN`, so they could never be run against a
+> candidate fix (`RBF_GOLDEN_DEFAULT` now does that). None of those fixes made
+> the gate pass -- the underlying breakage is still unidentified.
+>
+> **Until the gate runs green again, nothing below is evidence.** The RBF
+> lost-update fix is instead supported by the 6809 conformance suite and the
+> `rl-*` fixtures, which are reproducible -- see
+> `docs/nitros9-rbf-reference/README.md`.
+
 # RBF fix certification — NitrOS-9 6809 combined RBF fix
 
 **Date:** 2026-07-22
