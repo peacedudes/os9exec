@@ -1,3 +1,12 @@
+* NOT PR MATERIAL -- kept as the record of a withdrawn investigation.
+*
+* Stock NitrOS-9 + the lost-update fix alone passes all eleven 6809 conformance
+* tests. Neither hunk below could be shown to change any observable behaviour,
+* and the EOF lock was never broken on 6809: stock already takes it for
+* write-only producers and creators, and wakes waiters on every write. Do not
+* apply this or send it upstream. See docs/nitros9-rbf-reference/README.md,
+* section "2026-07-27 CONCLUSION".
+*
 --- a/level2/modules/rbf.asm
 +++ b/level2/modules/rbf.asm
 @@ -2228,12 +2228,21 @@
