@@ -235,6 +235,7 @@ os9err pDchd     ( ushort pid, syspath_typ*, ushort  *modeP,  char* pathname );
 os9err pDmakdir  ( ushort pid, syspath_typ*, ushort  *modeP,  char* pathname );
 
 os9err pDsize    ( ushort pid, syspath_typ*, uint32_t *sizeP );
+os9err pDopt     ( ushort pid, syspath_typ*,                   byte* buffer );
 os9err pDpos     ( ushort pid, syspath_typ*, uint32_t  *posP );
 os9err pDeof     ( ushort pid, syspath_typ* );
 os9err pDsetatt  ( ushort pid, syspath_typ*, ulong   *attr );
@@ -295,7 +296,7 @@ void init_Dir( fmgr_typ* f )
     
     /* getstat */
     gs->_SS_Size = (pathopfunc_typ)pDsize;
-    gs->_SS_Opt  = (pathopfunc_typ)pRBFopt;
+    gs->_SS_Opt  = (pathopfunc_typ)pDopt;
     gs->_SS_DevNm= (pathopfunc_typ)pHvolnam;
     gs->_SS_Pos  = (pathopfunc_typ)pDpos;
     gs->_SS_EOF  = (pathopfunc_typ)pDeof;
@@ -722,6 +723,45 @@ os9err pFopt( ushort pid, syspath_typ* spP, byte *buffer )
   SET_OS9L(buffer, PD_FD, fdID << BpB); /* LSN of file */
   return err;
 } /* pFopt */
+
+os9err pDopt( ushort pid, syspath_typ* spP, byte *buffer )
+/* get options for a host-native DIRECTORY
+ *
+ * Until this existed, directories shared pRBFopt -- the constant option table
+ * -- so PD_FD read back as 0. RBF fills it (pRopt, file_rbf.c) and host-native
+ * files fill it (pFopt, just above); only directories reported no identity at
+ * all, and PD_FD is what a directory walker needs: the classic getwd()/getcwd()
+ * opens ".", takes PD_FD, then scans ".." for the entry whose FD field matches,
+ * and that entry's name is the answer. With 0 there is no match, which is the
+ * "getwd: cannot access parent directories" the ported bash reports on /dd
+ * while the same binary works inside a `mount -k` RBF image.
+ * Test: test/68k-live-verification/getwd-dirfd-repro.sh (RBF is its control).
+ */
+{
+  os9err err= pRBFopt( pid,spP, buffer );
+
+  #ifdef win_unix
+    dirtable_entry* mP= NULL;
+    uint32_t        fdID;
+
+    /* NULL for the entry, NOT spP->name -- and that is the whole subtlety.
+     * FD_ID interns <pathname> with the entry name appended when one is given,
+     * and the value our parent's directory entry carries was formed by pDread
+     * as FD_ID(parentFullName, "<us>"), i.e. the interned form of our own
+     * fullName. Passing our name again would intern ".../SUB/SUB" and match
+     * nothing. (pFopt does pass the name for files; that value is
+     * self-consistent across two opens of one file, which is what it was added
+     * for, but it is not the value the parent's entry holds.) */
+    FD_ID( spP->fullName, NULL, &fdID, &mP );
+
+    /* PD_FD is a byte position, while a directory entry's FD field is a sector
+     * number -- the same <<BpB conversion pFopt does, and what RBF's
+     * fd_nr*sctSize amounts to on a 256-byte-sector device. */
+    SET_OS9L( buffer, PD_FD, fdID << BpB );
+  #endif
+
+  return err;
+} /* pDopt */
 
 /* check ready */
 os9err pFready( _pid_, _spP_, uint32_t *n )

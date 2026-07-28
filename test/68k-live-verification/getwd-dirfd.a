@@ -1,0 +1,227 @@
+* GETWD-DIRFD: can a ".."-walk identify the directory it started in?
+*
+* This is the contract every getwd()/getcwd() built on the classic
+* "walk up and find yourself" algorithm depends on, and the ported GNU
+* bash on the freeware disk is one of them: open ".", ask SS_Opt for
+* the path's own FD position (PD_FD), then open ".." and look for the
+* entry whose 3-byte FD field names that same FD. That entry's name IS
+* the current directory's name. Without the match there is no way to
+* name the directory you are standing in, which is what bash reports as
+* "getwd: cannot access parent directories".
+*
+* Load-bearing assumption, stated rather than buried: PD_FD is a BYTE
+* position while a directory entry's FD field is a SECTOR number, so
+* the comparison shifts the entry left by 8 -- i.e. 256-byte sectors.
+* Both worlds this runs in use 256: `mount -k` images say so when they
+* are created, and the host-native manager forms PD_FD as id<<8 by
+* construction. Run it on a device with another sector size and the
+* comparison, not the emulator, is what would be wrong.
+*
+* PD_FD == 0 is treated as an immediate FAIL rather than scanned for.
+* Sector 0 of an RBF device is the identification sector and can never
+* hold a file descriptor, so 0 does not mean "my FD lives at 0", it
+* means "this path manager did not report one at all". Scanning anyway
+* would let a parent entry that also reads 0 produce a vacuous PASS.
+*
+* Prints exactly one line:
+*   GETWD-DIRFD PASS <name>       -- the ".." entry that matched
+*   GETWD-DIRFD FAIL pdfd=<hex>   -- nothing matched; hex is PD_FD
+*
+* Run it from a SUBdirectory, not a device root: at a root, ".." holds
+* the root's own FD by design (that self-reference is how walkers
+* detect "top of device"), so the answer there is a special case that
+* says nothing about the mechanism under test.
+*
+Prgrm set 1
+Objct set 1
+ReEnt set $80
+Type_Lang set (Prgrm<<8)+Objct
+Attr_Rev set (ReEnt<<8)+1
+IOpen set $84
+IRead set $89
+IWrite set $8A
+IGetStt set $8D
+IClose set $8F
+FExit set $06
+SSOpt set 0
+DirRead set $81
+PDFD set $36
+DirEntSz set 32
+FDOffs set 29
+NameMax set 29
+*
+ psect getwdfd,Type_Lang,Attr_Rev,0,1000,start
+start
+* --- open "." as a directory, read-only ---
+ lea dotname(pc),a0
+ move.b #DirRead,d0
+ trap #0
+ dc.w IOpen
+ bcs badopen
+ move.w d0,d6
+*
+* --- SS_Opt: the whole 128-byte option section ---
+ move.w d6,d0
+ moveq #SSOpt,d1
+ lea optbuf(pc),a0
+ trap #0
+ dc.w IGetStt
+ bcs badopt
+ lea optbuf(pc),a0
+ move.l PDFD(a0),d5
+*
+ move.w d6,d0
+ trap #0
+ dc.w IClose
+*
+* --- no FD reported at all: nothing to look for ---
+ tst.l d5
+ beq nomatch
+*
+* --- open ".." and scan its entries for our own FD ---
+ lea dotdot(pc),a0
+ move.b #DirRead,d0
+ trap #0
+ dc.w IOpen
+ bcs badopen
+ move.w d0,d6
+scan
+ move.w d6,d0
+ move.l #DirEntSz,d1
+ lea entbuf(pc),a0
+ trap #0
+ dc.w IRead
+ bcs nomatch
+ cmp.l #DirEntSz,d1
+ bne nomatch
+* skip "." and ".." -- see the header note on device roots
+ lea entbuf(pc),a0
+ move.b (a0),d0
+ and.b #$7F,d0
+ cmp.b #'.',d0
+ beq scan
+* entry FD: three bytes, most significant first
+ moveq #0,d4
+ move.b FDOffs(a0),d4
+ and.l #$FF,d4
+ lsl.l #8,d4
+ move.b FDOffs+1(a0),d3
+ and.l #$FF,d3
+ or.l d3,d4
+ lsl.l #8,d4
+ move.b FDOffs+2(a0),d3
+ and.l #$FF,d3
+ or.l d3,d4
+* sector number -> byte position
+ lsl.l #8,d4
+ cmp.l d5,d4
+ bne scan
+*
+* --- matched: report the name it found ---
+ lea passmsg(pc),a0
+ move.l #passlen,d1
+ bsr emit
+ bsr emitname
+ lea crlf(pc),a0
+ move.l #2,d1
+ bsr emit
+ bra done
+*
+nomatch
+ lea failmsg(pc),a0
+ move.l #faillen,d1
+ bsr emit
+ move.l d5,d1
+ bsr emithex
+ lea crlf(pc),a0
+ move.l #2,d1
+ bsr emit
+ bra done
+*
+badopen
+ lea openerr(pc),a0
+ move.l #openerrlen,d1
+ bsr emit
+ bra done
+*
+badopt
+ lea opterr(pc),a0
+ move.l #opterrlen,d1
+ bsr emit
+ bra done
+*
+done
+ moveq #0,d1
+ trap #0
+ dc.w FExit
+*
+* --- write d1.l bytes at a0 to stdout ---
+emit
+ move.w #1,d0
+ trap #0
+ dc.w IWrite
+ rts
+*
+* --- write the matched entry's name: high bit marks the last char ---
+emitname
+ lea entbuf(pc),a0
+ lea namebuf(pc),a1
+ moveq #0,d2
+enloop
+ move.b (a0)+,d3
+ move.b d3,d4
+ and.b #$7F,d4
+ move.b d4,(a1)+
+ addq.l #1,d2
+ tst.b d3
+ bmi enend
+ cmp.l #NameMax,d2
+ blt enloop
+enend
+ lea namebuf(pc),a0
+ move.l d2,d1
+ bsr emit
+ rts
+*
+* --- write d1.l as eight hex digits ---
+emithex
+ move.l d1,d4
+ lea hexbuf(pc),a1
+ moveq #7,d2
+hxloop
+ move.l d4,d3
+ and.l #$0F,d3
+ cmp.b #9,d3
+ bls hxdig
+ add.b #'A'-10,d3
+ bra hxput
+hxdig
+ add.b #'0',d3
+hxput
+ move.b d3,0(a1,d2.w)
+ lsr.l #4,d4
+ dbra d2,hxloop
+ lea hexbuf(pc),a0
+ move.l #8,d1
+ bsr emit
+ rts
+*
+dotname dc.b ".",0
+dotdot dc.b "..",0
+passmsg dc.b "GETWD-DIRFD PASS "
+passlen equ *-passmsg
+failmsg dc.b "GETWD-DIRFD FAIL pdfd="
+faillen equ *-failmsg
+openerr dc.b "GETWD-DIRFD FAIL cannot open . or ..",13,10
+openerrlen equ *-openerr
+opterr dc.b "GETWD-DIRFD FAIL SS_Opt refused",13,10
+opterrlen equ *-opterr
+crlf dc.b 13,10
+hexbuf dc.b "00000000"
+namebuf dc.b "                             "
+entbuf dc.b "                                "
+optbuf dc.b "                                "
+ dc.b "                                "
+ dc.b "                                "
+ dc.b "                                "
+ ends

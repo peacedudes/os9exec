@@ -50,6 +50,18 @@
       "notes": "Wraps the already-complete E$BMode repro script (this test wraps the SCRIPT's own exit code / PASS marker, not a fresh oracle) -- writing to a file opened read-only, and reading one opened write-only, both return E$BMode (203)."
     },
     {
+      "id": "getwd-dirfd",
+      "category": "solo",
+      "sources": [
+        {"file": "getwd-dirfd-repro.sh", "moduleName": "getwd-dirfd-repro.sh", "primary": true}
+      ],
+      "expect": [
+        {"contains": "host-native: GETWD-DIRFD PASS"},
+        {"contains": "RBF control: GETWD-DIRFD PASS"}
+      ],
+      "notes": "A host-native directory must report its own FD position in SS_Opt's PD_FD, so that a ..-walking getwd()/getcwd() can find the parent entry that names it. Both lines are asserted deliberately: the RBF line is the control, and matching only a bare PASS would let a harness that quietly stopped exercising RBF report a green result. Before the pDopt fix the host-native line read FAIL pdfd=00000000 -- directories shared the constant RBF option table, so PD_FD was always 0 -- which is what the ported bash reported as 'getwd: cannot access parent directories'."
+    },
+    {
       "id": "lostupdate-trio",
       "category": "choreography",
       "sources": [
