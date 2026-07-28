@@ -993,7 +993,28 @@ void get_hw()
      * mingw), so the Windows build fell through to the "unknown" branch below and
      * reported itself as hw_name "?" / platform "?". */
     hw_site= "PC";
-	hw_name= "Windows - PC"; platform= "x86"; // don't change hw_name, used at ".mgr_loop"
+	hw_name= "Windows - PC"; // don't change hw_name, used at ".mgr_loop"
+
+    /* platform is the REAL architecture, not a literal. Windows has no
+     * uname(), so unlike the linux branch below this has to come from the
+     * compiler's own predefined macros. Both spellings per arch: the
+     * __-flavoured ones are what mingw-w64's gcc/clang define, the _M_ ones
+     * what MSVC and clang-cl define, and this project builds with both
+     * families (see project memory `native-arm64-windows-toolchain-findings`).
+     * Names match the linux branch, which passes uname's un.machine through
+     * verbatim, so "aarch64"/"x86_64" mean the same thing on both.
+     * Until this existed every Windows build claimed "x86" -- wrong on the
+     * ARM64 toolchain AND on the ordinary 64-bit one. Safe to change freely:
+     * unlike hw_name, platform is never copied into the init module's
+     * fixed-size CRC'd slot (adapt_init(), modstuff.c), so it has no length
+     * limit to respect. */
+    #if   defined __aarch64__ || defined _M_ARM64
+      platform= "aarch64";
+    #elif defined __x86_64__  || defined _M_AMD64 || defined _M_X64
+      platform= "x86_64";
+    #else
+      platform= "x86";       /* genuine 32-bit x86 */
+    #endif
 
   #elif defined linux
     hw_site= "PC";
