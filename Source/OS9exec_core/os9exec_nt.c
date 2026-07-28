@@ -957,7 +957,21 @@ void get_hw()
       platform= "arm64";
     #elif defined __INTEL__
       hw_name = "IntelMac XCode";
-      platform= "x86";
+      /* Real architecture, not a literal -- same reasoning as the Windows
+       * branch below: this said "x86" on every Intel Mac, but every Mac Xcode
+       * can still build for is x86_64. Taken from the compiler's predefines
+       * (macOS has uname(), but only the linux branch includes <sys/utsname.h>,
+       * and __INTEL__ here is the LE-Mac flag, not an arch: __ARM64__ is tested
+       * first above, so this arm is Intel-only). Names follow uname -m, which
+       * the linux branch passes through verbatim -- so "i386", Apple's own name
+       * for the 32-bit case, rather than the Windows branch's generic "x86".
+       * No current toolchain can produce that build; the arm is there so a
+       * hypothetical one reports honestly instead of inheriting x86_64. */
+      #if defined __x86_64__
+        platform= "x86_64";
+      #else
+        platform= "i386";      /* 32-bit Intel Mac -- no longer buildable */
+      #endif
     #else
       #ifndef powerc
         hw_name = "Apple Macintosh";
