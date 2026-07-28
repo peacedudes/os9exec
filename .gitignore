@@ -33,8 +33,9 @@ dd
 # Claude Code per-user local settings (machine-specific allowlist)
 /.claude/settings.local.json
 
-# Internal planning doc — not ready for public visibility yet
-/ROADMAP.md
+# Internal planning docs — not ready for public visibility yet
+# (index + the per-architecture splits ROADMAP-68k.md / ROADMAP-6809.md)
+/ROADMAP*.md
 
 # Session-to-session handoff/continuity notes — for the pair, not the community
 *HANDOFF.md
