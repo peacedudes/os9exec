@@ -51,11 +51,12 @@ reported is discarded rather than counted.
 
 | workload | stock | with this patch |
 |---|---|---|
-| 2 racers x 100 increments | 173, 175, 178, 183, 190 of 200 | 200/200, every run |
-| 2 racers x 200 increments | 21-110 lost of 400 | 400/400, every run |
+| 2 racers x 100 increments | 173, 183, 190, 190, 191, 197 of 200 | 200/200, every run |
+| 2 racers x 200 increments | 21, 21, 48, 59, 64, 73, 110 lost of 400 | 400/400, every run |
 
-Stock never lost the same amount twice — the signature of a real race rather
-than a fixed miscount. The fix lost nothing on any run.
+The amount lost varies from run to run — 3 to 27 of 200, 21 to 110 of 400 —
+which is the signature of a real race rather than a fixed miscount. The fix
+lost nothing on any run.
 
 The contended record deliberately sits away from end of file, so this exercises
 the ordinary record lock rather than the EOF lock.
