@@ -51,6 +51,8 @@ Measured live on 2026-07-29, not inferred. Do not re-derive:
 - **`host2os9err( hosterr, suggestion )` wants the POSIX RETURN CODE as its first argument, not an errno.** Its UNIX arm opens with `if (hosterr==0) return 0;` and then reads `errno` itself, so passing `0` silently reports SUCCESS. Pass the failing call's `-1`. It maps ENOENT->E_PNNF, EACCES->E_FNA, EBUSY->E_SHARE, ENXIO/ENODEV->E_UNIT, and falls back to your suggestion otherwise (`utilstuff.c:568`).
 - **The OS-9 shell echoes each input line to its console before running it.** So a `check(..., contains: "foo", "echo foo")` passes on the echoed *command text* alone and can never fail. Never assert on a string that appears in the command. Assert on something only the code under test can produce (an error code, a byte read back from the far end of a pty). This killed the plan's original Task 2 test — found by its implementer.
 - **The Swift harness DISCARDS the emulator's host stderr** — it is drained only to avoid a pipe deadlock (`main.swift`, `_ = stderrPipe...readDataToEndOfFile()`), never merged into the returned string. This does not break `uphe_printf`: OS-9's stderr user path maps to the console, and `ConsPutc` writes to host fd **1**, so emulator `# ...` messages do arrive on stdout and are captured. Do not "fix" the harness to merge stderr as part of this plan.
+- **`tsmon /t1` WORKS on a host-backed terminal — verified independently by the controller, 2026-07-29.** With `OS9T1=<pty slave>` and `-r`, `tsmon /t1` serves the full banner and `User name?:` prompt onto the pty, and a login proceeds to a working shell. An earlier agent reported this as failing; that was its test rig, not the emulator (it hit the two pty traps below). **Do not re-investigate this as a bug.** Reproduction script pattern: raw-mode the master BEFORE writing, hold a spare slave fd, `tsmon /t1`, then send `\r` on the master.
+- **`-d 0x0002` return lines are MISLABELLED** — `debug_return()` re-derives the call name from `cp->func`, a single scalar, so a nested call renames the outer call's return. Do not trust the name on a `<<< ... returns:` line. Logged on the roadmap.
 - Machine tooling: `screen`, `cu`, `nc`, `tmux` present. **No `socat`** — and not needed.
 
 ## Scope
@@ -1362,13 +1364,17 @@ This is the acceptance test for the whole feature. It is **live verification**, 
 
 - [ ] **Step 1: Build the two-instance rig**
 
-Create a pty pair with a scratchpad script. Instance A gets the master via `OS9T1=pty` is **not** what you want here — both instances must see a *slave-style* endpoint. Simplest correct rig: create one pty pair externally; instance A opens the slave by name, instance B connects to the master through a second pty. Concretely:
+Now that Task 5 has landed, the rig is two emulator instances and no external plumbing at all:
 
-- Run instance A with `OS9T1=pty`. It prints slave name `S`.
-- Run instance B with `OS9T1=S`.
-- A holds the master, B holds the slave, and bytes flow between them.
+- Run **instance A** with `OS9T1=pty`. It allocates the pty, holds the master, and prints the slave device name `S`.
+- Run **instance B** with `OS9T1=S`. It opens that slave by name.
+- Bytes written by A's `/t1` surface on B's `/t1`, and vice versa.
 
-Use two `tools/os9repl.sh` sessions with distinct `OS9REPL_SESSION` names (e.g. `kermA`, `kermB`) so they cannot collide with each other or another session.
+Both ends are already in raw 8-bit mode, so nothing in the host path rewrites a byte.
+
+Note A also holds a spare read reference on the slave (Task 5) which it never reads from — that does not steal data from B; an unread fd does not consume the queue.
+
+Drive the two instances however you can do so reliably and reproducibly. Two `tools/os9repl.sh` sessions with distinct `OS9REPL_SESSION` names (e.g. `kermA`, `kermB`) is the intended route; a scripted Python driver playing both terminals is equally acceptable and has proved more reliable than tmux for this work — earlier tasks hit repeated tmux/env friction. **Say which you used.** What matters is that the bytes really cross between two independent emulator processes.
 
 - [ ] **Step 2: Transfer a text file A -> B**
 
@@ -1392,6 +1398,147 @@ If anything fails, **stop and report with the raw output**. Do not fix defects i
 git add test/68k-live-verification/hostterm-kermit-report-2026-07-29.md
 git commit -m "Tests: kermit transfers between two instances over /t1"
 ```
+
+---
+
+### Task 6a: A bound terminal must outlive the path that opened it
+
+Found by the controller while reviewing Task 6's FAIL. **Do this before re-running Task 6.**
+
+**Files:**
+- Modify: `Source/OS9exec_core/hostterm.c` (`hostterm_open`, `hostterm_close`, `hostterm_poll`, the `hostterm_typ` struct)
+- Test: `test/Sources/OS9Tests/main.swift`
+
+**The defect.** `hostterm_open` says *"already open: share it"* and returns without counting the extra holder. `hostterm_close` then tears the whole device down — `close(fd)`, `close(spareFd)`, `open=false` — on **any** path close. Two consequences, both real:
+
+1. When two OS-9 paths are open on `/t1` (ordinary: a process with stdin *and* stdout on it, or `tsmon` plus the `login` it spawns), the first close destroys the device under the second holder.
+2. With `OS9Tn=pty`, tearing down and reopening allocates a **different** pty. The name printed at startup — the one a user ran `screen` against — goes dead as soon as the opening path closes. That makes the headline workflow unusable across more than one command.
+
+This is very likely why Task 6's kermit run lost its final handshake ACK whenever the pty-master-holding instance was the receiver.
+
+**The decision: a binding persists for the emulator's lifetime once established.** That matches how a real OS-9 device behaves — a device descriptor is not destroyed because one path to it closed — and it keeps a self-allocated pty's name stable, which is the whole point of printing it.
+
+- [ ] **Step 1: Write the failing test**
+
+Count how many times a pty is **allocated**, not how many distinct names appear.
+
+**Do not assert on distinct name strings — that was tried and is vacuous on macOS.** `posix_openpt`/`ptsname` deterministically hand back the same lowest-free slot, so a torn-down-and-reallocated pty reappears under the *identical* name (`/dev/ttys002`, even the same fd). Proven live: the fresh-allocation debug line fires twice across two commands while the name never changes.
+
+`hostterm_open` prints its `attach with: screen` line only on the fresh-allocation path, never on the "already open" shortcut — so counting that line counts allocations directly.
+
+```swift
+// Two commands, each opening and closing /t1. With OS9T1=pty the emulator
+// announces the slave name once per ALLOCATION. If the binding is torn down
+// when the first command's path closes, the second command allocates again and
+// the announcement appears TWICE -- and any `screen` attached to the first is
+// already dead, even though the recycled pty happens to carry the same name.
+let twice = os9(["echo one >/t1", "echo two >/t1"], env: ["OS9T1": "pty"])
+let allocations = twice.components(separatedBy: "attach with: screen").count - 1
+
+if allocations == 1 {
+    print("PASS: hostterm: a pty binding survives the path that opened it")
+    passed += 1
+} else {
+    print("FAIL: hostterm: a pty binding survives the path that opened it")
+    print("      [expected exactly 1 pty allocation across two commands, saw \(allocations)]")
+    failed += 1
+}
+```
+
+If you change `hostterm_open`'s announcement wording, change this assertion with it.
+
+- [ ] **Step 2: Run it and watch it fail**
+
+```sh
+swift run --package-path test OS9Tests hostterm
+```
+Expected: FAIL reporting 2 distinct names. If it reports 1 already, STOP AND REPORT — the teardown is not happening where I think it is, and this task needs rethinking rather than implementing.
+
+- [ ] **Step 3: Count holders, and stop closing the endpoint**
+
+Add to `hostterm_typ`:
+
+```c
+    int  openCount;  /* live OS-9 paths on this device; the endpoint itself
+                        is never closed once bound -- see hostterm_close */
+```
+
+Initialise it to `0` alongside the other fields in `hostterm_init`.
+
+In `hostterm_open`, replace the share-and-return line:
+
+```c
+    h= &hostterms[ term_id ];
+    if (h->open) { h->openCount++; h->dev.spP= spP; return 0; } /* another holder */
+```
+
+and set `h->openCount= 1;` in the success tail, next to `h->open= true;`.
+
+Rewrite `hostterm_close` so it releases the *path*, never the endpoint:
+
+```c
+void hostterm_close( int term_id )
+{
+    hostterm_typ* h;
+
+    hostterm_init();
+    if (!hostterm_in_range( term_id )) return;
+
+    h= &hostterms[ term_id ];
+    if (!h->open) return;
+
+    if (h->openCount>0) h->openCount--;
+    if (h->openCount>0) return;          /* another path still holds it */
+
+    /* Deliberately does NOT close h->fd or h->spareFd. A bound terminal is a
+       DEVICE, and a device does not cease to exist because the last path to it
+       closed -- real OS-9 keeps its descriptor. Two concrete reasons here:
+       a self-allocated pty would otherwise hand out a DIFFERENT name on the
+       next open, killing whatever `screen` was attached to the old one; and
+       closing the master discards bytes the peer has not read yet (the mirror
+       of the slave-side discard already documented in this file's plan).
+       The fd is released when the emulator exits, which is when the device
+       genuinely goes away. */
+    h->dev.spP= NULL; /* the syspath is going away; do not keep a stale pointer */
+} /* hostterm_close */
+```
+
+- [ ] **Step 4: Stop polling a device with no path open**
+
+`hostterm_poll` calls `KeyToBuffer( &h->dev, c )`, which dereferences `h->dev.spP` for the path options. That is now NULL between opens, so skip those devices:
+
+```c
+        if (!h->open || h->dev.spP==NULL) continue;
+```
+
+Make the same guard in `hostterm_get` and `hostterm_ready` if they can be reached with no path open — read them and decide; say in your report what you found. Missing this is a NULL dereference, so check it rather than assuming.
+
+- [ ] **Step 5: Verify, including that the endpoint still works after a reopen**
+
+```sh
+swift run --package-path test OS9Tests
+```
+All hostterm tests must pass, not just the new one — several of them open and close `/t1` repeatedly, so they are the regression guard for this change.
+
+- [ ] **Step 6: Commit**
+
+```sh
+git add Source/OS9exec_core/hostterm.c test/Sources/OS9Tests/main.swift
+git commit -m "Fix: a bound /tN outlives the path that opened it"
+```
+
+- [ ] **Step 7: Re-run Task 6's acceptance test**
+
+Re-run the kermit rig from Task 6 (its report file records the exact commands, including the `l` and `i` flags it discovered are required). Determine whether the handshake now completes in **both** directions.
+
+Then **update** `test/68k-live-verification/hostterm-kermit-report-2026-07-29.md` with the new result and commit it:
+
+```sh
+git add test/68k-live-verification/hostterm-kermit-report-2026-07-29.md
+git commit -m "Tests: record kermit result after the binding-lifetime fix"
+```
+
+If it still fails, say so plainly and leave the FAIL recorded — do not keep patching toward a pass. Report what changed and what did not.
 
 ---
 
