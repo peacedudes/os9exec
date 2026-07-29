@@ -488,23 +488,38 @@ cmd_connect() {
     #                                guest-side fix can only ever honour one).
     #   LF ($0A)                  -> CR, OS-9's eor. Matters for pasted text;
     #                                a raw terminal's Return is already CR.
-    #   ESC [ ... / ESC O ...     -> swallowed whole. Not a remap: arrow and
-    #                                function keys have no OS-9 meaning, and
-    #                                leaking them would spend the Esc as an EOF
-    #                                and drop "[A" into the line.
+    #   ESC [ ... / ESC O ...     -> translated to the CoCo key it corresponds
+    #                                to, or swallowed if there is no
+    #                                counterpart. The CoCo has arrow keys and
+    #                                F1/F2, and sends them as PLAIN BYTES, not
+    #                                escape sequences -- so this is not
+    #                                inventing a mapping, it is undoing the
+    #                                host terminal's encoding. Left arrow
+    #                                really is $08 on a CoCo, which is why
+    #                                bsp=08 is the OS-9 default.
     #   bare Esc                  -> passed through as the real $1B EOF, once
     #                                ESC_WAIT has proved no sequence follows it.
     #   everything else <= $7F    -> passed through untouched, Ctrl-A and Tab
     #                                and Ctrl-C and Ctrl-D included.
     #   Ctrl-] ($1D)              -> detach (the one key kept for ourselves)
-    # Bytes above $7F are dropped: they have no OS-9 meaning and are far more
-    # often a stray Option-key accident than an intentional send.
+    # TYPED bytes above $7F are dropped: they have no OS-9 meaning and are far
+    # more often a stray Option-key accident than an intentional send. That is
+    # a rule about input; F1/F2 legitimately EMIT $B1-$B6 and are unaffected.
+    #
+    # Caveat worth knowing: these codes are what the CoCo's own keyboard driver
+    # (vtio/CC3IO) generates for the console. Over a DriveWire /N channel the
+    # bytes reach SCF on a virtual serial device instead, so only the ones SCF
+    # acts on do anything by themselves -- left arrow ($08 = bsp) erases and
+    # shift-left ($18 = del) kills the line. Up/down/right and F1/F2 are
+    # delivered as data, which is exactly what a guest program expecting CoCo
+    # keys wants to read; they do not drive windows or the keyboard mouse,
+    # because that is console-driver behaviour and this is not the console.
     # Output needs no translation: inetd sets PD.ALF, so the guest sends CR LF,
     # which a raw terminal renders correctly as-is.
     printf '[connecting to the guest shell on port %s — Ctrl-] to detach]\n' "$CHAN_PORT"
     printf '[Keys pass through to OS-9: Ctrl-A recalls, Ctrl-X kills the line,]\n'
     printf '[Ctrl-C/Ctrl-E interrupt the GUEST, Esc is EOF. Backspace erases.]\n'
-    printf '[Remap them guest-side with tmode; arrow keys are swallowed.]\n'
+    printf '[Arrows and F1/F2 send the real CoCo codes; remap with tmode.]\n'
     local saved fifo ncpid
     saved=$(stty -g)
     fifo=$(mktemp -u "${TMPDIR:-/tmp}/nitros9repl-conn.XXXXXX")
@@ -516,10 +531,23 @@ cmd_connect() {
     nc 127.0.0.1 "$CHAN_PORT" <"$fifo" &
     ncpid=$!
     perl -e '
-        $|=1;
+        $|=1; binmode(STDOUT);                                     # F1/F2 emit high-bit bytes; no encoding layer
         my $st=0;                                                  # 0 normal, 1 after Esc, 2 CSI, 3 SS3
         my $ESC_WAIT=0.05;                                         # how long a lone Esc waits for a sequence
+        my $par="";                                                # CSI parameter bytes, for the modifier
         my $rin=""; vec($rin,fileno(STDIN),1)=1;
+        # The CoCo keyboard sends these keys as plain bytes, not escape
+        # sequences, so a modern terminal maps straight onto them. Codes from
+        # NitrOS-9 vtio.asm (the driver this guest runs), byte-for-byte equal
+        # to the OS-9 Quick Reference 1982 and Farna 2nd-ed keyboard tables.
+        #                     normal shift  ctrl
+        my %KEY=("A"=>[0x0c, 0x1c, 0x13],                          # UP ARROW    FF  FS  DC3
+                 "B"=>[0x0a, 0x1a, 0x12],                          # DOWN ARROW  LF  SUB DC2
+                 "C"=>[0x09, 0x19, 0x11],                          # RIGHT ARROW HT  EM  DC1
+                 "D"=>[0x08, 0x18, 0x10],                          # LEFT ARROW  BS  CAN DLE
+                 "P"=>[0xb1, 0xb3, 0xb5],                          # F1
+                 "Q"=>[0xb2, 0xb4, 0xb6]);                         # F2
+        my %TILDE=(11=>"P", 12=>"Q");                              # ESC [ 11~ / 12~ spelling of F1/F2
         while (1) {
           # Only state 1 is time-sensitive: an Esc that ends a read is either a
           # real EOF keypress or the head of an arrow key, and nothing but the
@@ -540,13 +568,21 @@ cmd_connect() {
               elsif ($o==0x0a) { print "\r" }                      # LF -> SCF eor
               elsif ($o<=0x7f) { print $c }                        # everything else, untouched
             } elsif ($st==1) {                                     # after Esc
-              if    ($c eq "[") { $st=2 }
+              if    ($c eq "[") { $st=2; $par="" }
               elsif ($c eq "O") { $st=3 }
               else { print "\x1b"; $st=0; redo }                   # real Esc, then this key
-            } elsif ($st==2) {                                     # CSI: swallow to the final byte
-              next if $o>=0x30&&$o<=0x3f;                          # parameter bytes
-              $st=0;
-            } else {                                               # SS3 (ESC O x): one final byte
+            } elsif ($st==2) {                                     # CSI: collect params, map the final byte
+              if ($o>=0x30&&$o<=0x3f) { $par.=$c; next }
+              my $k=$c;
+              if ($c eq "~") { my ($n)=$par=~/^(\d+)/; $k=$TILDE{$n//0}//"" }
+              if (my $codes=$KEY{$k}) {
+                my ($m)=$par=~/;(\d+)/;                            # xterm modifier: 2 shift, 5/6 ctrl
+                $m=1 unless defined $m;
+                print chr($codes->[$m==2 ? 1 : ($m==5||$m==6) ? 2 : 0]);
+              }
+              $st=0; $par="";
+            } else {                                               # SS3 (ESC O x): application cursor/F-key mode
+              print chr($KEY{$c}[0]) if $KEY{$c};
               $st=0;
             }
           }
