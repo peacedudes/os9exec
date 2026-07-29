@@ -55,8 +55,9 @@
 #     without a restart: the next `send` opens a new connection and inetd
 #     forks another shell. `connect` translates a modern terminal's keys for
 #     OS-9 (Backspace/left-arrow -> $08, other arrows swallowed whole, Ctrl-C
-#     passed through as the guest's interrupt) and still blocks a bare Esc so
-#     a human can't send EOF by accident; a deliberate EOF is: key Escape
+#     passed through as the guest's interrupt, Ctrl-D -> Esc for a deliberate
+#     EOF) and still blocks a bare Esc so a reflexive tap can't log you out.
+#     For the scripted pane's session, a deliberate EOF is: key Escape
 #
 # Copyright notice (disk image content):
 #   Anything observable through this REPL depends on what is in your disk
@@ -450,14 +451,16 @@ cmd_connect() {
     #   Ctrl-X                    -> through: OS-9 delete-line
     #   Ctrl-C / Ctrl-E           -> through: the GUEST's interrupt/quit keys
     #                                (raw mode means they no longer signal us)
-    #   bare Esc                  -> blocked: it is SCF's EOF and exits the
-    #                                shell; a deliberate EOF is  key Escape
+    #   Ctrl-D                    -> Esc, a DELIBERATE OS-9 EOF: ends tee/list
+    #                                input, or the shell itself (= logout)
+    #   bare Esc                  -> blocked: too easy to hit by reflex, and it
+    #                                is SCF's EOF; Ctrl-D is the intended one
     #   Ctrl-]                    -> detach (the one key kept for ourselves)
     # Output needs no translation: inetd sets PD.ALF, so the guest sends CR LF,
     # which a raw terminal renders correctly as-is.
     printf '[connecting to the guest shell on port %s — Ctrl-] to detach]\n' "$CHAN_PORT"
     printf '[Backspace/arrows translated; Ctrl-X kills the line; Ctrl-C interrupts the GUEST]\n'
-    printf '[detach logs the guest out; if the guest ends the session itself, press Ctrl-]]\n'
+    printf '[Ctrl-D sends OS-9 EOF (Esc); after the guest ends the session, press Ctrl-]]\n'
     local saved fifo ncpid
     saved=$(stty -g)
     fifo=$(mktemp -u "${TMPDIR:-/tmp}/nitros9repl-conn.XXXXXX")
@@ -475,6 +478,7 @@ cmd_connect() {
             my $o=ord($c);
             if ($st==0) {
               if    ($o==0x1d) { exit 0 }                          # Ctrl-]
+              elsif ($o==0x04) { print "\x1b" }                    # Ctrl-D -> OS-9 EOF (Esc)
               elsif ($o==0x1b) { $st=1 }
               elsif ($o==0x7f) { print "\x08" }                    # Backspace
               elsif ($o==0x0a) { print "\r" }
