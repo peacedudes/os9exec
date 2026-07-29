@@ -36,6 +36,10 @@ dd
 # Internal planning docs — not ready for public visibility yet
 # (index + the per-architecture splits ROADMAP-68k.md / ROADMAP-6809.md)
 /ROADMAP*.md
+# The companion record of what we decided NOT to build, and why. The roadmaps
+# are TODO lists only; a declined or deferred item moves here so it stops
+# reading as work-in-hand. Same visibility as the roadmaps: local, not shared.
+/DECISIONS*.md
 
 # Session-to-session handoff/continuity notes — for the pair, not the community
 *HANDOFF.md
