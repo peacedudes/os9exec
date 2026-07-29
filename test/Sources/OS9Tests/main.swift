@@ -3203,6 +3203,30 @@ if runHostPtyName || runHostPtyCarry {
     }
 }
 
+// Two commands, each opening and closing /t1. With OS9T1=pty the emulator
+// announces the slave name once per ALLOCATION. If the binding is torn down
+// when the first command's path closes, the second command allocates again and
+// the announcement appears TWICE -- and any `screen` attached to the first is
+// already dead, even though the recycled pty happens to carry the same name.
+// (Do not assert on distinct name strings: posix_openpt/ptsname deterministically
+// hand back the same lowest-free slot, so a torn-down-and-reallocated pty
+// reappears under the IDENTICAL name -- proven live, so that check is vacuous.)
+let hostSurvivesCloseName = "hostterm: a pty binding survives the path that opened it"
+let runHostSurvivesClose  = filter.isEmpty || hostSurvivesCloseName.localizedCaseInsensitiveContains(filter)
+
+if runHostSurvivesClose {
+    let twiceOut = os9(["echo one >/t1", "echo two >/t1"], env: ["OS9T1": "pty"])
+    let allocations = twiceOut.components(separatedBy: "attach with: screen").count - 1
+
+    if allocations == 1 {
+        print("PASS: \(hostSurvivesCloseName)"); passed += 1
+    } else {
+        print("FAIL: \(hostSurvivesCloseName)")
+        print("      [expected exactly 1 pty allocation across two commands, saw \(allocations)]")
+        failed += 1
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us

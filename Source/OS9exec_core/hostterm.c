@@ -38,6 +38,9 @@ typedef struct {
     int         fd;         /* -1 when not open */
     int         spareFd;    /* self-allocated pty only; -1 otherwise -- see
                                 its own comment in hostterm_open */
+    int         openCount;  /* live OS-9 paths on this device; the endpoint
+                                itself is never closed once bound -- see
+                                hostterm_close */
     ttydev_typ  dev;        /* per-device input buffer; KeyToBuffer target */
     char        endpoint[OS9PATHLEN]; /* what we actually opened, for messages */
 } hostterm_typ;
@@ -56,6 +59,7 @@ static void hostterm_init( void )
         hostterms[k].open       = false;
         hostterms[k].fd         =    -1;
         hostterms[k].spareFd    =    -1;
+        hostterms[k].openCount  =     0;
         hostterms[k].endpoint[0]=   NUL;
         hostterms[k].dev.installed = false;
         hostterms[k].dev.inBufUsed =     0;
@@ -161,7 +165,7 @@ os9err hostterm_open( int term_id, syspath_typ* spP )
     if (!hostterm_in_range( term_id )) return os9error(E_UNIT);
 
     h= &hostterms[ term_id ];
-    if (h->open) { h->dev.spP= spP; return 0; } /* already open: share it */
+    if (h->open) { h->openCount++; h->dev.spP= spP; return 0; } /* another holder */
 
     spec= hostterm_spec( term_id );
     if (spec==NULL) return os9error(E_UNIT);
@@ -253,8 +257,9 @@ os9err hostterm_open( int term_id, syspath_typ* spP )
         return os9error(E_DEVBSY);
     }
 
-    h->fd  = fd;
-    h->open= true;
+    h->fd       = fd;
+    h->open     = true;
+    h->openCount=    1;
 
     h->dev.installed = true;
     h->dev.inBufUsed =     0;
@@ -277,12 +282,23 @@ void hostterm_close( int term_id )
     h= &hostterms[ term_id ];
     if (!h->open) return;
 
-    close( h->fd );
-    h->fd          =    -1;
-    if (h->spareFd>=0) { close( h->spareFd ); h->spareFd= -1; }
-    h->open        = false;
-    h->dev.installed= false;
-    h->dev.spP     =  NULL;
+    if (h->openCount>0) h->openCount--;
+    if (h->openCount>0) return;          /* another path still holds it */
+
+    /* Deliberately does NOT close h->fd or h->spareFd. A bound terminal is a
+       DEVICE, and a device does not cease to exist because the last path to it
+       closed -- real OS-9 keeps its descriptor: I$Attach maintains a use count
+       per device-table entry, and I$Detach only tears TERM/storage down when
+       that count reaches zero, exactly the shape restored here (os9-dev and
+       os9-systems-dev skills, memory-and-io.md / device-drivers.md). Two
+       concrete reasons this matters for hostterm specifically: a
+       self-allocated pty would otherwise hand out a DIFFERENT name on the
+       next open, killing whatever `screen` was attached to the old one; and
+       closing the master discards bytes the peer has not read yet (the mirror
+       of the slave-side discard already documented in this file's plan).
+       The fd is released when the emulator exits, which is when the device
+       genuinely goes away. */
+    h->dev.spP= NULL; /* the syspath is going away; do not keep a stale pointer */
 } /* hostterm_close */
 
 int hostterm_put( int term_id, const char* buffer, int n )
@@ -338,7 +354,12 @@ void hostterm_poll( void )
         hostterm_typ* h= &hostterms[ id ];
         int           room;
 
-        if (!h->open) continue;
+        /* dev.spP is NULL between the last path close and any reopen (the
+           device stays open per hostterm_close above, but no syspath is
+           bound to it) -- KeyToBuffer dereferences mco->spP unconditionally
+           (utilstuff.c:1034, no NULL check there), so skip a device with no
+           current path rather than crash on its next byte. */
+        if (!h->open || h->dev.spP==NULL) continue;
 
         /* Never read more than inBuf has guaranteed space for: KeyToBuffer
            silently drops once it is full, and a byte already taken off the fd
