@@ -323,9 +323,20 @@ Boolean ConsGetc( char* c )
     
     // other terminal ?
     if (gConsoleID>=TTY_Base) {
-              n= ReadCharsFromPTY( c,1, gConsoleID);        
+              n= ReadCharsFromPTY( c,1, gConsoleID);
       return (n>0) && devIsReady;
     } // if
+
+    if (hostterm_bound( gConsoleID )) {
+        /* Returns before the LF<->CR swap below on purpose. That swap exists
+           for a genuine Unix terminal in cooked mode; a host endpoint is raw
+           and 8-bit transparent, and rewriting CR would corrupt every binary
+           transfer -- which is the entire point of this device. The existing
+           PTY branch above returns early for the same reason. */
+        n= hostterm_get( gConsoleID, c );
+        devIsReady= n>0;
+        return devIsReady;
+    }
 
     #if defined windows32 || defined MINGW
       /* MINGW's HandleEvent() reads via ReadConsoleInput (telnetaccess.c),
@@ -1149,6 +1160,12 @@ os9err pCready( _pid_, syspath_typ* spP, uint32_t* n )
 
     if (gConsoleID>=TTY_Base) {
         if (DevReadyTTY( &cnt, gConsoleID )) {
+            *n = (uint32_t)cnt;
+            return 0;
+        }
+    }
+    else if (hostterm_bound( gConsoleID )) {
+        if (hostterm_ready( gConsoleID, &cnt )) {
             *n = (uint32_t)cnt;
             return 0;
         }

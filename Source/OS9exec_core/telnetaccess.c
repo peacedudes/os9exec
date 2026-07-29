@@ -401,6 +401,7 @@ void CheckInputBuffers(void)
     #endif
     
     CheckInputBuffersTTY();      /*   "        "       "  ttys         */
+    hostterm_poll();             /* and every host-backed /tN          */
     HandleEvent();               /* and check also the Mac events      */
 } /* CheckInputBuffers */
 

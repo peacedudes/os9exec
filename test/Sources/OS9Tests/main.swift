@@ -3089,6 +3089,72 @@ if runHostOutput || runHostRawMode {
     }
 }
 
+// Input path: bytes written into the host end of a /tN pty must reach OS-9
+// reads on that device.
+let hostInputName = "hostterm: input arrives from the host endpoint"
+let runHostInput   = filter.isEmpty || hostInputName.localizedCaseInsensitiveContains(filter)
+
+if runHostInput {
+    if let (master, slave, slaveName) = makePTY() {
+        // Feed a whole COMMAND LINE into the pty before the emulator reads, so
+        // the bytes are already waiting -- no race with the guest's scheduler.
+        //
+        // `shell </t1` makes an OS-9 shell take its input from the host
+        // endpoint. Whatever we write is read, echoed and executed by that
+        // shell, and its output goes to the console, which the harness
+        // captures. So the assertion string is one only a byte that travelled
+        // host -> pty -> OS-9 can produce: it appears NOWHERE in the command
+        // text we send on stdin, which is the trap that made the original
+        // Task 2 test vacuous (see Global Constraints).
+        //
+        // Trailing ESC is deliberate and load-bearing. 0x1B is PD_EOF's
+        // default in the console option table (init_consoleopts, utilstuff.c),
+        // so it makes the inner shell's read return E_EOF and the shell exit
+        // cleanly. Without it that shell reads a pty that never reaches EOF
+        // and the test can only end by timing out.
+        //
+        // makePTY() deliberately leaves the pty in COOKED mode (see its own
+        // comment) so Task 3's raw-mode check can prove hostterm_raw() is
+        // what flips it -- but that makes writing test input to master BEFORE
+        // the emulator ever opens the slave actively wrong here: a pty's
+        // termios is one struct shared by both ends, and while it is still
+        // cooked the HOST KERNEL's own line discipline processes our write
+        // immediately (ICRNL rewrites our CR to LF, ECHOCTL renders the ESC
+        // as the two visible characters "^["), before hostterm_raw() ever
+        // gets a chance to run on the OS-9 side -- so OS-9 ends up reading
+        // already-corrupted bytes no matter what hostterm.c does. Confirmed
+        // live: without this, the shell reads a line that never matches its
+        // CR terminator (mangled to LF), runs on into the still-intact ESC,
+        // and aborts with E_EOF before ever executing anything. Task 3
+        // already proves hostterm_raw() itself works (raw mode governs
+        // OUTPUT too, same shared termios), so setting raw mode here first
+        // does not weaken this test's own job, which is the input plumbing.
+        var raw = termios()
+        tcgetattr(master, &raw)
+        cfmakeraw(&raw)
+        tcsetattr(master, TCSANOW, &raw)
+
+        let line = "echo GOT-IT-FROM-HOST\r\u{1B}\r"
+        _ = line.withCString { write(master, $0, strlen($0)) }
+
+        let out = os9(["shell </t1"], timeout: 30, env: ["OS9T1": slaveName])
+        close(master)
+        close(slave)
+
+        if out.contains("GOT-IT-FROM-HOST") {
+            print("PASS: \(hostInputName)"); passed += 1
+        } else {
+            print("FAIL: \(hostInputName)")
+            print("      [a command written into the pty should have run inside OS-9]")
+            print("      got: \(out.suffix(200).debugDescription)")
+            failed += 1
+        }
+    } else {
+        print("FAIL: hostterm: could not create a pty pair for input test")
+        failed += 1
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us

@@ -255,6 +255,68 @@ int hostterm_put( int term_id, const char* buffer, int n )
     return done<n ? -1 : done;
 } /* hostterm_put */
 
+void hostterm_poll( void )
+{
+    int id;
+
+    hostterm_init();
+
+    for (id=HOSTTERM_MIN; id<=HOSTTERM_MAX; id++) {
+        hostterm_typ* h= &hostterms[ id ];
+        int           room;
+
+        if (!h->open) continue;
+
+        /* Never read more than inBuf has guaranteed space for: KeyToBuffer
+           silently drops once it is full, and a byte already taken off the fd
+           cannot be pushed back. Same conservative floor HandleEvent() uses
+           for stdin. Special chars do not consume inBuf space at all, so the
+           worst case is deferring a few plain bytes to the next poll. */
+        room= INBUFSIZE-1 - h->dev.inBufUsed;
+
+        while (room-->0) {
+            char c;
+            if (read( h->fd,&c,1 )!=1) break; /* EAGAIN: nothing more today */
+            KeyToBuffer( &h->dev, c );
+        }
+    }
+} /* hostterm_poll */
+
+int hostterm_get( int term_id, char* c )
+{
+    hostterm_typ* h;
+
+    hostterm_init();
+    if (!hostterm_bound( term_id )) return 0;
+    h= &hostterms[ term_id ];
+
+    hostterm_poll();
+    if (h->dev.inBufUsed==0) return 0;
+
+    *c= h->dev.inBuf[ 0 ];
+    h->dev.inBufUsed--;
+    if (h->dev.inBufUsed>0)
+        MoveBlk( h->dev.inBuf, h->dev.inBuf+1, (ulong)h->dev.inBufUsed );
+
+    return 1;
+} /* hostterm_get */
+
+Boolean hostterm_ready( int term_id, long* cnt )
+{
+    hostterm_typ* h;
+
+    hostterm_init();
+    *cnt= 0;
+    if (!hostterm_bound( term_id )) return false;
+    h= &hostterms[ term_id ];
+
+    hostterm_poll();
+    if (h->dev.inBufUsed==0) return false;
+
+    *cnt= h->dev.inBufUsed;
+    return true;
+} /* hostterm_ready */
+
 #else /* not UNIX, or MINGW: no termios, no pty */
 
 os9err hostterm_open( int term_id, syspath_typ* spP )
@@ -273,30 +335,21 @@ int hostterm_put( int term_id, const char* buffer, int n )
     return -1; /* no host fd on this platform */
 } /* hostterm_put */
 
-#endif
-
 int hostterm_get( int term_id, char* c )
 {
-    #ifndef __GNUC__
-    #pragma unused( term_id,c )
-    #endif
-    (void)c; (void)term_id;
-    return 0; /* filled in by Task 4 */
+    (void)term_id; (void)c;
+    return 0; /* no host fd on this platform */
 } /* hostterm_get */
 
 Boolean hostterm_ready( int term_id, long* cnt )
 {
-    #ifndef __GNUC__
-    #pragma unused( term_id )
-    #endif
     (void)term_id;
     *cnt= 0;
-    return false; /* filled in by Task 4 */
+    return false; /* no host fd on this platform */
 } /* hostterm_ready */
 
-void hostterm_poll( void )
-{
-    /* filled in by Task 4 */
-} /* hostterm_poll */
+void hostterm_poll( void ) { } /* nothing to poll on this platform */
+
+#endif
 
 /* eof */
