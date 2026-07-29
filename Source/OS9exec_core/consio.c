@@ -140,6 +140,11 @@ os9err pGBlink   ( ushort pid, syspath_typ*, uint32_t   *d2 );
 static int term_line = 0;
 /* ------------------------------------------------------------------------- */
 
+/* Forward declaration: pCopen calls this before its own definition (further
+   down this file) is reached. Stays static -- both call sites are in this
+   file. */
+static ulong baud_bps( byte code );
+
 void init_Cons( fmgr_typ* f )
 /* install all procedures of the console file manager */
 {
@@ -616,7 +621,14 @@ os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
 
     /* get the initialised path option table */
     pSCFopt( pid,spP, (byte*)&spP->opt ); /* no err returned */
-    
+
+    /* Not inside hostterm_open: that runs before pSCFopt above, so the option
+       table -- and _sgs_bau with it -- is not populated yet there. */
+    if (hostterm_bound( id )) {
+        struct _sgs* ot= (struct _sgs*)&spP->opt;
+        hostterm_setspeed( id, baud_bps( ot->_sgs_bau ) );
+    }
+
     debugprintf( dbgTerminal,dbgDetail,("# pCopen (%s): successful, pid=%d\n",
                                            name, pid ));
     return 0;
@@ -1142,6 +1154,13 @@ os9err pCsetopt( _pid_, syspath_typ* spP, byte* buffer )
       if (sp != spP && sp->type == spP->type && sp->term_id == spP->term_id)
           memcpy( &sp->opt, buffer, OPTSECTSIZE );
   }
+
+  /* SS_Opt is how `tmode baud=` reaches us, so a live port retunes. */
+  if (hostterm_bound( spP->term_id )) {
+      struct _sgs* ot= (struct _sgs*)&spP->opt;
+      hostterm_setspeed( spP->term_id, baud_bps( ot->_sgs_bau ) );
+  }
+
   return 0;
 } /* pCsetopt */
 

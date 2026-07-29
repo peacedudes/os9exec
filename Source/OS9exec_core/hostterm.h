@@ -43,6 +43,14 @@ Boolean hostterm_ready    ( int term_id, long* cnt );
    CheckInputBuffers(), alongside the tty and main-console sweeps. */
 void    hostterm_poll     ( void );
 
+/* Apply <bps> (bits per second, already resolved from the path's PD_BAU
+   option code) to the bound host fd. A no-op if the device is not bound,
+   if <bps> has no POSIX B-constant (2000/3600/7200 -- OS-9's own table has
+   no equivalent), or on any platform without termios. A pty stores the
+   speed without honouring it: this is provable against a pty but not
+   against a real serial line. */
+void    hostterm_setspeed ( int term_id, ulong bps );
+
 #endif /* HOSTTERM_H */
 
 /* eof */

@@ -411,6 +411,57 @@ Boolean hostterm_ready( int term_id, long* cnt )
     return true;
 } /* hostterm_ready */
 
+/* OS-9 rates that have a POSIX B-constant. 2000, 3600 and 7200 appear in
+   OS-9's own table (baud_bps, consio.c) and have no POSIX equivalent, so they
+   land in the default arm: leave the port at whatever it was rather than
+   silently substituting a different speed, which would be worse than not
+   setting one at all. */
+static speed_t hostterm_speed( ulong bps )
+{
+    switch (bps) {
+        case     50: return B50;
+        case     75: return B75;
+        case    110: return B110;
+        case    134: return B134;
+        case    150: return B150;
+        case    300: return B300;
+        case    600: return B600;
+        case   1200: return B1200;
+        case   1800: return B1800;
+        case   2400: return B2400;
+        case   4800: return B4800;
+        case   9600: return B9600;
+        case  19200: return B19200;
+        case  38400: return B38400;
+        case  57600: return B57600;
+        case 115200: return B115200;
+        default    : return 0;
+    }
+} /* hostterm_speed */
+
+void hostterm_setspeed( int term_id, ulong bps )
+{
+    hostterm_typ*  h;
+    struct termios t;
+    speed_t        sp;
+
+    hostterm_init();
+    if (!hostterm_bound( term_id )) return;
+
+    sp= hostterm_speed( bps );
+    if (sp==0) return; /* no POSIX equivalent: leave the port alone */
+
+    h= &hostterms[ term_id ];
+    if (tcgetattr  ( h->fd,&t   )!=0) return;
+    if (cfsetispeed( &t,   sp   )!=0) return;
+    if (cfsetospeed( &t,   sp   )!=0) return;
+
+    tcsetattr( h->fd,TCSANOW, &t );
+
+    debugprintf( dbgTerminal,dbgNorm,
+                 ( "# hostterm: /t%d speed %lu\n", term_id, bps ) );
+} /* hostterm_setspeed */
+
 #else /* not UNIX, or MINGW: no termios, no pty */
 
 os9err hostterm_open( int term_id, syspath_typ* spP )
@@ -443,6 +494,8 @@ Boolean hostterm_ready( int term_id, long* cnt )
 } /* hostterm_ready */
 
 void hostterm_poll( void ) { } /* nothing to poll on this platform */
+
+void hostterm_setspeed( int term_id, ulong bps ) { (void)term_id; (void)bps; }
 
 #endif
 

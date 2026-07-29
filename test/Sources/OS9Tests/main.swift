@@ -3227,6 +3227,66 @@ if runHostSurvivesClose {
     }
 }
 
+// -- Serial speed: a bound /tN follows the path's PD_BAU --------------------
+// A pty ignores speed for timing but STORES it, and its termios state is
+// shared between both ends -- so we can read back exactly what the emulator
+// set. Default PD_BAU is 0x0F = 19200 (init_consoleopts, utilstuff.c).
+// Measured live on this machine: a fresh, untouched pty defaults to B9600,
+// not B19200, so this assertion is real -- it cannot pass by accident.
+let hostSpeedDefaultName = "hostterm: host port speed follows the path's PD_BAU"
+let runHostSpeedDefault  = filter.isEmpty || hostSpeedDefaultName.localizedCaseInsensitiveContains(filter)
+
+if runHostSpeedDefault {
+    if let (master, slave, slaveName) = makePTY() {
+        _ = os9(["echo x >/t1"], env: ["OS9T1": slaveName])
+
+        var t = termios()
+        tcgetattr( master, &t )
+        let got = cfgetospeed( &t )
+        close( master ); close( slave )
+
+        if got == speed_t(B19200) {
+            print("PASS: \(hostSpeedDefaultName)"); passed += 1
+        } else {
+            print("FAIL: \(hostSpeedDefaultName)")
+            print("      [expected B19200 (\(speed_t(B19200))), got \(got)]")
+            failed += 1
+        }
+    } else {
+        print("FAIL: hostterm: could not create a pty pair for the speed-default test")
+        failed += 1
+    }
+}
+
+// `tmode` issues I$SetStt SS_Opt on its stdin path, so redirecting stdin
+// from /t1 retunes THAT device. 2400 is deliberately not the default -- this
+// is the test that proves the SS_Opt hook in pCsetopt, independent of
+// whether open-time defaulting (above) happens to already match.
+let hostSpeedTmodeName = "hostterm: tmode baud= retunes a live host port"
+let runHostSpeedTmode  = filter.isEmpty || hostSpeedTmodeName.localizedCaseInsensitiveContains(filter)
+
+if runHostSpeedTmode {
+    if let (master, slave, slaveName) = makePTY() {
+        _ = os9(["tmode </t1 baud=2400"], env: ["OS9T1": slaveName])
+
+        var t = termios()
+        tcgetattr( master, &t )
+        let got = cfgetospeed( &t )
+        close( master ); close( slave )
+
+        if got == speed_t(B2400) {
+            print("PASS: \(hostSpeedTmodeName)"); passed += 1
+        } else {
+            print("FAIL: \(hostSpeedTmodeName)")
+            print("      [expected B2400 (\(speed_t(B2400))), got \(got)]")
+            failed += 1
+        }
+    } else {
+        print("FAIL: hostterm: could not create a pty pair for the tmode-speed test")
+        failed += 1
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us
