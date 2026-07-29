@@ -738,6 +738,22 @@ run("rbf: mount -k image is dir/free/dcheck clean",
 // does not), and `mount -k` would otherwise be handed a file that already exists.
 try? FileManager.default.removeItem(atPath: scratchHostPath)
 
+// A RAW device open ("/dd@") of a host-DIRECTORY device is refused -- a host
+// directory has no disk sectors, decided in 063f8d1 and unchanged. What is
+// asserted here is WHICH refusal: E$Unit (240, "illegal unit"), not E$MNF
+// (221, "module not found"), which claims the device does not exist at all.
+// `free`/`dcheck` are the visible face; the C library's stat() probes the same
+// "<device>@" path, which is why a ported bash reported every file on /dd as
+// missing. Asserting the absence of 221 is the point of the test: the guard
+// that produces 240 sat unreachable for years because path classification
+// rejected "/dd@" before the file manager ever saw it, so a test that only
+// checked "some error" passed throughout and proved nothing.
+run("fs: raw open of a host-directory device is E$Unit, not E$MNF",
+    expectation: "free /dd refuses with 240 (illegal unit), never 221 (module not found)",
+    commands: ["free /dd"]) {
+        $0.contains("240") && !$0.contains("221")
+    }
+
 // `mount -k` names its image "<startPath>/<dev>" and prints that name, which is
 // the only place the emulator's computed startPath is observable from outside.
 // StartDir used to rebuild the cwd by climbing ".." and matching each child's

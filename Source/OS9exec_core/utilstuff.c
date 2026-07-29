@@ -3008,7 +3008,21 @@ static Boolean OS9_Device( char* os9path, ushort mode, ptype_typ *typeP )
     #ifdef RBF_SUPPORT
       if (err && InstalledDev( os9path,"",false, &cdv )) return true; /* already ? */
     #endif
-    
+
+    /* A RAW open ("/dd@") of a device backed by a host DIRECTORY. It arrives
+     * here as E$FNA with isFolder set -- "you asked to open a folder as a
+     * file" -- and the E$FNA line below would call it fNone, i.e. no such
+     * device module, so every caller got E$MNF for a device that plainly
+     * exists. Hand it to the host file manager instead: pFopen strips the '@',
+     * sees rawMode, and its "host directories have no disk sectors" guard
+     * answers E$Unit. Raw access stays refused -- that decision (063f8d1)
+     * is unchanged; only the error becomes an honest one. The guard could
+     * never fire before, because classification rejected the path first.
+     * Verified as the deciding branch by tracing err/isFolder live, not by
+     * reading: an earlier attempt patched the E$PNNF probe below and changed
+     * nothing. */
+    if (IsRaw( os9path ) && isFolder) { *typeP= fFile; return true; }
+
     if (!IsDir(mode) && err==E_FNA) { *typeP= fNone; return false; }
     if (!err && !isFolder)          { *typeP= fRBF;  return true;  }
 
