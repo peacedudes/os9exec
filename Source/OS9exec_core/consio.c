@@ -575,17 +575,20 @@ os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
         return os9error(E_UNIT);
     } /* end exit part */
 
-    /* A /tN in the host-backed range is only a device if OS9T<n> names an
-       endpoint. Unconfigured, it used to fall through and share the MAIN
-       console's stdin/stdout -- so `echo x >/t1` interleaved its bytes into
-       the shell's own prompt, and `tsmon /t1` failed with a misleading
-       E_NOTRDY much later instead of an honest refusal here. Real OS-9 has no
-       device without a descriptor; E_UNIT is what it says for a bad unit. */
-    if (hostterm_in_range( id ) && !hostterm_configured( id ))
-        return os9error(E_UNIT);
-
     spP->term_id= id;
     strcpy( spP->name,&name[1] );
+
+    /* A /tN in the host-backed range is only a device if OS9T<n> names a
+       WORKING endpoint. Unconfigured, or naming something the host refuses,
+       it used to fall through and share the MAIN console's stdin/stdout --
+       so `echo x >/t1` interleaved its bytes into the shell's own prompt,
+       and `tsmon /t1` failed with a misleading E_NOTRDY much later instead
+       of an honest refusal here. hostterm_open already returns E_UNIT when
+       unconfigured, so this single call also covers the earlier gate. */
+    if (hostterm_in_range( id )) {
+        os9err herr= hostterm_open( id, spP );
+        if    (herr) return herr;
+    }
 
     /* for tty/pty pairs with the same name, the same pipe must be used */
     #ifdef PIP_SUPPORT
@@ -658,6 +661,8 @@ os9err pCclose( ushort pid, syspath_typ* spP )
 
     g_spP     = spP;
     gConsoleID= spP->term_id;
+
+    if (hostterm_in_range( spP->term_id )) hostterm_close( spP->term_id );
 
     if (spP->type!=fTTY) {
         #ifdef MACTERMINAL

@@ -90,23 +90,137 @@ Boolean hostterm_bound( int term_id )
     return hostterms[ term_id ].open;
 } /* hostterm_bound */
 
+#if defined UNIX && !defined MINGW
+
+/* Put a tty into 8-bit-transparent raw mode.
+   Verified necessary, not assumed: without this a round-trip through a pty
+   mangles exactly the bytes a file transfer depends on -- XON/XOFF are
+   swallowed, CR becomes CRLF, DEL becomes BS-space-BS.
+
+   The flag manipulation below is the standard cfmakeraw() recipe (termios(3):
+   disable input translation/flow control, disable output post-processing,
+   disable canonical/echo/signal-generating input processing, 8-bit chars, no
+   parity), applied by hand rather than calling the library function itself.
+   os9_ll.h deliberately `#undef __USE_MISC` on Linux (module_from_book.h's
+   `ulong` needs the slot glibc's own __USE_MISC-gated typedef would
+   otherwise occupy -- a pre-existing, unrelated decision, not something to
+   unpick here), which is also the guard glibc's termios.h puts around
+   cfmakeraw()'s own declaration, so calling it directly on Linux is an
+   implicit-function-declaration warning. macOS/BSD declare it unconditionally
+   and mingw doesn't compile this arm at all, but the same code path having
+   different warning behaviour per platform is exactly the kind of thing this
+   project's "make it fail once" rule exists to catch -- so it is spelled out
+   here once, portably, rather than patched per-platform. */
+static Boolean hostterm_raw( int fd )
+{
+    struct termios t;
+
+    if (tcgetattr( fd,&t )!=0) return false;
+
+    t.c_iflag &= (tcflag_t)~( IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON );
+    t.c_oflag &= (tcflag_t)~( OPOST );
+    t.c_lflag &= (tcflag_t)~( ECHO|ECHONL|ICANON|ISIG|IEXTEN );
+    t.c_cflag &= (tcflag_t)~( CSIZE|PARENB );
+    t.c_cflag |=             ( CS8 );
+
+    /* CLOCAL: do not wait on carrier detect. CREAD: enable the receiver.
+       Both are no-ops for a pty and both matter for a real serial port, so
+       they are set here rather than in a later serial-only change. */
+    t.c_cflag |= CLOCAL | CREAD;
+
+    /* Return immediately with whatever is there. The emulator polls; it must
+       never block inside a read, because the scheduler is cooperative and a
+       blocked read stalls every other OS-9 process. */
+    t.c_cc[VMIN ]= 0;
+    t.c_cc[VTIME]= 0;
+
+    return tcsetattr( fd,TCSANOW, &t )==0;
+} /* hostterm_raw */
+
 os9err hostterm_open( int term_id, syspath_typ* spP )
 {
-    #ifndef __GNUC__
-    #pragma unused( term_id,spP )
-    #endif
-    (void)spP;
+    hostterm_typ* h;
+    char*         spec;
+    int           fd;
+
     hostterm_init();
-    return os9error(E_UNIT); /* filled in by Task 2 */
+    if (!hostterm_in_range( term_id )) return os9error(E_UNIT);
+
+    h= &hostterms[ term_id ];
+    if (h->open) { h->dev.spP= spP; return 0; } /* already open: share it */
+
+    spec= hostterm_spec( term_id );
+    if (spec==NULL) return os9error(E_UNIT);
+
+    if (*spec!=PATHDELIM) {
+        /* "pty" arrives in Task 5; anything else is simply not an endpoint.
+           Refuse loudly -- a mistyped OS9T1 must not look like it worked. */
+        uphe_printf( "OS9T%d: unsupported endpoint '%s'\n", term_id, spec );
+        return os9error(E_UNIT);
+    }
+
+    /* O_NONBLOCK at open, and kept: it skips the carrier-detect wait a real
+       serial port would otherwise impose, and it is what keeps every later
+       read non-blocking. O_NOCTTY: this must never become our controlling
+       terminal, which would route the host's job-control signals here. */
+    fd= open( spec, O_RDWR | O_NOCTTY | O_NONBLOCK );
+    if (fd<0) {
+        uphe_printf( "OS9T%d: cannot open '%s'\n", term_id, spec );
+        return os9error(E_DEVBSY);
+    }
+
+    if (!hostterm_raw( fd )) {
+        uphe_printf( "OS9T%d: '%s' is not a terminal\n", term_id, spec );
+        close( fd );
+        return os9error(E_DEVBSY);
+    }
+
+    h->fd  = fd;
+    h->open= true;
+    strncpy( h->endpoint,spec, OS9PATHLEN-1 );
+             h->endpoint[      OS9PATHLEN-1 ]= NUL;
+
+    h->dev.installed = true;
+    h->dev.inBufUsed =     0;
+    h->dev.holdScreen= false;
+    h->dev.pid       =     0;
+    h->dev.spP       =   spP;
+
+    debugprintf( dbgTerminal,dbgNorm,
+                 ( "# hostterm: /t%d -> %s (fd %d)\n", term_id, spec, fd ) );
+    return 0;
 } /* hostterm_open */
 
 void hostterm_close( int term_id )
 {
-    #ifndef __GNUC__
-    #pragma unused( term_id )
-    #endif
-    (void)term_id;
+    hostterm_typ* h;
+
+    hostterm_init();
+    if (!hostterm_in_range( term_id )) return;
+
+    h= &hostterms[ term_id ];
+    if (!h->open) return;
+
+    close( h->fd );
+    h->fd          =    -1;
+    h->open        = false;
+    h->dev.installed= false;
+    h->dev.spP     =  NULL;
 } /* hostterm_close */
+
+#else /* not UNIX, or MINGW: no termios, no pty */
+
+os9err hostterm_open( int term_id, syspath_typ* spP )
+{
+    (void)spP;
+    hostterm_init();
+    (void)term_id;
+    return os9error(E_UNIT);
+} /* hostterm_open */
+
+void hostterm_close( int term_id ) { (void)term_id; }
+
+#endif
 
 int hostterm_put( int term_id, const char* buffer, int n )
 {

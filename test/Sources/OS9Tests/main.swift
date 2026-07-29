@@ -2920,6 +2920,42 @@ check("hostterm: unconfigured /t1 is E_UNIT",
       contains: "Error #000:240 (E_UNIT)",
       "echo hello >/t1")
 
+// The plan's own Step 1 test for this task ("checkEnv contains: 'opened'"
+// against a real pty slave) turned out unable to fail either as written or
+// with the redirect it was missing -- investigated live, not assumed:
+//   1. Task 1's gate in pCopen only checks hostterm_configured (is OS9T1
+//      SET?), never hostterm_open. With OS9T1 pointed at a real pty slave,
+//      that gate already lets the open through today, straight to the
+//      pre-existing /t1 fallback path -- so "does /t1 open without error"
+//      already passes BEFORE this task's code exists, for any *configured*
+//      OS9T1, valid or not. hostterm_open is not reachable from pCopen
+//      until this task's Step 4 wires the call in.
+//   2. Separately, the OS-9 shell echoes every input line onto its own
+//      console before executing it (confirmed live: an unknown command's
+//      literal text appears verbatim in the captured output even though it
+//      never ran), so a "contains" check whose pattern is a substring of
+//      the command text itself -- "opened" in "echo opened" -- is satisfied
+//      by the echoed input alone and can never fail regardless of what /t1
+//      does.
+// The one behaviour this task actually introduces that a pre-Task-4 gate
+// cannot already produce is REFUSAL of a host path that does not work --
+// hostterm_open is the first code that ever tries the host open() and can
+// say no. A nonexistent path is that discriminating case: today it
+// "succeeds" (any configured value passes the old gate); after this task
+// hostterm_open's open() genuinely fails and pCopen reports E_DEVBSY.
+//
+// The successful-open case (a real pty slave) is intentionally not
+// duplicated here as an automated check: with output/input not wired until
+// Tasks 3/4, nothing observes hostterm_open's success yet, so any such
+// check is provably unable to fail at this task's boundary -- confirmed by
+// testing it directly against the untouched stub. Task 3's own test already
+// asserts a genuine byte-level success signal (output reaching the pty
+// master), so that is where a real positive check belongs.
+checkEnv("hostterm: /t1 refuses a host path that does not exist",
+         contains: "Error #000:250 (E_DEVBSY)",
+         env: ["OS9T1": "/hostterm-definitely-does-not-exist"],
+         "echo x >/t1")
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us
