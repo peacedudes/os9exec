@@ -166,7 +166,10 @@ os9err hostterm_open( int term_id, syspath_typ* spP )
     fd= open( spec, O_RDWR | O_NOCTTY | O_NONBLOCK );
     if (fd<0) {
         uphe_printf( "OS9T%d: cannot open '%s'\n", term_id, spec );
-        return os9error(E_DEVBSY);
+        /* <fd> is -1: host2os9err's UNIX arm wants the POSIX RETURN CODE, not
+           an errno -- it reads errno itself, and returns SUCCESS if handed 0.
+           E_DEVBSY stays as the fallback for an errno it does not map. */
+        return host2os9err( fd, E_DEVBSY );
     }
 
     if (!hostterm_raw( fd )) {

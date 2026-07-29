@@ -2952,7 +2952,7 @@ check("hostterm: unconfigured /t1 is E_UNIT",
 // asserts a genuine byte-level success signal (output reaching the pty
 // master), so that is where a real positive check belongs.
 checkEnv("hostterm: /t1 refuses a host path that does not exist",
-         contains: "Error #000:250 (E_DEVBSY)",
+         contains: "Error #000:216 (E_PNNF)",
          env: ["OS9T1": "/hostterm-definitely-does-not-exist"],
          "echo x >/t1")
 
