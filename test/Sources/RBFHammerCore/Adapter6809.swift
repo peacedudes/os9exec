@@ -589,19 +589,34 @@ public struct Adapter6809: Adapter {
     }
 
     /// Tears down this run's emulator and tmux session.
+    ///
+    /// Also reaps other runs' corpses on the way out. Reaping only on entry left
+    /// a window with no closing edge: when the last run of a session died badly
+    /// its emulator sat there until *another* run happened to start, which for a
+    /// failing suite may be never. One did exactly that for half an hour.
     private func teardown(_ run: Run) {
         _ = try? shell(repl, ["stop"], environment: replEnvironment(run))
         try? waitForEmulatorExit(run)
+        reapStaleSessions()
     }
 
     /// Reaps `hammer-*` tmux sessions (and the XRoar they hold) left behind by a
     /// run that was interrupted before its `defer { teardown }` could fire -- a
     /// test killed with a signal skips `defer`, stranding a live emulator that
     /// then steals a core and quietly slows or hangs every later run (it once
-    /// made a clean fixed-image run look like a lost-wake regression). A real run
-    /// finishes in well under a minute, so any hammer session older than the
-    /// threshold is unambiguously an orphan: safe to kill without touching an
-    /// active run, even a concurrent session's. Best-effort; failures are ignored.
+    /// made a clean fixed-image run look like a lost-wake regression).
+    ///
+    /// Two independent conditions mark a session as dead, because age alone was
+    /// not enough. A session whose **`server` window is gone** is a corpse the
+    /// moment it appears: `drivewire-cli` is what the guest talks to, so a
+    /// hammer session that has outlived its server can never be driven again and
+    /// its XRoar is burning a core for nothing. That is the shape the DriveWire
+    /// segfault left behind, and the age rule could not see it for 20 minutes.
+    /// A live run always has both windows, so this cannot touch one -- including
+    /// a concurrent session's.
+    ///
+    /// Age remains the backstop for corpses that keep a server window. A real run
+    /// finishes in well under a minute. Best-effort; failures are ignored.
     private func reapStaleSessions() {
         let staleAfter: TimeInterval = 1200   // 20 minutes; a run lasts < 1
         let listing = (try? shell("/usr/bin/env",
@@ -610,9 +625,21 @@ public struct Adapter6809: Adapter {
         for line in listing.split(whereSeparator: \.isNewline) {
             let parts = line.split(separator: " ")
             guard parts.count == 2, parts[0].hasPrefix("hammer-"),
-                  let created = Double(parts[1]), now - created > staleAfter else { continue }
-            _ = try? shell("/usr/bin/env", ["tmux", "kill-session", "-t", String(parts[0])])
+                  let created = Double(parts[1]) else { continue }
+            let session = String(parts[0])
+            guard now - created > staleAfter || !hasServerWindow(session) else { continue }
+            _ = try? shell("/usr/bin/env", ["tmux", "kill-session", "-t", session])
         }
+    }
+
+    /// Whether a tmux session still has the `server` window holding drivewire-cli.
+    ///
+    /// Absence is only meaningful for a session that exists; a failed listing
+    /// reports `true` so an unreadable tmux never reads as "kill everything".
+    private func hasServerWindow(_ session: String) -> Bool {
+        guard let windows = try? shell("/usr/bin/env",
+            ["tmux", "list-windows", "-t", session, "-F", "#{window_name}"]) else { return true }
+        return windows.split(whereSeparator: \.isNewline).contains { $0 == "server" }
     }
 
     // ── Host process helper ───────────────────────────────────────────────────
