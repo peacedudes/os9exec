@@ -239,6 +239,7 @@
 #include <utime.h>
 #include <ctype.h>
 #include <limits.h>
+#include <errno.h>    /* the UNIX errno -> OS-9 error mapping in host2os9err */
 #include <stdlib.h>   /* realpath() (see _GNU_SOURCE note above); target_options.h only pulls this in for __MACH__ */
 
 #ifdef MINGW
@@ -449,9 +450,7 @@ os9err os9error(os9err err)
 os9err host2os9err(OSErr hosterr,ushort suggestion)
 {
     os9err  err;
-    #ifndef UNIX
     Boolean known= true;
-    #endif
 
     #ifdef MACOS9
       if (hosterr==noErr) return 0;
@@ -568,8 +567,54 @@ os9err host2os9err(OSErr hosterr,ushort suggestion)
 
     #elif defined UNIX
       if     (hosterr==0) return 0;
-      err= suggestion; /* known=false; — no debug print in UNIX path */
-    
+
+      /* On UNIX <hosterr> is a POSIX RETURN CODE, not an error code: every
+       * caller here passes the result of remove()/rename()/etc, which is
+       * -1 on failure and carries no cause at all. (The OSErr values the
+       * MACOS9 and windows32 branches switch on come from FSRead/FSpCreate
+       * and GetLastError, which really are error codes -- only this branch
+       * is handed a status.) So `err= suggestion` was not a lazy default;
+       * it was the ONLY thing available, and the consequence was that every
+       * host failure came back as whatever the caller guessed: `pFdelete`
+       * passes E_SHARE, so a delete refused for permissions, a read-only
+       * filesystem or a non-empty directory all reported "non-sharable file
+       * busy". The cause was there the whole time, in errno -- just never
+       * read. Do that here rather than at ~50 call sites.
+       *
+       * errno is fresh: we only consult it when the call reported failure,
+       * and a failing libc call always sets it. The exception to know about
+       * is an intervening libc call between the failure and this one -- the
+       * debugprintf in pDsetatt's delete loop, say -- which is a no-op unless
+       * that debug mask is enabled, so it cannot mislead a normal run.
+       *
+       * Deliberately conservative: only errnos whose OS-9 meaning is
+       * unambiguous in EVERY calling context are mapped (there are ~50 call
+       * sites passing 15 different suggestions). Anything context-dependent
+       * -- EINVAL, EISDIR, EAGAIN -- still falls back to the caller's
+       * suggestion, which knows which operation was attempted. */
+      switch (errno) {
+        case ENOENT:
+        case ENOTDIR:       err=E_PNNF;     break;
+        case EACCES:
+        case EPERM:         err=E_FNA;      break;
+        case EROFS:         err=E_WP;       break;
+        case ENOTEMPTY:     err=E_DNE;      break;
+        case EEXIST:        err=E_CEF;      break;
+        case ENOSPC:        err=E_FULL;     break;
+        case ENAMETOOLONG:  err=E_BPNAM;    break;
+        case EIO:           err=E_HARDWARE; break;
+        case EBUSY:
+        case ETXTBSY:       err=E_SHARE;    break;
+        case EMFILE:
+        case ENFILE:        err=E_PTHFUL;   break;
+        case ENXIO:
+        case ENODEV:        err=E_UNIT;     break;
+        case ESPIPE:        err=E_SEEK;     break;
+        default: err= suggestion; known= false; break;
+      }
+      debugprintf(dbgErrors,dbgNorm,("# ** UNIX errno=%d%s\n",
+                                      errno,known ? "" : " (not known, using suggestion)"));
+
     #else
       #error Unknown Target OS, no error translation implemented
     #endif
