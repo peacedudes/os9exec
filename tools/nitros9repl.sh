@@ -23,7 +23,7 @@
 #   ./tools/nitros9repl.sh key <keys...>  send raw keystrokes (no Enter); special: Enter Space C-x
 #   ./tools/nitros9repl.sh snap [label]   print labeled snapshot of the channel pane
 #   ./tools/nitros9repl.sh peek           print current full channel pane
-#   ./tools/nitros9repl.sh connect        interactive session in YOUR terminal (Ctrl-C to
+#   ./tools/nitros9repl.sh connect        interactive session in YOUR terminal (Ctrl-] to
 #                                          detach; that ends the forked shell)
 #   ./tools/nitros9repl.sh server         show the DriveWire server's protocol log pane
 #   ./tools/nitros9repl.sh stop           kill the session (server + XRoar)
@@ -53,8 +53,10 @@
 #   - Escape ($1B) is OS-9's default SCF end-of-file character, so the shell
 #     exits normally when it reads one. Under inetd that is recoverable
 #     without a restart: the next `send` opens a new connection and inetd
-#     forks another shell. `connect` still filters Esc/arrow keys so a human
-#     can't send EOF by accident; to send one deliberately, use: key Escape
+#     forks another shell. `connect` translates a modern terminal's keys for
+#     OS-9 (Backspace/left-arrow -> $08, other arrows swallowed whole, Ctrl-C
+#     passed through as the guest's interrupt) and still blocks a bare Esc so
+#     a human can't send EOF by accident; a deliberate EOF is: key Escape
 #
 # Copyright notice (disk image content):
 #   Anything observable through this REPL depends on what is in your disk
@@ -430,12 +432,83 @@ cmd_peek() {
 # shell read EOF and exit — normal OS-9 behavior, but since startup only
 # launches that shell once, recovering means a full `restart`.
 cmd_connect() {
-    printf '[connecting to the guest shell on port %s — Ctrl-C to detach]\n' "$CHAN_PORT"
-    printf '[inetd forks a login per connection, so detaching ends this one]\n'
-    printf '[line-oriented: local editing works; Esc/arrow keys are filtered]\n'
-    perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\n/\r/; $b =~ tr/\x20-\x7e\r//cd; print $b }' \
-        | nc 127.0.0.1 "$CHAN_PORT" \
-        | perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\n//d; $b =~ tr/\r/\n/; print $b }'
+    # Scripted callers (stdin not a terminal) get the original line-oriented
+    # pipeline: cooked input, CR/LF fixed up on the way out.
+    if [ ! -t 0 ]; then
+        perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\n/\r/; $b =~ tr/\x20-\x7e\r//cd; print $b }' \
+            | nc 127.0.0.1 "$CHAN_PORT" \
+            | perl -e '$|=1; while (sysread(STDIN,$b,4096)) { $b =~ tr/\n//d; $b =~ tr/\r/\n/; print $b }'
+        return
+    fi
+
+    # A human terminal gets a raw, character-at-a-time session with the keys
+    # translated to what OS-9's SCF expects, because a modern terminal and a
+    # 1980 serial line disagree about almost everything:
+    #   Backspace key (DEL, $7F)  -> $08, OS-9 backspace (guest echoes the erase)
+    #   Left arrow (ESC [ D)      -> $08 as well; other arrows are swallowed
+    #                                whole, so no stray "[A" lands in the line
+    #   Ctrl-X                    -> through: OS-9 delete-line
+    #   Ctrl-C / Ctrl-E           -> through: the GUEST's interrupt/quit keys
+    #                                (raw mode means they no longer signal us)
+    #   bare Esc                  -> blocked: it is SCF's EOF and exits the
+    #                                shell; a deliberate EOF is  key Escape
+    #   Ctrl-]                    -> detach (the one key kept for ourselves)
+    # Output needs no translation: inetd sets PD.ALF, so the guest sends CR LF,
+    # which a raw terminal renders correctly as-is.
+    printf '[connecting to the guest shell on port %s — Ctrl-] to detach]\n' "$CHAN_PORT"
+    printf '[Backspace/arrows translated; Ctrl-X kills the line; Ctrl-C interrupts the GUEST]\n'
+    printf '[detach logs the guest out; if the guest ends the session itself, press Ctrl-]]\n'
+    local saved fifo ncpid
+    saved=$(stty -g)
+    fifo=$(mktemp -u "${TMPDIR:-/tmp}/nitros9repl-conn.XXXXXX")
+    mkfifo "$fifo" || return 1
+    stty raw -echo
+    # nc reads the fifo so the filter below owns the terminal; when the filter
+    # exits (Ctrl-], or the guest closing) nc is killed explicitly -- this nc
+    # has no quit-on-stdin-EOF flag to do it for us.
+    nc 127.0.0.1 "$CHAN_PORT" <"$fifo" &
+    ncpid=$!
+    perl -e '
+        $|=1; my $st=0;
+        while (sysread(STDIN,$b,1024)) {
+          for my $c (split //,$b) {
+            my $o=ord($c);
+            if ($st==0) {
+              if    ($o==0x1d) { exit 0 }                          # Ctrl-]
+              elsif ($o==0x1b) { $st=1 }
+              elsif ($o==0x7f) { print "\x08" }                    # Backspace
+              elsif ($o==0x0a) { print "\r" }
+              elsif ($o==0x08||$o==0x18||$o==0x03||$o==0x05||$o==0x0d) { print $c }
+              elsif ($o>=0x20&&$o<=0x7e) { print $c }
+            } elsif ($st==1) {                                     # after Esc
+              if    ($c eq "[") { $st=2 }
+              elsif ($c eq "O") { $st=3 }
+              else { $st=0; redo }                                 # lone Esc: drop it, keep this key
+            } elsif ($st==2) {                                     # CSI sequence
+              next if $o>=0x30&&$o<=0x3f;                          # parameter bytes
+              print "\x08" if $c eq "D";                           # left arrow
+              $st=0;
+            } else {                                               # SS3 (ESC O x)
+              print "\x08" if $c eq "D";
+              $st=0;
+            }
+          }
+        }' >"$fifo"
+    # Log the guest out BEFORE dropping the socket. A client that just
+    # disconnects leaves its login parked on the channel forever -- the guest
+    # is never told -- and each leak permanently costs one of the few /N
+    # devices, until nothing can connect at all (measured: a leaked channel
+    # was still dead 45s later; only a reboot clears it). Esc is SCF's EOF:
+    # one ends a program reading the channel, the second ends the shell, and
+    # inetd then retires the channel properly. Detaching from something
+    # nested deeper than one program may still leak; `restart` clears it.
+    printf '\033' >"$fifo"; sleep 0.4
+    printf '\033' >"$fifo"; sleep 0.4
+    kill "$ncpid" 2>/dev/null
+    wait "$ncpid" 2>/dev/null
+    rm -f "$fifo"
+    stty "$saved"
+    printf '\n[detached, guest logged out]\n'
 }
 
 # Prefer the log file over the pane: it holds the whole run rather than the
