@@ -50,6 +50,7 @@ SRCS = \
     $(CORE)/filestuff.c \
     $(CORE)/filters.c \
     $(CORE)/funcdispatch.c \
+    $(CORE)/hostterm.c \
     $(CORE)/icalls.c \
     $(CORE)/int_move.c \
     $(CORE)/int_rename.c \

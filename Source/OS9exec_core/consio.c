@@ -575,6 +575,15 @@ os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
         return os9error(E_UNIT);
     } /* end exit part */
 
+    /* A /tN in the host-backed range is only a device if OS9T<n> names an
+       endpoint. Unconfigured, it used to fall through and share the MAIN
+       console's stdin/stdout -- so `echo x >/t1` interleaved its bytes into
+       the shell's own prompt, and `tsmon /t1` failed with a misleading
+       E_NOTRDY much later instead of an honest refusal here. Real OS-9 has no
+       device without a descriptor; E_UNIT is what it says for a bad unit. */
+    if (hostterm_in_range( id ) && !hostterm_configured( id ))
+        return os9error(E_UNIT);
+
     spP->term_id= id;
     strcpy( spP->name,&name[1] );
 

@@ -137,7 +137,7 @@ func killContainer(_ name: String) {
 }
 
 func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bool = false,
-         disk: String = diskPath) -> String {
+         disk: String = diskPath, env: [String: String] = [:]) -> String {
     let setup  = "chx \(sdkCmds)\nload math cio\n"
     // ESC then Ctrl-D: EOF is a per-path setting, not a constant. A site whose
     // `.login` runs `tmode eof=04` (a normal thing to do -- it matches Unix)
@@ -253,6 +253,7 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
         }()
         process.environment  = ["OS9DISK": disk,
                                 "OS9H\(scratchDev.dropFirst())": resolvedScratchDisk]
+                               .merging(env) { _, caller in caller }
     }
 
     let stdinPipe  = Pipe()
@@ -309,9 +310,10 @@ var failed = 0
 let filter = CommandLine.arguments.dropFirst().first ?? ""
 
 func run(_ name: String, expectation: String, commands: [String], disk: String = diskPath,
-         timeout: TimeInterval = defaultTimeout, check: (String) -> Bool) {
+         timeout: TimeInterval = defaultTimeout, env: [String: String] = [:],
+         check: (String) -> Bool) {
     guard filter.isEmpty || name.localizedCaseInsensitiveContains(filter) else { return }
-    let output = os9(commands, timeout: timeout, disk: disk)
+    let output = os9(commands, timeout: timeout, disk: disk, env: env)
     if check(output) {
         print("PASS: \(name)")
         passed += 1
@@ -351,6 +353,13 @@ func noError(_ name: String, _ commands: String...) {
     // Match "Error #" — the OS-9 error format — not the startup ioctl message
     run(name, expectation: "no OS-9 error", commands: commands) {
         !$0.contains("Error #")
+    }
+}
+
+func checkEnv(_ name: String, contains pattern: String,
+              env: [String: String], _ commands: String...) {
+    run(name, expectation: "contains: \(pattern)", commands: commands, env: env) {
+        $0.contains(pattern)
     }
 }
 
@@ -2901,6 +2910,15 @@ if !containerized {
 
     try? FileManager.default.removeItem(atPath: scratchDisk + "/prod")
 }
+
+// -- host-backed terminals -------------------------------------------------
+// An unconfigured /tN is not a device. It used to silently alias the main
+// console, so `echo` to it appeared to work while interleaving its bytes into
+// the shell's own prompt -- and `tsmon /t1` failed with a misleading E_NOTRDY
+// much later instead of an honest "no such unit" at open time.
+check("hostterm: unconfigured /t1 is E_UNIT",
+      contains: "Error #000:240 (E_UNIT)",
+      "echo hello >/t1")
 
 // ── Results ───────────────────────────────────────────────────────────────────
 

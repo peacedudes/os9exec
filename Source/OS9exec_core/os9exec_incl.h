@@ -221,6 +221,7 @@
 /* OS9 emulator core */
 #include "c_access.h"
 #include "os9exec_nt.h"
+#include "hostterm.h"
 #include "alarms.h"
 #include "consio.h"
 #include "printer.h"

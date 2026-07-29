@@ -3216,12 +3216,15 @@ ptype_typ IO_Type(ushort pid, char* os9path, ushort mode)
            || ustrcmp(os9path,SerialLineA)==0 /* ts1 */
            || ustrcmp(os9path,SerialLineB)==0 /* ts2 */
           
-            #ifndef linux
+           /* No longer #ifndef linux. /t1../t49 classified as fCons on macOS
+              and as a FILE on Linux, so the same path was a console on one
+              host and not on another -- an accident of the old Mac-only
+              serial code, not a deliberate platform difference. Nothing in
+              the tree depended on the Linux behaviour (checked). */
            || (ustrcmp (os9path,"/t0") == 0)
            || (os9path[0]==PSEP &&
                os9path[1]=='t'  && atoi(&os9path[2])>= 1 && /* /t1 ../t49 */
                                    atoi(&os9path[2])<VModBase)
-            #endif
           #endif
           ) { type= fCons; break; }
 
