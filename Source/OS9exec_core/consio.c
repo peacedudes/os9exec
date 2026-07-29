@@ -294,6 +294,11 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
           return;
       }
 
+      if (hostterm_bound( gConsoleID )) {
+          hostterm_put( gConsoleID, &c,1 );
+          return;
+      }
+
       write( 1,&c,1 );
 
       // not yet supported for Mac Classic/Carbon

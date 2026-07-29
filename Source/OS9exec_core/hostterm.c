@@ -17,6 +17,7 @@
 #include "os9exec_incl.h"
 
 #if defined UNIX && !defined MINGW
+  #include <errno.h>
   #include <fcntl.h>
   #include <termios.h>
   #include <unistd.h>
@@ -211,6 +212,49 @@ void hostterm_close( int term_id )
     h->dev.spP     =  NULL;
 } /* hostterm_close */
 
+int hostterm_put( int term_id, const char* buffer, int n )
+{
+    hostterm_typ* h;
+    int           done= 0;
+    int           tries= 0;
+
+    hostterm_init();
+    if (!hostterm_bound( term_id )) return -1;
+    h= &hostterms[ term_id ];
+
+    while (done<n) {
+        ssize_t w= write( h->fd, buffer+done, (size_t)(n-done) );
+
+        if (w>0) { done+= (int)w; tries= 0; continue; }
+
+        if (w<0 && errno==EAGAIN) {
+            /* Not also checking EWOULDBLOCK: os9exec_incl.h deliberately
+               #undefs it (it becomes an OS-9 error constant instead), and
+               POSIX guarantees the two are the same value wherever both
+               exist, so EAGAIN alone already covers it.
+               The far end is not draining. The fd is deliberately
+               O_NONBLOCK -- blocking here would stall every OS-9 process,
+               because the scheduler is cooperative -- so retry briefly and
+               then report a write error rather than DROP the bytes.
+               Silently dropping is the specific bug that shipped once
+               already: a best-effort auto-LF push was discarded whenever the
+               output FIFO was full, leaving bare-CR lines (fixed in 75a8ea8).
+               Do not "improve" this into a discard.
+               A proper fix parks the process in pWaitWrite exactly as the
+               baud FIFO does (consio.c). Deferred: it needs the saved_cnt /
+               saved_state resume dance, which is its own change. */
+            if (++tries>10) break;
+            usleep( 10000 ); /* 10ms x 10 = 100ms ceiling */
+            continue;
+        }
+
+        if (w<0 && errno==EINTR) continue;
+        return -1; /* genuine error: EIO on a hung-up pty, etc. */
+    }
+
+    return done<n ? -1 : done;
+} /* hostterm_put */
+
 #else /* not UNIX, or MINGW: no termios, no pty */
 
 os9err hostterm_open( int term_id, syspath_typ* spP )
@@ -223,16 +267,13 @@ os9err hostterm_open( int term_id, syspath_typ* spP )
 
 void hostterm_close( int term_id ) { (void)term_id; }
 
-#endif
-
 int hostterm_put( int term_id, const char* buffer, int n )
 {
-    #ifndef __GNUC__
-    #pragma unused( term_id,buffer,n )
-    #endif
-    (void)buffer; (void)n; (void)term_id;
-    return -1; /* filled in by Task 3 */
+    (void)term_id; (void)buffer; (void)n;
+    return -1; /* no host fd on this platform */
 } /* hostterm_put */
+
+#endif
 
 int hostterm_get( int term_id, char* c )
 {

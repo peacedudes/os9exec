@@ -2956,6 +2956,139 @@ checkEnv("hostterm: /t1 refuses a host path that does not exist",
          env: ["OS9T1": "/hostterm-definitely-does-not-exist"],
          "echo x >/t1")
 
+// Creates a pty pair. Returns (masterFD, slaveFD, slaveDeviceName). The TEST
+// owns both ends, so it can drive /tN from outside the emulator with no
+// parsing of emulator output. A pty slave is an ordinary tty device, so this
+// exercises exactly the code path a real /dev/cu.usbserial-* will take.
+//
+// <slave> is deliberately returned OPEN, not closed here, and must stay open
+// (close it only once the caller is done reading). Confirmed live, isolated
+// from hostterm entirely with a bare pty and no os9exec involved: on macOS,
+// once the LAST open reference to a pty's SLAVE closes, any output not yet
+// read by the master is discarded -- even a reader already BLOCKED in read()
+// before the write+close is woken with zero bytes, not the data. This is
+// deterministic, not a scheduling race a fast enough reader could win. The
+// emulator opens the slave BY NAME for the lifetime of one redirected
+// command (e.g. `echo x >/t1` opens, writes and closes the path within that
+// one command) and then closes ITS OWN reference -- if the test had already
+// closed its own copy (as a first version of this helper did), that emulator
+// close would be the LAST reference, and the discard would fire before the
+// test ever got to read(). Holding a second reference open here keeps the
+// refcount above zero for the whole test, so the emulator's own open/close
+// cycle never triggers the discard -- exactly how a real attached `screen`
+// session (which never closes its end) already avoids this in practice.
+// Deliberately does NOT put the pty into raw mode itself. A pty's termios
+// state is one struct shared by both ends -- tcsetattr on the master and on
+// the slave act on the SAME state -- so if this helper called cfmakeraw()
+// here too, that call would already have put the pty in raw mode before the
+// emulator's own hostterm_raw() (which runs on the slave, later) ever got a
+// chance to matter, and the 8-bit-transparency check below could never fail
+// no matter what hostterm_raw() does. Confirmed live: with hostterm_raw()'s
+// own flag-clearing temporarily disabled, the check still passed as long as
+// this function set raw mode too. Leaving the pty in its default (cooked)
+// state here makes hostterm_raw() the ONLY thing that can put it in raw
+// mode, so the check actually exercises it.
+func makePTY() -> (master: Int32, slave: Int32, name: String)? {
+    var master: Int32 = 0
+    var slaveFD: Int32 = 0
+    guard openpty(&master, &slaveFD, nil, nil, nil) == 0 else { return nil }
+    let name = String(cString: ttyname(slaveFD))
+    _ = fcntl(master, F_SETFL, fcntl(master, F_GETFL, 0) | O_NONBLOCK)
+    return (master, slaveFD, name)
+}
+
+// Reads everything currently available on <fd> without blocking.
+func drainNonBlocking(_ fd: Int32) -> [UInt8] {
+    var out = [UInt8]()
+    var buf = [UInt8](repeating: 0, count: 4096)
+    while true {
+        let n = read(fd, &buf, buf.count)
+        if n <= 0 { break }
+        out.append(contentsOf: buf[0..<n])
+    }
+    return out
+}
+
+// Output path: bytes OS-9 writes to /t1 must reach the host endpoint, not the
+// emulator's own stdout. Names checked against `filter` by hand -- this block
+// doesn't go through run()/check(), so it has to opt itself out the same way
+// they do, rather than paying for an emulator run on every unrelated filter.
+let hostOutputName  = "hostterm: output reaches the host endpoint"
+let hostRawModeName = "hostterm: raw mode passes control bytes through unmangled"
+let runHostOutput   = filter.isEmpty || hostOutputName.localizedCaseInsensitiveContains(filter)
+let runHostRawMode  = filter.isEmpty || hostRawModeName.localizedCaseInsensitiveContains(filter)
+
+if runHostOutput || runHostRawMode {
+    if let (master, slave, slaveName) = makePTY() {
+        _ = os9(["echo host-terminal-works >/t1"], env: ["OS9T1": slaveName])
+        usleep(200_000)
+        let text = String(decoding: drainNonBlocking(master), as: UTF8.self)
+
+        if runHostOutput {
+            if text.contains("host-terminal-works") {
+                print("PASS: \(hostOutputName)"); passed += 1
+            } else {
+                print("FAIL: \(hostOutputName)")
+                print("      [pty master should have received the echoed text]")
+                print("      got: \(text.debugDescription.prefix(200))")
+                failed += 1
+            }
+        }
+
+        // 0x11/0x13 are XON/XOFF, 0x7f is DEL, and 0x0a is a bare LF with no
+        // preceding CR of its own. This is the assertion that would catch a
+        // missing raw-mode setup in hostterm_raw -- but XON/XOFF/DEL turned
+        // out NOT to discriminate for this OUTPUT direction: a pty isn't
+        // real hardware, so the input-side flags (IXON, ISTRIP, ICANON) that
+        // would eat/rewrite them on a real serial line are simply irrelevant
+        // to bytes a process WRITES to its slave -- confirmed live, this
+        // check still passed with hostterm_raw()'s own flag-clearing
+        // disabled. The one OUTPUT-direction flag in the raw-mode recipe is
+        // OPOST (c_oflag), which on a cooked pty rewrites a bare LF to CRLF
+        // -- also confirmed live, isolated from hostterm, against a bare
+        // pty with no termios changes on either end. So the bare LF is what
+        // actually exercises hostterm_raw() here; the check asserts the
+        // whole 4-byte sequence arrives EXACTLY as sent (contiguous, in
+        // order), which a spurious inserted CR would break.
+        //
+        // NOT sent as literal bytes in the command text (as first tried):
+        // that hung the whole run. KeyToBuffer() (utilstuff.c) applies
+        // PD_XON/PD_XOFF flow control to the MAIN console's own command-line
+        // input -- typing OS9T1's XOFF (0x13, the same default this device
+        // also uses) sets mco->holdScreen and the console's input pump stops
+        // consuming stdin entirely, with no later XON in the stream to clear
+        // it. That is a property of console 0 reading its own command line,
+        // unrelated to hostterm -- confirmed by reproducing the same hang
+        // against a plain shell with no /t1 involved at all. Routing the
+        // bytes through a file and `tee` avoids the console's keystroke path
+        // completely: `tee` reads them with F$Read, not KeyToBuffer.
+        let rawPath = scratchDisk + "/hostbin"
+        let expectedRaw: [UInt8] = [0x11, 0x13, 0x0a, 0x7f]
+        try? Data(expectedRaw).write(to: URL(fileURLWithPath: rawPath))
+
+        _ = os9(["tee /t1 <\(scratch)/hostbin"], env: ["OS9T1": slaveName])
+        usleep(200_000)
+        let bytes = drainNonBlocking(master)
+        try? FileManager.default.removeItem(atPath: rawPath)
+        close(master)
+        close(slave)
+
+        if runHostRawMode {
+            if Data(bytes).range(of: Data(expectedRaw)) != nil {
+                print("PASS: \(hostRawModeName)"); passed += 1
+            } else {
+                print("FAIL: \(hostRawModeName)")
+                print("      [XON/XOFF/LF/DEL should survive a raw-mode round trip intact]")
+                print("      got: \(bytes.map { String(format: "%02x", $0) }.joined(separator: " "))")
+                failed += 1
+            }
+        }
+    } else {
+        print("FAIL: hostterm: could not create a pty pair")
+        failed += 1
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us
