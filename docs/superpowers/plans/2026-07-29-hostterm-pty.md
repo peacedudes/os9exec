@@ -1572,6 +1572,11 @@ device does not exist and opening it returns `E_UNIT`. `OS9T1=pty` makes
 /dev/ttys004`); `OS9T1=/dev/cu.usbserial-1420` opens a real serial port. With
 `tsmon /t1` running inside OS-9, that terminal gets its own login prompt — one
 emulator, several independent sessions.
+
+A binding lasts for the life of the emulator, not the life of the path that
+opened it — so the device you attached to stays the same device between
+commands, and the terminal is 8-bit transparent, which is what lets `kermit`
+move a binary across it intact.
 ```
 
 Verify the claim about `E_UNIT` against the code before writing it, and check the surrounding README voice so this reads like the rest of the file.
