@@ -53,11 +53,12 @@
 #   - Escape ($1B) is OS-9's default SCF end-of-file character, so the shell
 #     exits normally when it reads one. Under inetd that is recoverable
 #     without a restart: the next `send` opens a new connection and inetd
-#     forks another shell. `connect` translates a modern terminal's keys for
-#     OS-9 (Backspace/left-arrow -> $08, other arrows swallowed whole, Ctrl-C
-#     passed through as the guest's interrupt, Ctrl-D -> Esc for a deliberate
-#     EOF) and still blocks a bare Esc so a reflexive tap can't log you out.
-#     For the scripted pane's session, a deliberate EOF is: key Escape
+#     forks another shell. `connect` passes the keyboard through to the guest
+#     essentially untouched -- Ctrl-A (recall), Tab, Ctrl-C, Ctrl-D, Ctrl-W
+#     and Esc all reach SCF as themselves, so `tmode` stays the one place any
+#     of them is remapped. The lone exception is the Backspace key, which
+#     sends DEL ($7F) where SCF wants BS ($08). For the scripted pane's
+#     session, a deliberate EOF is: key Escape
 #
 # Copyright notice (disk image content):
 #   Anything observable through this REPL depends on what is in your disk
@@ -254,6 +255,13 @@ send_one_key() {
     case "$k" in
         Enter|Return|enter)  tmux send-keys -t "$SESSION:chan" "Enter" ;;
         Space|space)         tmux send-keys -t "$SESSION:chan" " " ;;
+        # Named because the fallback branch would otherwise type the word:
+        # `key ab Tab cd` really did put "abTabcd" on the guest's line.
+        Tab|tab)             tmux send-keys -t "$SESSION:chan" -l -- "$(printf '\t')" ;;
+        # The Backspace KEY sends DEL, which SCF ignores at the default
+        # bsp=08 -- both spellings exist so a test can tell them apart.
+        BSpace|bspace)       tmux send-keys -t "$SESSION:chan" -l -- "$(printf '\010')" ;;
+        DEL|Delete|del)      tmux send-keys -t "$SESSION:chan" -l -- "$(printf '\177')" ;;
         # Escape is OS-9's default SCF end-of-file character: sending one to
         # the session is a deliberate EOF (the shell exits on it; the next
         # `send` reconnects and inetd forks a new one).
@@ -462,25 +470,41 @@ cmd_connect() {
         return
     fi
 
-    # A human terminal gets a raw, character-at-a-time session with the keys
-    # translated to what OS-9's SCF expects, because a modern terminal and a
-    # 1980 serial line disagree about almost everything:
-    #   Backspace key (DEL, $7F)  -> $08, OS-9 backspace (guest echoes the erase)
-    #   Left arrow (ESC [ D)      -> $08 as well; other arrows are swallowed
-    #                                whole, so no stray "[A" lands in the line
-    #   Ctrl-X                    -> through: OS-9 delete-line
-    #   Ctrl-C / Ctrl-E           -> through: the GUEST's interrupt/quit keys
-    #                                (raw mode means they no longer signal us)
-    #   Ctrl-D                    -> Esc, a DELIBERATE OS-9 EOF: ends tee/list
-    #                                input, or the shell itself (= logout)
-    #   bare Esc                  -> blocked: too easy to hit by reflex, and it
-    #                                is SCF's EOF; Ctrl-D is the intended one
-    #   Ctrl-]                    -> detach (the one key kept for ourselves)
+    # A human terminal gets a raw, character-at-a-time session that passes the
+    # keyboard through essentially untouched. It deliberately does NOT rewrite
+    # the control codes SCF already owns, because every one of them is a
+    # *guest-side* setting: `tmode` reports bsp=08 del=18 eor=0D eof=1B
+    # reprint=04 dup=01 psc=17 abort=03 quit=05, and remapping any of them here
+    # both hides the real key and overrides the user's own tmode. An earlier
+    # version allowed only six control bytes through, which silently killed
+    # Ctrl-A (dup -- recall last line, OS-9's entire command history), Tab,
+    # Ctrl-W (psc), Ctrl-D (reprint) and 21 others; verified live 2026-07-29.
+    # So the translation table is now down to what a modern terminal genuinely
+    # cannot express:
+    #   Backspace key (DEL, $7F)  -> $08. The only remap. The key sends DEL and
+    #                                SCF wants BS; doing it here rather than via
+    #                                `tmode bsp=7F` keeps BOTH Backspace and
+    #                                Ctrl-H erasing (bsp is one byte, so the
+    #                                guest-side fix can only ever honour one).
+    #   LF ($0A)                  -> CR, OS-9's eor. Matters for pasted text;
+    #                                a raw terminal's Return is already CR.
+    #   ESC [ ... / ESC O ...     -> swallowed whole. Not a remap: arrow and
+    #                                function keys have no OS-9 meaning, and
+    #                                leaking them would spend the Esc as an EOF
+    #                                and drop "[A" into the line.
+    #   bare Esc                  -> passed through as the real $1B EOF, once
+    #                                ESC_WAIT has proved no sequence follows it.
+    #   everything else <= $7F    -> passed through untouched, Ctrl-A and Tab
+    #                                and Ctrl-C and Ctrl-D included.
+    #   Ctrl-] ($1D)              -> detach (the one key kept for ourselves)
+    # Bytes above $7F are dropped: they have no OS-9 meaning and are far more
+    # often a stray Option-key accident than an intentional send.
     # Output needs no translation: inetd sets PD.ALF, so the guest sends CR LF,
     # which a raw terminal renders correctly as-is.
     printf '[connecting to the guest shell on port %s — Ctrl-] to detach]\n' "$CHAN_PORT"
-    printf '[Backspace/arrows translated; Ctrl-X kills the line; Ctrl-C interrupts the GUEST]\n'
-    printf '[Ctrl-D sends OS-9 EOF (Esc); after the guest ends the session, press Ctrl-]]\n'
+    printf '[Keys pass through to OS-9: Ctrl-A recalls, Ctrl-X kills the line,]\n'
+    printf '[Ctrl-C/Ctrl-E interrupt the GUEST, Esc is EOF. Backspace erases.]\n'
+    printf '[Remap them guest-side with tmode; arrow keys are swallowed.]\n'
     local saved fifo ncpid
     saved=$(stty -g)
     fifo=$(mktemp -u "${TMPDIR:-/tmp}/nitros9repl-conn.XXXXXX")
@@ -492,28 +516,37 @@ cmd_connect() {
     nc 127.0.0.1 "$CHAN_PORT" <"$fifo" &
     ncpid=$!
     perl -e '
-        $|=1; my $st=0;
-        while (sysread(STDIN,$b,1024)) {
+        $|=1;
+        my $st=0;                                                  # 0 normal, 1 after Esc, 2 CSI, 3 SS3
+        my $ESC_WAIT=0.05;                                         # how long a lone Esc waits for a sequence
+        my $rin=""; vec($rin,fileno(STDIN),1)=1;
+        while (1) {
+          # Only state 1 is time-sensitive: an Esc that ends a read is either a
+          # real EOF keypress or the head of an arrow key, and nothing but the
+          # gap between them tells the two apart. Every other state blocks.
+          if (!select(my $r=$rin,undef,undef,$st==1 ? $ESC_WAIT : undef)) {
+            print "\x1b"; $st=0; next;                             # nothing followed: a real Esc
+          }
+          my $n=sysread(STDIN,my $b,1024);
+          # EOF is readable, so it beats the ESC_WAIT timeout: flush a still-
+          # undecided Esc rather than swallowing it as the terminal closes.
+          if (!defined $n || $n==0) { print "\x1b" if $st==1; last }
           for my $c (split //,$b) {
             my $o=ord($c);
             if ($st==0) {
-              if    ($o==0x1d) { exit 0 }                          # Ctrl-]
-              elsif ($o==0x04) { print "\x1b" }                    # Ctrl-D -> OS-9 EOF (Esc)
-              elsif ($o==0x1b) { $st=1 }
-              elsif ($o==0x7f) { print "\x08" }                    # Backspace
-              elsif ($o==0x0a) { print "\r" }
-              elsif ($o==0x08||$o==0x18||$o==0x03||$o==0x05||$o==0x0d) { print $c }
-              elsif ($o>=0x20&&$o<=0x7e) { print $c }
+              if    ($o==0x1d) { exit 0 }                          # Ctrl-]: ours, the detach key
+              elsif ($o==0x1b) { $st=1 }                           # decide once we see what follows
+              elsif ($o==0x7f) { print "\x08" }                    # Backspace key -> SCF bsp
+              elsif ($o==0x0a) { print "\r" }                      # LF -> SCF eor
+              elsif ($o<=0x7f) { print $c }                        # everything else, untouched
             } elsif ($st==1) {                                     # after Esc
               if    ($c eq "[") { $st=2 }
               elsif ($c eq "O") { $st=3 }
-              else { $st=0; redo }                                 # lone Esc: drop it, keep this key
-            } elsif ($st==2) {                                     # CSI sequence
+              else { print "\x1b"; $st=0; redo }                   # real Esc, then this key
+            } elsif ($st==2) {                                     # CSI: swallow to the final byte
               next if $o>=0x30&&$o<=0x3f;                          # parameter bytes
-              print "\x08" if $c eq "D";                           # left arrow
               $st=0;
-            } else {                                               # SS3 (ESC O x)
-              print "\x08" if $c eq "D";
+            } else {                                               # SS3 (ESC O x): one final byte
               $st=0;
             }
           }
@@ -583,7 +616,8 @@ case "${1:-help}" in
         printf '  key K [K...]     send raw keystrokes (no Enter); special: Enter Space C-x\n'
         printf '  snap [label]     print labeled snapshot of the channel pane\n'
         printf '  peek             show full current channel pane\n'
-        printf '  connect          interactive session in your own terminal (Ctrl-C detaches)\n'
+        printf '  connect          interactive session in your own terminal (Ctrl-] detaches;\n'
+    printf '                   Ctrl-C goes to the GUEST, as do Ctrl-A/Tab/Ctrl-D/Esc)\n'
         printf '  server           show the DriveWire protocol log\n'
         printf '  stop             kill the session (server + XRoar)\n'
         printf '  restart          stop + start\n'
