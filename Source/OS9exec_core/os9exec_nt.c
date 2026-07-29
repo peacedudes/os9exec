@@ -1708,8 +1708,15 @@ static void CheckStartup( int cpid, char* toolname, int *argc, char **argv )
 
 
 #if defined windows32 || defined MINGW
-  /* catch the Ctrl C */
-  static BOOL CtrlC_Handler( DWORD ctrlType )
+  /* catch the Ctrl C.
+   *
+   * WINAPI (__stdcall) is part of the type, not decoration: SetConsoleCtrlHandler
+   * takes a PHANDLER_ROUTINE, which is __stdcall. On x86_64 Windows there is only
+   * one calling convention, so __stdcall is ignored and omitting it compiled
+   * silently; on 32-bit Windows __cdecl and __stdcall disagree about who cleans
+   * up the stack, so the omission is a hard incompatible-pointer error -- and
+   * would corrupt the stack on every Ctrl-C if it were cast through. */
+  static BOOL WINAPI CtrlC_Handler( DWORD ctrlType )
   {
     Boolean fnd= false;
 
