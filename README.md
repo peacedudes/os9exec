@@ -107,7 +107,7 @@ You can also attach extra host directories as `/h1`, `/h2`, etc. (see [Devices](
 |--------|------------|-----------------|
 | `/dd`  | `OS9DISK=…` env var, or a `dd` file/dir next to the binary | Default drive — RBF image or host directory |
 | `/h0`–`/h9`, `/ha`–`/hz` | `OS9H0=…` through `OS9HZ=…`, or files/dirs named `h0`–`hz` next to the binary | RBF disk images or host directories |
-| `/t1`–`/t49` | `OS9T1=…` through `OS9T49=…` | Terminals. `pty` allocates one and prints the device to attach to; a `/dev/…` path opens that terminal or serial port. Unset means the device does not exist. |
+| `/t1`–`/t49` | `OS9T1=…` through `OS9T49=…`, or the wildcard `OS9T=…` for any `/tN` not named individually | Terminals. `pty` allocates one and prints the device to attach to; a `/dev/…` path opens that terminal or serial port. Unset (and no wildcard) means the device does not exist. |
 
 Files placed in a host directory appear immediately inside the emulator as OS-9 files, with no conversion needed for binary modules. Text files need OS-9 line endings (CR, `0x0D`) rather than Unix LF — the emulator handles this transparently for `I$ReadLn`/`I$WritLn`, but raw byte copies preserve whatever endings are in the file.
 
@@ -174,6 +174,8 @@ dsave -ive /h7
 **Device-resolution order, if you're layering these:** for any `/hX` path, `os9exec` checks, in order: (1) the `OS9Hx` environment variable, if set; (2) a file/dir named `hX` next to the binary — what `mount -k` writes; (3) one directory level up from the binary (a legacy fallback). An explicit `mount <file> <name>` (or `mount -r=`) call takes priority over all three for as long as the process keeps running.
 
 **Terminals resolve directly, with no search.** Unlike `/hX` — which falls back through `OS9Hx`, then a file next to the binary, then one directory up — a terminal is bound only by its `OS9Tn` variable. Set means bound; unset means the device does not exist, and opening it returns `E_UNIT`. `OS9T1=pty` makes `os9exec` allocate a terminal and print the device to attach to (`screen /dev/ttys004`); `OS9T1=/dev/cu.usbserial-1420` opens a real serial port. With `tsmon /t1` running inside OS-9, that terminal gets its own login prompt — one emulator, several independent sessions.
+
+There's also a bare `OS9T` wildcard, for when you want every `/tN` you haven't named individually to spring up as a pty on first use: `OS9T=pty ./os9exec shell` and `/t1`, `/t2`, and so on each allocate the moment something opens them, no per-device variable needed. It's deliberately opt-in. Without it the refusal above stands exactly as described — a typo like `/t5` for `/t4` still reports `E_UNIT` rather than silently handing you a terminal nobody is attached to — and a per-device `OS9Tn` always takes priority over the wildcard, including its failures: if you name a real serial port that turns out to be missing, you get that error, not a surprise pty. The two combine freely, e.g. `OS9T=pty OS9T1=/dev/cu.usbserial-1420` puts real hardware on `/t1` and lets every other terminal allocate on demand.
 
 A binding lasts for the life of the emulator, not the life of the path that opened it, so the device you attached to stays the same device between commands — and the terminal is 8-bit transparent, which is what lets `kermit` move a binary across it intact.
 

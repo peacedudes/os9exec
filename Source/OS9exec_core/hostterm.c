@@ -93,6 +93,20 @@ static char* hostterm_spec( int term_id )
     v= getenv( name );
 
     if (v!=NULL && *v==NUL) v= NULL; /* set-but-empty means unset */
+
+    /* Fall back to the bare OS9T wildcard: "any /tN not named individually".
+       Deliberately opt-in. Auto-allocating by default would turn a typo
+       (">/t5" for ">/t4") into a terminal nobody is attached to, silently --
+       and unlike /hx's fallback, which DISCOVERS a directory that already
+       exists, this CREATES a resource, so it can never fail to find anything
+       and can never tell you that you were wrong. Real OS-9 has no device
+       without a descriptor; E_UNIT stays the default because it is the
+       faithful answer. */
+    if (v==NULL) {
+        v= getenv( "OS9T" );
+        if (v!=NULL && *v==NUL) v= NULL;
+    }
+
     return v;
 } /* hostterm_spec */
 

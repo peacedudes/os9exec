@@ -3390,6 +3390,48 @@ if runHostSpeedTmode {
     }
 }
 
+// -- OS9T=pty: opt-in wildcard for any /tN not named individually -----------
+// Real OS-9 has no device without a descriptor -- an unconfigured /tN
+// staying E_UNIT is deliberate (see the very first hostterm test above), so
+// this wildcard exists to opt INTO auto-allocation, never to become the
+// default. /t5 is unconfigured by every other test in this file, so it is
+// free to use here without colliding with anything else's OS9T5.
+let hostWildcardName       = "hostterm: OS9T=pty serves an unconfigured /tN"
+let hostWildcardStrictName = "hostterm: an unconfigured /tN still refuses without OS9T=pty"
+let runHostWildcard        = filter.isEmpty || hostWildcardName.localizedCaseInsensitiveContains(filter)
+let runHostWildcardStrict  = filter.isEmpty || hostWildcardStrictName.localizedCaseInsensitiveContains(filter)
+
+if runHostWildcard {
+    let wild = os9(["echo x >/t5"], env: ["OS9T": "pty"])
+
+    if wild.contains("attach with: screen") && !wild.contains("Error #000:240") {
+        print("PASS: \(hostWildcardName)"); passed += 1
+    } else {
+        print("FAIL: \(hostWildcardName)")
+        print("      [expected an allocation announcement (attach with: screen ...)]")
+        print("      got: \(wild.debugDescription.prefix(200))")
+        failed += 1
+    }
+}
+
+if runHostWildcardStrict {
+    // Guards the DECISION, not the code: the default must keep refusing even
+    // though the wildcard now exists, because auto-allocation is opt-in. A
+    // later change that made it implicit would break this test, which is
+    // the point -- it is not redundant with the very first hostterm test,
+    // which predates the wildcard entirely.
+    let strict = os9(["echo x >/t5"])
+
+    if strict.contains("Error #000:240 (E_UNIT)") {
+        print("PASS: \(hostWildcardStrictName)"); passed += 1
+    } else {
+        print("FAIL: \(hostWildcardStrictName)")
+        print("      [expected Error #000:240 (E_UNIT)]")
+        print("      got: \(strict.debugDescription.prefix(200))")
+        failed += 1
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us
