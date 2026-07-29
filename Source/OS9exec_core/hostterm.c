@@ -14,11 +14,21 @@
 //    there is nothing to search for. Set = bound, unset = E_UNIT.
 //
 
+/* glibc gates posix_openpt/grantpt/unlockpt/ptsname behind __USE_XOPEN2K(8),
+   which needs _XOPEN_SOURCE/_POSIX_C_SOURCE/_GNU_SOURCE -- none of which this
+   tree's Linux build defines. Same fix utilstuff.c already uses for
+   realpath() (a different gate, __USE_MISC, but the same "must be defined
+   before the first system header" constraint): must come before
+   os9exec_incl.h or the include guard locks the declarations out. Harmless
+   on Darwin, which declares all four unconditionally. */
+#define _GNU_SOURCE
+
 #include "os9exec_incl.h"
 
 #if defined UNIX && !defined MINGW
   #include <errno.h>
   #include <fcntl.h>
+  #include <stdlib.h>
   #include <termios.h>
   #include <unistd.h>
 #endif
@@ -26,6 +36,8 @@
 typedef struct {
     Boolean     open;       /* host fd is live */
     int         fd;         /* -1 when not open */
+    int         spareFd;    /* self-allocated pty only; -1 otherwise -- see
+                                its own comment in hostterm_open */
     ttydev_typ  dev;        /* per-device input buffer; KeyToBuffer target */
     char        endpoint[OS9PATHLEN]; /* what we actually opened, for messages */
 } hostterm_typ;
@@ -43,6 +55,7 @@ static void hostterm_init( void )
     for (k=0; k<=HOSTTERM_MAX; k++) {
         hostterms[k].open       = false;
         hostterms[k].fd         =    -1;
+        hostterms[k].spareFd    =    -1;
         hostterms[k].endpoint[0]=   NUL;
         hostterms[k].dev.installed = false;
         hostterms[k].dev.inBufUsed =     0;
@@ -153,36 +166,95 @@ os9err hostterm_open( int term_id, syspath_typ* spP )
     spec= hostterm_spec( term_id );
     if (spec==NULL) return os9error(E_UNIT);
 
-    if (*spec!=PATHDELIM) {
-        /* "pty" arrives in Task 5; anything else is simply not an endpoint.
-           Refuse loudly -- a mistyped OS9T1 must not look like it worked. */
+    if (ustrcmp( spec,"pty" )==0) {
+        char* slave;
+        int   spareFd;
+
+        fd= posix_openpt( O_RDWR | O_NOCTTY );
+        if (fd<0 || grantpt( fd )!=0 || unlockpt( fd )!=0) {
+            uphe_printf( "OS9T%d: cannot allocate a pty\n", term_id );
+            if (fd>=0) close( fd );
+            return os9error(E_DEVBSY);
+        }
+
+        slave= ptsname( fd );
+        if (slave==NULL) {
+            uphe_printf( "OS9T%d: pty has no slave name\n", term_id );
+            close( fd );
+            return os9error(E_DEVBSY);
+        }
+
+        /* Open our own reference to the slave and hold it for the life of
+           this binding. Verified necessary on macOS, not cosmetic:
+             1. tcgetattr on the bare MASTER from posix_openpt fails ENOTTY
+                ("Inappropriate ioctl for device") until the slave has been
+                opened at least once -- so the hostterm_raw() call below,
+                which runs on <fd> (the master) for both endpoint spellings,
+                would otherwise fail every time for "pty" and this whole
+                endpoint would silently never work. A pty's termios is one
+                struct shared by both ends (confirmed live: setting raw mode
+                via the master after this open is visible reading it back
+                from the slave), so opening the slave here is enough to
+                unlock it -- the raw-mode call itself still targets <fd>.
+             2. Separately, once the LAST open reference to a pty's slave
+                closes, any output not yet read by the far end is discarded
+                on macOS, deterministically. Before whoever runs `screen`
+                ever attaches, this spare reference is what keeps early
+                output alive to be read once they do. */
+        spareFd= open( slave, O_RDWR | O_NOCTTY );
+        if (spareFd<0) {
+            uphe_printf( "OS9T%d: cannot open pty slave '%s'\n", term_id, slave );
+            close( fd );
+            return host2os9err( spareFd, E_DEVBSY );
+        }
+        h->spareFd= spareFd;
+
+        /* The name is the whole point -- without it there is no way to
+           attach. stderr via uphe_printf, so it survives stdout redirection
+           and matches the emulator's other "# ..." startup messages. */
+        uphe_printf( "/t%d is %s   (attach with: screen %s)\n",
+                     term_id, slave, slave );
+
+        /* We hold the MASTER. O_NONBLOCK is set here rather than at
+           posix_openpt because the grant/unlock dance wants the plain fd. */
+        fcntl( fd, F_SETFL, fcntl( fd,F_GETFL,0 ) | O_NONBLOCK );
+        strncpy( h->endpoint,slave, OS9PATHLEN-1 );
+                 h->endpoint[       OS9PATHLEN-1 ]= NUL;
+    }
+    else if (*spec==PATHDELIM) {
+        /* O_NONBLOCK at open, and kept: it skips the carrier-detect wait a
+           real serial port would otherwise impose, and it is what keeps
+           every later read non-blocking. O_NOCTTY: this must never become
+           our controlling terminal, which would route the host's
+           job-control signals here. */
+        fd= open( spec, O_RDWR | O_NOCTTY | O_NONBLOCK );
+        if (fd<0) {
+            uphe_printf( "OS9T%d: cannot open '%s'\n", term_id, spec );
+            /* <fd> is -1: host2os9err's UNIX arm wants the POSIX RETURN
+               CODE, not an errno -- it reads errno itself, and returns
+               SUCCESS if handed 0. E_DEVBSY stays as the fallback for an
+               errno it does not map. */
+            return host2os9err( fd, E_DEVBSY );
+        }
+        strncpy( h->endpoint,spec, OS9PATHLEN-1 );
+                 h->endpoint[      OS9PATHLEN-1 ]= NUL;
+    }
+    else {
+        /* Neither spelling: refuse loudly -- a mistyped OS9T1 must not look
+           like it worked. */
         uphe_printf( "OS9T%d: unsupported endpoint '%s'\n", term_id, spec );
         return os9error(E_UNIT);
     }
 
-    /* O_NONBLOCK at open, and kept: it skips the carrier-detect wait a real
-       serial port would otherwise impose, and it is what keeps every later
-       read non-blocking. O_NOCTTY: this must never become our controlling
-       terminal, which would route the host's job-control signals here. */
-    fd= open( spec, O_RDWR | O_NOCTTY | O_NONBLOCK );
-    if (fd<0) {
-        uphe_printf( "OS9T%d: cannot open '%s'\n", term_id, spec );
-        /* <fd> is -1: host2os9err's UNIX arm wants the POSIX RETURN CODE, not
-           an errno -- it reads errno itself, and returns SUCCESS if handed 0.
-           E_DEVBSY stays as the fallback for an errno it does not map. */
-        return host2os9err( fd, E_DEVBSY );
-    }
-
     if (!hostterm_raw( fd )) {
-        uphe_printf( "OS9T%d: '%s' is not a terminal\n", term_id, spec );
+        uphe_printf( "OS9T%d: '%s' is not a terminal\n", term_id, h->endpoint );
         close( fd );
+        if (h->spareFd>=0) { close( h->spareFd ); h->spareFd= -1; }
         return os9error(E_DEVBSY);
     }
 
     h->fd  = fd;
     h->open= true;
-    strncpy( h->endpoint,spec, OS9PATHLEN-1 );
-             h->endpoint[      OS9PATHLEN-1 ]= NUL;
 
     h->dev.installed = true;
     h->dev.inBufUsed =     0;
@@ -191,7 +263,7 @@ os9err hostterm_open( int term_id, syspath_typ* spP )
     h->dev.spP       =   spP;
 
     debugprintf( dbgTerminal,dbgNorm,
-                 ( "# hostterm: /t%d -> %s (fd %d)\n", term_id, spec, fd ) );
+                 ( "# hostterm: /t%d -> %s (fd %d)\n", term_id, h->endpoint, fd ) );
     return 0;
 } /* hostterm_open */
 
@@ -207,6 +279,7 @@ void hostterm_close( int term_id )
 
     close( h->fd );
     h->fd          =    -1;
+    if (h->spareFd>=0) { close( h->spareFd ); h->spareFd= -1; }
     h->open        = false;
     h->dev.installed= false;
     h->dev.spP     =  NULL;

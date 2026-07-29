@@ -3155,6 +3155,54 @@ if runHostInput {
     }
 }
 
+// -- OS9Tn=pty: self-allocated pty, self-reported slave name ----------------
+// A named endpoint (OS9T1=/dev/ttysNNN) requires the pty to already exist,
+// which is fine for a test that creates the pair itself, but useless for the
+// interactive case this endpoint exists for: you cannot name a pty that has
+// not been allocated yet. `pty` makes hostterm allocate one itself and report
+// the slave name to attach to.
+let hostPtyNameName  = "hostterm: OS9T1=pty reports a slave device to attach to"
+let hostPtyCarryName = "hostterm: OS9T1=pty carries output off the console"
+let runHostPtyName   = filter.isEmpty || hostPtyNameName.localizedCaseInsensitiveContains(filter)
+let runHostPtyCarry  = filter.isEmpty || hostPtyCarryName.localizedCaseInsensitiveContains(filter)
+
+if runHostPtyName || runHostPtyCarry {
+    // NOTE: do NOT "strengthen" assertion 1 by stat()ing the reported path.
+    // On macOS /dev/ttysNNN are STATIC device nodes that exist whether or not
+    // anything allocated them, so a stat() check would pass unconditionally --
+    // vacuous. Liveness is proved by assertion 2 and by interactive
+    // verification (screen + tsmon), not by stat().
+    let ptyOut = os9(["dir /dd >/t1"], env: ["OS9T1": "pty"])
+
+    if runHostPtyName {
+        if ptyOut.range(of: "/dev/[a-z]*tty[a-zA-Z0-9/]+", options: .regularExpression) != nil {
+            print("PASS: \(hostPtyNameName)"); passed += 1
+        } else {
+            print("FAIL: \(hostPtyNameName)")
+            print("      [no /dev/...tty... name found in emulator output]")
+            print("      got: \(ptyOut.debugDescription.prefix(200))")
+            failed += 1
+        }
+    }
+
+    // "DEFS" is a directory on the system disk, so it appears in a `dir /dd`
+    // listing -- and it appears in NO command this harness sends (the setup
+    // lines are `chx <sdkCmds>` and `load math cio`). The shell echoes every
+    // command it runs, so a check on the command text alone could never fail
+    // (see Global Constraints); DEFS only ever appears via the listing itself.
+    // Before Task 5, `pty` is refused, the redirection never takes effect, and
+    // the listing lands on the console -- so this assertion fails honestly.
+    if runHostPtyCarry {
+        if !ptyOut.contains("DEFS") {
+            print("PASS: \(hostPtyCarryName)"); passed += 1
+        } else {
+            print("FAIL: \(hostPtyCarryName)")
+            print("      [listing reached the console, so /t1 was not the pty]")
+            failed += 1
+        }
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us
