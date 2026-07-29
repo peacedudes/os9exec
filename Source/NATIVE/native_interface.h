@@ -67,11 +67,14 @@
   /* Same LLP64 caveat as c_access.h: `ulong` is the pointer-width native word,
    * and this header's Call_Intercept() passes a host pointer in one. mingw is
    * __GNUC__, where plain `unsigned long` is only 32 bits, so it needs the
-   * `unsigned long long` branch to agree with os9main_incl_precomp.h. Dormant
-   * today (this file is built only under PTOC_SUPPORT/NATIVE_SUPPORT, neither
-   * of which is enabled for mingw), but the trap is identical -- keep in step. */
+   * `uintptr_t` branch to agree with os9main_incl_precomp.h -- derived from the
+   * pointer, not hardcoded 64-bit, because __MINGW32__ covers the 32-bit
+   * toolchain too. Dormant today (this file is built only under
+   * PTOC_SUPPORT/NATIVE_SUPPORT, neither of which is enabled for mingw), but
+   * the trap is identical -- keep in step. */
+  #include <stdint.h>
   #if defined __MINGW32__ || defined __MINGW64__
-    typedef unsigned long long ulong;
+    typedef uintptr_t ulong;
   #elif defined __MACH__ || defined __GNUC__
     typedef unsigned long  ulong;
   #endif

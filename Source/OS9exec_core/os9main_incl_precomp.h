@@ -514,6 +514,7 @@ typedef struct dirent dirent_typ;
 
 
 // define type shortcuts
+#include <stdint.h>  /* uintptr_t -- see the MINGW `ulong` typedef below */
 #ifndef  __GLOBDEF
 #define  __GLOBDEF
   typedef unsigned char  byte;
@@ -559,8 +560,17 @@ typedef struct dirent dirent_typ;
      * width "native word" for stashing host pointers (see os9_ll.h's
      * TO68K/FROM68K neighbourhood and the `(ulong)&procs[k]` casts in
      * fcalls.c/icalls.c/filestuff.c) -- `unsigned long` here would
-     * silently truncate every 64-bit pointer stored in one. */
-    typedef unsigned long long ulong;
+     * silently truncate every 64-bit pointer stored in one.
+     *
+     * `uintptr_t`, not a hardcoded `unsigned long long`: __MINGW32__ is
+     * defined by the 32-bit toolchain TOO, so a fixed 64-bit width was
+     * right for x86_64 and wrong for i686, where pointers are 32 bits --
+     * 24 pointer/int cast-size warnings, the mirror image of the LLP64
+     * truncation this branch exists to prevent. Deriving the width from
+     * the pointer makes the "native word" contract true by construction
+     * on every target; on x86_64 mingw this resolves to the same
+     * `unsigned long long` it always was. */
+    typedef uintptr_t ulong;
   #endif
 
   #if defined __INTEL__ || defined __MACH__

@@ -75,8 +75,10 @@
   /* Windows is LLP64: `long` stays 32-bit even in a 64-bit build, so `unsigned
    * long` is NOT pointer-width there. `ulong` is this codebase's pointer-width
    * "native word" (host pointers are stashed in one -- see os9_ll.h and the
-   * `(ulong)&procs[k]` casts), so mingw must get `unsigned long long`, exactly
-   * as os9main_incl_precomp.h already does.
+   * `(ulong)&procs[k]` casts), so mingw must derive it from `uintptr_t`,
+   * exactly as os9main_incl_precomp.h already does -- and NOT hardcode
+   * `unsigned long long`, which is right only for x86_64: __MINGW32__ is
+   * defined by the 32-bit toolchain as well, where pointers are 32 bits.
    *
    * This header has to repeat that decision rather than defer to it: both
    * headers open with `#ifndef __GLOBDEF`, so only the first one included wins,
@@ -90,7 +92,7 @@
    * against mingw-w64: sizeof(ulong)!=sizeof(void*) in this TU, and ==, in the
    * others. Keep the two branches in step. */
   #if defined __MINGW32__ || defined __MINGW64__
-    typedef unsigned long long ulong;
+    typedef uintptr_t ulong;
   #elif defined __MACH__ || defined __GNUC__ || defined MPW
     typedef unsigned long  ulong;
   #endif
