@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# coco -- one command for a live CoCo shell.
+#
+#   coco                 boot NitrOS-9 if it is not already up, then connect
+#   coco <anything...>   handed straight to tools/nitros9repl.sh
+#
+# A bare `coco` is idempotent: run it any time, as often as you like. If a
+# guest is already running it just connects to it; if not it boots one first.
+# The disk is a private scratch clone the helper creates and reuses on its own
+# (~/.cache/nitros9repl/eou-clone) -- the golden master is never booted, since
+# XRoar edits its image in place. Delete that directory to reset the disk.
+#
+# Everything else is the helper's own vocabulary, so these all work:
+#   coco send 'dir /dd'      one scripted command, gated on the prompt
+#   coco key Enter           raw keystrokes
+#   coco stop | restart      tear down / rebuild
+#   coco server              the DriveWire protocol log
+#   coco help                the full list
+#
+# In the interactive session, keys reach OS-9 as a CoCo sends them: arrows and
+# F1/F2 as their real codes (left arrow erases, shift-left kills the line),
+# Ctrl-A recalls the last line, Ctrl-C/Ctrl-E interrupt the GUEST, Esc is EOF.
+# Ctrl-] is the one key kept back, to detach.
+
+set -u
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPL="$HERE/nitros9repl.sh"
+
+[ -x "$REPL" ] || { printf 'coco: cannot find %s\n' "$REPL" >&2; exit 1; }
+
+# Anything with arguments is just a friendlier spelling of the helper.
+if [ $# -gt 0 ]; then
+    exec "$REPL" "$@"
+fi
+
+# --- bare `coco`: guarantee a guest, then hand over the terminal ------------
+
+# `peek` fails when no session is up, which is the first question here.
+if ! "$REPL" peek >/dev/null 2>&1; then
+    printf '[No CoCo running -- booting one, give it a few seconds]\n'
+    "$REPL" start || exit 1
+else
+    printf '[CoCo already running -- connecting]\n'
+fi
+
+# A tmux session existing is NOT the same as a usable guest, and the gap is
+# worth warning about because the symptom is silence rather than an error:
+# every login left stranded by a client that dropped its socket costs one of
+# the few /N devices, and once they are gone inetd answers each new connection
+# with tcp kill -- TCP connects fine and no banner ever arrives. Only a reboot
+# clears it. There is deliberately no active health probe here: the only way to
+# ask is to open a session, which spends one of the very channels that are
+# scarce, so a launcher that probed on every run would help cause the failure
+# it was checking for. Say what to do instead.
+printf '[If no banner appears in a few seconds, the channels are exhausted:\n'
+printf ' press Ctrl-] and run "coco restart"]\n'
+
+# `start` leaves a scripted client parked on its own inetd channel, and
+# connecting displaces that client without telling the guest -- which strands
+# its login on the channel permanently, costing one of the few /N devices
+# every launch until inetd answers new connections with tcp kill. Log it out
+# properly first (Escape is SCF's EOF, so the shell exits and the channel
+# recycles at once). Harmless when there is no scripted session to retire.
+if tmux list-windows -t "${NITROS9REPL_SESSION:-nitros9repl}" -F '#W' 2>/dev/null |
+       grep -qx chan; then
+    "$REPL" key Escape >/dev/null 2>&1 || true
+    sleep 0.5
+fi
+
+exec "$REPL" connect
