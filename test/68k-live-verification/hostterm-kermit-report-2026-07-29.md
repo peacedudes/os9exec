@@ -6,7 +6,7 @@ terminal and reports its device"), the tip of the six commits listed as
 done. Backs no skill claim directly; records a defect and two kermit
 usage facts that should be added to `os9-dev` (see "Skill feedback").
 
-## Verdict
+## Verdict (original run, commit `3e53f26`)
 
 **FAIL.** The text-file leg (A -> B) is clean and byte-perfect on both
 sides. The binary-file leg (B -> A) also delivers byte-perfect data
@@ -18,6 +18,16 @@ a size effect. The data arrives intact; the transfer does not complete
 *cleanly*, which is what Task 6 asks to prove. See "Finding: sender-side
 false failure" below for the evidence and a root-cause hypothesis in
 `hostterm_close()`.
+
+## Update 2026-07-29: PASS after the Task 6a binding-lifetime fix
+
+**Re-run against commit `d98acc0`** ("Fix: a bound /tN outlives the path
+that opened it") confirms the hypothesis below was correct and the
+defect is fixed. See "Re-run: PASS in both directions" for the full
+evidence. **Both directions now complete cleanly, byte-perfect, with no
+sender-side "Send failed" and no retry timeouts.** The FAIL verdict
+above stands as the historical record of what commit `3e53f26` did; it
+is superseded by the PASS below, not edited away.
 
 ## Rig
 
@@ -355,6 +365,145 @@ hypothesis based on the code and the reproduction pattern, not verified
 with `dtruss`/`strace` timing evidence, and is left for the controller
 to confirm and scope -- per the task instructions, no source change was
 made.
+
+## Re-run: PASS in both directions (after Task 6a's fix)
+
+Re-run 2026-07-29 against commit `d98acc0`, using the same rig, driver
+shape, files and `kermit` flags as the original run (`kermit sl`/`kermit
+rl` for text, `kermit sli`/`kermit ril` for binary -- see above for why).
+Driver: same `driver.py` `Inst` class (`subprocess.Popen` with
+stdin/stdout pipes), copied into a fresh scratch directory so this run's
+artifacts don't mix with the original's. Both instances tracked by PID
+and terminated via `proc.terminate()`/`proc.wait()` in a `finally` block;
+confirmed no leftover `os9exec` process after each script exit.
+
+**Leg 1 re-run, text, A -> B (A = pty-master, sending)** -- this
+direction already passed before the fix; re-run to confirm the fix did
+not regress it:
+
+```
+===== B kermit receive =====
+kermit rl /t1
+Kermit: Receiving STARTUP as startup
+...
+
+Kermit: done.
+
+$ Read I/O error - Error #000:025 (E_???) <<unknown error code>>
+
+===== A kermit send =====
+kermit sl /t1 /dd/startup
+# /t1 is /dev/ttys002   (attach with: screen /dev/ttys002)
+Kermit: Sending /dd/startup as STARTUP
+...
+
+Kermit: done.
+
+$ Read I/O error - Error #000:025 (E_???) <<unknown error code>>
+```
+
+`diff` of the two full 60-line hex dumps again shows only the echoed
+command line differing; host-level cross-check:
+
+```
+$ cmp h0/startup <B's scratch dir>/startup ; echo $?
+0
+$ md5 h0/startup <B's scratch dir>/startup
+MD5 (h0/startup) = b0c94b9b92c513bd34096d291b5887ca
+MD5 (<B's scratch dir>/startup) = b0c94b9b92c513bd34096d291b5887ca
+```
+
+Still clean. No regression.
+
+**Leg 2 re-run, binary, B -> A (A = pty-master, receiving)** -- this is
+the direction that failed originally. Same file, same flags
+(`kermit sli`/`kermit ril`):
+
+```
+===== B2 kermit send =====
+kermit sli /t1 /dd/CMDS/hello
+Kermit: Sending /dd/CMDS/hello as HELLO
+......................................................
+
+Kermit: done.
+
+$ Read I/O error - Error #000:025 (E_???) <<unknown error code>>
+
+===== A2 kermit receive =====
+kermit ril /t1
+# /t1 is /dev/ttys002   (attach with: screen /dev/ttys002)
+Kermit: Receiving HELLO as hello
+.....................................................
+
+Kermit: done.
+
+$ Read I/O error - Error #000:025 (E_???) <<unknown error code>>
+```
+
+**The sender (`B2`) now reports `Kermit: done.` with zero retries** --
+no `TTTTTTTTTTT`, no "Send failed", where the original run showed eleven
+timeout retries and a hard failure on this exact leg. `ident` on the
+received copy:
+
+```
+$ ident /h5/hello
+...
+Module CRC:      $1A4CE4     Good CRC
+...
+$ ident /dd/CMDS/hello
+...
+Module CRC:      $1A4CE4     Good CRC
+...
+```
+
+Same CRC, same size, same every field, as before. Host-level
+cross-check:
+
+```
+$ cmp h0/CMDS/hello <A2's scratch dir>/hello ; echo $?
+0
+$ md5 h0/CMDS/hello <A2's scratch dir>/hello
+MD5 (h0/CMDS/hello) = e8638adafdcc9e3ddaf8c6542a04317c
+MD5 (<A2's scratch dir>/hello) = e8638adafdcc9e3ddaf8c6542a04317c
+```
+
+**Leg 2b re-run: the small-text asymmetry probe (B -> A, same direction
+as Leg 2 but with the 949-byte text file, to confirm the fix is not
+file-size- or content-dependent)**:
+
+```
+===== B3 kermit send (small text, B->A) =====
+kermit sli /t1 /dd/startup
+Kermit: Sending /dd/startup as STARTUP
+...
+
+Kermit: done.
+
+===== A3 kermit receive (small text, B->A) =====
+kermit rli /t1
+# /t1 is /dev/ttys002   (attach with: screen /dev/ttys002)
+Kermit: Receiving STARTUP as startup
+...
+
+Kermit: done.
+```
+
+Also clean, both sides, no retries. The asymmetry that originally
+reproduced with both a 3-packet text transfer and a ~55-packet binary
+transfer is gone in both cases.
+
+**Conclusion.** The hypothesis in "Finding: sender-side false failure"
+above was correct: `hostterm_close()` was closing the pty master (and
+its spare slave reference) the instant the owning instance's `kermit`
+process closed `/t1` -- right after that instance believed it had sent
+its final ACK, discarding it before the peer could read it if the peer
+had not already drained it. Task 6a's fix (commit `d98acc0`) makes a
+bound `/tN` endpoint persist for the emulator's lifetime once
+established, closing only the *path*, never the underlying host fd, so
+that race no longer exists. **Verdict updated: PASS**, both directions,
+both file sizes, byte-perfect data (unchanged from the original run) and
+now also a clean protocol-level handshake with no sender-side retries or
+failure.
 
 ## Minor, unrelated artifact (reported, not chased further)
 
