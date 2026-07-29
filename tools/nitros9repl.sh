@@ -66,12 +66,28 @@
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 NITROS9="${NITROS9_DIR:-$REPO/../os9/nitros9}"
-# Directory holding the disk image XRoar boots. Overridable so a test harness
-# can run against a throwaway CLONE of the golden master rather than the master
-# itself: the .ide file is edited IN PLACE by the guest, so any run that writes
-# would otherwise mutate the shared boot disk permanently.
-# A clone directory needs 68IDE.ide and hdblba.rom; -rompath is absolute.
-DISKDIR="${NITROS9REPL_DISKDIR:-$NITROS9/disk-images/eou_ide-v0.3-6809-xroar-dw-becker}"
+# Directory holding the disk image XRoar boots. The .ide file is edited IN
+# PLACE by the guest, so booting the golden master would mutate the shared
+# boot disk permanently. Therefore the DEFAULT is a private scratch clone,
+# created automatically on `start` (APFS cp -c, ~instant) and reused across
+# runs and reboots -- delete $CLONE_DEFAULT to reset it to pristine. Set
+# NITROS9REPL_DISKDIR to boot a specific directory instead (test harnesses
+# do; it must hold 68IDE.ide and hdblba.rom; -rompath is absolute).
+GOLDEN="$NITROS9/disk-images/eou_ide-v0.3-6809-xroar-dw-becker"
+CLONE_DEFAULT="$HOME/.cache/nitros9repl/eou-clone"
+DISKDIR="${NITROS9REPL_DISKDIR:-$CLONE_DEFAULT}"
+
+# Materialize the default clone if that is what we are booting and it does not
+# exist yet (first run, or deleted for a reset).
+ensure_default_clone() {
+    [ "$DISKDIR" = "$CLONE_DEFAULT" ] || return 0
+    [ -f "$DISKDIR/68IDE.ide" ] && return 0
+    printf '[creating scratch clone of the EOU disk at %s]\n' "$DISKDIR"
+    printf '[delete that directory to reset it to pristine]\n'
+    mkdir -p "$DISKDIR" || return 1
+    cp -c "$GOLDEN/68IDE.ide" "$DISKDIR/68IDE.ide" || return 1
+    cp "$GOLDEN/hdblba.rom" "$DISKDIR/hdblba.rom" || return 1
+}
 SESSION="${NITROS9REPL_SESSION:-nitros9repl}"
 TIMEOUT=${NITROS9REPL_TIMEOUT:-20}      # seconds per command
 BOOT_TIMEOUT=${NITROS9REPL_BOOT_TIMEOUT:-120}
@@ -288,6 +304,7 @@ cmd_start() {
         printf '[drivewire-cli not found — build it, or set DWCLI=/path/to/drivewire-cli]\n' >&2
         return 1
     fi
+    ensure_default_clone || return 1
     if [ ! -f "$DISKDIR/68IDE.ide" ]; then
         printf '[disk image not found: %s]\n' "$DISKDIR/68IDE.ide" >&2
         return 1
@@ -333,10 +350,13 @@ cmd_start() {
             'tell application "System Events" to get name of first process whose frontmost is true' \
             2>/dev/null || true)
     fi
+    # Full speed by default: a throttled boot takes ~40s where an unthrottled
+    # one takes ~4, and nothing here depends on real-time pacing. A test that
+    # does can pass -ratelimit in NITROS9REPL_EXTRA_XROAR (last flag wins).
     tmux new-window -t "$SESSION" -n xroar -c "$DISKDIR" \
         "xroar -rompath '$NITROS9/roms' -machine coco3 -tv-input rgb -machine-cart ide \
          -cart-rom ./hdblba.rom -load-hd0 68IDE.ide -cart-becker \
-         -becker-port $BECKER_PORT -type 'DOS 0\\r\\r' $ui $NITROS9REPL_EXTRA_XROAR"
+         -becker-port $BECKER_PORT -type 'DOS 0\\r\\r' -no-ratelimit $ui $NITROS9REPL_EXTRA_XROAR"
     printf '[booting NitrOS-9 under XRoar (up to %ss)...]\n' "$BOOT_TIMEOUT"
 
     # Window 2 "chan": the inetd session client (retries until inetd listens).
