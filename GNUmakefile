@@ -207,10 +207,21 @@ test-linux:
 	docker build -f docker/Dockerfile -t os9exec:linux .
 	DOCKER_IMAGE=os9exec:linux swift run --package-path test OS9Tests
 
-# Compile-only sweep across all three toolchains. Each one sees bugs the others
-# do not: mingw (LLP64) catches host pointers truncated through 32-bit ints,
-# gcc-on-Linux catches NULL/format issues clang ignores, clang catches its own.
-# All three must be warning-clean.
+# Compile-only sweep across all four toolchains. Each one sees bugs the others
+# do not: mingw x86_64 (LLP64) catches host pointers truncated through 32-bit
+# ints, mingw i686 (ILP32) catches the mirror image -- a width hardcoded to 64
+# bits where the pointer is 32 -- plus every __stdcall omission that x86_64
+# Windows is free to ignore, gcc-on-Linux catches NULL/format issues clang
+# ignores, and clang catches its own. All four must be warning-clean.
+#
+# The i686 leg earns its slot twice over. It is the only target here where
+# pointer width AND `long` width both differ from every other leg, and it found
+# two real defects the day it was first run (aca7b7f, d7a4ebd) that no other
+# toolchain in this matrix can see. It is also the ONLY evidence 32-bit Windows
+# works at all: that target is supported but has never been executed -- there is
+# no 32-bit Windows host here to run it on -- so a clean compile is the whole of
+# the assurance. Treat a regression here as a broken platform, not as noise from
+# a toolchain nobody uses.
 #
 # Each leg writes its build log to a file, then tallies it. Do NOT go back to
 # piping the build straight into `grep -c "warning:"`: a build that dies with
@@ -243,9 +254,21 @@ warnings:
 	@test -x /tmp/os9exec-linux-built \
 	  || echo "  NOT BUILT -- no Linux binary produced; the score below means nothing"
 	@$(TALLY) /tmp/os9exec-linux.log
-	@echo "=== windows (mingw-w64, LLP64) ==="
+	@echo "=== windows x86_64 (mingw-w64, LLP64) ==="
+	@rm -f /tmp/os9exec-win/os9exec.exe
 	@$(MAKE) -B --no-print-directory OS=Windows_NT CC=x86_64-w64-mingw32-gcc \
 	  OBJDIR=/tmp/os9exec-win EXE=/tmp/os9exec-win/os9exec.exe \
 	  >/tmp/os9exec-win.log 2>&1 \
 	  || echo "  BUILD FAILED -- see /tmp/os9exec-win.log"
+	@test -f /tmp/os9exec-win/os9exec.exe \
+	  || echo "  NOT BUILT -- no Windows binary produced; the score below means nothing"
 	@$(TALLY) /tmp/os9exec-win.log
+	@echo "=== windows i686 (mingw-w64, ILP32) ==="
+	@rm -f /tmp/os9exec-win32/os9exec.exe
+	@$(MAKE) -B --no-print-directory OS=Windows_NT CC=i686-w64-mingw32-gcc \
+	  OBJDIR=/tmp/os9exec-win32 EXE=/tmp/os9exec-win32/os9exec.exe \
+	  >/tmp/os9exec-win32.log 2>&1 \
+	  || echo "  BUILD FAILED -- see /tmp/os9exec-win32.log"
+	@test -f /tmp/os9exec-win32/os9exec.exe \
+	  || echo "  NOT BUILT -- no Windows binary produced; the score below means nothing"
+	@$(TALLY) /tmp/os9exec-win32.log
