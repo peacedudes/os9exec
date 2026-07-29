@@ -3155,6 +3155,109 @@ if runHostInput {
     }
 }
 
+// -- Backpressure: a full host endpoint must never lose bytes ---------------
+// ConsPutc calls hostterm_put() and used to ignore its return value: on a
+// full endpoint the write stalled up to ~100ms per byte and the byte was
+// then quietly dropped (consio.c's old unpaced branch). The fix parks the
+// writing process in pWaitWrite -- mirroring the paced FIFO branch three
+// lines above it in ConsoleOut -- instead of discarding, and a pWaitWrite
+// process is rescheduled periodically (procstuff.c) until the far end
+// drains.
+//
+// Measured, not guessed (2026-07-29): the plan this test comes from assumed
+// an ~8KB pty output queue. The real number on macOS is 1024 bytes (write()
+// to the slave starts returning EAGAIN there with nothing draining the
+// master) -- so `dir /dd/CMDS` is already comfortably over it: measured at
+// 3226 bytes against a continuously-drained pty, no bigger producer needed.
+//
+// The master is deliberately left UNDRAINED for a full 2 seconds after the
+// command starts -- long enough for the queue to genuinely fill, not
+// simulated -- then drained continuously from a second thread for the rest
+// of the run, so a correct (parking, not dropping) implementation has every
+// chance to deliver every byte once room frees up. Measured against this
+// exact scenario, three runs each: the pre-fix build lost a stable 15 bytes
+// every time (3211/3226); the post-fix build recovered the full 3226 every
+// time, including with the undrained window stretched to 5 seconds. The
+// threshold below sits clear of both, on the fixed-build side.
+// Small thread-safe box for the drain thread below: a plain `var` captured
+// and mutated by a background Thread closure, then read from the main
+// thread after joining, trips the Swift 6 sendable-closure checker even
+// though the DispatchSemaphore join makes it safe. Locking inside a
+// dedicated type says so explicitly instead of just silencing the warning.
+final class BackpressureCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var bytes: [UInt8] = []
+    private var stopRequested  = false
+
+    func append(_ chunk: ArraySlice<UInt8>) {
+        lock.lock(); bytes.append(contentsOf: chunk); lock.unlock()
+    }
+    func requestStop() { lock.lock(); stopRequested = true; lock.unlock() }
+    func shouldStop() -> Bool { lock.lock(); defer { lock.unlock() }; return stopRequested }
+    func total() -> Int { lock.lock(); defer { lock.unlock() }; return bytes.count }
+}
+
+let hostBackpressureName = "hostterm: a full endpoint blocks the writer, losing nothing"
+let runHostBackpressure   = filter.isEmpty || hostBackpressureName.localizedCaseInsensitiveContains(filter)
+
+if runHostBackpressure {
+    if let (master, slave, slaveName) = makePTY() {
+        let collector    = BackpressureCollector()
+        let drainStopped = DispatchSemaphore(value: 0)
+
+        // Runs concurrently with the os9() call below, on its own thread --
+        // os9() blocks the calling thread until the command finishes (or
+        // times out), so this is the only way to drain WHILE it runs rather
+        // than only after, which the pty's tiny queue makes mandatory: the
+        // full listing physically cannot fit in 1024 bytes of kernel buffer,
+        // so nothing drained DURING the run could never observe more than
+        // that no matter which side of this fix is under test.
+        let drainThread = Thread {
+            usleep(2_000_000) // deliberately undrained -- forces the queue to fill
+            var buf = [UInt8](repeating: 0, count: 4096)
+            while true {
+                let shouldStop = collector.shouldStop()
+                let n = read(master, &buf, buf.count)
+                if n > 0 {
+                    collector.append(buf[0..<n])
+                } else if shouldStop {
+                    break
+                } else {
+                    usleep(20_000)
+                }
+            }
+            drainStopped.signal()
+        }
+        drainThread.start()
+
+        // 90s budget: generous enough that this test can still observe (and
+        // report) the OLD code's behaviour -- its retry-then-drop loop cost
+        // up to ~100ms per byte once the queue was full -- without the run
+        // itself timing out before the assertion below ever sees the loss.
+        _ = os9(["dir /dd/CMDS >/t1"], timeout: 90, env: ["OS9T1": slaveName])
+
+        collector.requestStop()
+        drainStopped.wait() // the drain thread does its own final read before exiting
+        close(master); close(slave)
+
+        let total = collector.total()
+
+        // 3220 sits clear of both measured outcomes above (3211 buggy / 3226
+        // fixed) without pinning the exact byte count of a CMDS listing that
+        // could grow as the SDK disk does.
+        if total > 3220 {
+            print("PASS: \(hostBackpressureName)"); passed += 1
+        } else {
+            print("FAIL: \(hostBackpressureName)")
+            print("      [expected the full listing to survive; only \(total) bytes did]")
+            failed += 1
+        }
+    } else {
+        print("FAIL: hostterm: could not create a pty pair for the backpressure test")
+        failed += 1
+    }
+}
+
 // -- OS9Tn=pty: self-allocated pty, self-reported slave name ----------------
 // A named endpoint (OS9T1=/dev/ttysNNN) requires the pty to already exist,
 // which is fine for a test that creates the pair itself, but useless for the

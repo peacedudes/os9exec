@@ -304,44 +304,28 @@ void hostterm_close( int term_id )
 int hostterm_put( int term_id, const char* buffer, int n )
 {
     hostterm_typ* h;
-    int           done= 0;
-    int           tries= 0;
+    ssize_t       w;
 
     hostterm_init();
     if (!hostterm_bound( term_id )) return -1;
     h= &hostterms[ term_id ];
 
-    while (done<n) {
-        ssize_t w= write( h->fd, buffer+done, (size_t)(n-done) );
+    do { w= write( h->fd, buffer, (size_t)n ); } while (w<0 && errno==EINTR);
 
-        if (w>0) { done+= (int)w; tries= 0; continue; }
+    /* 0 means "would block": the far end has not drained. NOT an error and
+       NOT a licence to discard -- the caller (ConsoleOut) parks the writing
+       process instead, exactly as the baud FIFO does, and retries from here
+       on resume. Retrying in a loop HERE would stall every other OS-9
+       process, because the scheduler is cooperative -- that loop used to
+       exist, capped at 100ms, and then gave up and returned -1, which the
+       original call site ignored: the exact silent-discard bug this
+       function's contract exists to prevent (a best-effort auto-LF push
+       discarded whenever the output FIFO was full, leaving bare-CR lines,
+       fixed in 75a8ea8). Do not reintroduce a retry loop here. */
+    if (w<0 && errno==EAGAIN) return 0;
+    if (w<0)                  return -1; /* genuine error: EIO on a hung-up pty, etc. */
 
-        if (w<0 && errno==EAGAIN) {
-            /* Not also checking EWOULDBLOCK: os9exec_incl.h deliberately
-               #undefs it (it becomes an OS-9 error constant instead), and
-               POSIX guarantees the two are the same value wherever both
-               exist, so EAGAIN alone already covers it.
-               The far end is not draining. The fd is deliberately
-               O_NONBLOCK -- blocking here would stall every OS-9 process,
-               because the scheduler is cooperative -- so retry briefly and
-               then report a write error rather than DROP the bytes.
-               Silently dropping is the specific bug that shipped once
-               already: a best-effort auto-LF push was discarded whenever the
-               output FIFO was full, leaving bare-CR lines (fixed in 75a8ea8).
-               Do not "improve" this into a discard.
-               A proper fix parks the process in pWaitWrite exactly as the
-               baud FIFO does (consio.c). Deferred: it needs the saved_cnt /
-               saved_state resume dance, which is its own change. */
-            if (++tries>10) break;
-            usleep( 10000 ); /* 10ms x 10 = 100ms ceiling */
-            continue;
-        }
-
-        if (w<0 && errno==EINTR) continue;
-        return -1; /* genuine error: EIO on a hung-up pty, etc. */
-    }
-
-    return done<n ? -1 : done;
+    return (int)w;
 } /* hostterm_put */
 
 void hostterm_poll( void )

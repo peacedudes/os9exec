@@ -1085,7 +1085,58 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                                 fifo_push( dev, c  );
                   if (needsLF)  fifo_push( dev, LF );
               }
+              else if (hostterm_bound( gConsoleID )
+                       && pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask) {
+                  /* Same protection `paced` above relies on: pid==0 is the
+                     system process and pid==MAXPROCESSES is the "no process
+                     running" banner sentinel (see ConsPutc's own comment on
+                     gLastwritten_pid) -- neither is a real process that can
+                     be parked and later rescheduled, so a park here would
+                     hang the emulator rather than one OS-9 process. A system-
+                     state write instead falls through to the plain ConsPutc
+                     arm below, best-effort, same as it was before this change.
+
+                     CR and its auto-LF must reach the endpoint TOGETHER or not
+                     at all -- a lone CR leaves an unterminated line and the
+                     next output lands on top of it (the 75a8ea8 bug). Build
+                     the pair, then write it as one unit. */
+                  char pair[2];
+                  int  len= 0;
+                  int  w;
+
+                  pair[len++]= c;
+                  if (needsLF) pair[len++]= LF;
+
+                  w= hostterm_put( gConsoleID, pair,len );
+
+                  /* w<len covers both "would block" (hostterm_put returns 0)
+                     and a genuine short write (0<w<len) -- either way, some
+                     byte of the pair was not accepted and must not be
+                     skipped. A hard error (w<0) parks too rather than
+                     dropping: parking is never wrong, only potentially slow,
+                     and the resumed retry will surface a persistent error
+                     again on its own if the endpoint is truly gone. */
+                  if (w<len) {
+                      /* Park exactly as the paced branch does and retry from
+                         this same character on resume -- never advance cnt
+                         past a byte the endpoint did not take. A pWaitWrite
+                         process is rescheduled periodically (procstuff.c), so
+                         it comes back here and proceeds once the far end
+                         drains. */
+                      cp->saved_cnt  = cnt;
+                      cp->saved_state= cp->state;
+                      set_os9_state( pid, pWaitWrite, "ConsoleOut" );
+                      arbitrate= true;
+                      break;
+                  }
+              }
               else {
+                  /* Plain screen output, and any hostterm-bound write this
+                     bulk path cannot park (system-state, see above). ConsPutc
+                     still owns the echo path, baud_drain_due and debug.c --
+                     all single characters at low volume -- so its own
+                     hostterm branch stays best-effort; only THIS bulk path
+                     gained backpressure. */
                                 ConsPutc( c  );
                   if (needsLF)  ConsPutc( LF );
               }
