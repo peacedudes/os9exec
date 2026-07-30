@@ -47,3 +47,13 @@ dd
 
 # Subagent-driven-development scratch state (progress ledger, review packages)
 /.superpowers/
+
+# CONF68K run artefacts: the tests' own scratch files (one reaches 70K by
+# design -- t07 checks that a write past a 32-bit seek extends a file) and
+# the report a run appends to. The suite's recorded results live in
+# test/68k-conformance/DOCS/expected, which IS committed.
+/test/68k-conformance/SCRATCH/*
+!/test/68k-conformance/SCRATCH/readme
+/test/68k-conformance/RESULTS/report
+/test/68k-conformance/REBUILT/*
+!/test/68k-conformance/REBUILT/readme
