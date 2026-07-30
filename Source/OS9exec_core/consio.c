@@ -312,7 +312,8 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
       }
 
       if (hostterm_bound( term_id )) {
-          hostterm_put( term_id, &c,1 );
+          hostterm_put       ( term_id, &c,1 );
+          hostterm_note_writer( term_id ); /* give this terminal's abort key a target */
           return;
       }
 

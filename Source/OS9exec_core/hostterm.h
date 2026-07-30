@@ -62,6 +62,17 @@ void    hostterm_poll     ( void );
    against a real serial line. */
 void    hostterm_setspeed ( int term_id, ulong bps );
 
+/* Record the process that just wrote to <term_id> as that terminal's
+   last writer, so an abort character typed ON that terminal has a target.
+   KeyToBuffer reads the target from the device's own syspath
+   (`lastwritten_pid`), and only lw_pid() ever sets it -- so without this the
+   abort char still flushed the terminal's paced backlog (losing queued output)
+   while signalling nobody, and the process it was meant to interrupt ran to
+   completion. Lives here because `hostterms[]`, and thus each device's
+   ttydev_typ, is private to hostterm.c. No-op if the device is not bound, has
+   no syspath, or on any platform where hostterm is a stub. */
+void    hostterm_note_writer( int term_id );
+
 #endif /* HOSTTERM_H */
 
 /* eof */

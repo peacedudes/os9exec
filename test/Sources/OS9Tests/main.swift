@@ -141,7 +141,7 @@ func killContainer(_ name: String) {
 // the containerized argument lists, so a test using it still runs in a container.
 func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bool = false,
          disk: String = diskPath, env: [String: String] = [:],
-         flags: [String] = []) -> String {
+         flags: [String] = [], holdOpen: TimeInterval = 0) -> String {
     let setup  = "chx \(sdkCmds)\nload math cio\n"
     // ESC then Ctrl-D: EOF is a per-path setting, not a constant. A site whose
     // `.login` runs `tmode eof=04` (a normal thing to do -- it matches Unix)
@@ -151,7 +151,15 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
     // Sending both costs one stray line in whichever mode is not in force.
     // One write, not two: after the emulator acts on the first terminator it is
     // gone, and a follow-up write to the closed pipe would raise EPIPE here.
-    let input  = setup + commands.joined(separator: "\n") + "\n\u{1B}\n\u{04}\n"
+    let body       = setup + commands.joined(separator: "\n") + "\n"
+    let terminator = "\u{1B}\n\u{04}\n"
+    // holdOpen delays ONLY the terminator. A test that acts on the running
+    // system from outside (writing to a bound pty, say) needs OS-9 processes to
+    // still be alive when it acts; send the terminator immediately and the shell
+    // can exit first, leaving the emulator in baud_drain_all_pending where
+    // nothing is scheduled any more. A check written against that state passes
+    // whatever the emulator does.
+    let input  = holdOpen > 0 ? body : body + terminator
 
     let process = Process()
     // The system tick is on by default in the emulator, so the suite runs
@@ -269,7 +277,19 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
 
     guard (try? process.run()) != nil else { return "" }
     stdinPipe.fileHandleForWriting.write(Data(input.utf8))
-    stdinPipe.fileHandleForWriting.closeFile()
+    if holdOpen > 0 {
+        DispatchQueue.global().async {
+            Thread.sleep(forTimeInterval: holdOpen)
+            // The emulator may already have exited (a test can abort the very
+            // shell we are talking to), so a write here can EPIPE. Ignore it:
+            // the run is over either way.
+            signal(SIGPIPE, SIG_IGN)
+            try? stdinPipe.fileHandleForWriting.write(contentsOf: Data(terminator.utf8))
+            try? stdinPipe.fileHandleForWriting.close()
+        }
+    } else {
+        stdinPipe.fileHandleForWriting.closeFile()
+    }
 
     var output = ""
     // Read stdout and stderr concurrently to avoid deadlock
@@ -3533,6 +3553,69 @@ if runDualDevice {
         }
     } else {
         print("FAIL: hostterm: could not create two pty pairs for the crossover test")
+        failed += 1
+    }
+}
+
+// -- an abort key typed on /tN interrupts THAT terminal's writer --------------
+// KeyToBuffer takes its signal target from the device's own syspath
+// (`lastwritten_pid`), and only lw_pid() sets it -- which ConsPutcTo reached on
+// the main-console arm alone, because the hostterm_bound() branch returns first.
+// So Ctrl-E typed on a bound /t1 used to flush that terminal's paced backlog
+// (silently discarding queued output) while signalling nobody, and the process
+// it was aimed at ran to completion. Measured, not reasoned: 3226 bytes with no
+// abort, ~2984 with one -- ~240 bytes gone, listing still complete.
+//
+// The abort char goes to the pty MASTER, i.e. in on /t1's own input, which is
+// the whole point: this is not the console's abort key. holdOpen keeps the shell
+// alive past the injection, so the writer is genuinely running when it lands --
+// without it the shell exits first and the FIFO flush truncates the output no
+// matter what the emulator does, which passes for the wrong reason.
+// Confirmed 3/3 FAIL before the fix, 0/3 after.
+let tnAbortName = "hostterm: an abort key on /tN interrupts that terminal's writer"
+let runTNAbort  = filter.isEmpty || tnAbortName.localizedCaseInsensitiveContains(filter)
+
+if runTNAbort {
+    if let (master, slave, slaveName) = makePTY() {
+        let collector = BackpressureCollector()
+        let stopped   = DispatchSemaphore(value: 0)
+        _ = startDrainThread(master, collector, stopped)
+
+        // Ctrl-E (the default PD_QUT) once a paced backlog exists but long
+        // before the ~3226-byte listing could finish on its own.
+        DispatchQueue.global().async {
+            Thread.sleep(forTimeInterval: 0.6)
+            var abortChar: UInt8 = 0x05
+            _ = write(master, &abortChar, 1)
+        }
+
+        _ = os9(["dir /dd/CMDS >/t1 &", "free /dd"],
+                timeout: 120, paced: true,
+                env: ["OS9T1": slaveName], holdOpen: 3.0)
+
+        usleep(500_000)
+        collector.requestStop(); stopped.wait()
+        close(master); close(slave)
+
+        let text = String(decoding: collector.snapshot(), as: UTF8.self)
+        // Started (first name present) but was cut off (last name absent).
+        // Both halves matter: without the first, "aborted" is indistinguishable
+        // from "never ran".
+        let started  = text.contains("BOOTOBJS")
+        let finished = text.contains("xmode")
+
+        if started && !finished {
+            print("PASS: \(tnAbortName)"); passed += 1
+        } else {
+            print("FAIL: \(tnAbortName)")
+            print("      [expected the listing to start (BOOTOBJS) and be cut off")
+            print("       before its last entry (xmode)]")
+            print("      started: \(started), ran to completion: \(finished), " +
+                  "bytes: \(collector.snapshot().count)")
+            failed += 1
+        }
+    } else {
+        print("FAIL: hostterm: could not create a pty for the /tN abort test")
         failed += 1
     }
 }

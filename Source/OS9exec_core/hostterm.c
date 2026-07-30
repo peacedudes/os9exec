@@ -460,6 +460,19 @@ void hostterm_setspeed( int term_id, ulong bps )
                  ( "# hostterm: /t%d speed %lu\n", term_id, bps ) );
 } /* hostterm_setspeed */
 
+void hostterm_note_writer( int term_id )
+{
+    hostterm_typ* h;
+
+    hostterm_init();
+    if (!hostterm_bound( term_id )) return;
+
+    h= &hostterms[ term_id ];
+    if (h->dev.spP==NULL) return; /* lw_pid dereferences spP unconditionally */
+
+    lw_pid( &h->dev );
+} /* hostterm_note_writer */
+
 #else /* not UNIX, or MINGW: no termios, no pty */
 
 os9err hostterm_open( int term_id, syspath_typ* spP )
@@ -494,6 +507,8 @@ Boolean hostterm_ready( int term_id, long* cnt )
 void hostterm_poll( void ) { } /* nothing to poll on this platform */
 
 void hostterm_setspeed( int term_id, ulong bps ) { (void)term_id; (void)bps; }
+
+void hostterm_note_writer( int term_id ) { (void)term_id; }
 
 #endif
 
