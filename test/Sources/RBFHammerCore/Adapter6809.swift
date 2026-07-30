@@ -427,6 +427,28 @@ public struct Adapter6809: Adapter {
             }
         }
 
+        // RESIDENT FIRST: `load` every racer's module before any of them is
+        // launched. Without this, four `runb`s starting on one shell line each
+        // reach the module directory at once and one loses -- RunB reports
+        // `Error #043 -- Unknown Procedure` for a module that is demonstrably
+        // on the disk and verifies Good, that worker never runs, and the roster
+        // then sits out its whole timeout while the verifier reports the
+        // worker's records as missing. Measured: 4 of 8 runs of the four-worker
+        // shared-file scenario, once its own fork-storm defect was out of the
+        // way (`Scenario6809Tests.sharedRoster`).
+        //
+        // Loading first is the documented 6809 idiom (a resident module is
+        // found in the module directory ahead of any directory search) and it
+        // also tightens the launch, which the binary lost-update reproduction
+        // wants: the module load was exactly the per-worker startup skew that
+        // made a staggered launch suppress its race.
+        for worker in racers { type("load \(moduleName(worker))", in: run) }
+        let loaded = "LOADED-RACERS"
+        type("echo \(loaded)", in: run)
+        guard waitFor(loaded, in: run, until: deadline) != nil else {
+            return (capture(run), true)
+        }
+
         // LAUNCH: `runb` the packed modules on ONE shell line, so they fork
         // within a single parse and their first GETs land nearly together.
         // This is load-bearing, MEASURED: the binary lost-update reproduction

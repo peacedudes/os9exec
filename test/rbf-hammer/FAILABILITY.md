@@ -147,8 +147,93 @@ the golden master; the master is never booted by the harness.
 |---|---|---|---|
 | `testSingleWorkerAppendsOn6809` (whole 6809 path end to end) | `@COUNT@` substituted as `worker.count - 1`, so the guest writes one fewer record | **RED, precisely**: `worker 1: wrote 8, found 7` + `missing sequences [7]`. Proves the guest really runs, the file really comes back out of the `.ide` container, and the host really compares | 2026-07-20 |
 
-`testFourWorkersShareOneFileOn6809` passes (11.5s) and shares the mutation
-above, since both go through the same render/inject/collect path.
+`testFourWorkersShareOneFileOn6809` shares the mutation above, since both go
+through the same render/inject/collect path. It passed in 11.5s when that was
+written; it later became unreliable, and what that turned out to be is the next
+section.
+
+### The four-worker roster's "lost writer" was TWO harness defects — 2026-07-30
+
+`testFourWorkersShareOneFileOn6809` reported a worker's whole slot range
+missing, intermittently, in two shapes: a fast (~27s) failure and a ~316s one.
+Both read as RBF dropping a concurrent writer's records. **Neither was RBF.**
+
+Measured baseline before any change, 8 consecutive runs, host 1-min load 1.3
+rising to 4.9: **3 passed, 5 failed** — 1 fast, 3 long, and 1 that never
+reached a shell prompt at all (a boot flake under load, not pursued).
+
+**Defect 1 — the nap forked a shell per record.** The slot roster used the
+`.sleep` nap, which runs `SHELL "sleep <ticks>"`. Since the racers were changed
+to launch on ONE shell line (`da1cbcc`, which the binary lost-update
+reproduction needs), four workers fork in a burst, and NitrOS-9 starts refusing
+those forks with `Error #237`. A worker whose own `RUN hnap` took the refusal
+died at its `ON ERROR` (`worker N ERROR err 237`) with nothing written, and the
+verifier reported its slots missing.
+
+> **`Error #237` here is NOT the guest running out of memory, and the earlier
+> reading of it in this file was wrong.** `mfree` was run mid-flight (the
+> scenario now does this on every run via `midFlight`) while the 237s were
+> flooding: **1736K, 1744K and 1760K free** across three failing runs. Whatever
+> `E$NoRAM` is refusing here, it is not the free-memory pool, so raising `-ram`
+> cannot reach it — the guest already boots with `-ram 2048`. The trigger is the
+> *number of simultaneous forks*, which is why staggering the launch once
+> appeared to "cure" it and why removing the fork actually does.
+
+Fixed by giving the slot roster the `.nilWrites` nap, which yields through
+ordinary `/nil` writes with no fork. Result over 8 runs: **zero `Error #237`,
+anywhere** — the fast failure mode is gone.
+
+**Defect 2 — four `runb`s racing the module directory.** With defect 1 gone,
+8 runs still gave **4 pass / 4 fail**, every failure now the long one and every
+one of them `Error #043 -- Unknown Procedure` from a `runb` at the combined
+launch. The module it could not find was on the disk and verified **Good** by
+ToolShed `ident` in the failing run's own clone (all four modules, 4089 bytes,
+Good CRC) — so this is the load/link path losing under four simultaneous
+starts, not a packing failure. The worker never runs, nothing reports it, and
+the roster sits out its full 300s timeout.
+
+Fixed by `load`ing every racer's module, gated on a marker, BEFORE the launch
+line: a resident module is found in the module directory ahead of any directory
+search. This also tightens the launch, which the binary lost-update
+reproduction wants — module load time was exactly the per-worker startup skew
+that made a staggered launch suppress its race.
+
+**Result with both fixes: 15 of 16 consecutive runs pass**, in 28.7-29.1s each,
+host load 0.6 to 7.3, with **no `Error #237` and no `Error #043` in any of
+them**. Against the 3-of-8 baseline that is the measurement worth quoting.
+
+The one failure is a different animal and is left standing: the guest went
+silent immediately after the load gate — no launch echo, no PIDs, no worker
+output for the full timeout — and all four workers read back missing rather
+than one. It was the first run after the host's emulators had just been force
+killed, and its shape matches the baseline's boot flake (`NitrOS-9 did not
+reach a shell prompt`) rather than anything the roster does. Not root-caused.
+**Read a run where ALL FOUR workers are missing as the channel, not as RBF**;
+one missing worker is the shape a real per-worker fault takes.
+
+Two diagnostics were added with the fixes, both earning their keep on the first
+failure they saw:
+
+- The scenario runs `mfree` mid-flight, so the guest's own free-memory map is
+  in the transcript of any failure. That is what disproved the RAM-Full story.
+- Both assertions now print the guest's `hammer:` report lines and the
+  transcript. The violations assertion used to print only the violations, so on
+  the one failure where the guest had *said* what went wrong (`worker 4 ERROR
+  err 237`) the harness threw that sentence away and reported "missing
+  sequences" — indistinguishable from RBF losing the writes.
+
+**The pre-load touches every 6809 scenario, so the whole target was re-run:**
+17 tests, 0 failures, 6 skipped (4 env-gated probes, plus the lock pair, which
+the host was too busy for at that moment). Both pinned reproductions still go
+red into their `XCTExpectFailure`, which is the check that matters — a
+tighter launch could have suppressed the very races they exist to catch:
+binary RMW lost **226 of 800**, mixed write-only + RMW lost **69 of 400**.
+The lock pair was then run separately on a quiet host and is stable with the
+change: locked 30.3s, and the control 5 for 5 at 29.1-32.0s. The very first
+control attempt of that session hung to its 600s timeout; that pair is
+documented above as fragile and load-sensitive, five later runs did not
+reproduce it, and nothing ties it to the pre-load — recorded here rather than
+rounded off.
 
 ### The record lock IS measured on 6809 — MEASURED + PROVEN FAILABLE 2026-07-20
 

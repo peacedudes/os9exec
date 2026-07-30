@@ -118,11 +118,28 @@ final class Scenario6809Tests: XCTestCase {
     /// end of file dies with E$EOF, and its whole range then reads back
     /// missing -- which looks exactly like RBF losing data under concurrent
     /// writers, and is not.
+    ///
+    /// The nap is `.nilWrites`, NOT the `.sleep` default, and on this target
+    /// that is load-bearing rather than a preference. `.sleep` forks a `SHELL
+    /// "sleep"` per record; four slot workers launched together (the racers go
+    /// out on ONE shell line -- see `Adapter6809.execute`) then fork in a burst,
+    /// and NitrOS-9 starts refusing those forks with `Error #237`. What that
+    /// error is NOT is the guest running out of memory: `mfree` taken mid-flight
+    /// while 237s were flooding reported **1736K-1760K free**. Whatever the
+    /// exhausted resource is, it is not the free-memory pool, and adding RAM
+    /// does not reach it -- the guest is already booted with `-ram 2048`.
+    /// The damage was two-faced and neither face named a fork: a worker died at
+    /// its own `ON ERROR` (`worker N ERROR err 237`) so its slot range read back
+    /// missing, or its `runb` failed to link the module it had just packed
+    /// (`Error #043`), so that worker never ran and the roster sat out its full
+    /// timeout. Both present as "RBF lost a writer's records". `.nilWrites`
+    /// yields through ordinary writes to `/nil` with no fork at all.
     private func sharedRoster(_ population: Int, file: String, nap: Int) -> [WorkerSpec] {
         var roster = [WorkerSpec(id: 99, role: .create, file: file,
                                  count: population * Self.records)]
         roster += (1...population).map {
-            WorkerSpec(id: $0, role: .slot, file: file, count: Self.records, nap: nap)
+            WorkerSpec(id: $0, role: .slot, file: file, count: Self.records,
+                       nap: nap, napMode: .nilWrites)
         }
         return roster
     }
@@ -132,24 +149,49 @@ final class Scenario6809Tests: XCTestCase {
     ///
     /// Cannot detect a missing record lock -- slot ranges are disjoint and
     /// never overlap. That is what the `rmw` pair below is for.
+    ///
+    /// `midFlight` runs `mfree` while the roster is live, so the guest's own
+    /// free-memory map lands in the transcript of any future failure. That is
+    /// the measurement that disproved this test's long-standing "RAM Full"
+    /// explanation, and it costs one read-only shell command.
     func testFourWorkersShareOneFileOn6809() throws {
         let file = "\(Self.device)/shared.dat"
         let scenario = Scenario(name: "four-workers-shared-6809",
                                 backend: .rbfImage,
-                                workers: sharedRoster(4, file: file, nap: 1),
-                                timeout: 300)
+                                workers: sharedRoster(4, file: file, nap: 100),
+                                timeout: 300,
+                                midFlight: ["mfree"])
         let result = try Adapter6809(repoRoot: Self.repoRoot).run(scenario)
 
         XCTAssertFalse(result.timedOut,
                        "run never completed. Clone kept at \(result.scratchPath)\n"
-                     + "guest transcript:\n\(result.transcript.suffix(3000))")
+                     + "workers reported:\n" + Self.workerLines(result.transcript)
+                     + "\nguest transcript:\n\(result.transcript.suffix(20000))")
         guard let data = result.produced[file] else {
             return XCTFail("\(file) was never produced:\n\(result.transcript)")
         }
         let violations = Verifier.verify(data: data,
                                          expecting: scenario.expectations(forFile: file))
+        // Violations alone cannot tell a lost write from a worker that never
+        // wrote: "missing sequences" reads identically either way. The guest's
+        // own per-worker report line says which, so it has to come out with the
+        // verdict -- printing only the violation detail discards the evidence on
+        // exactly the failure that needs it.
         XCTAssertEqual(violations, [],
-                       violations.map(\.detail).joined(separator: "\n"))
+                       violations.map(\.detail).joined(separator: "\n")
+                     + "\n\nworkers reported:\n" + Self.workerLines(result.transcript)
+                     + "\nfile: \(data.count) bytes"
+                     + "\nclone kept at \(result.scratchPath)"
+                     + "\nguest transcript (tail):\n\(result.transcript.suffix(3000))")
+    }
+
+    /// The guest's own `hammer: ...` report lines, in order, pulled out of a
+    /// transcript that is mostly shell prompts and banners.
+    private static func workerLines(_ transcript: String) -> String {
+        let lines = transcript.split(whereSeparator: \.isNewline)
+            .filter { $0.contains("hammer:") }
+        return lines.isEmpty ? "(none -- no worker ever reported)"
+                             : lines.joined(separator: "\n")
     }
 
     // ── THE RECORD-LOCK TEST ──────────────────────────────────────────────────
