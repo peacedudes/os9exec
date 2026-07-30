@@ -27,10 +27,21 @@ Boolean hostterm_bound    ( int term_id );
    unsupported, E_DEVBSY if the host refuses). */
 os9err  hostterm_open     ( int term_id, syspath_typ* spP );
 
-/* Close and release the host fd. Safe on an unbound device. */
+/* Release one PATH on this device -- NOT the endpoint. Decrements the open
+   count; the host fd (and a self-allocated pty's slave reference) deliberately
+   stay open until the emulator exits, so the device a user attached to remains
+   the same device between commands, and so closing cannot discard bytes the
+   far end has not read yet. Matches OS-9's own model, where a device
+   descriptor outlives any single path to it. Safe on an unbound device. */
 void    hostterm_close    ( int term_id );
 
-/* Write <n> bytes. Returns bytes written, or -1 on a genuine error. */
+/* Write <n> bytes, without blocking. Returns the count written; 0 if the
+   endpoint would block (its buffer is full and the far end has not drained);
+   -1 on a genuine error or an unbound device.
+   0 is NOT an error and NOT a licence to discard: the caller must park the
+   writing process (ConsoleOut uses pWaitWrite) and retry the same bytes. This
+   function deliberately does not retry internally -- the scheduler is
+   cooperative, so sleeping here would stall every other OS-9 process. */
 int     hostterm_put      ( int term_id, const char* buffer, int n );
 
 /* Take one buffered byte. Returns 1 if <c> was filled, 0 if none ready. */

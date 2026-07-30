@@ -797,6 +797,15 @@ Expected: FAIL — `hostterm_put` is still the stub, and `ConsPutc` still writes
 
 - [ ] **Step 3: Implement `hostterm_put`**
 
+> **The bounded-retry design below was SUPERSEDED by `5e45bb8`.** It shipped,
+> then proved to be only half a fix: `ConsPutc` ignores this function's return
+> value, so once the retries were exhausted the byte was silently dropped
+> anyway — measured at a stable 15 bytes lost out of 3226. `hostterm_put` is now
+> purely non-blocking (single `write`, 0 on `EAGAIN`, no `usleep`), and
+> `ConsoleOut` parks the writing process in `pWaitWrite` exactly as its paced
+> branch does. A 100ms sleep inside a cooperative scheduler was always wrong.
+> See `2026-07-29-hostterm-backpressure-and-wildcard.md`, Task 1.
+
 Add inside the `#if defined UNIX && !defined MINGW` block in `hostterm.c`:
 
 ```c
@@ -891,6 +900,20 @@ git commit -m "Core: /tN output goes to its own host endpoint"
 ---
 
 ### Task 3a: Paced output must go to the device that queued it
+
+> **DROPPED, then SUPERSEDED — do not implement this task.** Its test passed
+> against unfixed code (a single writer to a single device never contends
+> `gConsoleID` under a cooperative scheduler), so the fix was reverted rather
+> than landed behind a check that could not fail. The defect was real, and was
+> fixed properly in **`045da4b`** by a different route: `ConsPutcTo( term_id, c )`
+> gives console output an explicit destination, so `baud_drain_due` names its
+> device instead of inheriting an ambient global — the mistake becomes
+> structurally impossible at that site rather than corrected by assignment.
+> A working repro was then found (two paced devices, two CONCURRENT writers)
+> and the symptom was worse than described here: byte-level interleaving of the
+> two streams, not whole-backlog misattribution. See
+> `2026-07-29-conspuctto-explicit-destination.md`. The save/restore approach
+> below is kept only as the record of what was tried.
 
 Found by Task 3's implementer while reading `ConsoleOut`, and confirmed by the controller. **Do this before Task 4.**
 
