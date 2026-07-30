@@ -30,6 +30,9 @@
 #   tools/conformance.sh 68k --rbf      ... from a freshly built RBF image
 #                                       instead of a host-native directory
 #   tools/conformance.sh 68k --build    rebuild the modules from SRC first
+#   tools/conformance.sh 68k --noshell  run each test as its own boot program,
+#                                       needing no shell and no Microware SDK
+#                                       (used automatically when h0/ is absent)
 #   tools/conformance.sh 6809           run the 6809 suite under XRoar
 #   tools/conformance.sh all            both
 #
@@ -143,6 +146,40 @@ build_68k() {
     echo "  ${#MODULES[@]} modules built"
 }
 
+# Run each test as its own boot program -- no shell, no Microware SDK.
+#
+# This is the mode that makes the suite runnable by anyone who clones the
+# repo. The normal path needs /dd/CMDS/shell to execute runall, and that
+# shell is Microware's: it lives in h0/, which is a licensed OS-9 system disk
+# outside this repository. Without this mode a recipient of the GitHub tree
+# -- or CI -- could not run the 68k suite at all, only read it.
+#
+# Every module in CMDS/ is our own code, and os9exec can boot a module
+# directly, so pointing OS9DISK at the suite itself runs each test with the
+# suite as /dd. Relative paths still resolve: the top-level process takes its
+# data directory from OS9DISK and its execution directory from OS9DISK/CMDS,
+# which is exactly what runall arranges by hand with chd and chx.
+#
+# It is also a real check in its own right -- it proves no test depends on
+# the shell for anything beyond being started.
+run_68k_noshell() {
+    local dir="$REPO/test/68k-conformance" rc=0 m out
+    echo "== CONF68K on os9exec (no shell, no SDK -- each test as its own boot program) =="
+    printf 'RUN prebuilt\r' > "$dir/RESULTS/report"
+    for m in "${MODULES[@]}"; do
+        case "$m" in tally|mark) continue ;; esac
+        out=$($TIMEOUT 60 env OS9DISK="$dir" "$REPO/os9exec" -r "/dd/CMDS/$m" </dev/null 2>&1 \
+              | tr '\r' '\n' | grep -a '^RESULT ')
+        [ -n "$out" ] && printf '%s\r' "$out" >> "$dir/RESULTS/report"
+    done
+    # tally is a module too, so it reads the report the same way it would on
+    # a real system rather than being reimplemented here in shell.
+    $TIMEOUT 60 env OS9DISK="$dir" "$REPO/os9exec" -r /dd/CMDS/tally </dev/null 2>&1 \
+        | tr '\r' '\n' | grep -a 'CONF68K totals' | sed 's/^/  /'
+    compare "$dir" "$dir/RESULTS/report" || rc=1
+    return $rc
+}
+
 run_68k() {
     local use_rbf="$1" dir="$REPO/test/68k-conformance" rc=0
     echo "== CONF68K on os9exec ($([ "$use_rbf" = yes ] && echo 'RBF image' || echo 'host-native directory')) =="
@@ -202,10 +239,11 @@ run_6809() {
 # --------------------------------------------------------------------- main
 
 which=${1:-all}; shift 2>/dev/null || true
-use_rbf=no; do_build=no
+use_rbf=no; do_build=no; no_shell=no
 for a in "$@"; do
     case "$a" in
-        --rbf)   use_rbf=yes ;;
+        --rbf)     use_rbf=yes ;;
+        --noshell) no_shell=yes ;;
         --build) do_build=yes ;;
         *) echo "conformance: unknown option $a" >&2; exit 2 ;;
     esac
@@ -214,7 +252,15 @@ done
 overall=0
 case "$which" in
     68k)  [ "$do_build" = yes ] && { build_68k "$REPO/test/68k-conformance" || exit 1; }
-          run_68k "$use_rbf" || overall=1 ;;
+          # No h0 means no Microware shell to run runall with. Fall back
+          # rather than fail: a fresh clone has no system disk, and the
+          # suite does not actually need one.
+          if [ ! -d "$REPO/h0/CMDS" ] && [ "$no_shell" = no ]; then
+              echo "note: no h0/CMDS system disk found -- using --noshell"
+              no_shell=yes
+          fi
+          if [ "$no_shell" = yes ]; then run_68k_noshell || overall=1
+          else run_68k "$use_rbf" || overall=1; fi ;;
     6809) run_6809 || overall=1 ;;
     all)  [ "$do_build" = yes ] && { build_68k "$REPO/test/68k-conformance" || exit 1; }
           run_68k "$use_rbf" || overall=1

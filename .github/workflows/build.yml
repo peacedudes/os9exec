@@ -8,6 +8,34 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Run the OS-9/68000 conformance suite (test/68k-conformance) against the
+  # freshly built emulator. Until now CI only proved os9exec compiles and
+  # starts on four platforms; nothing here executed a single OS-9 program.
+  #
+  # This can run in CI at all only because the suite needs no Microware
+  # software: every module in its CMDS/ is our own 68000 assembly, and
+  # os9exec boots a module directly, so no shell and no licensed system disk
+  # are involved. conformance.sh detects the absent h0/ and takes that path
+  # by itself -- which is also exactly what a stranger cloning this repo
+  # gets, so this job doubles as proof the published tree is runnable.
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential clang
+
+    - name: Build os9exec
+      env:
+        CC: clang
+      run: make prod
+
+    - name: Run the 68k conformance suite
+      run: ./tools/conformance.sh 68k
+
   build:
     runs-on: ${{ matrix.os }}
     strategy:
