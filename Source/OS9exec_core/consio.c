@@ -293,13 +293,16 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
      consio.h -- so there is no matching spot to add ConsPutcTo to. Both of
      ConsPutcTo's only callers (ConsPutc and baud_drain_due) are in this
      file, so file-static is correct as well as consistent with that. */
-  static void ConsPutcTo( int term_id, char c )
+  static void ConsPutcTo( int term_id, char c, ushort owner )
   {
       /* save this info in terminal interface system.
          0 = "nobody": emulator banner output is written while currentpid is the
          MAXPROCESSES "no process" sentinel, and that must not become a Ctrl-C
-         signal target (KeyToBuffer) nor a procs[] index (lw_pid). */
-      gLastwritten_pid= proc_slot( currentpid );
+         signal target (KeyToBuffer) nor a procs[] index (lw_pid).
+         The owner is passed in for the same reason term_id is: from the FIFO
+         drain there is no ambient current process to inherit, and currentpid
+         there is whoever holds the CPU, not whoever wrote these bytes. */
+      gLastwritten_pid= proc_slot( owner );
 
       if (term_id>=TTY_Base) {
           #ifdef PIP_SUPPORT
@@ -324,7 +327,11 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
   /* put char to console and perform CR/LF expansion etc. */
   void ConsPutc( char c )
   {
-      ConsPutcTo( gConsoleID, c );
+      /* currentpid is the right owner HERE and only here: this arm runs inside
+         the writer's own fmgr entry point, so the running process is the one
+         whose bytes these are. The FIFO drain has no such guarantee, which is
+         why it carries the owner along instead. */
+      ConsPutcTo( gConsoleID, c, currentpid );
   } /* ConsPutc */
 
   void ConsPutcEdit( char c, Boolean alf, char eorch )
@@ -829,6 +836,13 @@ typedef struct {
     Boolean inUse;
     short   term_id;
     byte    buf[BAUD_FIFO_SIZE];
+    /* Who queued each byte. Ctrl-C/Ctrl-E target the process that wrote what is
+       ON the screen (KeyToBuffer -> lastwritten_pid), but a paced byte reaches
+       the screen long after its writer stopped running, and the drain happens in
+       the scheduler where "currentpid" is simply whoever holds the CPU. Reading
+       it there aimed the abort at an innocent bystander. Per BYTE, not per
+       device: two processes writing one terminal genuinely interleave here. */
+    ushort  owner[BAUD_FIFO_SIZE];
     ushort  head, tail, count;
     ulong   us_per_char;   /* 0 = unpaced; Task 3 fills this in for real baud rates */
     ulong   next_due_us;   /* host time next pop may happen; Task 3 makes this meaningful */
@@ -881,23 +895,25 @@ static baud_device_t* baud_dev_for( short term_id )
     return &baud_devices[free_slot];
 } /* baud_dev_for */
 
-static Boolean fifo_push( baud_device_t* d, byte c )
+static Boolean fifo_push( baud_device_t* d, byte c, ushort owner )
 {
     if (d->count>=BAUD_FIFO_SIZE) return false;
     if (d->count==0 && d->us_per_char>0) {
         d->next_due_us= host_micros(); /* first queued char of a burst is due immediately */
     }
-    d->buf[d->tail]= c;
+    d->buf  [d->tail]= c;
+    d->owner[d->tail]= owner;
     d->tail= (ushort)((d->tail+1) % BAUD_FIFO_SIZE);
     d->count++;
     if (d->us_per_char>0) recompute_next_wake();
     return true;
 } /* fifo_push */
 
-static Boolean fifo_pop( baud_device_t* d, byte* c )
+static Boolean fifo_pop( baud_device_t* d, byte* c, ushort* owner )
 {
     if (d->count==0) return false;
-    *c= d->buf[d->head];
+    *c    = d->buf  [d->head];
+    *owner= d->owner[d->head];
     d->head= (ushort)((d->head+1) % BAUD_FIFO_SIZE);
     d->count--;
     return true;
@@ -908,9 +924,10 @@ static Boolean fifo_pop( baud_device_t* d, byte* c )
    shouldn't normally accumulate a backlog, but drain fully if they ever do. */
 void baud_drain_due( void )
 {
-    int   i;
-    byte  c;
-    ulong now;
+    int    i;
+    byte   c;
+    ushort owner;
+    ulong  now;
 
     for (i=0; i<MAXBAUDDEV; i++) {
         baud_device_t* d= &baud_devices[i];
@@ -924,7 +941,7 @@ void baud_drain_due( void )
                devices are ever paced (ConsoleOut routes TTY_Base ids away from
                the FIFO entirely), so WriteCharsToPTY's own g_spP dependence
                cannot be reached from here. */
-            while (fifo_pop(d,&c)) ConsPutcTo( d->term_id, c );
+            while (fifo_pop(d,&c,&owner)) ConsPutcTo( d->term_id, c, owner );
         }
     }
 
@@ -937,8 +954,8 @@ void baud_drain_due( void )
         if (!d->inUse || d->count==0 || d->us_per_char==0) continue;
 
         while (d->count>0 && d->next_due_us<=now) {
-            fifo_pop( d,&c );
-            ConsPutcTo( d->term_id, c );
+            fifo_pop( d,&c,&owner );
+            ConsPutcTo( d->term_id, c, owner );
             d->next_due_us += d->us_per_char;
         }
     }
@@ -1104,8 +1121,10 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                       arbitrate= true;
                       break;
                   }
-                                fifo_push( dev, c  );
-                  if (needsLF)  fifo_push( dev, LF );
+                  /* Stamp the WRITER, not whoever will be running when these
+                     bytes finally reach the screen -- that is the whole point. */
+                                fifo_push( dev, c,  pid );
+                  if (needsLF)  fifo_push( dev, LF, pid );
               }
               else if (hostterm_bound( gConsoleID )
                        && pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask) {
