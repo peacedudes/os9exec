@@ -133,6 +133,13 @@ build_68k() {
     for n in "${MODULES[@]}"; do
         [ -s "$dir/CMDS/$n" ] || { echo "  $n did not build" >&2; return 1; }
     done
+    # l68 recreates these through the host filesystem as 0644, dropping the
+    # execute bit.  That matters on the way OUT: the shipped tree is copied to
+    # an OS-9 disk by host tools, and a host mode bit is what becomes the OS-9
+    # `e` attribute.  Without this, every --build silently degrades the tree
+    # it just rebuilt.  (Module contents are byte-identical across rebuilds --
+    # verified -- so this mode flip was the only drift.)
+    chmod 755 "$dir"/CMDS/*
     echo "  ${#MODULES[@]} modules built"
 }
 
