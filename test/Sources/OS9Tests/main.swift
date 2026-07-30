@@ -3195,6 +3195,32 @@ final class BackpressureCollector: @unchecked Sendable {
     func requestStop() { lock.lock(); stopRequested = true; lock.unlock() }
     func shouldStop() -> Bool { lock.lock(); defer { lock.unlock() }; return stopRequested }
     func total() -> Int { lock.lock(); defer { lock.unlock() }; return bytes.count }
+    func snapshot() -> [UInt8] { lock.lock(); defer { lock.unlock() }; return bytes }
+}
+
+// Drains <master> into <collector> until requestStop() is called, exactly
+// like the dedicated thread inside the backpressure test above -- pulled out
+// here because the destination-crossover test below needs two of them
+// running concurrently.
+func startDrainThread(_ master: Int32, _ collector: BackpressureCollector,
+                       _ stopped: DispatchSemaphore) -> Thread {
+    let thread = Thread {
+        var buf = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let shouldStop = collector.shouldStop()
+            let n = read(master, &buf, buf.count)
+            if n > 0 {
+                collector.append(buf[0..<n])
+            } else if shouldStop {
+                break
+            } else {
+                usleep(20_000)
+            }
+        }
+        stopped.signal()
+    }
+    thread.start()
+    return thread
 }
 
 let hostBackpressureName = "hostterm: a full endpoint blocks the writer, losing nothing"
@@ -3428,6 +3454,81 @@ if runHostWildcardStrict {
         print("FAIL: \(hostWildcardStrictName)")
         print("      [expected Error #000:240 (E_UNIT)]")
         print("      got: \(strict.debugDescription.prefix(200))")
+        failed += 1
+    }
+}
+
+// -- baud_drain_due destination crossover ------------------------------------
+// baud_drain_due (consio.c) drains every paced device's FIFO from the
+// scheduler, not from an fmgr entry point -- there is no ambient
+// gConsoleID for it to inherit the way pConsIn/pConsInLn/ConsoleOut/pCready/
+// pCclose do (see docs/superpowers/plans/2026-07-29-conspuctto-explicit-
+// destination.md, "Why, precisely"). Two devices with live backlogs at once
+// is exactly the shape that could leak one device's bytes onto the other's
+// pty if the drain used ConsPutc's ambient gConsoleID instead of naming its
+// destination explicitly.
+//
+// Markers: "bootptest" (unique to /dd/CMDS -- confirmed absent from the
+// /dd/DEFS listing) and "flexdef.h" (unique to /dd/DEFS -- confirmed absent
+// from the /dd/CMDS listing), checked live against the actual h0 disk this
+// suite runs against, 2026-07-29. Neither string appears anywhere in the
+// command text sent below, so a match cannot come from the shell's own
+// command echo.
+let dualDeviceName = "hostterm: paced output from two devices does not cross over"
+let runDualDevice   = filter.isEmpty || dualDeviceName.localizedCaseInsensitiveContains(filter)
+
+if runDualDevice {
+    if let (master1, slave1, slave1Name) = makePTY(),
+       let (master2, slave2, slave2Name) = makePTY() {
+        let collector1 = BackpressureCollector()
+        let collector2 = BackpressureCollector()
+        let stopped1   = DispatchSemaphore(value: 0)
+        let stopped2   = DispatchSemaphore(value: 0)
+
+        // Both threads must be draining BEFORE the shell command starts:
+        // pacing keeps both backlogs alive for ~1.7s (dir /dd/CMDS is ~3226
+        // bytes at the default 19200), well past the 1024-byte pty queue, so
+        // an undrained window here would deadlock the writer rather than
+        // exercise the drain's device attribution.
+        _ = startDrainThread(master1, collector1, stopped1)
+        _ = startDrainThread(master2, collector2, stopped2)
+
+        // Two devices, two concurrent writers, distinct content, PACED (no
+        // -r) so both FIFOs are still draining across many baud_drain_due
+        // calls at once.
+        _ = os9(["dir /dd/CMDS >/t1 &", "dir /dd/DEFS >/t2"],
+                timeout: 120, paced: true,
+                env: ["OS9T1": slave1Name, "OS9T2": slave2Name])
+
+        // The backgrounded /t1 job can still be draining its FIFO after the
+        // foreground /t2 command (and the shell that spawned both) has
+        // exited -- give it a moment before stopping the readers.
+        usleep(500_000)
+        collector1.requestStop(); collector2.requestStop()
+        stopped1.wait(); stopped2.wait()
+        close(master1); close(slave1)
+        close(master2); close(slave2)
+
+        let text1 = String(decoding: collector1.snapshot(), as: UTF8.self)
+        let text2 = String(decoding: collector2.snapshot(), as: UTF8.self)
+
+        let noCrossover = text1.contains("bootptest") && !text1.contains("flexdef.h")
+                        && text2.contains("flexdef.h") && !text2.contains("bootptest")
+
+        if noCrossover {
+            print("PASS: \(dualDeviceName)"); passed += 1
+        } else {
+            print("FAIL: \(dualDeviceName)")
+            print("      [expected /t1 to carry only the CMDS listing (bootptest) and")
+            print("       /t2 only the DEFS listing (flexdef.h), with no crossover]")
+            print("      /t1 has bootptest: \(text1.contains("bootptest")), " +
+                  "/t1 has flexdef.h: \(text1.contains("flexdef.h"))")
+            print("      /t2 has flexdef.h: \(text2.contains("flexdef.h")), " +
+                  "/t2 has bootptest: \(text2.contains("bootptest"))")
+            failed += 1
+        }
+    } else {
+        print("FAIL: hostterm: could not create two pty pairs for the crossover test")
         failed += 1
     }
 }

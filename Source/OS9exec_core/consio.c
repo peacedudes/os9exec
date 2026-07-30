@@ -283,24 +283,33 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
 #endif /* TERMINAL_CONSOLE */
 
 #ifdef TERMINAL_CONSOLE
-  /* put char to console and perform CR/LF expansion etc. */
-  void ConsPutc( char c )
-  {   
+  /* Put one character to a NAMED console. Split out from ConsPutc because the
+     baud FIFO drains from the scheduler, where there is no "current" console
+     to inherit -- see baud_drain_due. Every other caller legitimately runs
+     inside an fmgr entry point that has just set gConsoleID from its path, and
+     keeps using the ConsPutc wrapper below.
+     Not declared in consio.h: ConsPutc's own declaration lives in
+     filestuff.h, unconditionally (no TERMINAL_CONSOLE guard), not in
+     consio.h -- so there is no matching spot to add ConsPutcTo to. Both of
+     ConsPutcTo's only callers (ConsPutc and baud_drain_due) are in this
+     file, so file-static is correct as well as consistent with that. */
+  static void ConsPutcTo( int term_id, char c )
+  {
       /* save this info in terminal interface system.
          0 = "nobody": emulator banner output is written while currentpid is the
          MAXPROCESSES "no process" sentinel, and that must not become a Ctrl-C
          signal target (KeyToBuffer) nor a procs[] index (lw_pid). */
       gLastwritten_pid= proc_slot( currentpid );
-    
-      if (gConsoleID>=TTY_Base) {
+
+      if (term_id>=TTY_Base) {
           #ifdef PIP_SUPPORT
-            WriteCharsToPTY( &c,1, gConsoleID, false );
+            WriteCharsToPTY( &c,1, term_id, false );
           #endif
           return;
       }
 
-      if (hostterm_bound( gConsoleID )) {
-          hostterm_put( gConsoleID, &c,1 );
+      if (hostterm_bound( term_id )) {
+          hostterm_put( term_id, &c,1 );
           return;
       }
 
@@ -310,6 +319,12 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
       #ifdef win_unix
         lw_pid( &main_mco ); /* assign for later use */
       #endif
+  } /* ConsPutcTo */
+
+  /* put char to console and perform CR/LF expansion etc. */
+  void ConsPutc( char c )
+  {
+      ConsPutcTo( gConsoleID, c );
   } /* ConsPutc */
 
   void ConsPutcEdit( char c, Boolean alf, char eorch )
@@ -902,7 +917,14 @@ void baud_drain_due( void )
         if (!d->inUse || d->count==0) continue;
 
         if (d->us_per_char==0) {
-            while (fifo_pop(d,&c)) ConsPutc(c);
+            /* Name the device explicitly: this function runs from the
+               scheduler, not from an fmgr entry point, so there is no current
+               console for ConsPutc to inherit -- it would send every device's
+               backlog to whichever console was touched last. Only non-TTY
+               devices are ever paced (ConsoleOut routes TTY_Base ids away from
+               the FIFO entirely), so WriteCharsToPTY's own g_spP dependence
+               cannot be reached from here. */
+            while (fifo_pop(d,&c)) ConsPutcTo( d->term_id, c );
         }
     }
 
@@ -916,7 +938,7 @@ void baud_drain_due( void )
 
         while (d->count>0 && d->next_due_us<=now) {
             fifo_pop( d,&c );
-            ConsPutc( c );
+            ConsPutcTo( d->term_id, c );
             d->next_due_us += d->us_per_char;
         }
     }
