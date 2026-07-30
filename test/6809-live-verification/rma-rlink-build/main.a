@@ -1,0 +1,8 @@
+* Mainline PSECT: calls a subroutine defined in a SEPARATE file.
+* typelang non-zero marks this as the mainline segment.
+         psect mn,$11,$81,1,200,start
+start    lbsr helper
+         clrb
+         swi2
+         fcb  $06
+         endsect

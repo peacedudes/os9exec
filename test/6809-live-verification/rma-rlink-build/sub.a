@@ -1,0 +1,14 @@
+* Non-mainline PSECT: typelang MUST be 0. The trailing colon on `helper:`
+* is RMA's global-symbol marker -- without it the label is local to this
+* PSECT and RLINK reports "unresolved references" for main.a's call.
+         psect sb,0,0,0,50,0
+helper:  leax msg,pcr
+         ldy  #len
+         lda  #1
+         swi2
+         fcb  $8C
+         rts
+msg      fcc  /RMA-RLINK-OK/
+         fcb  $0D
+len      equ  *-msg
+         endsect
