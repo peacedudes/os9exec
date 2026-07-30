@@ -36,7 +36,7 @@ snapshotted before and after, and it came back byte-for-byte
 unchanged.
 
 A note on the record-locking tests, because they behave unlike the
-others: three of them start a second process of their own and wait for
+others: four of them start a second process of their own and wait for
 it. They are the only way to check a mechanism that exists purely to
 coordinate concurrent access, so a run now takes a minute or two rather
 than seconds, most of it apparently idle, and "procs" during a run will

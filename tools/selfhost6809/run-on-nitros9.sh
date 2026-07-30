@@ -94,9 +94,11 @@ export NITROS9REPL_EXTRA_XROAR="-no-ratelimit ${NITROS9REPL_EXTRA_XROAR:-}"
 # whatever the caller's environment already says.
 LOGIN_USER="${NITROS9REPL_USER:-USER1}"
 export NITROS9REPL_USER="$LOGIN_USER"
-# runall drives eight tests plus tally; give it more room than a one-line
-# command needs. Cheap: this only lengthens the wait on a genuine hang.
-export NITROS9REPL_TIMEOUT="${NITROS9REPL_TIMEOUT:-90}"
+# runall drives twelve tests plus tally, four of which wait on a helper
+# process; `rebuild` additionally runs 5 assemblies and 12 basic09 PACKs in
+# one command. Give both far more room than a one-line command needs. Cheap:
+# this only lengthens the wait on a genuine hang.
+export NITROS9REPL_TIMEOUT="${NITROS9REPL_TIMEOUT:-900}"
 
 printf '[image: %s]\n[session: %s  login: %s (non-super)]\n' "$IMG" "$NITROS9REPL_SESSION" "$LOGIN_USER"
 
