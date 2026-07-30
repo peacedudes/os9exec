@@ -1,0 +1,48 @@
+        nam     alrmtst2
+        mod     modend+3,nm,$11,$81,start,0
+nm      fcs     /ALRMTST2/
+start   equ     *
+        ldd     #0
+        swi2
+        fcb     $1E
+        bcs     e1
+        leax    ok1,pcr
+        bra     p1
+e1      leax    bad1,pcr
+p1      lda     #1
+        ldy     #8
+        swi2
+        fcb     $8C
+        ldd     #2
+        swi2
+        fcb     $1E
+        bcs     e2
+        leax    ok2,pcr
+        bra     p2
+e2      leax    bad2,pcr
+p2      lda     #1
+        ldy     #8
+        swi2
+        fcb     $8C
+        ldd     #99
+        swi2
+        fcb     $1E
+        bcs     e3
+        leax    ok3,pcr
+        bra     p3
+e3      leax    bad3,pcr
+p3      lda     #1
+        ldy     #8
+        swi2
+        fcb     $8C
+        clrb
+        swi2
+        fcb     $06
+ok1     fcc     /D=0 OK  /
+bad1    fcc     /D=0 ERR /
+ok2     fcc     /D=2 OK  /
+bad2    fcc     /D=2 ERR /
+ok3     fcc     /D=99 OK /
+bad3    fcc     /D=99 ERR/
+modend  equ     *
+        emod

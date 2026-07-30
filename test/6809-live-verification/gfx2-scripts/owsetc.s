@@ -1,0 +1,14 @@
+e owsetc
+ DIM p:INTEGER
+ OPEN #p,"/w5":WRITE
+ RUN GFX2(p,"DWSET",6,0,0,40,24,0,1,1)
+ RUN GFX2(p,"SELECT")
+ RUN GFX2(p,"COLOR",3)
+ RUN GFX2(p,"BAR",20,20,280,160)
+ RUN GFX2(p,"OWSET",1,5,3,20,8,2,1)
+ RUN GFX2("OWEND")
+ LOOP
+ ENDLOOP
+q
+run owsetc
+bye

@@ -1,0 +1,13 @@
+e ff2
+ DIM p:INTEGER
+ OPEN #p,"/w5":WRITE
+ PRINT "OPEN-OK"
+ RUN GFX2(p,"DWSET",255,0,0,40,24,0,1,1)
+ PRINT "DWSET-FF-OK"
+ RUN GFX2(p,"COLOR",2)
+ RUN GFX2(p,"BAR",10,10,300,60)
+ PRINT "BAR-OK"
+ CLOSE #p
+q
+run ff2
+bye

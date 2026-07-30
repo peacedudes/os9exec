@@ -1,0 +1,56 @@
+ nam Probe2
+ mod eom,nm,$11,$81,start,$0080
+nm fcs /Probe2/
+PARMLEN equ 0
+PARMPTR equ 2
+HEXBUF equ 4
+start stx PARMPTR,u
+ std PARMLEN,u
+ leax HEXBUF,u
+ ldd PARMLEN,u
+ pshs b
+ bsr B2HEX
+ puls a
+ bsr B2HEX
+ lda #$20
+ sta ,x+
+ ldy PARMPTR,u
+ ldb #16
+dloop lda ,y+
+ pshs b
+ bsr B2HEX
+ puls b
+ decb
+ bne dloop
+ lda #$0D
+ sta ,x+
+ leax HEXBUF,u
+ ldy #60
+ lda #1
+ swi2
+ fcb $8C
+ clrb
+ swi2
+ fcb $06
+B2HEX pshs a
+ lsra
+ lsra
+ lsra
+ lsra
+ tfr a,b
+ bsr NIB2A
+ stb ,x+
+ puls a
+ anda #$0F
+ tfr a,b
+ bsr NIB2A
+ stb ,x+
+ rts
+NIB2A cmpb #9
+ bgt n2al
+ addb #$30
+ rts
+n2al addb #$37
+ rts
+ emod
+eom equ *

@@ -1,0 +1,11 @@
+e mk1
+ DIM p:INTEGER
+ OPEN #p,"/w5":WRITE
+ RUN GFX2(p,"DWSET",5,0,0,80,24,0,1,1)
+ RUN GFX2(p,"COLOR",2)
+ RUN GFX2(p,"BAR",100,40,500,120)
+ LOOP
+ ENDLOOP
+q
+run mk1
+bye

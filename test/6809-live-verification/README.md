@@ -16,3 +16,18 @@ These are not automated regression tests (no runner replays them
 automatically) — rerunning one means driving `nitros9repl.sh` by hand or
 via an agent, same as when it was first written. Automating that is a
 possible future step if this proves worth it, not done yet.
+
+`gfx2-scripts/` is a subdirectory rather than a set of `.bas` files because
+those are whole BASIC09 *session* transcripts, not procedures — see its own
+README.
+
+A batch of files here was recovered from the disk image itself on 2026-07-29,
+when the accumulated scratch on `/DD` was swept: they had only ever existed on
+the guest. Recovered under a descriptive name, with content unchanged apart
+from CR→LF: `basic09-date-string.bas`, `basic09-printusing-b8.bas`,
+`falarm-basic.a`, `falarm-cycle.a`, `process-descriptor-dump.a`,
+`rl-create-update-mode.bas`, the five `dogfood-eoflock-*-{81byte,partial,4x}`
+variants, and all of `gfx2-scripts/`. They carry no header comment naming the
+claim they back, unlike everything else here — the comments were stripped when
+they were typed into the guest over the REPL channel, and were never on the
+disk to recover.

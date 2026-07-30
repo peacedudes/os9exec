@@ -1,0 +1,15 @@
+e getputtest
+ DIM p:INTEGER
+ OPEN #p,"/w5":WRITE
+ RUN GFX2(p,"DWSET",6,0,0,40,24,0,1,1)
+ RUN GFX2(p,"SELECT")
+ RUN GFX2(p,"COLOR",3)
+ RUN GFX2(p,"FCIRCLE",50,50,20)
+ RUN GFX2(p,"DEFBUFF",1,1,2000)
+ RUN GFX2(p,"GET",1,1,30,30,40,40)
+ RUN GFX2(p,"PUT",1,1,150,100)
+ LOOP
+ ENDLOOP
+q
+run getputtest
+bye

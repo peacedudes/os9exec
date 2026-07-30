@@ -1,0 +1,16 @@
+e fonttest
+ DIM p:INTEGER
+ OPEN #p,"/w5":WRITE
+ RUN GFX2(p,"DWSET",6,0,0,40,24,0,1,1)
+ RUN GFX2(p,"SELECT")
+ RUN GFX2(p,"COLOR",3)
+ RUN GFX2(p,"CURXY",2,2)
+ PRINT #p,"HELLO WORLD"
+ RUN GFX2(p,"FONT",200,3)
+ RUN GFX2(p,"CURXY",2,6)
+ PRINT #p,"HELLO WORLD"
+ LOOP
+ ENDLOOP
+q
+run fonttest
+bye

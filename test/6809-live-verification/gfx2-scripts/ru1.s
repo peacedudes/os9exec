@@ -1,0 +1,11 @@
+e ru1
+ DIM p:INTEGER
+ OPEN #p,"/w5":WRITE
+ PRINT "OPEN-OK"
+ RUN GFX2(p,"COLOR",3)
+ RUN GFX2(p,"BAR",20,20,120,60)
+ PRINT "BAR-OK"
+ CLOSE #p
+q
+run ru1
+bye
