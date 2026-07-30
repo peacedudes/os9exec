@@ -1304,19 +1304,27 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
                                      cre ? "create":"open", pp,*modeP));
 
       err= AdjustPath( pp,adapted, cre );
-      /* OS-9 I$Create = open-or-create; file already existing is not an error for pFopen */
-      if (cre && err == E_CEF) err = 0;
       if (err) return err;
       pp=                 adapted;
 
       if (cre) {
-          /* --- create */
-          if (FileFound( pp )) {
-              /* OS-9 I$Create opens existing files without truncating; caller truncates via SS_Size if needed */
-              stream= fopen( pp,"rb+" );
-              if (stream==NULL) return c2os9err(errno,E_FNA);
-          }
-          else {
+          /* --- create.  A name that already exists is E$CEF, not a silent
+           * reopen.  I$Create's own manual section states that an error
+           * occurs if the pathlist specifies a file name that already
+           * exists, and file_rbf.c's create path already returns E_CEF on
+           * an RBF image -- so the host-native path was diverging from both
+           * the manual and this emulator's own RBF behaviour.  Its old
+           * comment claimed I$Create was "open-or-create", which is what
+           * I$Open with the write bit is for.  Visible consequence: the
+           * shell's `>` redirect (create-only, documented to fail when the
+           * target exists) silently overwrote on a host directory while
+           * failing correctly on an RBF image.
+           *
+           * Found by test/68k-conformance t10, which passed against an RBF
+           * image and failed against a host-native directory -- the split
+           * that makes a host-native shim divergence visible at all.  */
+          if (FileFound( pp )) return os9error( E_CEF );
+          {
               #ifdef windows32
               if (GetLastError()==ERROR_NOT_READY) return os9error(E_NOTRDY);
               #endif
