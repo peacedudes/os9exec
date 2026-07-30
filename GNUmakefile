@@ -88,7 +88,7 @@ UAE_SUPPRESS = -Wno-unused-variable -Wno-unused-but-set-variable \
 
 VPATH = $(CORE):$(PLAT):Source/OS9execMPW:$(APPEMU):$(UAE)
 
-.PHONY: all prod clean test test-notick test-linux warnings hammer hammer-soak hammer-6809
+.PHONY: all prod clean test test-notick test-linux warnings hammer hammer-soak hammer-6809 conformance
 
 all: $(OBJDIR) $(EXE)
 
@@ -154,6 +154,20 @@ test: $(EXE)
 # runtime (~1 min each) for a mode that is deliberately not the supported one.
 test-notick: $(EXE)
 	OS9_FLAGS=-q swift run --package-path test OS9Tests
+
+# Guest-side conformance suites: run one on a guest and CHECK the RESULT lines
+# it produced against the recorded results in the suite's DOCS/expected. This
+# is what makes a divergence fail a build rather than merely print -- before
+# tools/conformance.sh existed, both suites could be run and neither could
+# fail. Both device types are run because they genuinely disagree: a
+# host-native directory is a shim with no real RBF underneath, and t10 found a
+# real I$Create defect by passing on one and failing on the other.
+# The 6809 arm (./tools/conformance.sh 6809) needs XRoar and is deliberately
+# not wired in here -- it drives a live emulator and would collide with any
+# concurrent session using the same tooling.
+conformance: $(EXE)
+	./tools/conformance.sh 68k
+	./tools/conformance.sh 68k --rbf
 
 # Wraps the 68k live-verification corpus (test/68k-live-verification/) into
 # a runnable PASS/FAIL suite -- see docs/superpowers/specs/
