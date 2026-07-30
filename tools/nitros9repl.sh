@@ -361,10 +361,18 @@ cmd_start() {
     # Full speed by default: a throttled boot takes ~40s where an unthrottled
     # one takes ~4, and nothing here depends on real-time pacing. A test that
     # does can pass -ratelimit in NITROS9REPL_EXTRA_XROAR (last flag wins).
+    # Exactly ONE \r after the DOS command. A second \r outlives the DECB
+    # stage, lands in the booting NitrOS-9, and leaves EVERY subsequent
+    # basic09 fork with an unusable workspace ("0 free", E/LOAD fail with
+    # Error #248 - Media Full) -- system-wide, on the console as well as /N,
+    # while everything else looks normal. Measured 2026-07-29 by A/B/A/B on
+    # one clone: 'DOS 0\r\r' and 'DOS\r\r' break it; 'DOS 0\r', 'DOS\r' and
+    # 'DOS   \r' (same length, no second CR) are all healthy -- so it is the
+    # extra CR keystroke itself, not timing, not the "0".
     tmux new-window -t "$SESSION" -n xroar -c "$DISKDIR" \
         "xroar -rompath '$NITROS9/roms' -machine coco3 -tv-input rgb -machine-cart ide \
          -cart-rom ./hdblba.rom -load-hd0 68IDE.ide -cart-becker \
-         -becker-port $BECKER_PORT -type 'DOS 0\\r\\r' -no-ratelimit $ui $NITROS9REPL_EXTRA_XROAR"
+         -becker-port $BECKER_PORT -type 'DOS 0\\r' -no-ratelimit $ui $NITROS9REPL_EXTRA_XROAR"
     printf '[booting NitrOS-9 under XRoar (up to %ss)...]\n' "$BOOT_TIMEOUT"
 
     # Window 2 "chan": the inetd session client (retries until inetd listens).
