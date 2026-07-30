@@ -1238,6 +1238,15 @@ typedef struct {
                 ushort vector;              /* current TRAP vector */
                 ushort func;                /* current function code or exception vector */
                 os9err oerr;                /* OS9 error */
+
+                /* Syscall tracing (-d 0x0002) only. "func" above is overloaded
+                   three ways -- function code, exception vector offset (see the
+                   ">>2" at os9exec_nt.c), and 0 meaning "fatal, no handler" --
+                   and it is a single slot, not a stack. Deriving a RETURN line's
+                   name from it therefore named the wrong call. debug_comein()
+                   snapshots the call it announced; debug_return() reports that. */
+                ushort  dbgfunc;            /* func as captured at debug_comein */
+                Boolean dbgpending;         /* a ">>>" line is awaiting its "<<<" */
     
                 /* signal handling */
                 regs_type  rteregs;         /* saved main thread registers during intercept processing, valid if lastsignal!=0 */

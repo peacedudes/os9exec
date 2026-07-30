@@ -572,6 +572,11 @@ void debug_comein( regs_type* rp, ushort pid )
   if (!Dbg_SysCall( rp, pid )) return;
   if (cp->state==pWaitRead)    return; /* avoid dbg display in pWaitRead mode */
 
+  /* Remember which call this line announced. debug_return must name THIS call,
+     and cp->func will not still hold it by then. */
+  cp->dbgfunc   = cp->func;
+  cp->dbgpending= true;
+
   /* (enclosed in another if to avoid get_syscall_name invocation */
   /* in nodebug case!) */
   uphe_printf( ">>>%cPid=%02d: OS9 %s : ",msk ? '*':' ', pid,fdeP->name );
@@ -584,8 +589,11 @@ void debug_comein( regs_type* rp, ushort pid )
 void debug_return( regs_type* crp, ushort pid, Boolean cwti )
 {	
   process_typ*              cp  = &procs[ pid ];
-  const funcdispatch_entry* fdeP= getfuncentry(cp->func);
-  
+  /* A process start reports itself here and has no ">>>" line of its own; every
+     other return names the call debug_comein snapshotted, never cp->func. */
+  Boolean                   isStart= cp->func==STARTCALL;
+  const funcdispatch_entry* fdeP= getfuncentry( isStart ? cp->func : cp->dbgfunc );
+
   char*     errnam;
   char*     errdesc;
   mod_exec* mod;
@@ -606,9 +614,21 @@ void debug_return( regs_type* crp, ushort pid, Boolean cwti )
 	upe_printf ( "\n" );
   }
   else {
+    /* No pending entry means no call is returning, so there is nothing honest
+       to print. This is reached whenever the loop revisits a process parked
+       between syscalls -- an internal utility being launched, a fatal
+       exception, an expired time slice -- and it used to emit a return for
+       whatever cp->func happened to hold, complete with the 0xAAAAAAAx
+       register fill as if those values meant something. */
+    if (!cp->dbgpending && !isStart) return;
+
 	if ((cp->state==pActive  || // internal utilities can be active now as well
 		 cp->oerr) &&
          cp->state!=pWaitRead) { /* avoid dbg display in pWaitRead mode */
+
+      /* Consumed. Left set in the pWaitRead case above on purpose: a blocked
+         read has not returned yet and its ">>>" line still stands. */
+      cp->dbgpending= false;
 
       /* D1.w/carry error reporting will be done when process is active or syscall delivered error, */
       /* otherwise, d1.w will be updated when suspended process gets active again */

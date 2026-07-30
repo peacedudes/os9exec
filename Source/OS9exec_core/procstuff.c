@@ -415,6 +415,8 @@ os9err new_process(ushort parentid, ushort *newpid, ushort numpaths)
             /* there was no last systemcall */
             cp->func       = STARTCALL;
             cp->lastsyscall= STARTCALL;
+            cp->dbgfunc    = STARTCALL; /* nothing traced yet either */
+            cp->dbgpending = false;
             
             /* reset statistics */
             cp->pd._uticks= 0;

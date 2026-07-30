@@ -136,8 +136,12 @@ func killContainer(_ name: String) {
     kill.waitUntilExit()
 }
 
+// `flags` adds emulator flags for ONE call, which OS9_FLAGS (whole-run, read
+// from the parent's environment) cannot express. Applied to both the local and
+// the containerized argument lists, so a test using it still runs in a container.
 func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bool = false,
-         disk: String = diskPath, env: [String: String] = [:]) -> String {
+         disk: String = diskPath, env: [String: String] = [:],
+         flags: [String] = []) -> String {
     let setup  = "chx \(sdkCmds)\nload math cio\n"
     // ESC then Ctrl-D: EOF is a per-path setting, not a constant. A site whose
     // `.login` runs `tmode eof=04` (a normal thing to do -- it matches Unix)
@@ -159,7 +163,7 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
     // the whole suite with the clock off, guarding the "-q" fallback.
     let extraFlags = (ProcessInfo.processInfo.environment["OS9_FLAGS"] ?? "")
         .split(separator: " ").map(String.init)
-    let speedFlag: [String] = (paced ? [] : ["-r"]) + extraFlags
+    let speedFlag: [String] = (paced ? [] : ["-r"]) + extraFlags + flags
     // Named so a timeout can actually stop it -- see killContainer above.
     let containerName = "os9test-\(UUID().uuidString.prefix(8))"
 
@@ -3529,6 +3533,81 @@ if runDualDevice {
         }
     } else {
         print("FAIL: hostterm: could not create two pty pairs for the crossover test")
+        failed += 1
+    }
+}
+
+// -- -d 0x0002 return lines name the call that was entered --------------------
+// funcdispatch.c used to re-derive a return line's name from cp->func at exit
+// time. That field is a single slot per process, overloaded three ways
+// (function code, exception vector offset, and 0 for "fatal, no handler"), so
+// by the time a return printed it could hold something else entirely -- and
+// because F$Link IS function code $00, the 0 sentinel printed a whole
+// fabricated `<<< F$Link returns:` line, padded with the 0xAAAAAAAx register
+// fill pattern as though those values meant something. That is not cosmetic:
+// it sent a 2026-07-29 investigation chasing an E_NOTRDY attributed to the
+// wrong call. debug_comein now snapshots what it announced.
+//
+// The BACKGROUNDED job is load-bearing, not decoration. exec_syscall skips its
+// own debug_return whenever arbitration is due and re-enters the main loop
+// instead, whose top prints a return for whatever cp->func now holds -- so the
+// defect needs a second runnable process for arbitration to fall due while an
+// internal utility (`procs` here) is mid-run. `&` guarantees that structurally.
+//
+// Measured against the pre-fix binary, because two tidier-looking versions of
+// this test were VACUOUS: bare `procs` passed, and so did bare `free /dd`, even
+// though `free /dd` does reproduce when piped in outside this harness. Timing
+// alone is not a reliable trigger. This shape failed 3/3 before the fix and
+// passes 3/3 after. Do not simplify the command list without re-checking that
+// it can still fail.
+let tracePairingName = "debug: -d syscall trace pairs every return with its entry"
+let runTracePairing  = filter.isEmpty || tracePairingName.localizedCaseInsensitiveContains(filter)
+
+if runTracePairing {
+    let trace = os9(["dir /dd/DEFS &", "procs"], flags: ["-d", "0x0002"])
+
+    // ">>>" / "<<<" then one mask char, then "Pid=NN: OS9 <name>". START and
+    // INTERCEPT are legitimately unpaired: neither has an entry line of its own.
+    var pending: [String: [String]] = [:]
+    var unpaired: [(String, String)] = []
+    var mismatched: [(String, String, String)] = []
+
+    for line in trace.split(whereSeparator: \.isNewline) {
+        for match in line.ranges(of: try! Regex("(>>>|<<<).Pid=([0-9]+): OS9 ([^ ]+)")) {
+            let field = String(line[match])
+            let isEntry = field.hasPrefix(">>>")
+            // "…Pid=NN: OS9 name" -- split off the pid and the name positionally.
+            guard let pidPart  = field.split(separator: "=").last?.split(separator: ":").first,
+                  let namePart = field.split(separator: " ").last else { continue }
+            let pid  = String(pidPart)
+            let name = String(namePart)
+            if name == "START" || name == "INTERCEPT" { continue }
+
+            if isEntry {
+                pending[pid, default: []].append(name)
+            } else if let expected = pending[pid]?.popLast() {
+                if expected != name { mismatched.append((pid, expected, name)) }
+            } else {
+                unpaired.append((pid, name))
+            }
+        }
+    }
+
+    // F$Exit never returns, so it is expected to stay open; nothing else should.
+    let strayOpen = pending.flatMap { pid, names in
+        names.filter { $0 != "F$Exit" }.map { (pid, $0) }
+    }
+
+    if trace.contains("Pid=") && unpaired.isEmpty && mismatched.isEmpty && strayOpen.isEmpty {
+        print("PASS: \(tracePairingName)"); passed += 1
+    } else {
+        print("FAIL: \(tracePairingName)")
+        if !trace.contains("Pid=") {
+            print("      [no trace output at all -- did -d 0x0002 reach the emulator?]")
+        }
+        for u in unpaired    { print("      return printed with no entry: pid=\(u.0) \(u.1)") }
+        for m in mismatched  { print("      pid=\(m.0) entered \(m.1) but return printed as \(m.2)") }
+        for s in strayOpen   { print("      entry never returned: pid=\(s.0) \(s.1)") }
         failed += 1
     }
 }
