@@ -41,6 +41,12 @@ ENDIF
 IF -R /x0/REBUILT/t11wprod
 del /x0/REBUILT/t11wprod
 ENDIF
+IF -R /x0/REBUILT/t12wser
+del /x0/REBUILT/t12wser
+ENDIF
+IF -R /x0/REBUILT/t12whld
+del /x0/REBUILT/t12whld
+ENDIF
 echo CHX /x0/REBUILT >-/x0/SCRATCH/rbpack.tmp
 echo LOAD /x0/SRC/tally.bas >+/x0/SCRATCH/rbpack.tmp
 echo PACK tally >+/x0/SCRATCH/rbpack.tmp
@@ -91,6 +97,16 @@ echo LOAD /x0/SRC/t11wprod.bas >+/x0/SCRATCH/rbpack.tmp
 echo PACK t11wprod >+/x0/SCRATCH/rbpack.tmp
 echo BYE >+/x0/SCRATCH/rbpack.tmp
 /DD/CMDS/basic09 </x0/SCRATCH/rbpack.tmp
+echo CHX /x0/REBUILT >-/x0/SCRATCH/rbpack.tmp
+echo LOAD /x0/SRC/t12wser.bas >+/x0/SCRATCH/rbpack.tmp
+echo PACK t12wser >+/x0/SCRATCH/rbpack.tmp
+echo BYE >+/x0/SCRATCH/rbpack.tmp
+/DD/CMDS/basic09 </x0/SCRATCH/rbpack.tmp
+echo CHX /x0/REBUILT >-/x0/SCRATCH/rbpack.tmp
+echo LOAD /x0/SRC/t12whld.bas >+/x0/SCRATCH/rbpack.tmp
+echo PACK t12whld >+/x0/SCRATCH/rbpack.tmp
+echo BYE >+/x0/SCRATCH/rbpack.tmp
+/DD/CMDS/basic09 </x0/SCRATCH/rbpack.tmp
 attr /x0/REBUILT/tally e pe pw pr
 attr /x0/REBUILT/t02int e pe pw pr
 attr /x0/REBUILT/t07div0 e pe pw pr
@@ -101,6 +117,8 @@ attr /x0/REBUILT/t10eoflk e pe pw pr
 attr /x0/REBUILT/t10prod e pe pw pr
 attr /x0/REBUILT/t11wlock e pe pw pr
 attr /x0/REBUILT/t11wprod e pe pw pr
+attr /x0/REBUILT/t12wser e pe pw pr
+attr /x0/REBUILT/t12whld e pe pw pr
 del /x0/SCRATCH/rbpack.tmp
 chd /x0
 echo RUN rebuilt >+/x0/RESULTS/report
@@ -117,6 +135,7 @@ t08extend >+/x0/RESULTS/report
 t09lost >+/x0/RESULTS/report
 t10eoflk >+/x0/RESULTS/report
 t11wlock >+/x0/RESULTS/report
+t12wser >+/x0/RESULTS/report
 tally
 ELSE
 echo CONF6809 rebuild: basic09 not found on this system -- nothing written to REBUILT/
