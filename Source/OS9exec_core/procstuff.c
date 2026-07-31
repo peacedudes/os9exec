@@ -751,13 +751,32 @@ os9err send_signal( ushort spid, ushort signal )
     if (wRead && signal<=Pwr_Signal) sigp->pwr_brk= true; /* special break condition */
         
     s= &sig_queue; /* store it, but don't do anything */
+
+    /* Bounds check BEFORE the store, not after. The count used to be tested
+       only when deciding whether to advance it, so with the queue already full
+       the two stores below still ran at index MAXSIGNALS: pid[MAXSIGNALS] is
+       signal[0] (the arrays are adjacent in sig_typ), and signal[MAXSIGNALS] is
+       past the end of sig_queue altogether -- a global-buffer overflow that
+       also silently corrupted the oldest queued entry. Every later signal then
+       did it again, since the count could not advance.
+       E$USigP is the documented answer, not an invented one: F$Send lists
+       E$IPrcID and E$USigP as its only two possible errors, and "unprocessed
+       signal pending" is exactly the situation. Refusing loudly beats
+       overwriting somebody's queued signal and reporting success. */
+    if (s->cnt>=MAXSIGNALS) {
+        debugprintf(dbgProcess,dbgNorm,
+                   ("# send signal=%d to pid=%d REFUSED: queue full (%d)\n",
+                      signal, spid, s->cnt ));
+        return os9error(E_USIGP);
+    }
+
     s->pid   [s->cnt]= spid;
     s->signal[s->cnt]= signal;
     
 //  debugprintf(dbgSysCall,dbgNorm,("# STACK SIGNAL intUtil=%d spid=%d signal=%d lvl=%d\n", 
 //                                     cp->isIntUtil, spid, signal, s->cnt ));
         
-    if (s->cnt<MAXSIGNALS) s->cnt++;
+    s->cnt++; /* the full case returned above, so this can no longer saturate */
 //  upe_printf("# send signal=%d to pid=%d queued (level=%d) %d\n",
 //                                         signal,spid, s->cnt, sigp->pwr_brk );
     debugprintf(dbgProcess,dbgNorm,("# send signal=%d to pid=%d queued (level=%d)\n",
