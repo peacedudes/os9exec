@@ -221,5 +221,121 @@ os9err evSet( uint32_t evId, int evValue, int *prvValue )
 
 
 
+int evSatAdd( int a, int b )
+/* Signed add, saturating instead of overflowing: "If an underflow or overflow
+   occurs on the addition, the values $80000000 (minimum integer), and
+   $7fffffff (maximum integer) are used, respectively" (Ev$WaitR; Ev$SetR says
+   the same of its increment).
+   Summed as UNSIGNED because signed overflow is undefined behaviour -- it is
+   the thing being detected, so it must not be allowed to happen first. */
+{
+    int32_t sum= (int32_t)( (uint32_t)a + (uint32_t)b );
+
+    if (b>0 && sum<a) return  2147483647;       /* overflowed  -> max integer */
+    if (b<0 && sum>a) return -2147483647 - 1;   /* underflowed -> min integer */
+    return sum;
+} /* evSatAdd */
+
+
+
+os9err evRead( uint32_t evId, int *evValue )
+/* Read the value "without waiting or modifying the event variable" (Ev$Read).
+   Deliberately does NOT apply the wait increment, which is what separates this
+   from evWait(). */
+{
+    event_typ* ev= getEv( evId );
+    if        (ev==NULL) return E_EVNTID;
+
+    *evValue= ev->value;
+    return 0;
+} /* evRead */
+
+
+
+os9err evSetR( uint32_t evId, int evIncr, int *prvValue )
+/* Ev$SetR: like evSet(), but the caller supplies an increment to apply to the
+   current value rather than the value itself, and the signal auto-increment is
+   NOT used. Returns the previous value. */
+{
+    event_typ* ev= getEv( evId );
+    if        (ev==NULL) return E_EVNTID;
+
+    *prvValue= ev->value;
+    ev->value= evSatAdd( ev->value, evIncr );
+    return 0;
+} /* evSetR */
+
+
+
+/* Big-endian stores into the guest's buffer, one byte at a time -- never a cast
+   to a wider pointer type. The block's fields are not naturally aligned (its
+   4-byte value sits at an even offset that is not a multiple of 4), and this
+   code is built for hosts where an unaligned access through a wider type is
+   undefined, as well as for both endiannesses. Same shape fcalls.c already uses
+   to lay out a register image. */
+static void putEvWord( byte* p, ushort v )
+{
+    p[0]= (byte)((v>> 8) & 0xFF);  p[1]= (byte)( v      & 0xFF);
+} /* putEvWord */
+
+static void putEvLong( byte* p, uint32_t v )
+{
+    p[0]= (byte)((v>>24) & 0xFF);  p[1]= (byte)((v>>16) & 0xFF);
+    p[2]= (byte)((v>> 8) & 0xFF);  p[3]= (byte)( v      & 0xFF);
+} /* putEvLong */
+
+
+
+os9err evInfo( ushort index, byte* buffer, ushort* foundP )
+/* Ev$Info: copy the information block of the first active event whose INDEX is
+   >= <index>. The index is the event table position -- "the system event
+   number, ranging from zero to the maximum number of system events minus one"
+   -- not an event ID, which is why the call takes only the low word of d0.
+
+   Field order and the 32-byte size are the manual's (event ID, name, value,
+   wait increment, signal increment, link count, next, previous). The widths
+   follow from what it already states -- a name of at most 12 characters, a
+   "four-byte integer" value, and two queue pointers -- which leaves exactly one
+   word each for the four remaining fields, and the ID being a word is why
+   Ev$Info indexes on d0's low word at all. */
+{
+    event_typ* ev;
+    int        k;
+
+    for (k= index; k<MAXEVENTS; k++) {
+            ev= &events[k];
+        if (ev->id==0) continue; /* free slot -- keep looking */
+
+        memset( buffer, 0, Ev_BlockSize );
+
+        /* The low word of our 32-bit internal ID. The block has room for a word
+           and no more, and the guest cannot pass this back as an event ID
+           anyway -- Ev$Wait and friends take the full ID handed out by
+           Ev$Creat/Ev$Link. It is here to be displayed. */
+        putEvWord( buffer +  0, (ushort)( ev->id & 0xFFFF ) );
+
+        /* Not strncpy: the field is a fixed 12 bytes, the block is already
+           zeroed, and a name of exactly 12 characters legitimately fills it
+           with no terminator. evCreat rejects anything longer. */
+        memcpy   ( buffer +  2, ev->name, strlen( ev->name ) );
+
+        putEvLong( buffer + 14, (uint32_t)ev->value );
+        putEvWord( buffer + 18, (ushort)  ev->wInc  );
+        putEvWord( buffer + 20, (ushort)  ev->sInc  );
+        putEvWord( buffer + 22,           ev->e_linkcount );
+        /* 24 and 28 are the queue links. os9exec has no event queue -- waiters
+           park and re-test the range (see evWait) instead of being threaded
+           onto one -- so both stay 0 rather than carrying a host pointer that
+           would mean nothing in the guest's address space. */
+
+        *foundP= (ushort)k;
+        return 0;
+    } /* for */
+
+    return E_EVNTID; /* "The index is above all active events." */
+} /* evInfo */
+
+
+
 /* eof */
 

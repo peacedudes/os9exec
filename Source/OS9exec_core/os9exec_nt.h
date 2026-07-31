@@ -1273,6 +1273,17 @@ typedef struct {
                 /* Stdin saved buffer */
                 int        saved_cnt;
                 pstate_typ saved_state;     /* saved process' state */
+
+                /* Ev_WaitR: the ABSOLUTE range, resolved once from the caller's
+                   relative one. A waiter parks and has its syscall re-run with
+                   its ENTRY registers restored (os9exec_nt.c), so d2/d3 are the
+                   relative values again on every retry -- recomputing from them
+                   would re-anchor the window to the event's current value each
+                   round, and a relative range that brackets the current value
+                   is then satisfied immediately, so Ev_WaitR would never block
+                   at all. Resolved on the first pass, reused on every retry. */
+                int        ev_minV;
+                int        ev_maxV;
                 
                 os9addr_t my_args;          /* 68k arena offset of process argument area */
                 #ifdef THREAD_SUPPORT

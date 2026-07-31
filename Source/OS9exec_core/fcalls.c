@@ -607,12 +607,22 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
 {
     os9err       err   = 0;
     char*        p     = (char*)FROM68K(rp->a[0]);
-    short        evCode= loword(rp->d[1]);
+    /* The function code is only the LOW BITS of d1's low word. Its MS bit is
+       Ev_AllProcs ("activate all processes in range"), a modifier that rides on
+       the same word -- so the documented spelling of a broadcast signal,
+       d1 = $8008, used to fall through to `default:` and come back E_UNKSVC
+       instead of signalling anything. Masking it off is the whole fix: os9exec
+       keeps no event queue, waiters poll evWait() and each one re-tests the
+       range for itself, so "wake every process in range" is already what
+       happens and the bit needs no behaviour of its own. */
+    short        evCode= (short)( loword(rp->d[1]) & ~Ev_AllProcs );
     process_typ* cp    = &procs[cpid];
-    
+
     int          evValue= 0; /* stays 0 if evWait() errors out before setting it */
+    int          prvValue= 0;
     short        wIncr, sIncr;
     int          minV,  maxV;
+    ushort       evIndex;
     uint32_t     evId;
 
     
@@ -675,10 +685,89 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
                         rp->d[1]= evValue;
                         break;
                         
+        case Ev_WaitR:  evId= rp->d[0];
+
+                        /* Resolve the relative range ONCE. On a retry the entry
+                           registers are back in place, so d2/d3 are relative
+                           again and re-resolving would move the window with the
+                           value -- see procs[].ev_minV. */
+                        if (cp->state==pWaitRead) {
+                            set_os9_state( cpid, cp->saved_state, "OS9_F_Event" );
+                            minV= cp->ev_minV;
+                            maxV= cp->ev_maxV;
+                        }
+                        else {
+                            /* evRead both fetches the anchor value and rejects a
+                               bad ID before any arithmetic happens. */
+                                err= evRead( evId, &evValue );
+                            if (err) break;
+
+                            minV= evSatAdd( evValue, (int)rp->d[2] );
+                            maxV= evSatAdd( evValue, (int)rp->d[3] );
+                            cp->ev_minV= minV;
+                            cp->ev_maxV= maxV;
+                        }
+
+                        err= evWait( evId, minV,maxV, &evValue );
+                        if (err==EV_NOTYET) { /* park and retry, exactly as Ev_Wait */
+                            cp->saved_state= cp->state;
+                            set_os9_state( cpid, pWaitRead, "OS9_F_Event" );
+                        }
+
+                        /* "the actual values are returned to the caller" */
+                        rp->d[1]= evValue;
+                        rp->d[2]= minV;
+                        rp->d[3]= maxV;
+                        break;
+
+        case Ev_Read:   evId= rp->d[0];
+                            err= evRead( evId, &evValue );
+                        if (!err) rp->d[1]= evValue;
+                        break;
+
+        case Ev_Info:   /* Only the LOW WORD of d0 is the index -- the manual is
+                           explicit that this call differs from the others there. */
+                        evIndex= loword( rp->d[0] );
+
+                        /* a0 is a 32-byte OUTPUT buffer, so the whole block has
+                           to be inside the arena, not just its first byte:
+                           EVENT_NAME_REQUIRED()'s single-byte IN_ARENA test
+                           would let a buffer starting 4 bytes below emul_end
+                           through and evInfo would write off the end. */
+                        if (!RANGE_IN_ARENA( p, Ev_BlockSize )) {
+                            return os9error(E_BPADDR);
+                        }
+
+                            err= evInfo( evIndex, (byte*)p, &evIndex );
+                        if (!err) rp->d[0]= evIndex;
+                        break;
+
         case Ev_Signl:  evId= rp->d[0];
         				err = evSignl( evId );
         				break;
-        
+
+        case Ev_Set:    evId= rp->d[0];
+                            err= evSet ( evId, (int)rp->d[2], &prvValue );
+                        if (!err) rp->d[1]= prvValue;
+                        break;
+
+        case Ev_SetR:   evId= rp->d[0];
+                            err= evSetR( evId, (int)rp->d[2], &prvValue );
+                        if (!err) rp->d[1]= prvValue;
+                        break;
+
+        /* Ev_Pulse is deliberately NOT implemented, and returns E_UNKSVC via
+           default: below rather than pretending. A pulse sets the event value,
+           runs the signal search, and RESTORES the original value -- so the
+           pulsed value only ever exists during that search. os9exec has no
+           event queue to search: a waiter parks and re-tests the range when it
+           is next scheduled, which is always after the value has been put back,
+           so every waiter would miss every pulse. Implementing it would mean
+           recording which process waits on which event with what range, i.e.
+           building the queue the manual describes. Accepting the call and
+           quietly waking nobody is the worse option -- it reports success for
+           work not done. See ROADMAP-68k.md. */
+
         default:        err= E_UNKSVC;
     }
 

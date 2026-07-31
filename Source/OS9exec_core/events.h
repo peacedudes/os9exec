@@ -73,6 +73,16 @@
    range (os9errno.h) so it can never collide with one. */
 #define EV_NOTYET   0xFFFF
 
+/* The MS bit of the function-code WORD, not a function code of its own:
+   "d1.w = MS bit set to activate all processes in range / LS bits = <code>"
+   (F$Event, Ev$Signl / Ev$Pulse / Ev$Set / Ev$SetR). It has to be masked off
+   before dispatching, or the documented spelling of a signal -- d1 = $8008 --
+   does not match its own case. */
+#define Ev_AllProcs 0x8000
+
+/* Size of the event information block Ev_Info copies to the caller. */
+#define Ev_BlockSize    32
+
 
 
 /* the routines */
@@ -85,5 +95,12 @@ os9err evDelet( char* evName );
 os9err evWait ( uint32_t evId, int minV, int maxV, int  *evValue );
 os9err evSignl( uint32_t evId );
 os9err evSet  ( uint32_t evId, int evValue,         int *prvValue );
+os9err evRead ( uint32_t evId,                      int *evValue  );
+os9err evSetR ( uint32_t evId, int evIncr,          int *prvValue );
+os9err evInfo ( ushort   index, byte* buffer,    ushort *foundP   );
+
+/* Saturating signed add, exported because Ev_WaitR resolves its relative
+   range with it before ever reaching evWait(). */
+int    evSatAdd( int a, int b );
 
 /* eof */
