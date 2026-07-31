@@ -3735,6 +3735,70 @@ if runTNXoffHalt || runTNXoffAlive {
     }
 }
 
+// -- shutdown must survive a process that wrote to a /tN ---------------------
+// `kill_process` (procstuff.c) dereferenced `cp->last_mco->spP` unconditionally.
+// A /tN keeps its ttydev_typ while `hostterm_close()` drops the syspath and
+// leaves `dev.spP` NULL, and cleanup() runs close_syspaths BEFORE
+// kill_processes -- so ANY process still holding a last_mco for a /tN crashed
+// on the way out. `hostterm_poll` already carried this exact guard; this was
+// the other unguarded dereference.
+//
+// It presented as an unkillable 100%-CPU hang, not a crash, because
+// setup_exception left segv_handler armed after the emulation loop: the fault
+// siglongjmp'd back into a loop whose world had already been torn down, faulted
+// again, and span forever with the PC in unmapped memory. Both halves are
+// fixed; this test covers the pair, since either one alone brings the hang or
+// the crash back.
+//
+// No holdOpen: the terminator goes out with the body, so the shell exits while
+// the backgrounded writer is still running -- that is the whole setup. Paced
+// and drained, both load-bearing: unpaced-and-undrained instead parks the
+// writer on a genuinely full pty, which is correct blocked-writer behaviour
+// (idle, and it completes in full the moment a reader appears -- measured) and
+// would make this test flaky for a reason that is not a bug.
+let tnShutdownName = "hostterm: cleanup survives a process that wrote to /tN"
+let runTNShutdown  = filter.isEmpty || tnShutdownName.localizedCaseInsensitiveContains(filter)
+
+if runTNShutdown {
+    if let (master, slave, slaveName) = makePTY() {
+        let collector = BackpressureCollector()
+        let stopped   = DispatchSemaphore(value: 0)
+        _ = startDrainThread(master, collector, stopped)
+
+        let consoleOut = os9(["dir /dd/CMDS >/t1 &"], timeout: 120, paced: true,
+                             env: ["OS9T1": slaveName])
+
+        usleep(500_000)
+        collector.requestStop(); stopped.wait()
+        close(master); close(slave)
+
+        // Assert on the BUS ERROR, not on the delivered bytes. The listing is
+        // fully out before teardown even starts, so a "did the data survive"
+        // check passes with the defect present -- measured, it did. The host
+        // NULL deref surfaces two ways depending on where kill_process was
+        // called from: inside the emulation loop it is caught and reported as a
+        // fabricated OS-9 `E_BUSERR` against an innocent program, and during
+        // cleanup it is a plain SIGSEGV (or, before the handler was disarmed,
+        // the 100% spin, which fails this test by timing out instead). "xmode"
+        // stays in as the data-loss half of the claim.
+        let text  = String(decoding: collector.snapshot(), as: UTF8.self)
+        let clean = !consoleOut.contains("E_BUSERR")
+        if clean && text.contains("xmode") {
+            print("PASS: \(tnShutdownName)"); passed += 1
+        } else {
+            print("FAIL: \(tnShutdownName)")
+            print("      [kill_process dereferenced a /tN's dropped syspath: reported as a")
+            print("       bus error, a SIGSEGV in cleanup, or a 100%-CPU spin (timeout)]")
+            print("      bus error reported: \(!clean), listing tail present: \(text.contains("xmode"))")
+            print("      bytes off /t1: \(collector.snapshot().count)")
+            failed += 1
+        }
+    } else {
+        print("FAIL: hostterm: could not create a pty for the /tN shutdown test")
+        failed += 1
+    }
+}
+
 // -- the console's own ^S/^Q belong to OS-9, not to the host tty -------------
 // setup_term() turned off ICANON, ECHO, ISIG and OPOST but left IXON on, so the
 // HOST tty consumed ^S before os9exec ever read it and stopped accepting output.

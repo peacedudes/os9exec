@@ -670,7 +670,17 @@ os9err kill_process( ushort pid )
 
     /* now dispose all the process' resources */
     if (cp->last_mco!=NULL) {
-        cp->last_mco->spP->lastwritten_pid= 0; /* disconnect CtrlC/E signal */
+        /* spP is NULL between a device's last path close and any reopen -- a
+           /tN keeps its ttydev_typ (and this process's pointer to it) while
+           hostterm_close() drops the syspath (hostterm.c). Killing a process
+           that had written to such a device then dereferenced NULL here, which
+           is exactly what shutdown does: close_syspaths runs before
+           kill_processes, so ANY process still holding a last_mco for a /tN
+           crashed cleanup. hostterm_poll already carries this same guard for
+           the same reason; this was the other unguarded dereference.
+           Nothing to disconnect when there is no path -- just drop the link. */
+        if (cp->last_mco->spP!=NULL)
+            cp->last_mco->spP->lastwritten_pid= 0; /* disconnect CtrlC/E signal */
         cp->last_mco= NULL;
     }
     debugprintf(dbgProcess,dbgNorm,("# kill_process: CtrlC/E signal disconnected\n" ));
