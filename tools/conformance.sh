@@ -50,17 +50,27 @@ TIMEOUT=$(command -v gtimeout || command -v timeout)
 MODULES=(t01open t02eof t03bmode t04mode0 t05mode0rd t06short t07extend
          t08seekeof t09bpnum t10exists t11rewind t12size t13evread
          t14evsignl t15evset t16evsetr t17evinfo t18evwaitr
+         t19lock t20read t21defr t22wrel t23whol t24rels t25eofl t26zrel
+         t27shar
          tally mark)
 
 # ---------------------------------------------------------------- comparison
 
-# compare <suite-dir> <report-file>
+# compare <suite-dir> <report-file> [expected-basename]
 # Reads RESULT lines from the report, checks them against the suite's
 # expected/known-divergences, prints a verdict per anomaly.  Returns 1 if
 # anything is news.
+#
+# The expected file is per DEVICE TYPE, not per suite.  It stopped being one
+# file when the record-locking tests arrived: those need real RBF mechanics
+# underneath, so they report a verdict on an image and SKIP on a host-native
+# directory, and a single expected file would have to call one of the two
+# wrong.  Recording both is what keeps SKIP meaningful -- a test that started
+# skipping on the image, where it is supposed to run, is then news instead of
+# being indistinguishable from its normal behaviour on the other device.
 compare() {
     local dir="$1" report="$2" rc=0
-    local exp="$dir/DOCS/expected" kd="$dir/DOCS/known-divergences"
+    local exp="$dir/DOCS/${3:-expected}" kd="$dir/DOCS/known-divergences"
 
     [ -f "$exp" ] || { echo "  no DOCS/expected -- nothing to check against" >&2; return 2; }
 
@@ -77,26 +87,45 @@ compare() {
     ids_exp=$(awk '{print $2}' "$n_exp" | sort -u)
     ids_got=$(awk '{print $2}' "$n_got" | sort -u)
 
-    local id verdict want
+    # A verdict is news when it differs from what was recorded, whatever the
+    # two verdicts are -- including a FAIL that became a PASS, which is how
+    # fixing a known divergence gets noticed instead of quietly closing a
+    # gap nobody is watching.
+    #
+    # SKIP matching SKIP is the one non-PASS that needs no entry in
+    # known-divergences, because it is not a disagreement with the manual: it
+    # is a test reporting that this device cannot exercise its claim at all.
+    # The record-locking tests do exactly that on a host-native directory.
+    # Requiring an explanation for those would put nine permanent entries in a
+    # file whose whole job is to stay short enough to read.
+    local id verdict want nskip=0
     for id in $ids_exp; do
         verdict=$(awk -v i="$id" '$2==i {print $3}' "$n_got" | tail -1)
         want=$(awk -v i="$id" '$2==i {print $3}' "$n_exp" | tail -1)
         if [ -z "$verdict" ]; then
             printf '  MISSING %s  no RESULT line -- the test died or never ran\n' "$id"
             rc=1
-        elif grep -qx "$id" "$n_kd" 2>/dev/null; then
-            if [ "$verdict" = "$want" ]; then
-                printf '  KNOWN   %s  %s, as recorded\n' "$id" "$verdict"
-            else
+        elif [ "$verdict" != "$want" ]; then
+            if grep -qx "$id" "$n_kd" 2>/dev/null; then
                 printf '  CHANGED %s  recorded %s, now %s\n' "$id" "$want" "$verdict"
-                rc=1
+            else
+                printf '  NEW     %s  recorded %s, now %s\n' "$id" "$want" "$verdict"
+                awk -v i="$id" '$2==i' "$n_got" | sed 's/^/          /'
             fi
-        elif [ "$verdict" != PASS ]; then
-            printf '  NEW     %s  %s\n' "$id" "$verdict"
+            rc=1
+        elif [ "$verdict" = PASS ]; then
+            :
+        elif [ "$verdict" = SKIP ]; then
+            nskip=$((nskip + 1))
+        elif grep -qx "$id" "$n_kd" 2>/dev/null; then
+            printf '  KNOWN   %s  %s, as recorded\n' "$id" "$verdict"
+        else
+            printf '  NEW     %s  recorded as %s, and nothing explains it\n' "$id" "$verdict"
             awk -v i="$id" '$2==i' "$n_got" | sed 's/^/          /'
             rc=1
         fi
     done
+    [ "$nskip" -gt 0 ] && printf '  %d skipped -- this device cannot exercise those claims\n' "$nskip"
     for id in $ids_got; do
         grep -qx "$id" <<<"$ids_exp" || {
             printf '  EXTRA   %s  reported but not in DOCS/expected\n' "$id"; rc=1; }
@@ -215,7 +244,8 @@ run_68k() {
         echo "  no RESULTS/report was produced -- see /tmp/conf68k-run.log" >&2
         return 1
     fi
-    compare "$dir" "$dir/RESULTS/report" || rc=1
+    compare "$dir" "$dir/RESULTS/report" \
+        "$([ "$use_rbf" = yes ] && echo expected-rbf || echo expected)" || rc=1
     return $rc
 }
 

@@ -81,7 +81,37 @@ matters — `tools/conformance.sh 68k` and `tools/conformance.sh 68k --rbf`.
 - **The rebuild path has not been exercised end-to-end by an independent
   assembler.** The modules in `CMDS/` were built by the `r68`/`l68` on our
   own system disk, and that is the only assembler they have met.
-- **No test here needs two processes**, so the whole of RBF's record-locking
-  and EOF-lock behaviour — the richest documented area, and four of the
-  twelve tests in the 6809 suite — is untouched. See the "not tested"
-  section of `claims.md`.
+- **The two-process tests are only exercised on an RBF image.** t19–t27 need
+  real record locking underneath, so they SKIP on a host-native directory —
+  which is what CI and `--noshell` run. `tools/conformance.sh 68k --rbf` is
+  the only thing that exercises `fork.i` at all, and it is a local gate.
+
+## 2026-07-31 — t19 to t27, the record-locking tests
+
+Nine two-process tests were added, and they found five defects on their first
+run against an RBF image. Four are recorded in `DOCS/known-divergences` (t19,
+t23, t25, t27); the fifth was found on the way and has no test, because it
+kills the caller rather than reporting anything: `I$SetStt` with `SS_Ticks` on
+a non-RBF path jumps through an uninitialised dispatch slot and bus-errors.
+That one shaped the suite — `canlock` probes with `SS_Lock(0)` precisely to
+avoid it.
+
+Current results:
+
+    host-native   18 PASS,  9 SKIP
+    RBF image     23 PASS,  4 FAIL   (all four KNOWN)
+    --noshell     18 PASS,  9 SKIP   (same as host-native)
+
+The most useful single thing in that table is the PAIR t19/t21. Both make the
+same demand of the same lock and differ only in whether the second process
+reads or writes. t21 passes, reporting E$Lock exactly as documented; t19
+reports 902 — its contender never came back at all. That is not a vague
+"locking is broken": it says readers are resumed and writers are not, which is
+a one-line answer to where to look. Neither test could have said it alone.
+
+The suite's own numbers 901 and 902 appear in this run's obs= column. They are
+not OS-9 error codes: 901 means the access succeeded only after the holder
+released, and 902 means it never returned and was killed. See the readme.
+
+**These are still os9exec results.** A FAIL here is os9exec disagreeing with
+the manual, and nothing in this file is evidence about real OS-9/68k.
