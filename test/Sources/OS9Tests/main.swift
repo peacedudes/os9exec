@@ -3799,6 +3799,102 @@ if runTNShutdown {
     }
 }
 
+// -- XOFF halts output; input keeps being taken ------------------------------
+// ReadCharsFromTerminal used to return "not ready" whenever holdScreen was set,
+// so a terminal paused with ^S also stopped accepting typing: keystrokes piled
+// up in inBuf and every one of them ran at once on ^Q. The Technical I/O Manual
+// V2.4 (PD_XOFF) halts OUTPUT only, and SS_Ready never had the test either
+// (DevReadyTerminal), so the device reported characters available while the
+// read refused to hand them over.
+//
+// Proof is a side effect that does NOT touch the held screen: a command typed
+// during the hold writes a file, and the file must appear BEFORE the XON. That
+// ordering is the whole assertion -- with the defect present the file appears
+// too, just late, so a bare "does it exist at the end" check passes either way.
+//
+// Driven over a real pty rather than through os9(): os9() writes the whole
+// command body in one go, so the XOFF byte is drained into inBuf at an
+// unpredictable point -- possibly before the shell has even printed the prompt
+// it then parks on -- and the run's outcome stops depending on the thing under
+// test. Real timing is the point here, as it is for the raw-mode test below.
+let xoffInputName = "console: XOFF halts output but input is still taken"
+let runXoffInput  = filter.isEmpty || xoffInputName.localizedCaseInsensitiveContains(filter)
+
+if runXoffInput && !containerized {
+    if let (master, slave, _) = makePTY() {
+        let witness = scratchDisk + "/xoffinput"
+        try? FileManager.default.removeItem(atPath: witness)
+
+        let collector = BackpressureCollector()
+        let stopped   = DispatchSemaphore(value: 0)
+        _ = startDrainThread(master, collector, stopped)
+
+        let process = Process()
+        process.executableURL       = execURL
+        process.arguments           = ["-r", shellArg]
+        process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
+        process.environment         = ["OS9DISK": diskPath,
+                                       "OS9H\(scratchDev.dropFirst())": scratchDisk]
+        let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
+        process.standardInput  = slaveHandle
+        process.standardOutput = slaveHandle
+        process.standardError  = slaveHandle
+
+        var ranDuringHold = false
+        var sizeAtXon     = -1
+
+        if (try? process.run()) != nil {
+            func send(_ s: String) {
+                var b = Array(s.utf8); _ = write(master, &b, b.count)
+            }
+            // Settle, then force a fresh prompt so the shell is sitting in a
+            // READ when the XOFF lands -- not parked mid-prompt, which would
+            // stall it for a reason that has nothing to do with the read gate.
+            send("chx \(sdkCmds)\nload math cio\n")
+            usleep(2_000_000)
+            send("\n")
+            usleep(1_000_000)
+
+            send("\u{13}")                            // XOFF: screen held from here
+            usleep(300_000)
+            send("dump /dd/CMDS/cc >\(scratch)/xoffinput\n")
+
+            // Poll for the side effect while the screen is still held.
+            for _ in 0..<80 {
+                if let a = try? FileManager.default.attributesOfItem(atPath: witness),
+                   let sz = a[.size] as? Int, sz > 0 { ranDuringHold = true; break }
+                usleep(100_000)
+            }
+            sizeAtXon = (try? FileManager.default.attributesOfItem(atPath: witness))
+                        .flatMap { $0[.size] as? Int } ?? -1
+
+            send("\u{11}")                            // XON: release
+            usleep(500_000)
+            send("\u{1B}\n\u{04}\n")
+            usleep(1_000_000)
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+
+        collector.requestStop(); stopped.wait()
+        close(master); close(slave)
+        try? FileManager.default.removeItem(atPath: witness)
+
+        if ranDuringHold {
+            print("PASS: \(xoffInputName)"); passed += 1
+        } else {
+            print("FAIL: \(xoffInputName)")
+            print("      [a command typed during the hold did not run until XON --")
+            print("       the read path is gating on holdScreen again]")
+            print("      witness size when XON was sent: \(sizeAtXon)")
+            failed += 1
+        }
+    } else {
+        print("FAIL: console: could not create a pty for the XOFF input test")
+        failed += 1
+    }
+}
+
 // -- the console's own ^S/^Q belong to OS-9, not to the host tty -------------
 // setup_term() turned off ICANON, ECHO, ISIG and OPOST but left IXON on, so the
 // HOST tty consumed ^S before os9exec ever read it and stopped accepting output.

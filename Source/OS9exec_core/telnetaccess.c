@@ -207,8 +207,11 @@ long ReadCharsFromPTY(char *buffer, long n, int consoleID)
     long        cnt; /* this is the data base */
     ttydev_typ* mco= &ttydev[consoleID-TTY_Base];
  
-    /* if not yet ready handle other events */
-    if (mco->holdScreen || (!DevReadyTTY( &cnt,consoleID ))) {      
+    /* if not yet ready handle other events.
+       holdScreen is deliberately NOT part of this test -- XOFF halts output
+       only (see ReadCharsFromTerminal below for the full reasoning); the hold
+       for a pty's output lives in WriteCharsToPTY. */
+    if (!DevReadyTTY( &cnt,consoleID )) {
       devIsReady= false;
       *buffer= NUL; return 1; /* if 0, it would not return to caller */
     }
@@ -436,12 +439,20 @@ long ReadCharsFromTerminal(char *buffer, long n, ttydev_typ* mco)
 {
     long cnt; /* this is the data base */
 
-    if (mco->holdScreen) {
-        devIsReady= false;
-        *buffer= NUL;
-        return 1;
-    }
-        
+    /* NO holdScreen test here. XOFF halts a device's OUTPUT and nothing else
+       ("Output from a SCF device is halted immediately when PD_XOFF is
+       received" -- Technical I/O Manual V2.4, PD_XOFF); input keeps being
+       taken, which is why a real terminal lets you type ahead through a pause.
+       This used to return not-ready whenever the device was held, so keystrokes
+       piled up in inBuf and every one of them ran at once on XON.
+       SS_Ready never had the test (DevReadyTerminal above), so the device also
+       reported characters available while the read refused to hand them over.
+
+       Consequence, accepted deliberately: SCF echoes through ConsPutc, which is
+       best-effort and cannot park, so a character typed during a hold appears
+       on the held screen. That is how a terminal with local echo behaves, and
+       the alternative -- freezing input to keep the screen perfectly still --
+       is the divergence this comment exists to record the removal of. */
     devIsReady= true; // the default value for devIsReady
     if       (mco->inBufUsed) {   // got some chars to return...
         cnt= (mco->inBufUsed<n ? mco->inBufUsed : n); // return this many chars
