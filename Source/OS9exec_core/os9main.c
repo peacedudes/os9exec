@@ -572,6 +572,14 @@ Boolean setup_term()
           modes.c_lflag &= ~ICANON;
           modes.c_lflag &= ~(ECHO | ECHOE | ECHOK /*| ECHOKE*/);
           modes.c_lflag &= ~ISIG; /* pass ^C/^Z as raw bytes; OS-9 handles signals */
+          modes.c_iflag &= ~IXON; /* pass ^S/^Q as raw bytes too. We ARE the SCF driver
+                                       here, and PD_XON/PD_XOFF are ours to consume
+                                       (KeyToBuffer, utilstuff.c). With IXON left on, the
+                                       HOST tty ate ^S before os9exec ever saw it and
+                                       stopped accepting output, so the emulator blocked
+                                       inside write(2) -- freezing every OS-9 process,
+                                       the tick and pending alarms, not just the writer.
+                                       Same reason hostterm_set_raw() clears it for /tN. */
           modes.c_oflag &= ~OPOST; /* SCF (consio.c) decides CR/LF on its own -- a host
                                        tty rewriting our LF bytes to CRLF (ONLCR, part of
                                        OPOST) silently breaks any termcap-driven program

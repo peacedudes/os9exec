@@ -3620,6 +3620,200 @@ if runTNAbort {
     }
 }
 
+// -- XOFF halts one terminal's output, and only that terminal ----------------
+// "Output from a SCF device is halted immediately when PD_XOFF is received and
+// will not be resumed until PD_XON is received" (Technical I/O Manual V2.4,
+// PD_XOFF). os9exec set holdScreen from the key path and then never looked at
+// it on any write path a modern build reaches -- the two `while (holdScreen)
+// CheckInputBuffers()` loops live in console.stubs.c (behind USE_CLASSIC) and
+// serialaccess.c (not in the makefile at all). So XOFF on /tN was a no-op for
+// output, and the pause users DID see on the main console came from the HOST
+// tty's own IXON eating ^S -- see the console test below.
+//
+// Two assertions from one run, because they are two different claims about the
+// same 4-second window and a second paced run would double the cost:
+//
+//  * /t1's output stops. Sampled at two points three seconds apart; equal
+//    means halted. The "sampled while still mid-listing" check is what keeps
+//    that from passing on a listing that had simply finished -- without it the
+//    equality is vacuous.
+//  * the CONSOLE listing, on a different device, runs to completion anyway.
+//    That is the bug behind the bug: the obvious way to honour an XOFF is to
+//    spin inside the write syscall, and under a cooperative scheduler that
+//    stalls every other process and every due F$Alarm, not just the writer.
+//    ConsoleOut parks the writer (pWaitWrite) instead. Verified able to fail by
+//    temporarily restoring the spin: the console listing is then truncated.
+//
+// The XOFF goes to the pty MASTER -- in on /t1's own input, the terminal
+// asking its own output to stop. holdOpen keeps the shell alive across the
+// whole hold; without it the shell exits, baud_drain_all_pending flushes
+// everything, and both assertions pass for the wrong reason.
+let tnXoffHaltName  = "hostterm: XOFF on /tN halts that terminal's output until XON"
+let tnXoffAliveName = "hostterm: an XOFF hold does not stall the rest of the system"
+let runTNXoffHalt   = filter.isEmpty || tnXoffHaltName.localizedCaseInsensitiveContains(filter)
+let runTNXoffAlive  = filter.isEmpty || tnXoffAliveName.localizedCaseInsensitiveContains(filter)
+
+if runTNXoffHalt || runTNXoffAlive {
+    if let (master, slave, slaveName) = makePTY() {
+        let collector = BackpressureCollector()
+        let stopped   = DispatchSemaphore(value: 0)
+        _ = startDrainThread(master, collector, stopped)
+
+        let heldLock  = NSLock()
+        let sampled   = DispatchSemaphore(value: 0)
+        var earlySample = -1     // bytes on /t1 shortly after the XOFF
+        var lateSample  = -1     // bytes on /t1 three seconds later
+
+        DispatchQueue.global().async {
+            Thread.sleep(forTimeInterval: 0.6)
+            var xoff: UInt8 = 0x13
+            _ = write(master, &xoff, 1)
+
+            // Each sample is published the moment it is taken, never both at
+            // the end: a run that ends early would otherwise leave both unset
+            // and the failure would say nothing about which half went wrong.
+            Thread.sleep(forTimeInterval: 0.6)
+            heldLock.lock(); earlySample = collector.total(); heldLock.unlock()
+            Thread.sleep(forTimeInterval: 3.0)
+            heldLock.lock(); lateSample  = collector.total(); heldLock.unlock()
+
+            var xon: UInt8 = 0x11
+            _ = write(master, &xon, 1)
+            sampled.signal()
+        }
+
+        // Both listings paced, so both are still streaming when the XOFF lands
+        // -- the console one finishes DURING the hold, which is the point.
+        let consoleOut = os9(["dir /dd/CMDS >/t1 &", "dir /dd/CMDS"],
+                             timeout: 180, paced: true,
+                             env: ["OS9T1": slaveName], holdOpen: 9.0)
+
+        // Both samples first, THEN stop draining. Without this the collector
+        // can be shut down before the second sample is due whenever the run
+        // ends early -- which is exactly what a broken build does -- leaving
+        // the failure report with nothing to say about the half that matters.
+        _ = sampled.wait(timeout: .now() + 20)
+        usleep(500_000)
+        collector.requestStop(); stopped.wait()
+        close(master); close(slave)
+
+        heldLock.lock()
+        let early = earlySample, late = lateSample
+        heldLock.unlock()
+        let total = collector.total()
+
+        if runTNXoffHalt {
+            // early == late: nothing left the device while held.
+            // early < total: it was genuinely mid-listing, not already done.
+            // total > early: XON released the rest, so nothing was discarded.
+            if early >= 0 && early == late && early < total {
+                print("PASS: \(tnXoffHaltName)"); passed += 1
+            } else {
+                print("FAIL: \(tnXoffHaltName)")
+                print("      [expected /t1 to be mid-listing and frozen across the hold]")
+                print("      bytes at XOFF+0.6s: \(early), +3.6s: \(late), final: \(total)")
+                failed += 1
+            }
+        }
+
+        if runTNXoffAlive {
+            // "xmode" is the last entry of a /dd/CMDS listing and appears in no
+            // command this harness sends, so the shell's own command echo cannot
+            // supply it (see Global Constraints).
+            if consoleOut.contains("xmode") {
+                print("PASS: \(tnXoffAliveName)"); passed += 1
+            } else {
+                print("FAIL: \(tnXoffAliveName)")
+                print("      [the console listing did not finish while /t1 was held]")
+                print("      console bytes: \(consoleOut.count)")
+                failed += 1
+            }
+        }
+    } else {
+        print("FAIL: hostterm: could not create a pty for the /tN XOFF test")
+        failed += 1
+    }
+}
+
+// -- the console's own ^S/^Q belong to OS-9, not to the host tty -------------
+// setup_term() turned off ICANON, ECHO, ISIG and OPOST but left IXON on, so the
+// HOST tty consumed ^S before os9exec ever read it and stopped accepting output.
+// The emulator then blocked inside write(2) -- with the whole 68k machine on one
+// thread, that froze every OS-9 process, the system tick and every pending
+// alarm until ^Q, which is what "^S stops everything" meant. Measured on a live
+// session: 0.65s of CPU per 5s free-running, 0.02s per 5s during the ^S.
+//
+// Asserted on the tty's own flags rather than by driving a paused session,
+// because the fix IS the flag: with IXON clear the byte reaches KeyToBuffer and
+// the /tN tests above cover what OS-9 then does with it. The rest of the recipe
+// is checked at the same time so a future edit cannot quietly drop one.
+//
+// This needs a real tty on fd 0 -- os9(), which pipes stdin, skips setup_term()
+// entirely (isatty(0) is false), so no test using it could ever see this.
+let consoleRawName = "console: the host tty hands ^S/^Q to OS-9 instead of eating them"
+let runConsoleRaw  = filter.isEmpty || consoleRawName.localizedCaseInsensitiveContains(filter)
+
+if runConsoleRaw && !containerized {
+    if let (master, slave, _) = makePTY() {
+        var before = termios()
+        _ = tcgetattr(slave, &before)
+
+        let process = Process()
+        process.executableURL     = execURL
+        process.arguments         = ["-r", shellArg]
+        process.environment       = ["OS9DISK": diskPath]
+        process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
+        let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
+        process.standardInput  = slaveHandle
+        process.standardOutput = slaveHandle
+        process.standardError  = slaveHandle
+
+        var sawRaw = false
+        if (try? process.run()) != nil {
+            // Poll rather than sleep a fixed interval: setup_term() runs early,
+            // but "early" is not a guarantee worth hard-coding.
+            for _ in 0..<100 {
+                var now = termios()
+                if tcgetattr(slave, &now) == 0, (now.c_iflag & tcflag_t(IXON)) == 0 {
+                    sawRaw = true
+                    break
+                }
+                usleep(50_000)
+            }
+            var quit = Array("\u{1B}\n\u{04}\n".utf8)
+            _ = write(master, &quit, quit.count)
+            usleep(500_000)
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+
+        // The pty is ours; put it back the way we found it for anything later.
+        _ = tcsetattr(slave, TCSANOW, &before)
+        close(master); close(slave)
+
+        // Guard against the flag having been clear before os9exec touched it:
+        // openpty() hands back a cooked tty with IXON ON, so "it was already
+        // off" would make the assertion vacuous.
+        let startedCooked = (before.c_iflag & tcflag_t(IXON)) != 0
+
+        if sawRaw && startedCooked {
+            print("PASS: \(consoleRawName)"); passed += 1
+        } else if !startedCooked {
+            print("FAIL: \(consoleRawName)")
+            print("      [the pty already had IXON off, so this proves nothing]")
+            failed += 1
+        } else {
+            print("FAIL: \(consoleRawName)")
+            print("      [IXON still set on the console tty: ^S never reaches OS-9,")
+            print("       it stops the host's output and blocks the whole emulator]")
+            failed += 1
+        }
+    } else {
+        print("FAIL: console: could not create a pty for the raw-mode test")
+        failed += 1
+    }
+}
+
 // -- -d 0x0002 return lines name the call that was entered --------------------
 // funcdispatch.c used to re-derive a return line's name from cp->func at exit
 // time. That field is a single slot per process, overloaded three ways

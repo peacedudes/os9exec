@@ -165,6 +165,11 @@ void  baud_flush_device( short term_id ); /* discard queued output for one devic
 ulong baud_next_wake_delay_us( void );    /* microseconds until baud_drain_due() has work, or ULONG_MAX if none */
 void  baud_drain_all_pending( void );     /* block until every device's backlog is fully drained -- call once, at shutdown only */
 
+/* Tell the pacing FIFO that <term_id>'s XOFF hold was just set or cleared
+   (KeyToBuffer, utilstuff.c). A held device is excluded from the drain
+   schedule; releasing one restarts its backlog's pacing from now. */
+void  console_hold_changed( short term_id, Boolean held );
+
 /* external RBF    support routines */
 os9err  MountDev        ( ushort pid, char* name, char* mnt_dev, char* devCopy,
                           short  adapt, ushort scsibus, 

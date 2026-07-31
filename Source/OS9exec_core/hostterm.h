@@ -73,6 +73,12 @@ void    hostterm_setspeed ( int term_id, ulong bps );
    no syspath, or on any platform where hostterm is a stub. */
 void    hostterm_note_writer( int term_id );
 
+/* Is output to <term_id> currently held by an XOFF typed on it? False for a
+   device that is not bound -- that terminal's output falls back to the main
+   console, whose own hold is the one that applies. Same reason as
+   hostterm_note_writer: `hostterms[]` is private to hostterm.c. */
+Boolean hostterm_held( int term_id );
+
 #endif /* HOSTTERM_H */
 
 /* eof */

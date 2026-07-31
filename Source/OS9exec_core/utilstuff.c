@@ -1047,8 +1047,16 @@ Boolean KeyToBuffer( ttydev_typ* mco, char key )
     if     (key!=NUL) {
         if (key==pd_int)  { baud_flush_device( mco->spP->term_id ); mco->inBufUsed= 0; if (lwp) send_signal( lwp, S_Intrpt ); return 0; }
         if (key==pd_qut)  { baud_flush_device( mco->spP->term_id ); mco->inBufUsed= 0; if (lwp) send_signal( lwp, S_Abort  ); return 0; }
-        if (key==pd_xon)  { mco->holdScreen= false;                return 0; }
-        if (key==pd_xoff) { mco->holdScreen=  true;                return 0; }
+        /* XON/XOFF are consumed by the driver, never handed to SCF ("the driver
+           consumes the PD_XON and PD_XOFF characters itself" -- Technical I/O
+           Manual V2.4, PD_XOFF). console_hold_changed() tells the paced-output
+           FIFO that this device left or rejoined the drain schedule; without it
+           a held device's stale deadline turns the scheduler's idle nap into a
+           spin, and a released one dumps its whole backlog in one unpaced burst. */
+        if (key==pd_xon)  { mco->holdScreen= false;
+                            console_hold_changed( mco->spP->term_id, false ); return 0; }
+        if (key==pd_xoff) { mco->holdScreen=  true;
+                            console_hold_changed( mco->spP->term_id,  true ); return 0; }
     }
             
     mco->inBuf[ mco->inBufUsed++ ]= key; /* update the buffer */

@@ -830,6 +830,31 @@ os9err pEOF( _pid_, _spP_, _maxlenP_, _buffer_ )
 {   return E_EOF;
 } /* pEOF */
 
+static Boolean g_final_drain= false; /* see baud_drain_all_pending */
+
+/* Is output to <term_id> currently halted by an XOFF typed on that terminal?
+   "Output from a SCF device is halted immediately when PD_XOFF is received and
+   will not be resumed until PD_XON is received" (Technical I/O Manual V2.4,
+   PD_XOFF) -- per DEVICE, so a hold on /term must not touch /t1 or a TTY.
+   KeyToBuffer (utilstuff.c) consumes the two characters and owns the flag; this
+   only reads it, from whichever ttydev_typ backs the id:
+     >= TTY_Base    a pty -- WriteCharsToPTY does its own hold, so false here
+     bound /tN      that device's own flag, via hostterm.c (hostterms[] is private)
+     anything else  the main console, including an unbound /tN whose output
+                    falls back to it. */
+static Boolean console_held( short term_id )
+{
+    if (g_final_drain)             return false;
+    if (term_id>=TTY_Base)         return false;
+    if (hostterm_bound( term_id )) return hostterm_held( term_id );
+
+    #ifdef win_unix
+      return main_mco.holdScreen;
+    #else
+      return false;
+    #endif
+} /* console_held */
+
 #define BAUD_FIFO_SIZE   256
 #define MAXBAUDDEV         8
 
@@ -869,7 +894,11 @@ static void recompute_next_wake( void )
     ulong earliest= 0;
     for (i=0; i<MAXBAUDDEV; i++) {
         baud_device_t* d= &baud_devices[i];
-        if (d->inUse && d->count>0 && d->us_per_char>0) {
+        /* A held device contributes no deadline. It must not: its next_due_us
+           is already in the past, so leaving it in would pin g_next_wake_us to
+           "due now" for the whole hold and turn DoWait()'s idle nap into a
+           zero-timeout spin. console_hold_changed() recomputes on release. */
+        if (d->inUse && d->count>0 && d->us_per_char>0 && !console_held(d->term_id)) {
             if (earliest==0 || d->next_due_us<earliest) earliest= d->next_due_us;
         }
     }
@@ -933,6 +962,7 @@ void baud_drain_due( void )
     for (i=0; i<MAXBAUDDEV; i++) {
         baud_device_t* d= &baud_devices[i];
         if (!d->inUse || d->count==0) continue;
+        if (console_held( d->term_id )) continue; /* XOFF: nothing leaves this device */
 
         if (d->us_per_char==0) {
             /* Name the device explicitly: this function runs from the
@@ -953,6 +983,7 @@ void baud_drain_due( void )
     for (i=0; i<MAXBAUDDEV; i++) {
         baud_device_t* d= &baud_devices[i];
         if (!d->inUse || d->count==0 || d->us_per_char==0) continue;
+        if (console_held( d->term_id )) continue; /* XOFF: nothing leaves this device */
 
         while (d->count>0 && d->next_due_us<=now) {
             fifo_pop( d,&c,&owner );
@@ -972,6 +1003,26 @@ ulong baud_next_wake_delay_us( void )
     return g_next_wake_us-now;
 } /* baud_next_wake_delay_us */
 
+void console_hold_changed( short term_id, Boolean held )
+{
+    int i;
+
+    if (!held) {
+        /* Released. The backlog queued before the XOFF is due at timestamps
+           that are now long past, so an unmodified drain would empty the whole
+           ring in one burst and lose the pacing the FIFO exists to provide.
+           Restart the burst from now, exactly as fifo_push does for the first
+           character of a fresh one. */
+        for (i=0; i<MAXBAUDDEV; i++) {
+            baud_device_t* d= &baud_devices[i];
+            if (d->inUse && d->term_id==term_id && d->count>0 && d->us_per_char>0)
+                d->next_due_us= host_micros();
+        }
+    }
+
+    recompute_next_wake(); /* the held device just left, or rejoined, the deadline set */
+} /* console_hold_changed */
+
 void baud_flush_device( short term_id )
 {
     int i;
@@ -988,12 +1039,22 @@ void baud_flush_device( short term_id )
    OS-9 processes). Any console's baud ring buffer may still have queued
    output that real-time pacing hasn't caught up to yet -- block here until
    it's all drained, since there's no more cooperative scheduling to wait
-   for and nothing else left running to stay responsive to. */
+   for and nothing else left running to stay responsive to.
+
+   An XOFF hold is deliberately ignored from here on. A held device is skipped
+   by baud_drain_due() and contributes no deadline, so honouring the hold would
+   make this loop spin at full CPU and never terminate: count>0 forever,
+   baud_next_wake_delay_us() ULONG_MAX so not even a nap between passes. No
+   OS-9 process is left to receive the XON that would release it either, so the
+   flag has no owner any more -- drop it and get the queued bytes out. */
 void baud_drain_all_pending( void )
 {
     int     i;
     Boolean anyPending;
     ulong   delay;
+
+    g_final_drain= true;
+    recompute_next_wake(); /* devices excluded while held rejoin the schedule */
 
     do {
         baud_drain_due();
@@ -1045,6 +1106,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
     Boolean      do_lf= false;
     process_typ* cp= &procs[pid];
     Boolean      paced= false;
+    Boolean      held = false;       /* XOFF on this terminal: park, don't write */
     baud_device_t* dev= NULL;
 
     gConsoleID=  spP->term_id;
@@ -1090,9 +1152,31 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
               cnt=                cp->saved_cnt;
           }
 
+          /* XOFF on this terminal: halt its output until XON, and PARK the
+             writer to do it. Parking is the whole point -- the scheduler is
+             cooperative, so a `while (held) CheckInputBuffers()` spin inside
+             the write syscall (what the classic-Mac console did) never lets
+             the process leave the kernel, and stalls every OTHER process and
+             every due F$Alarm along with the one that asked to be paused.
+             A pWaitWrite process is rescheduled periodically (procstuff.c) and
+             comes back through here, so release needs no wakeup of its own.
+             pid 0 / the MAXPROCESSES sentinel / pSysTask cannot be parked (see
+             the two branches below); their output goes out regardless, which is
+             the same compromise those branches already make. */
+          held= console_held( (short)gConsoleID ) &&
+                pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask;
+
           while (cnt<*maxlenP) {
               Boolean needsLF; /* does this char carry a trailing auto-LF? */
               int     need;    /* FIFO slots this char needs (2 if CR+LF) */
+
+              if (held) {
+                  cp->saved_cnt  = cnt;
+                  cp->saved_state= cp->state;
+                  set_os9_state( pid, pWaitWrite, "ConsoleOut" );
+                  arbitrate= true;
+                  break;
+              }
 
               c= buffer[cnt];
               if (ot->_sgs_case && islower((unsigned char)c)) {

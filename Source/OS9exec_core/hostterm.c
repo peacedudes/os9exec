@@ -473,6 +473,13 @@ void hostterm_note_writer( int term_id )
     lw_pid( &h->dev );
 } /* hostterm_note_writer */
 
+Boolean hostterm_held( int term_id )
+{
+    hostterm_init();
+    if (!hostterm_bound( term_id )) return false;
+    return hostterms[ term_id ].dev.holdScreen;
+} /* hostterm_held */
+
 #else /* not UNIX, or MINGW: no termios, no pty */
 
 os9err hostterm_open( int term_id, syspath_typ* spP )
@@ -509,6 +516,8 @@ void hostterm_poll( void ) { } /* nothing to poll on this platform */
 void hostterm_setspeed( int term_id, ulong bps ) { (void)term_id; (void)bps; }
 
 void hostterm_note_writer( int term_id ) { (void)term_id; }
+
+Boolean hostterm_held( int term_id ) { (void)term_id; return false; }
 
 #endif
 
