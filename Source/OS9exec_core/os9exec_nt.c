@@ -2563,6 +2563,32 @@ static void setup_exception( loop_proc lo )
       } __except( segv_handler( 0 ) ) { cp= &procs[currentpid]; err= cp->exiterr; }
     #endif
   } while (err);
+
+  /* Disarm before returning. segv_handler's whole job is to turn a fault taken
+   * while EXECUTING EMULATED 68k CODE into an OS-9 bus error, and it does that
+   * by siglongjmp'ing to the sigsetjmp above -- back into this loop. Past this
+   * point the loop is over and there is no emulation left to return to, so a
+   * fault during shutdown (cleanup(): kill_processes, close_syspaths,
+   * free_modules) would jump back in anyway and re-run the loop against a
+   * half-torn-down world, fault again, and spin at 100% CPU forever with the PC
+   * eventually in unmapped memory. That is not theoretical: it hid a real NULL
+   * dereference in kill_process() for as long as this file has had a handler,
+   * presenting it as an unkillable hang instead of a crash with a backtrace.
+   * Leaving the default handlers in place makes any future shutdown fault a
+   * plain, diagnosable SIGSEGV.
+   *
+   * Safe because setup_exception has exactly one caller (os9exec_nt) and is
+   * never nested -- re-check that before moving this. */
+  #if defined UNIX && !defined MINGW
+  { struct sigaction dfl;
+    dfl.sa_handler= SIG_DFL;
+    sigemptyset  ( &dfl.sa_mask );
+    dfl.sa_flags = 0;
+    sigaction( SIGSEGV, &dfl, NULL );
+    sigaction( SIGBUS,  &dfl, NULL );
+    sigaction( SIGFPE,  &dfl, NULL );
+  }
+  #endif
 } // setup_exception
 
 
