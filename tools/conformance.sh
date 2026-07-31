@@ -51,7 +51,7 @@ MODULES=(t01open t02eof t03bmode t04mode0 t05mode0rd t06short t07extend
          t08seekeof t09bpnum t10exists t11rewind t12size t13evread
          t14evsignl t15evset t16evsetr t17evinfo t18evwaitr
          t19lock t20read t21defr t22wrel t23whol t24rels t25eofl t26zrel
-         t27shar
+         t27shar t28exts t29self t30delo t31zrdr
          tally mark)
 
 # ---------------------------------------------------------------- comparison

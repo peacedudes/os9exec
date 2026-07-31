@@ -81,26 +81,35 @@ matters — `tools/conformance.sh 68k` and `tools/conformance.sh 68k --rbf`.
 - **The rebuild path has not been exercised end-to-end by an independent
   assembler.** The modules in `CMDS/` were built by the `r68`/`l68` on our
   own system disk, and that is the only assembler they have met.
-- **The two-process tests are only exercised on an RBF image.** t19–t27 need
+- **The two-process tests are only exercised on an RBF image.** t19–t31 need
   real record locking underneath, so they SKIP on a host-native directory —
   which is what CI and `--noshell` run. `tools/conformance.sh 68k --rbf` is
   the only thing that exercises `fork.i` at all, and it is a local gate.
 
-## 2026-07-31 — t19 to t27, the record-locking tests
+## 2026-07-31 — t19 to t31, the record-locking tests
 
-Nine two-process tests were added, and they found five defects on their first
-run against an RBF image. Four are recorded in `DOCS/known-divergences` (t19,
-t23, t25, t27); the fifth was found on the way and has no test, because it
+Thirteen two-process tests were added, and they found six defects. Five are
+recorded in `DOCS/known-divergences` (t19, t23, t25, t27, t29); the sixth was
+found on the way and has no test, because it
 kills the caller rather than reporting anything: `I$SetStt` with `SS_Ticks` on
 a non-RBF path jumps through an uninitialised dispatch slot and bus-errors.
 That one shaped the suite — `canlock` probes with `SS_Lock(0)` precisely to
 avoid it.
 
+A second batch (t28 to t31) followed, chosen so that the expected outcome
+of each involves no blocking — a lock's upper bound, the same-process
+exemption, a refused delete, and a zero-length release. Three pass. The
+fourth is the sharpest finding of the day: t29 shows that one process
+holding two paths to the same file is refused with E$DeadLk where the
+manual makes that arrangement the recommended idiom and guarantees the two
+paths will not lock each other out. Any program using the documented
+multi-record pattern gets spurious deadlock errors.
+
 Current results:
 
-    host-native   18 PASS,  9 SKIP
-    RBF image     23 PASS,  4 FAIL   (all four KNOWN)
-    --noshell     18 PASS,  9 SKIP   (same as host-native)
+    host-native   18 PASS, 13 SKIP
+    RBF image     26 PASS,  5 FAIL   (all five KNOWN)
+    --noshell     18 PASS, 13 SKIP   (same as host-native)
 
 The most useful single thing in that table is the PAIR t19/t21. Both make the
 same demand of the same lock and differ only in whether the second process
