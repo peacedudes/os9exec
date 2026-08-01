@@ -27,6 +27,24 @@ build anything that depends on it.
 
 Copy `docs/h0-template/` to wherever you keep it, then fill `CMDS/`.
 
+This is a **subset of Microware's documented layout**, not an invention of ours.
+*Using Professional OS-9*, chapter 2, page 2-7, "Directories Contained on the
+System Disk", lists what a Professional OS-9 root normally holds: `BOOTOBJS`,
+`C`, `CMDS`, `DEFS`, `IO`, `LIB`, `MACROS`, `SYS` — naming `Errmsg`, `password`
+and `termcap` inside it — and `SYSMODS`, with `startup` and `OS9Boot` at the
+root "by convention". The template ships only the parts that are ours to ship
+and that the tests need; everything else on that list is either yours to copy or
+irrelevant to running the suite. If you are building a disk for real use rather
+than just for `make test`, follow the manual's list, not this one.
+
+Two of those deserve a note. `SYS/termcap` is standard and every
+screen-oriented program wants it — `vi`, `less`, `emacs` — but nothing in the
+test suite reads it, so its absence costs you nothing here and a lot elsewhere.
+`USR` does not appear in the page 2-7 table at all, yet the same chapter says
+the disk holds "a directory for each user" and the manual's own example root
+listing shows it; the template uses `USR/<account>` because that is what the
+`SYS/password` entries point at.
+
 The account directories are not decoration: the suite runs `login claude` 20
 times and `login dog` 10 times, and `login` fails outright with `E$PNNF` if the
 home directory named in `SYS/password` does not exist. Each `.login` sets `chd`,
