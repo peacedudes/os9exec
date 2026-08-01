@@ -243,6 +243,16 @@ void init_None( fmgr_typ* f )
     ss->_SS_Attr   = (pathopfunc_typ)pUnimp;
     ss->_SS_FD     = (pathopfunc_typ)pUnimp;
     ss->_SS_Lock   = (pathopfunc_typ)pUnimp;
+    ss->_SS_Ticks  = (pathopfunc_typ)pUnimp; /* RBF overrides this with pRticks.
+                                                Without a default the slot stayed
+                                                NULL for every other file manager
+                                                while the dispatcher (SS_Ticks in
+                                                the setstat switch below) called it
+                                                unconditionally -- so SS_Ticks on a
+                                                host-native file, an SCF path, a
+                                                pipe or /nil called through a null
+                                                pointer and the guest got a bus
+                                                error instead of E$UnkSvc. */
     ss->_SS_WTrk   = (pathopfunc_typ)pUnimp;
     
     ss->_SS_Bind   = (pathopfunc_typ)pUnimp; /* network specific functions */
