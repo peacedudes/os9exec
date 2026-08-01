@@ -6,7 +6,7 @@
 # command rather than the full scrollback.
 #
 # Usage:
-#   ./tools/os9repl.sh start              boot os9exec via /h0/startup (preloads the
+#   ./tools/os9repl.sh start              boot os9exec via /dd/startup (preloads the
 #                                          toolchain, then tsmon -> `User name?:`)
 #   ./tools/os9repl.sh send <cmd>         send one command, wait for prompt, print new output
 #                                          (right after start, send the bare account
@@ -57,7 +57,7 @@ at_prompt() {
     last=$(printf '%s\n' "$content" | tail -1 | sed 's/[[:space:]]*$//')
     [ "$last" = '$' ] && return 0
     printf '%s' "$last" | grep -qE 'for hlp\)|^dbg:|^dis:|^tra:|^(su|claude|dog):$' && return 0
-    # tsmon's login sequence (boot now goes through /h0/startup -> tsmon ->
+    # tsmon's login sequence (boot now goes through /dd/startup -> tsmon ->
     # login, not straight to a shell $ prompt) -- see cmd_start.
     printf '%s' "$last" | grep -qE '^User name\?:$|^Password:$' && return 0
     # Also check last 5 lines (trace output may follow the prompt on same/next line)
@@ -124,9 +124,9 @@ cmd_start() {
     # just group-0 super-users -- so an agent driving a session that logs in as
     # a plain account (or gets stuck in a tsmon login loop) can always exit.
     #
-    # Boot through /h0/startup (shell is the boot program, /h0/startup is its
+    # Boot through /dd/startup (shell is the boot program, /dd/startup is its
     # procedure-file argument -- NOT a bootable target on its own, that fails
-    # with E_FNA) rather than launching straight into /h0/CMDS/shell. startup
+    # with E_FNA) rather than launching straight into /dd/CMDS/shell. startup
     # preloads the full toolchain (cio/csl/math, r68/l68/o68/runb, cc/cpp/c68/
     # gcc2/cccp2/cc2, common file utilities) as memory-resident modules, which
     # F$Fork's bare-name lookups resolve via F$Link regardless of any
@@ -135,8 +135,14 @@ cmd_start() {
     # left cpp/c68/r68/l68 unloaded, which looks like a chx/PATH problem
     # (`cc: cannot execute the pre-processor`) but isn't one -- the fix is
     # more preloading, not chx surgery. If something you need still isn't
-    # preloaded, add it to /h0/startup's `load` lines, don't patch chx.
-    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9STOP=1 OS9DISK='$REPO/h0' ./os9exec $EXTRA_ARGS shell /h0/startup"
+    # preloaded, add it to /dd/startup's `load` lines, don't patch chx.
+    # OS9DISK mounts $REPO/h0 as /dd, and /dd is what the boot disk IS inside
+    # OS-9 -- so every path here says /dd. It used to say /h0/startup, which
+    # worked only because os9exec ALSO maps an h0 directory sitting beside the
+    # binary to /h0: the same directory was mounted twice and the boot line
+    # depended on the working directory being $REPO. From anywhere else
+    # /h0/startup is "can't open" while /dd/startup is still right.
+    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9STOP=1 OS9DISK='$REPO/h0' ./os9exec $EXTRA_ARGS shell /dd/startup"
     printf '[starting os9exec...]\n'
     # startup ends in `tsmon /term`, which waits for a keypress before
     # showing `User name?:` -- wait for that banner, then send one.
