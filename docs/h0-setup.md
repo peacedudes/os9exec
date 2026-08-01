@@ -68,8 +68,9 @@ tar     tee     tmode   touch   tr      tsmon   unlink  what
 
 ### Where they come from
 
-On a Microware OS-9/68k SDK these live under `OS9/<cpu>/CMDS`. The disk this
-project was developed against was built by copying **all of `OS9/68000/CMDS`**
+These live under `OS9/<cpu>/CMDS` on a Microware **OS-9 for 68K SDK** — v1.2 is
+the one this project was developed against. Our disk was built by copying
+**all of `OS9/68000/CMDS`**
 and then **all of `OS9/68020/CMDS` over the top** — the 68020 build replaces
 same-named modules and adds none, so the file *set* is the 68000 one and the
 *contents* are 68020 where a 68020 build exists. Either layer alone should work
@@ -78,6 +79,15 @@ have measured against.
 
 `CPU32/CMDS`, `68040/CMDS` and `68060/CMDS` exist on the SDK too and were not
 used here.
+
+The SDK itself is Microware's and is not ours to point you at — but the
+**manuals** this project cites throughout are separately archived in public,
+and are what every claim in `test/68k-conformance/DOCS/claims.md` is checked
+against:
+
+- [OS-9/68K V2.4 Technical Manual](https://www.peripheraltech.com/OS9%20-%2068K%20V2.4%20Technical%20Manual.pdf)
+- [OS-9 Operating System User Manual](http://www.icdia.co.uk/microware/77165102.pdf)
+- [OS-9 for 68K OEM Installation Manual](https://archive.org/details/os968kOem_v9.9)
 
 Three of the 62 are trap handlers rather than utilities and are the ones most
 often missing: **`cio`**, **`csl`**, **`math`**. Without `cio` most archived

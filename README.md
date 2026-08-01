@@ -24,7 +24,7 @@ $ procs
 $ exit
 ```
 
-Don't have OS-9 software yet? Bring your own — a disk image, tape backup, or SDK archive. OS9exec doesn't include any (not ours to distribute).
+Don't have OS-9 software yet? Bring your own — a disk image, tape backup, or SDK archive. OS9exec doesn't include any (not ours to distribute). If you have a Microware OS-9 for 68K SDK, [`docs/h0-setup.md`](docs/h0-setup.md) lists the 62 modules the test suite needs and where they live on it.
 
 Prefer a prebuilt binary, Docker, or Apple Container instead of building? See [Other ways to run it](#other-ways-to-run-it) below.
 
