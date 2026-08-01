@@ -1,0 +1,1 @@
+chd /dd/USR/DOGchx /dd/CMDS/dogsetenv PATH ..:../CLAUDE:../GAMES:../SHAREsetenv TERM xterm-256colorsetenv _sh 0tmode -w=1 nopauseecho o k

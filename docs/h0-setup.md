@@ -16,13 +16,39 @@ build anything that depends on it.
 
 ```
 <your disk>/
-  startup          <- shipped in docs/h0-template/, ours, edit freely
-  CMDS/            <- shipped empty; this is the copy step below
-  SYS/password     <- shipped, ours: the accounts the login tests use
-  SYS/errmsg       <- from your OS-9 disk (Microware's; boot warns without it)
+  startup             <- ours, edit freely
+  SYS/password        <- ours: the accounts the login tests use
+  CMDS/               <- shipped EMPTY; this is the copy step below
+  CMDS/CLAUDE/        <- empty; the `claude` account's execution directory
+  CMDS/DOG/           <- empty; the `dog` account's execution directory
+  USR/CLAUDE/.login   <- ours
+  USR/DOG/.login      <- ours
 ```
 
 Copy `docs/h0-template/` to wherever you keep it, then fill `CMDS/`.
+
+The account directories are not decoration: the suite runs `login claude` 20
+times and `login dog` 10 times, and `login` fails outright with `E$PNNF` if the
+home directory named in `SYS/password` does not exist. Each `.login` sets `chd`,
+`chx`, `PATH` and `TERM` and ends with an `echo`, which is what the REPL's
+prompt detection watches for. Verified: a disk built from this template plus the
+copy step below boots, logs in as `dog`, and runs `procs`.
+
+## Why so little of SYS/
+
+Measured the same way as the command list — only **`SYS/password`** is referenced
+by anything in the suite. Nothing reads `termcap`, `motd`, `MENUS`,
+`moded.fields` or `umacs.hlp`; those are data files for utilities the tests do
+not run, and most are Microware's or third-party anyway.
+
+**`SYS/errmsg` deserves its own warning.** `h0/SYS/errmsg` is **Microware's
+copyrighted file** — the error-code numbers and `E$` names are facts, but the
+message prose is expression. Do not copy it into anything shippable. Nothing in
+the suite needs it; its absence only means the shell prints bare numbers instead
+of sentences. A clean-room replacement written from our own `error-codes.md`
+exists at `freeware/SYS/errmsg` (not in this repo). If you want readable errors
+on your own disk, copy Microware's from your own OS-9 disk — that is yours to
+use, just not to redistribute.
 
 ## Exactly which commands to copy
 
