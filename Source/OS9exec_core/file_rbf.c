@@ -769,7 +769,29 @@ static Boolean RingHasOtherWriter( syspath_typ* spP )
  * what it read, and a write-only path never read anything to modify. */
 
 static syspath_typ* LockHolder( syspath_typ* spP, ulong beg, ulong end )
-/* another path on this file whose locked record overlaps [beg,end) */
+/* Another path on this file whose locked record overlaps [beg,end) and whose
+   owner is a DIFFERENT process.
+
+   The owner test is the manual's rule, not an optimisation: "If an application
+   requires more than one record to be locked out, multiple paths to the same
+   file may be opened with each path having its own record locked out. RBF
+   notices that the same process owns both paths and keeps them from locking
+   each other out" (Technical Manual, Record Locking and Unlocking, page 7-8).
+   Two paths held by one process do not conflict AT ALL, so the question "what
+   should happen when they collide" never arises -- which is why the three
+   callers no longer answer it with E$DeadLk. That answer broke the very idiom
+   the manual recommends: a program locking two records the documented way got
+   a deadlock error reported against itself.
+
+   Owner against owner rather than owner against the running process, because
+   that is what the manual says ("the same process owns both paths"), and
+   because it makes a conflict a property of the two paths instead of something
+   that varies with whoever happens to be executing. The two differ only for a
+   path used by a process that did not open it -- an inherited path in a forked
+   child -- where the manual's wording is the one to follow.
+
+   A path still never conflicts with itself: the loop bounds skip spP, exactly
+   as before. */
 {
     syspath_typ* spK;
     ushort       k= spP->u.rbf.sameFile;
@@ -777,7 +799,8 @@ static syspath_typ* LockHolder( syspath_typ* spP, ulong beg, ulong end )
     while (k!=spP->nr && k!=0) {
              spK= &syspaths[k];
       if (   spK->u.rbf.lockBeg<spK->u.rbf.lockEnd && /* holds one at all */
-             spK->u.rbf.lockBeg<end && beg<spK->u.rbf.lockEnd) return spK;
+             spK->u.rbf.lockBeg<end && beg<spK->u.rbf.lockEnd &&
+             spK->u.rbf.ownPid!=spP->u.rbf.ownPid) return spK;
 
       k= spK->u.rbf.sameFile;
     } // while
@@ -2888,7 +2911,8 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
         syspath_typ* spH= LockHolder( spP, rbf->currPos, rbf->currPos+*lenP );
 
         if (spH!=NULL) {
-          if (spH->u.rbf.ownPid==currentpid) return os9error( E_DEADLK );
+          /* LockHolder never returns one of our own process's paths now, so a
+             holder here is genuinely somebody else and waiting for it is real. */
           if (WaitExpired( spP )) { WaitDone( spP ); return os9error( E_LOCK ); }
           SleepOnFile( spP, currentpid );
           *lenP= 0;
@@ -3158,7 +3182,6 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
           if (spH!=NULL) {
               rbf->currPos= sv; /* pretend it never happened */
               *lenP= 0;
-              if (spH->u.rbf.ownPid==currentpid) return os9error( E_DEADLK );
               if (WaitExpired( spP )) { WaitDone( spP ); return os9error( E_LOCK ); }
               SleepOnFile( spP, currentpid );
               return 0; /* runs again once the holder lets go */
@@ -3901,7 +3924,6 @@ os9err pRlock( ushort pid, syspath_typ* spP, uint32_t* d0, uint32_t* d1, uint32_
 
         spH= LockHolder( spP, beg,end );
     if (spH!=NULL) {
-      if (spH->u.rbf.ownPid==pid) return os9error( E_DEADLK );
       return os9error( E_LOCK ); /* someone else's -- say so rather than block,
                                   * the caller asked for it deliberately */
     } // if
