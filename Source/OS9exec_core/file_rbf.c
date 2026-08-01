@@ -2902,7 +2902,16 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     debugprintf( dbgFiles,dbgDetail,("# >DoAccess (%s): n=%d\n", wMode ? "write":"read", *lenP ));
     sv= rbf->currPos;
 
-    if (!wMode) WokeOnFile( currentpid ); /* re-entered after parking at EOF */
+    /* Re-entered after parking -- restore the process whatever kind of access
+     * parked it. This was `if (!wMode)` from when only a READ could park (at
+     * EOF, waiting for a writer); parking a WRITE on a record-lock conflict was
+     * added later and never reached here. The consequence was not that the
+     * write stayed blocked: pWaitRead is exactly what makes the dispatcher put
+     * the saved registers back and run the call again, so once the holder let
+     * go the write SUCCEEDED and was then re-run, and succeeded, and was re-run
+     * -- for ever, never returning to its caller. That is the "never came back"
+     * this leaves behind. */
+    WokeOnFile( currentpid );
 
     /* A write has to be stopped BEFORE it happens -- it changes the file, and
      * its length is exactly what was asked for, so the range is known here.
@@ -3916,11 +3925,21 @@ os9err pRlock( ushort pid, syspath_typ* spP, uint32_t* d0, uint32_t* d1, uint32_
      * lockBeg<lockEnd, so a wrapped range is stored, reported as success, and
      * then seen by nobody. That is exactly the "says it locked and did not"
      * failure this call was already fixed for once. A request that runs past
-     * the end of the address space can only mean "from here on", which is what
-     * the $FFFFFFFF sentinel already means, so fold it into that. */
+     * the end of the address space can only mean "from here on". */
     end= (*d2==0xFFFFFFFF || *d2 > 0xFFFFFFFF - beg)
              ? 0xFFFFFFFF
              : beg + *d2;
+
+    /* The $FFFFFFFF sentinel is a WHOLE-FILE lock, and that is not the same as
+     * "from here on": "If $FFFFFFFF bytes are requested, then the entire file
+     * is locked out REGARDLESS OF WHERE THE FILE POINTER IS" (I$SetStt SS_Lock,
+     * page 2 - 24). Anchoring it at currPos left every byte before the pointer
+     * unprotected, so a holder that had read its way to position 90 was not
+     * holding the file at all -- another process could still write at 0 and the
+     * call had reported success. Only the explicit sentinel means the whole
+     * file; a size that merely overflows still means "from here on", which is
+     * why the saturation above stays as it is. */
+    if (*d2==0xFFFFFFFF) beg= 0;
 
         spH= LockHolder( spP, beg,end );
     if (spH!=NULL) {
