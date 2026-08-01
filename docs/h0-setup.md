@@ -66,7 +66,20 @@ pd      pr      printenv procs  qsort   r68     save    shell   sleep
 tar     tee     tmode   touch   tr      tsmon   unlink  what
 ```
 
-Three of those are trap handlers rather than utilities and are the ones most
+### Where they come from
+
+On a Microware OS-9/68k SDK these live under `OS9/<cpu>/CMDS`. The disk this
+project was developed against was built by copying **all of `OS9/68000/CMDS`**
+and then **all of `OS9/68020/CMDS` over the top** — the 68020 build replaces
+same-named modules and adds none, so the file *set* is the 68000 one and the
+*contents* are 68020 where a 68020 build exists. Either layer alone should work
+under os9exec, which emulates a 68020/68881; the doubled copy is simply what we
+have measured against.
+
+`CPU32/CMDS`, `68040/CMDS` and `68060/CMDS` exist on the SDK too and were not
+used here.
+
+Three of the 62 are trap handlers rather than utilities and are the ones most
 often missing: **`cio`**, **`csl`**, **`math`**. Without `cio` most archived
 OS-9 binaries die with `**** Can't install trap handler ****`; the suite needs
 it. `math881` is a drop-in replacement for `math` on a 68881 build and is more
