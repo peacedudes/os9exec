@@ -2959,7 +2959,29 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     if (!spP->rawMode && wMode && *lenP>0) {
         syspath_typ* spH= LockHolder( spP, rbf->currPos, rbf->currPos+*lenP );
 
-        if (spH!=NULL) {
+        /* The EOF lock stops a SECOND writer extending the file, and that is
+         * the reason it exists: "EOF lock is the only time that a write call
+         * automatically causes lock out of any part of the file. This avoids
+         * problems that could occur when two users try to simultaneously extend
+         * a file" (Technical Manual, page 7-9). It was consulted on the read
+         * path only, so the documented spooler-behind-assembler case worked
+         * while the case the manual gives as the lock's PURPOSE did not.
+         *
+         * Only a write that would actually extend the file collides with it --
+         * one landing wholly inside existing data is not a second appender, and
+         * the ghost lock covers no real bytes. Its holder's own record lock, if
+         * any, is a separate matter and is what LockHolder above answers.
+         *
+         * A holder in our own process is not a conflict, for the same reason
+         * two paths of one process never lock each other out (page 7-8). */
+        Boolean blocked= (spH!=NULL);
+
+        if (!blocked && rbf->currPos+*lenP > FDSize( spP )) {
+            ushort wpid= EofLockHolder( spP );
+            blocked= (wpid!=0 && wpid!=rbf->ownPid);
+        } // if
+
+        if (blocked) {
           /* LockHolder never returns one of our own process's paths now, so a
              holder here is genuinely somebody else and waiting for it is real. */
           if (WaitExpired( spP )) { WaitDone( spP ); return os9error( E_LOCK ); }
