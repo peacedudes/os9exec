@@ -659,6 +659,9 @@ typedef enum { poRead      =0x0001,
                poWrite     =0x0002,
                poUpdate    =0x0003,
                poExec      =0x0004,
+               poSingle    =0x0040, /* I$Open bit 6: "open file for non sharable
+                                       use" -- the transient form of the file's
+                                       own single-user attribute */
                poDir       =0x0080,
                poCreateMask=0x8000 } poEnum;
 
@@ -812,6 +815,7 @@ typedef struct {
             uint32_t  waitUntil;    // host tick that wait expires at (0 = not waiting)
             ushort    ownPid;       // process that opened this path
             Boolean   updMode;      // opened for update: reads lock what they read
+            Boolean   single;       // opened non-sharably (I$Open bit 6)
             uint32_t  lockBeg;      // record this path holds: first byte ...
             uint32_t  lockEnd;      // ... and one past the last (equal: none)
             Boolean   eofLock;      // holds the end of the file (see file_rbf.c).

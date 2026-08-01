@@ -728,6 +728,46 @@ static Boolean RingSector( syspath_typ* spP, ulong sect, byte* b, ulong len )
     return false;
 } /* RingSector */
 
+static Boolean ShareConflict( syspath_typ* spP, Boolean wantSingle )
+/* Would this open break the single-user rule? True if another PROCESS already
+ * has this file open and either side wants it to itself.
+ *
+ * "If the single-user bit is set, only one process may open the file at a
+ * time. If another process attempts to open the file, error (#253) is
+ * returned" (Non-sharable Files, page 7-8). I$Open's access-mode table gives
+ * bit 6 as "open file for non sharable use" -- the transient form the manual
+ * recommends for the common case, as against setting the attribute on the file
+ * itself. Both were accepted and neither was enforced: two opens both
+ * succeeded.
+ *
+ * Qualified exactly as RingJoin qualifies a same-file path, because that is
+ * what "the same file" means here -- device plus FD sector, not the pathlist
+ * used to reach it.
+ *
+ * Another PROCESS, not another path: the manual counts processes ("only one
+ * process may open the file at a time"), and one process opening its own file
+ * twice is the multi-path idiom that page 7-8 recommends two paragraphs
+ * earlier. Refusing that would re-break what CONF68K t29 exists to protect. */
+{
+    syspath_typ* spK;
+    ushort       k;
+
+    if (spP->rawMode || spP->u.rbf.fd_nr==0) return false; /* not a file */
+
+    for (k=1; k<MAXSYSPATHS; k++) {
+          spK= &syspaths[k];
+      if (spK!=spP && spK->type==fRBF && !spK->rawMode &&
+          spK->u.rbf.devnr==spP->u.rbf.devnr &&
+          spK->u.rbf.fd_nr==spP->u.rbf.fd_nr &&
+          spK->u.rbf.ownPid!=spP->u.rbf.ownPid &&
+         (wantSingle || spK->u.rbf.single)) return true;
+    } // for
+
+    return false;
+} /* ShareConflict */
+
+
+
 static Boolean RingHasOtherWriter( syspath_typ* spP )
 /* True if some path OTHER than <spP> is open on the same file in write mode.
  * OS-9 RBF refuses to delete such a file (E$Share -- the canonical clone
@@ -3466,6 +3506,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     rbf->lockTicks= 0;
     rbf->waitUntil= 0;
     rbf->ownPid  = currentpid;
+    rbf->single  = (*modeP & poSingle)!=0;
     rbf->updMode = false;
     rbf->lockBeg = 0;
     rbf->lockEnd = 0;
@@ -3672,6 +3713,10 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     #endif
     
 //  printf( "RelBuffers %08X %08X %d\n", spP->fd_sct, spP->rw_sct, err );
+    /* Checked here, before RingJoin, so a refusal takes the ordinary error exit
+     * and leaves nothing spliced into the file's ring to unpick. */
+    if (!err && ShareConflict( spP, rbf->single )) err= os9error( E_SHARE );
+
     if    (err) ReleaseBuffers( spP );
     else        RingJoin      ( spP ); /* <fd_nr> is only final once open succeeds */
     return err;
