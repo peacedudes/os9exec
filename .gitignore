@@ -57,3 +57,10 @@ dd
 /test/68k-conformance/RESULTS/report
 /test/68k-conformance/REBUILT/*
 !/test/68k-conformance/REBUILT/readme
+
+# Built disk images are release ARTIFACTS, not sources: the tree in freeware/
+# is what gets maintained, and release/dd is generated from it by
+# release/mkimage.sh. A 182 MB binary in git means no diffs and a full copy per
+# revision. Build it, don't version it.
+/release/dd
+/release/*.rbf
