@@ -1485,7 +1485,12 @@ static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sct
      * Harmless only because get_mem() happens to hand back zeroed arena pages;
      * the moment it didn't, a fresh disk would come up full of stale bytes. */
     memset( base, 0, sctSize*headScts ); // clear the head
-    memcpy( base,RAM_zero, sctSize );
+    /* RAM_zero is 256 bytes. Copying sctSize of it read off the end of the
+     * array for any larger sector: with -n=512, 119 bytes of whatever
+     * followed it in the data segment (including module magic, 0x4AFC) were
+     * copied into the identification sector's tail. Copy what exists; the
+     * rest is already zero from the memset above. */
+    memcpy( base,RAM_zero, sctSize<sizeof(RAM_zero) ? sctSize : sizeof(RAM_zero) );
 
     f= allocSize + 1; fN= f*sctSize; // root dir fd sector position
     r=         f + 1; rN= r*sctSize;
