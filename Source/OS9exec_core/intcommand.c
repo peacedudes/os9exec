@@ -579,10 +579,14 @@ static os9err int_mem( _pid_, int argc, char** argv )
     show_mem( my_pid,mem_unused,mem_fulldisp ); return 0;
 } /* int_mem */
 
-/* int_unused: commented out, no longer referenced
+/* Only referenced from the command table under REUSE_MEM, so it must be
+   compiled under exactly the same condition -- it was commented out while the
+   table entry was left behind, which breaks any -DREUSE_MEM build. */
+#ifdef REUSE_MEM
 static os9err int_unused( _pid_, _argc_, _argv_ )
 {  show_unused(); return 0;
-} */
+}
+#endif
 
 static void idevs_usage( char* name )
 {

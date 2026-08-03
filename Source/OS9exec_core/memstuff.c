@@ -255,7 +255,7 @@ static void MemLine( int *k, ulong value, const char* s  )
 		(*k)--;
 	} /* while */
 	
-	if (n>0) upo_printf( "%s  %4d  %9d\n", s,  n,  tot );
+	if (n>0) upo_printf( "%s  %4d  %9lu\n", s,  n,  (unsigned long)tot );
 	else     upo_printf( "%s  %4s  %9s\n", s, "-", "-" );
 } /* MemLine */
 #endif
@@ -291,11 +291,11 @@ void show_mem( ushort npid, Boolean mem_unused, Boolean mem_fulldisp )
     		  i    = 0;
     		  
     		  while (true) {
-   				  if (nx>(char*)0) { /* not for the first time */
+   				  if (nx!=NULL) { /* not for the first time */
    				  	  diff= (int)((char*)nxMin-(char*)nx) - svSiz;
-   				  	  upe_printf( "%3d  %08X  %08X  %8d", i-1, nx, (char*)nx+svSiz, svSiz );
+   				  	  upe_printf( "%3d  %p  %p  %8lu", i-1, nx, (void*)((char*)nx+svSiz), (unsigned long)svSiz );
    				  	  if (nxMin==(char*)UpL) { upe_printf( "\n" ); break; }
-   				  	  upe_printf( "%8d  %08X\n", diff, nxMin );
+   				  	  upe_printf( "%8ld  %p\n", (long)diff, (void*)nxMin );
    				  } /* if */
    				  	  
    				  nx   = nxMin;
@@ -377,6 +377,7 @@ void show_unused(void)
 {
   #ifdef REUSE_MEM
     int   k, n= 0;
+    (void)n;   /* counted for the debug view only */
     memblock_typ* f;
     char s[10];
     
@@ -386,12 +387,13 @@ void show_unused(void)
     for (k=0;k<MAX_MEMALLOC;k++) {
           f= &freeinfo.f[ k ];
       if (f->base!=NULL)    { upo_printf("%5d  %p  $%08lX  %8lu\n",
-                                              k, f->base, (uint32_t)f->size, f->size ); n++;
+                                              k, f->base, (unsigned long)f->size,
+                                                 (unsigned long)f->size ); n++;
       }
     } // for
 
     snprintf( s,sizeof(s), "(%d)", freeinfo.freeN );
-    upo_printf("\nTOTAL %6s      $%08lX  %8lu\n", s, (uint32_t)freeinfo.freeMem, freeinfo.freeMem );
+    upo_printf("\nTOTAL %6s      $%08lX  %8lu\n", s, (unsigned long)freeinfo.freeMem, (unsigned long)freeinfo.freeMem );
   #endif
 } // show_unused
 
@@ -589,10 +591,10 @@ void release_mem( void* membase )
     
     #ifdef REUSE_MEM
       if (memsz==0) { 
-        printf( "STRANGE BLOCK at %08X\n", membase ); return;
+        printf( "STRANGE BLOCK at %p\n", membase ); return;
       } // if
       if (memsz==1) { 
-        printf( "UNUSED  BLOCK at %08X\n", membase ); return;
+        printf( "UNUSED  BLOCK at %p\n", membase ); return;
       } // if
       
       if (release_ok( membase,memsz )) {

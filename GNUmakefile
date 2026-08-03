@@ -29,6 +29,7 @@ CFLAGS  = -g -Wall -fcommon \
           -DTERMINAL_CONSOLE \
           -DINT_CMD \
           -DRAM_SUPPORT \
+          -DREUSE_MEM \
           -I$(CORE) \
           -I$(CORE)/os9defs \
           -I$(PLAT) \
@@ -96,7 +97,8 @@ all: $(OBJDIR) $(EXE)
 # Usage: make prod   (rebuilds from scratch with -O2)
 prod:
 	$(MAKE) -B CFLAGS="-O2 -Wall -fcommon \
-	          -DTERMINAL_CONSOLE \
+	          -DREUSE_MEM \
+          -DTERMINAL_CONSOLE \
 	          -DINT_CMD \
 	          -DRAM_SUPPORT \
 	          -I$(CORE) \
