@@ -2876,7 +2876,13 @@ Boolean RBF_ImgSize( long size )
   } /* OS9PathEscapesDeviceRoot */
 
   os9err GetRBFName( char* os9path, ushort mode,
-                     Boolean *isFolder, char* rbfname )
+                     Boolean *isFolder, char* rbfname, char* hostpath )
+  /* <rbfname> gets the LAST COMPONENT of the host path this resolved to;
+     <hostpath> (optional, may be NULL) gets that host path whole.  The two
+     are not interchangeable: a caller that has only the last component has
+     to rebuild the path from it, and rebuilding only lands back on the same
+     file when the host file happens to be named after the OS-9 device -- see
+     DeviceInit, which used to do exactly that. */
   {
       os9err err= 0;
       char   sv     [OS9PATHLEN];
@@ -2893,6 +2899,7 @@ Boolean RBF_ImgSize( long size )
          local holding stack garbage.  A path that does not resolve is not a
          folder, so false is the right answer for them. */
       *isFolder= false;
+      if (hostpath!=NULL) *hostpath= NUL; /* same rule: defined on every exit */
 
       strcpy    ( sv, os9path );
       pp= (char*)&sv; CutRaw( &pp );
@@ -2975,12 +2982,17 @@ Boolean RBF_ImgSize( long size )
           if (strcmp( &bb[CRUZ_POS],Cruz_Str )!=0)     { err= E_FNA;  break; }
       } while (false);
 
+      if (hostpath!=NULL) {
+          strncpy( hostpath, pp, OS9PATHLEN-1 );
+                   hostpath[  OS9PATHLEN-1 ]= NUL;
+      }
+
       qq = pp+strlen(pp);
       while (*qq!=PATHDELIM && qq>pp) qq--;
       qq++;
-      
+
       strcpy( rbfname, qq );
-      debugprintf( dbgFiles,dbgNorm,("# GetRBFName: '%s' err=%d\n", rbfname,err ));
+      debugprintf( dbgFiles,dbgNorm,("# GetRBFName: '%s' host='%s' err=%d\n", rbfname,pp,err ));
       return err;
   } /* GetRBFName */
 #endif
@@ -3044,8 +3056,8 @@ static Boolean OS9_Device( char* os9path, ushort mode, ptype_typ *typeP )
       if  (err==E_UNIT) err= GetRBFName( &os9path[1],mode, &isFolder, &fs,&afs );
 
     #elif defined win_unix
-                        err= GetRBFName(  os9path,   mode, &isFolder, (char*)&rbfname );
-      if  (err==E_UNIT) err= GetRBFName( &os9path[1],mode, &isFolder, (char*)&rbfname );
+                        err= GetRBFName(  os9path,   mode, &isFolder, (char*)&rbfname, NULL );
+      if  (err==E_UNIT) err= GetRBFName( &os9path[1],mode, &isFolder, (char*)&rbfname, NULL );
 
     #else 
       /* %%% some fixed devices defined currently */

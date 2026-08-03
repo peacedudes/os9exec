@@ -521,6 +521,37 @@ static void CheckH0( char* name, char* p, char** p3 )
     #endif
 } /* CheckH0 */
 
+static void AnnounceOverride( const char* dev, const char* chosen )
+/* Say once which of two live candidates for /<dev> won.
+ * OS9Hx beats a device of the same name sitting next to the emulator --
+ * explicit configuration beats ambient discovery, which is the order the
+ * resolution below already implements. What was missing is any way to tell:
+ * both spellings resolve, only one is used, and nothing said which. Silent
+ * when there is no second candidate -- most sessions set OS9Hx precisely
+ * because <startPath> has nothing to offer, and a line for that is noise. */
+{
+    /* TwoCharDev runs on every path resolution -- hundreds of times per
+     * command -- so this is emitted once per device character. */
+    static Boolean announced[ 256 ];
+    unsigned char  key= (unsigned char)dev[ 1 ];
+    char           ambient[OS9PATHLEN];
+    size_t         len= strlen( startPath );
+
+    if (announced[ key ]) return;
+    if (len+3>=sizeof(ambient)) return; /* no room for "<startPath>/hx" */
+
+    strcpy ( ambient,startPath );
+    if (len==0 || ambient[ len-1 ]!=PATHDELIM) strcat( ambient,PATHDELIM_STR );
+    strncat( ambient,dev, 2 );
+
+    if (!FileFound( ambient ) &&
+        !PathFound( ambient )) return;
+
+    announced[ key ]= true;
+    uphe_printf( "/%.2s: using OS9H%c='%s', ignoring '%s'\n",
+                    dev, dev[ 1 ], chosen, ambient );
+} /* AnnounceOverride */
+
 void TwoCharDev( char* p, char** p3, char* tmp )
 /* --- two-char device name */
 {
@@ -537,8 +568,10 @@ void TwoCharDev( char* p, char** p3, char* tmp )
         strcpy      ( envnam,"OS9H" );
         strncat     ( envnam,(p+1),1 );
         *p3= egetenv( envnam ); /* get OS9Hx */
-        if (*p3!=NULL && **p3==NUL) *p3= NULL; /* invalidate again */ 
-    
+        if (*p3!=NULL && **p3==NUL) *p3= NULL; /* invalidate again */
+
+        if (*p3!=NULL) AnnounceOverride( p,*p3 ); /* explicit beats ambient */
+
         if (*p3==NULL) {
             strcpy   ( tmp,startPath );
                  q=    tmp+strlen(tmp)-1;

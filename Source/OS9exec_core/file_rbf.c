@@ -1439,9 +1439,16 @@ static Boolean RoundSectorCount( uint32_t ramSizeKB, uint32_t sctSize, int clu,
 } /* RoundSectorCount */
 
 static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sctSize, int clu,
-                                 byte** bufOut )
-/* Builds a complete, ready-to-use RBF filesystem image in a freshly
- * allocated buffer: identification sector (Cruz-stamped, via RAM_zero),
+                                 byte** bufOut, uint32_t* headSctsOut, Boolean headOnly )
+/* Builds the HEAD of a ready-to-use RBF filesystem image in a freshly
+ * allocated buffer, and reports its length in sectors via <headSctsOut>.
+ * With <headOnly>, allocates ONLY the non-zero prefix and reports its length
+ * in <headSctsOut>; everything past it is zeros, so a caller writing to a FILE
+ * streams that part instead of buffering it. This used to always allocate
+ * sctSize*totScts -- the whole image -- in the 68k arena, which capped
+ * `mount -k` at about 28 MB of a 32 MB arena. A RAM disk really does need the
+ * whole buffer, so PrepareRAM passes headOnly=false and is unaffected.
+ * Only sectors 0..(allocSize+2) are ever written: identification sector (Cruz-stamped, via RAM_zero),
  * allocation bitmap, root directory FD sector, root directory entry.
  * Returns false (after printing the reason) if the allocation bitmap
  * doesn't fit in the available map size -- the caller owns *bufOut only on
@@ -1449,6 +1456,7 @@ static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sct
  * this function trusts it's a valid power of 2. */
 {
     ulong   allocSize, allocN, mapSize, f, r, fN, rN, cluRest, ii;
+    uint32_t headScts;
     byte*   b;
     int     v;
     byte    pt;
@@ -1465,13 +1473,18 @@ static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sct
     allocSize= (totBits-1)/(sctSize*BpB) + 1; // nr of allocation sectors, rounded up
     allocN   =  allocSize * sctSize*BpB;      // nr of allocation bits
 
-            base= get_mem( sctSize*totScts );
+    /* head = identification sector + allocation bitmap + root FD + root dir.
+     * r is the last sector this function touches, so r+1 sectors is exactly
+     * the non-zero prefix of the image. */
+    headScts= headOnly ? allocSize + 3 : totScts;
+    if (headScts>totScts) headScts= totScts;
+            base= get_mem( sctSize*headScts );
     if    ( base==NULL ) return false;
     /* memset(dst, VALUE, LENGTH) -- the value and length were transposed, making
      * this a zero-LENGTH memset that cleared nothing at all, despite the comment.
      * Harmless only because get_mem() happens to hand back zeroed arena pages;
      * the moment it didn't, a fresh disk would come up full of stale bytes. */
-    memset( base, 0, sctSize*totScts ); // clear all
+    memset( base, 0, sctSize*headScts ); // clear the head
     memcpy( base,RAM_zero, sctSize );
 
     f= allocSize + 1; fN= f*sctSize; // root dir fd sector position
@@ -1509,13 +1522,15 @@ static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sct
                  base[ rN+0x20 ]= 0xae;
     SET_OS9W(base, rN+0x3e,  f);
 
-    *bufOut= base;
+    *bufOut     = base;
+    *headSctsOut= headScts;
     return true;
 } /* BuildBlankImage */
 
 // #ifdef RAM_SUPPORT
 static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
 {
+    uint32_t ramHead;   /* unused: a RAM disk buffers the whole image */
     os9err    err, cErr;
     uint32_t  iSize;
     uint32_t  totBits;
@@ -1576,7 +1591,7 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
 
     dev->imgScts= dev->totScts;
 
-    if (!BuildBlankImage( dev->totScts, totBits, dev->sctSize, clu, &dev->ramBase ))
+    if (!BuildBlankImage( dev->totScts, totBits, dev->sctSize, clu, &dev->ramBase, &ramHead, false ))
       return E_NORAM;
 
     strcpy( dev->img_name,cmp );
@@ -1621,6 +1636,7 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
       FSSpec fs, afs;
     #elif defined win_unix
       char rbfname[OS9PATHLEN];
+      char rbfhost[OS9PATHLEN];
     #endif
 
     do {
@@ -1669,7 +1685,7 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
                 #ifdef MACFILES
                   err= GetRBFName( pathname,mode, &isFolder, &fs,&afs );
                 #elif defined win_unix
-                  err= GetRBFName( pathname,mode, &isFolder, (char*)&rbfname );
+                  err= GetRBFName( pathname,mode, &isFolder, (char*)&rbfname, (char*)&rbfhost );
                 #endif
 
                 /* must open it in the right mode */
@@ -1713,20 +1729,26 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
             
                     #elif defined win_unix
                       if (err) return E_UNIT; /* GetRBFName called earlier */
-                      strcpy( cmp,rbfname );
-                      /* Resolve the device-root OS-9 path (e.g. /h0, /h0@) to the host
-                         image file path.  Use cmp (the short device name from GetRBFName,
-                         which has already stripped any subpath like /CMDS) rather than the
-                         original pathname — otherwise /h0/CMDS would resolve to the
-                         nonexistent host path .../h0/CMDS and Open_Image would fail.
-                         Strip trailing '@' so raw-device paths (e.g. /h0@) resolve to
-                         the base image file. */
-                      { char devroot[OS9PATHLEN], *ip;
-                        devroot[0]= PSEP; devroot[1]= NUL;
-                        strncat( devroot, cmp, OS9PATHLEN-2 );
-                        { char *at= strrchr(devroot,'@'); if (at) *at= NUL; }
-                        ip= devroot;
-                        if (parsepath( pid, &ip, imgpath, false )) strcpy( imgpath,pathname ); }
+
+                      /* The device is named after the OS-9 path that asked for it
+                         ("/h9", "/h9@", "/h9/CMDS" -> "h9"), and its image is the
+                         host file GetRBFName already resolved.  Both used to be
+                         derived from that host file's BASENAME instead: the name
+                         was the basename, and the image path was rebuilt by feeding
+                         "/" + basename back through parsepath().  That round trip
+                         only returns to the same file when the basename is itself a
+                         device name, i.e. exactly when the image sits at
+                         <startPath>/hN.  Point OS9Hx at /somewhere/img.rbf and the
+                         device registered as "img.rbf" while the image path became
+                         the meaningless OS-9 path "/img.rbf", so Open_Image answered
+                         E$FNA for every access -- while host DIRECTORIES, which never
+                         come through here, honoured OS9Hx from anywhere.  Renaming
+                         the same file to "h9" made it work, which is what identified
+                         the decision as lexical.  GetOS9Dev needs an absolute path to
+                         read a device out of; a relative one keeps the old basename. */
+                      GetOS9Dev( pathname, (char*)&cmp );
+                      if (*cmp==NUL) strcpy( cmp,rbfname );
+                      strcpy( imgpath,rbfhost );
 
                     #else
                       /* %%% some fixed devices defined currently */
@@ -1983,7 +2005,8 @@ static os9err CreateBlankDevice( ushort pid, const char* name, uint32_t sizeKB,
     char      hostpath[OS9PATHLEN];
     const char* p= name;
     byte*     buf;
-    uint32_t  totScts, totBits;
+    uint32_t  totScts, totBits, headScts;
+    Boolean   ok;
     uint32_t  sctSize= (sctSizeArg>0) ? (uint32_t)sctSizeArg : STD_SECTSIZE;
     int       clu    = (cluSizeArg>0) ? cluSizeArg           : 1;
     FILE*     fp;
@@ -2019,17 +2042,36 @@ static os9err CreateBlankDevice( ushort pid, const char* name, uint32_t sizeKB,
 
     if (!RoundSectorCount( sizeKB, sctSize, clu, &totScts, &totBits ))
       return E_NORAM; /* RoundSectorCount already printed the specific reason */
-    if (!BuildBlankImage( totScts, totBits, sctSize, clu, &buf ))
+    if (!BuildBlankImage( totScts, totBits, sctSize, clu, &buf, &headScts, true ))
       return E_NORAM; /* BuildBlankImage already printed the specific reason */
 
     fp= fopen( hostpath,"wb" );
     if (fp==NULL) { release_mem( buf ); return _errmsg( E_BPNAM, "mount -k: can't create '%s'.\n", hostpath ); }
-    if (fwrite( buf, sctSize, totScts, fp )!=totScts) {
-      fclose( fp ); remove( hostpath ); release_mem( buf );
+
+    /* Head first, then the all-zero tail in chunks. Buffering the whole image
+     * is what limited this to ~28 MB; the tail carries no information, so
+     * there is nothing to hold in memory for it. */
+    ok= fwrite( buf, sctSize, headScts, fp )==headScts;
+    release_mem( buf );
+
+    if (ok) {
+      byte     zeros[ 4096 ];
+      uint32_t left= totScts - headScts;
+      memset( zeros, 0, sizeof(zeros) );
+      while (ok && left>0) {
+        uint32_t chunk= sizeof(zeros)/sctSize;   /* whole sectors per write */
+        if (chunk==0)   chunk= 1;                /* sctSize > 4096: one at a time */
+        if (chunk>left) chunk= left;
+        ok= fwrite( zeros, sctSize, chunk, fp )==chunk;
+        left -= chunk;
+      } // while
+    } // if
+
+    if (!ok) {
+      fclose( fp ); remove( hostpath );
       return _errmsg( E_BPNAM, "mount -k: write failed for '%s' (disk full?).\n", hostpath );
     } // if
     fclose( fp );
-    release_mem( buf );
 
     upo_printf( "mount: created '%s' (%u sectors, %u bytes/sector)\n", hostpath, totScts, sctSize );
     return 0;

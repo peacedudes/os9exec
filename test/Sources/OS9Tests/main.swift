@@ -114,6 +114,19 @@ let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/dd/CMDS"
 /// against the locally built binary.
 let containerized = dockerImage != nil || containerImage != nil
 
+/// How the emulator itself spells `scratchDisk`. A container bind-mounts that
+/// directory at `/h5` and runs there, so a host path handed to the emulator in
+/// an env var has to be written in whichever namespace the emulator lives in --
+/// the host's own spelling names nothing inside the container. Physically
+/// resolved locally for the same reason `os9()` resolves it (macOS firmlinks:
+/// /var/folders vs /private/var/folders are one directory under two names, and
+/// device roots are compared as literal strings).
+let scratchInEmulator: String = containerized ? scratch : {
+    guard let r = realpath(scratchDisk, nil) else { return scratchDisk }
+    defer { free(r) }
+    return String(cString: r)
+}()
+
 /// Per-command budget. A container pays for image start-up and a cold emulator
 /// boot (the UAE CPU tables are rebuilt every run) on top of the command itself,
 /// which pushed the slower commands (list, pr, tar, build...) past the native 15s
@@ -233,15 +246,24 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
         "-w", scratch,
         "-e", "OS9H\(scratchDev.dropFirst())=" + scratch,
     ]
+    // The caller's `env` reaches a container too. It used to be applied ONLY on
+    // the local branch below, so every test that configures the emulator through
+    // the environment was silently running with none of it under `make
+    // test-linux` -- asserting against a default emulator, and passing or failing
+    // for reasons that had nothing to do with what it set. Sorted so a run's
+    // command line is reproducible.
+    let callerEnvArgs = env.sorted { $0.key < $1.key }.flatMap { ["-e", "\($0.key)=\($0.value)"] }
 
     if let image = dockerImage {
         // Run via Docker: mount local dd directory and pipe stdin/stdout
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["docker", "run"] + containerRunArgs + [image] + speedFlag + ["shell"]
+        process.arguments = ["docker", "run"] + containerRunArgs + callerEnvArgs
+                          + [image] + speedFlag + ["shell"]
     } else if let image = containerImage {
         // Run via Apple Container: mount local dd directory and pipe stdin/stdout
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["container", "run"] + containerRunArgs + [image] + speedFlag + ["shell"]
+        process.arguments = ["container", "run"] + containerRunArgs + callerEnvArgs
+                          + [image] + speedFlag + ["shell"]
     } else {
         // Run locally: OS9DISK points straight at the repo-root h0 dir.
         process.executableURL = execURL
@@ -835,6 +857,48 @@ check  ("rbf: dsave -ive populates+verifies", contains: "6473 6176",
     "del /h5/t_dsavesrc", "del /h5/t_dsavedir/f1", "deldir -q /h5/t_dsavedir")
 
 try? FileManager.default.removeItem(atPath: scratchHostPath)
+
+// An RBF image is a device wherever it lives. It used to be one only at
+// "<startPath>/hN": DeviceInit named the device after the IMAGE FILE'S BASENAME
+// and then rebuilt the image's host path by feeding "/" + that basename back
+// through parsepath -- a round trip that only lands on the same file when the
+// basename is itself a device name. Point OS9H9 at /anywhere/img.rbf and the
+// device registered as "img.rbf" while its image path became the meaningless
+// OS-9 path "/img.rbf", so every access answered E$FNA (#000:214). Renaming that
+// very same file to "h9" made it work, which is what identified the decision as
+// lexical rather than as anything about the file. Host DIRECTORIES behind OS9Hx
+// never came through that code and honoured the variable from anywhere all along.
+//
+// Two images of DIFFERENT SIZES, so which one answered is VISIBLE in free's
+// capacity line rather than inferred: 1M = 4096 sectors, 500K = 2016. `mount -k`
+// writes into the emulator's cwd, which is <startPath>, so the host moves the
+// first image out of the naming convention before the second one is made.
+let awayHostPath = scratchDisk + "/not-a-device-name.rbf"
+let awayDevPath  = scratchInEmulator + "/not-a-device-name.rbf"
+try? FileManager.default.removeItem(atPath: awayHostPath)
+_ = os9(["mount -k=1M \(scratchDevice)"])
+try? FileManager.default.moveItem(atPath: scratchHostPath, toPath: awayHostPath)
+
+run("rbf: OS9Hx mounts an image that is not at <startPath>/hN",
+    expectation: "free /h9 reports the moved 1M image (4096 sectors), no error",
+    commands: ["free /h9"], env: ["OS9H9": awayDevPath]) {
+        !$0.contains("Error #") && $0.contains("4096 sectors")
+    }
+
+// Explicit configuration beats ambient discovery, and now says so once. Both
+// candidates are live here -- a 500K image sitting at <startPath>/h9 and the 1M
+// one OS9H9 names -- so the capacity line is the only thing that can tell which
+// of them the emulator actually opened.
+_ = os9(["mount -k=500K \(scratchDevice)"])
+run("rbf: OS9Hx wins over an image of the same name beside the emulator",
+    expectation: "free /h9 reports OS9H9's 1M image (4096 sectors), announced once",
+    commands: ["free /h9"], env: ["OS9H9": awayDevPath]) {
+        $0.contains("4096 sectors") && !$0.contains("2016 sectors")
+                                    && $0.contains("using OS9H9=")
+    }
+
+try? FileManager.default.removeItem(atPath: scratchHostPath)
+try? FileManager.default.removeItem(atPath: awayHostPath)
 
 // ── RAM disk regression test ──────────────────────────────────────────────────
 // mount -r=<size> builds a complete filesystem in memory -- no host file,

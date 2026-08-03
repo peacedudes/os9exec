@@ -236,8 +236,8 @@ Boolean RBF_ImgSize( long size );
   os9err GetRBFName( char* os9path, ushort mode, Boolean *isFolder, 
                      FSSpec  *fs, FSSpec *afs );
 #elif defined UNIX
-  os9err GetRBFName( char* os9path, ushort mdoe, Boolean *isFolder, 
-                     char* rbfname );
+  os9err GetRBFName( char* os9path, ushort mode, Boolean *isFolder,
+                     char* rbfname, char* hostpath );
 #endif
 
 
