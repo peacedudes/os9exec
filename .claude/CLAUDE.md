@@ -47,7 +47,12 @@ condition is never true, an assertion listing the wrong directory).
   pattern; you will kill their runs and manufacture failures. Match a path.
 - **Several Claude sessions may share this repo.** Expect commits and modified
   files you did not make. Leave them alone; do not revert or "fix" them.
-- **`ROADMAP.md` is gitignored** -- local only, never committed.
+- **The roadmap is `ROADMAP-68k.md` (os9exec/68k) or `ROADMAP-6809.md`** --
+  gitignored, local only, never committed. There is no plain `ROADMAP.md`; a
+  stale index by that name was deleted on 2026-08-04 after items got appended
+  to it that belonged in the 68k file. A roadmap holds OPEN work only: done
+  items are deleted (git log and memory keep the history), and anything
+  decided against moves to `DECISIONS-68k.md` / `DECISIONS-6809.md`.
 - The suite prints a filtered preview on failure that drops `#`/`$` lines, so an
   empty `output:` does NOT mean the run produced none.
 
