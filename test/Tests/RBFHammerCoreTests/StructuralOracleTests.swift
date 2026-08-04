@@ -15,6 +15,10 @@ import XCTest
 final class StructuralOracleTests: XCTestCase {
 
     /// Real `dcheck /h9` output on a freshly `mount -k`ed image holding one file.
+    /// Captured before `mount -k` learned to name a volume after its device, so a
+    /// fresh image now says 'h9' here. Kept verbatim: the oracle keys on the
+    /// "file structure is intact" line, and doctoring a capture to match today's
+    /// output would make it something other than a capture.
     private static let cleanDcheck = """
         Sector $000001 is start of bitmap
         Sector $000002 is start of root dir

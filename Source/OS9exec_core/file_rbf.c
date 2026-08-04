@@ -1438,8 +1438,46 @@ static Boolean RoundSectorCount( uint32_t ramSizeKB, uint32_t sctSize, int clu,
     return true;
 } /* RoundSectorCount */
 
+static void StampVolume( byte* base, uint32_t sctSize, const char* volName )
+/* Overwrites the two identification-sector fields that RAM_zero cannot supply
+ * honestly, because a template is a snapshot of one particular disk:
+ *
+ *   DD_DAT ($1A) -- the template's bytes say 02-07-03 20:45, which Microware's
+ *     own `free` renders as "Jul 3, 1902". Every image ever built carried it.
+ *   DD_NAM ($1F) -- the template reads "Ram Disk (Caution: Volatile)", which is
+ *     true for `mount -r` and a lie for the persistent host file `mount -k`
+ *     writes. <volName> NULL keeps it, which is what the RAM disk wants.
+ *
+ * Everything else in the template is real and stays: DD_SYNC ("Cruz", which
+ * Open_Image requires), DD_MapLSN=1, DD_LSNSize, DD_VersID=1.
+ *
+ * Both writes are guarded on sctSize, for the same reason the RAM_zero memcpy
+ * is: a -n= smaller than the field would otherwise write into sector 1. */
+{
+    struct tm tim;
+    size_t    len;
+
+    if (sctSize>=DAT_POS+5) {
+        GetTim( &tim );
+        base[ DAT_POS   ]= (byte)tim.tm_year;    /* already years since 1900 */
+        base[ DAT_POS+1 ]= (byte)(tim.tm_mon+1); /* tm counts months from 0  */
+        base[ DAT_POS+2 ]= (byte)tim.tm_mday;
+        base[ DAT_POS+3 ]= (byte)tim.tm_hour;
+        base[ DAT_POS+4 ]= (byte)tim.tm_min;
+    } // if
+
+    if (volName==NULL || *volName==NUL || sctSize<NAM_POS+NAM_LEN) return;
+
+          len= strlen( volName );
+    if   (len>NAM_LEN) len= NAM_LEN;
+    memset( &base[NAM_POS], 0,       NAM_LEN );
+    memcpy( &base[NAM_POS], volName, len );
+    base[ NAM_POS+len-1 ] |= 0x80; /* OS-9 strings are high-bit terminated */
+} /* StampVolume */
+
 static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sctSize, int clu,
-                                 byte** bufOut, uint32_t* headSctsOut, Boolean headOnly )
+                                 byte** bufOut, uint32_t* headSctsOut, Boolean headOnly,
+                                 const char* volName )
 /* Builds the HEAD of a ready-to-use RBF filesystem image in a freshly
  * allocated buffer, and reports its length in sectors via <headSctsOut>.
  * With <headOnly>, allocates ONLY the non-zero prefix and reports its length
@@ -1448,8 +1486,8 @@ static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sct
  * sctSize*totScts -- the whole image -- in the 68k arena, which capped
  * `mount -k` at about 28 MB of a 32 MB arena. A RAM disk really does need the
  * whole buffer, so PrepareRAM passes headOnly=false and is unaffected.
- * Only sectors 0..(allocSize+2) are ever written: identification sector (Cruz-stamped, via RAM_zero),
- * allocation bitmap, root directory FD sector, root directory entry.
+ * Only sectors 0..(allocSize+2) are ever written: identification sector (Cruz-stamped, via RAM_zero,
+ * then corrected by StampVolume), allocation bitmap, root directory FD sector, root directory entry.
  * Returns false (after printing the reason) if the allocation bitmap
  * doesn't fit in the available map size -- the caller owns *bufOut only on
  * true. Caller must already have validated clu (via RoundSectorCount) --
@@ -1491,6 +1529,7 @@ static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sct
      * copied into the identification sector's tail. Copy what exists; the
      * rest is already zero from the memset above. */
     memcpy( base,RAM_zero, sctSize<sizeof(RAM_zero) ? sctSize : sizeof(RAM_zero) );
+    StampVolume( base, sctSize, volName );
 
     f= allocSize + 1; fN= f*sctSize; // root dir fd sector position
     r=         f + 1; rN= r*sctSize;
@@ -1596,7 +1635,9 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
 
     dev->imgScts= dev->totScts;
 
-    if (!BuildBlankImage( dev->totScts, totBits, dev->sctSize, clu, &dev->ramBase, &ramHead, false ))
+    /* NULL: a RAM disk really IS volatile, so the template's own name is the
+     * one true thing about it. Only the date gets corrected. */
+    if (!BuildBlankImage( dev->totScts, totBits, dev->sctSize, clu, &dev->ramBase, &ramHead, false, NULL ))
       return E_NORAM;
 
     strcpy( dev->img_name,cmp );
@@ -1996,18 +2037,23 @@ static void mount_usage( char* name, _pid_ )
     upe_printf( "    -c=<num>     cluster size (default: 1) for RAM disk\n" );
     upe_printf( "    -d=<device>  create RAM disk as a copy of <device>\n" );
     upe_printf( "    -k=<size>    create blank hX device (K/M/G suffix; 0 = host dir)\n" );
+    upe_printf( "    -v=<name>    volume name for -k (default: the device name)\n" );
 } /* mount_usage */
 
 static os9err CreateBlankDevice( ushort pid, const char* name, uint32_t sizeKB,
-                                             int sctSizeArg, int cluSizeArg )
+                                             int sctSizeArg, int cluSizeArg,
+                                             const char* volNameArg )
 /* Creates a new hX device at <startPath>/hX -- either a fully-formatted
  * blank RBF image (sizeKB>0) or a plain host directory (sizeKB==0).
  * Refuses if a file/dir already exists at that path. <name> may be given
  * with or without a leading '/' ("h7" or "/h7"), and only h0..hz is valid
  * -- /dd is fixed at boot via OS9DISK and is never a valid target.
+ * The volume name defaults to the device's own name ("h7"); -v=<name>
+ * overrides it. It is NOT the RAM disk's name -- see StampVolume.
  * Reuses the file-scope MaxKB defined above RoundSectorCount (Task 2, Step 1). */
 {
     char      hostpath[OS9PATHLEN];
+    char      volName[NAM_LEN+1];
     const char* p= name;
     byte*     buf;
     uint32_t  totScts, totBits, headScts;
@@ -2047,7 +2093,15 @@ static os9err CreateBlankDevice( ushort pid, const char* name, uint32_t sizeKB,
 
     if (!RoundSectorCount( sizeKB, sctSize, clu, &totScts, &totBits ))
       return E_NORAM; /* RoundSectorCount already printed the specific reason */
-    if (!BuildBlankImage( totScts, totBits, sctSize, clu, &buf, &headScts, true ))
+
+    /* Default the volume name to the device's own ("h7"), which is at least
+     * true, rather than leaving the template's "Ram Disk (Caution: Volatile)"
+     * on a file that is neither RAM nor volatile. */
+    memset( volName,0, sizeof(volName) ); /* strncpy below never NUL-terminates */
+    if (volNameArg!=NULL && *volNameArg!=NUL) strncpy( volName,volNameArg, sizeof(volName)-1 );
+    else                                      strncpy( volName,p,          2 );
+
+    if (!BuildBlankImage( totScts, totBits, sctSize, clu, &buf, &headScts, true, volName ))
       return E_NORAM; /* BuildBlankImage already printed the specific reason */
 
     fp= fopen( hostpath,"wb" );
@@ -2177,12 +2231,14 @@ os9err int_mount( ushort pid, int argc, char** argv )
     int       imgMode = Img_Unchanged;
     Boolean   blankImage = false;
     uint32_t  blankSizeKB= 0;
+    char      volName[NAM_LEN+1];
     char      *p;
     int       k;
-    
+
     #define     MAXARGS_ 2
     char* nargv[MAXARGS_];
     strcpy( devCopy,"" ); // default
+    memset( volName,0, sizeof(volName) ); /* empty = "use the device name" */
 
     for (k=1; k<argc; k++) {
              p= argv[ k ];    
@@ -2285,8 +2341,17 @@ os9err int_mount( ushort pid, int argc, char** argv )
                              if  (k>=argc) break;
                              p= argv[k];
                            } // if
-                           
+
                            strncpy( devCopy, p, OS9PATHLEN );
+                           break;
+
+                case 'v' : if (*(p+1)=='=') p+=2;
+                           else { k++; /* next arg */
+                             if  (k>=argc) break;
+                             p= argv[k];
+                           } // if
+
+                           strncpy( volName, p, sizeof(volName)-1 );
                            break;
                            
                 default  : upe_printf("Error: unknown option '%c'!\n",*p); 
@@ -2304,11 +2369,16 @@ os9err int_mount( ushort pid, int argc, char** argv )
 
     if (blankImage) {
       if (nargc!=1)
-        return _errmsg( E_BPNAM, "usage: mount -k=<size> <h0..hz>\n" );
-      err= CreateBlankDevice( pid, nargv[0], blankSizeKB, sctSize, cluSize );
+        return _errmsg( E_BPNAM, "usage: mount -k=<size> [-v=<name>] <h0..hz>\n" );
+      err= CreateBlankDevice( pid, nargv[0], blankSizeKB, sctSize, cluSize, volName );
       if (err) return err; /* CreateBlankDevice already printed the reason */
       return 0;
     } // if
+
+    /* -v only has a meaning while creating an image; silently accepting it on
+     * an ordinary mount would read as "the volume was renamed", which it was not. */
+    if (*volName!=NUL)
+      return _errmsg( E_BPNAM, "-v=<name> only applies with -k=<size>.\n" );
 
     if (nargc==0) {      /* no param is not really allowed: exception is ramDisk with */
       if (ramSize>0 || /* size>0 or <devCopy> defined */

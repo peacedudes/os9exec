@@ -675,14 +675,24 @@ typedef enum { fNone, fCons,fTTY,fNIL,fVMod,fSCF, fFile,fDir,
                       fPipe,fPTY, fRBF, fNET, fPrinter, fARRSZ } ptype_typ;
 
 
+/* Identification sector (LSN 0) field offsets. The names here are os9exec's
+ * own; the OS-9 Technical Manual "Disk File Organization" calls the same
+ * fields DD_TOT, DD_TKS, DD_MAP, DD_BIT, DD_DIR, DD_DAT, DD_NAM, DD_SYNC
+ * and DD_LSNSize. */
 #define  TOT_POS  0x00       /* Total number of sectors */
 #define  TRK_POS  0x03       /* Number of sectors per track */
 #define  MAP_POS  0x04       /* Number of bytes in allocation map */
 #define  BIT_POS  0x06       /* Cluster size */
 #define  DIR_POS  0x08       /* Position of root dir */
+#define  DAT_POS  0x1a       /* Creation date, 5 bytes: year-1900, month, day, hour, min */
+#define  NAM_POS  0x1f       /* Volume name */
+#define  NAM_LEN  32         /* ...and its field width, per that manual's table */
 #define CRUZ_POS  0x60       /* Cruz position at RBF boot sector */
 #define SECT_POS  0x68       /* Sector size */
 
+/* DD_SYNC, the media integrity code. os9exec uses the literal string "Cruz"
+ * as its value, and Open_Image REFUSES an image without it (E_FNA) -- so this
+ * is load-bearing, not a leftover byline: every image we build must carry it. */
 #define Cruz_Str "Cruz"      /* the expected magic string at CRUZ_POS */
 #define UNDEF_POS 0xFFFFFFFF /* invalid compare position for image raw access */
 

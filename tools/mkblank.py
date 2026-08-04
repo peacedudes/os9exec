@@ -2,14 +2,19 @@
 """Write a blank OS-9 RBF filesystem image, host-side.
 
 A faithful port of os9exec's BuildBlankImage()/RoundSectorCount()
-(Source/OS9exec_core/file_rbf.c). os9exec's own `mount -k` builds the whole
-image in the 68k arena before writing it, so it cannot create anything near
-or above the 32 MB arena. Nothing about a FINISHED image needs memory --
-Open_Image reads one sector -- so building it here removes the cap entirely.
+(Source/OS9exec_core/file_rbf.c).
 
-Verified by byte-for-byte comparison against `mount -k` output.
+This existed because `mount -k` once buffered the whole image in the 68k arena
+and so could not build anything near 32 MB. That is no longer true: it streams
+the head and then the zero tail (commit dffd612), and a 125 MB image builds in
+well under a second. What this script is still for is building an image with
+NO emulator running -- CI, a Makefile, a fresh clone with no system disk.
+
+Verified by byte-for-byte comparison against `mount -k` output, which is a
+check between the two builders, not against anything canonical: keep both
+sides in step when either changes.
 """
-import os, sys
+import os, sys, time
 
 BpB           = 8
 TOT_POS, TRK_POS, MAP_POS, BIT_POS, DIR_POS = 0x00, 0x03, 0x04, 0x06, 0x08
@@ -57,7 +62,12 @@ def pick_cluster(size_kb, sct=256, clu=1):
             return clu
         clu *= 2
 
-NAME_POS, NAME_MAX = 0x1f, 0x3a - 0x1f + 1   # volume name field in sector 0
+# DD_DAT / DD_NAM, per the OS-9 Technical Manual's "Disk File Organization"
+# table. NAME_MAX used to be 0x3a-0x1f+1 == 28, measured off the length of the
+# template's own "Ram Disk (Caution: Volatile)" rather than off the field -- so
+# a 29..32 character volume name was silently truncated.
+DATE_POS           = 0x1a
+NAME_POS, NAME_MAX = 0x1f, 32
 
 def set_volume_name(img, name):
     """Stamp the volume name into the identification sector.
@@ -68,9 +78,25 @@ def set_volume_name(img, name):
     """
     b = bytearray(img)
     n = name[:NAME_MAX].encode("ascii", "replace")
+    if not n:
+        return bytes(b)
     b[NAME_POS:NAME_POS+NAME_MAX] = bytes(NAME_MAX)          # clear the old name
     b[NAME_POS:NAME_POS+len(n)-1] = n[:-1]
     b[NAME_POS+len(n)-1] = n[-1] | 0x80                      # terminator
+    return bytes(b)
+
+def set_creation_date(img, when=None):
+    """Stamp DD_DAT (5 bytes: year-1900, month, day, hour, minute).
+
+    The template carries 02-07-03 20:45, which Microware's own `free` renders
+    as "Jul 3, 1902" -- it is a snapshot of whichever disk RAM_zero was dumped
+    from, not a zeroed field. os9exec's StampVolume() writes the same five
+    bytes from the host clock; this keeps the two builders in agreement.
+    """
+    b = bytearray(img)
+    t = when or time.localtime()
+    b[DATE_POS:DATE_POS+5] = bytes([t.tm_year - 1900, t.tm_mon, t.tm_mday,
+                                    t.tm_hour, t.tm_min])
     return bytes(b)
 
 def build_blank(size_kb, sct=256, clu=1):
@@ -118,8 +144,15 @@ if __name__ == "__main__":
     if len(sys.argv) <= 4:                      # no explicit cluster: choose one
         clu = pick_cluster(mb*1024, sct, clu)
     img = build_blank(mb*1024, sct, clu)
-    vol = os.environ.get("RBF_VOLNAME")
-    if vol:
-        img = set_volume_name(img, vol)
+    # Default the volume name to the output file's own name, matching what
+    # `mount -k` now does with the device name. RBF_VOLNAME still overrides.
+    vol = os.environ.get("RBF_VOLNAME") or os.path.splitext(os.path.basename(out))[0]
+    img = set_volume_name(img, vol)
+    # DD_DAT resolves to the minute, so a naive `cmp` against `mount -k` output
+    # fails whenever the two runs straddle a minute boundary. RBF_EPOCH (a Unix
+    # timestamp) pins it, which is what makes that comparison -- and a
+    # reproducible release build -- deterministic.
+    epoch = os.environ.get("RBF_EPOCH")
+    img = set_creation_date(img, time.localtime(int(epoch)) if epoch else None)
     open(out, "wb").write(img)
     print("  wrote %s: %d bytes (%d sectors of %d, cluster %d)" % (out, len(img), len(img)//sct, sct, clu))
