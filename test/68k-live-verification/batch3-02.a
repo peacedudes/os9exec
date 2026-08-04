@@ -8,6 +8,16 @@
 *     handling is not yet implemented (%%%)".
 * This test confirms both live rather than just citing source.
 *
+* BOTH DIVERGENCES ABOVE WERE RETRACTED -- this header is kept as written
+* because it is the record of what was believed when the test was run, but
+* do not read it as current. F$Send DOES broadcast to a group on PID 0, and
+* F$Icpt DOES deliver to the handler; the original pass only ever sent
+* S_Wake, which is consumed by the sleep rather than delivered, and read
+* that as "no delivery". See project memory fsend-pid0-broadcast-already-
+* works and ficpt-signal-delivery-already-works. Nothing here noticed the
+* retraction for weeks, which is the argument in README.md for not treating
+* this corpus as verification coverage.
+*
 Prgrm set 1
 Objct set 1
 ReEnt set $80
