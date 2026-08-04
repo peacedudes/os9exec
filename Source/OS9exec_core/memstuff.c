@@ -164,6 +164,21 @@ static void* emul_alloc( ulong memsz )
 } /* emul_alloc */
 
 
+ulong emul_arena_free( void )
+/* Bytes still carve-able from the 68k arena in ONE contiguous piece.
+ * Callers that must allocate a large block up front (a RAM disk is the whole
+ * image at once) can use this to refuse an impossible request with a message
+ * that names the real constraint, instead of letting get_mem fail late with a
+ * bare "No more memory !!!" -- which is also what an exhausted memtable
+ * prints, so the cause is genuinely ambiguous once you are down there.
+ * Conservative on purpose: it ignores the REUSE_MEM free list, whose blocks
+ * are small fragments that could not satisfy such a request anyway. */
+{
+    if (emul_base==NULL || emul_next==NULL) return 0;
+    return (ulong)( emul_end - emul_next );
+} /* emul_arena_free */
+
+
 /* prepare the memory handling for use */
 void init_all_mem(void)
 {

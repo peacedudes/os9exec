@@ -1607,6 +1607,11 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
       return 0;
     } // if
 
+    /* MaxKB is the ceiling for a FILE image, where the only real limit is host
+     * disk space. A RAM disk is carved from the 68k arena in one piece, so its
+     * true ceiling is smaller by two orders of magnitude -- the exact check is
+     * below, once the rounded sector count is known. This one only catches the
+     * absurd early, before the arithmetic. */
     if (mnt_ramSize>MaxKB) {
       upe_printf( "mount: error - size is too large for this device.\n" );
       return 1;
@@ -1634,6 +1639,26 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
     } // if
 
     dev->imgScts= dev->totScts;
+
+    /* Refuse what the arena cannot hold, naming the constraint. Without this
+     * the request is accepted, get_mem fails deep inside BuildBlankImage, and
+     * the user sees a bare "No more memory !!!" -- the same line an exhausted
+     * memtable prints, and the same line the -M option's own bug produces, so
+     * three unrelated causes were indistinguishable. */
+    {
+        uint64_t need = (uint64_t)dev->totScts * dev->sctSize;
+        ulong    avail= emul_arena_free();
+
+        if (need>avail) {
+          upe_printf( "mount: error - a %u kB RAM disk needs %u kB of the 68k arena, "
+                      "which has %u kB left.\n",
+                      (uint32_t)mnt_ramSize,
+                      (uint32_t)(need/KByte + (need%KByte!=0)), (uint32_t)(avail/KByte) );
+          upe_printf( "A RAM disk lives in emulated RAM; use mount -k=<size> for a disk "
+                      "image instead, which does not.\n" );
+          return E_NORAM;
+        } // if
+    }
 
     /* NULL: a RAM disk really IS volatile, so the template's own name is the
      * one true thing about it. Only the date gets corrected. */

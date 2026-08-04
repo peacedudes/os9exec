@@ -101,6 +101,7 @@ void   show_unused( void );
 
 void*      get_mem( ulong  memsz   );
 void   release_mem( void*  membase );
+ulong  emul_arena_free( void );
 void      free_mem( ushort pid     ); // release all memory of process
 
 void*   os9malloc ( ushort pid,                ulong memsz );
