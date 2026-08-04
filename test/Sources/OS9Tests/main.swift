@@ -82,9 +82,21 @@ try? FileManager.default.createSymbolicLink(atPath: scratchDisk + "/h0",
 // beside those tests, because container mode has to MOUNT it -- every os9()
 // invocation builds its mount list, so the path must exist before the first one.
 let canaryName   = "FSCANARY_\(UUID().uuidString.prefix(8))"
-let canaryHost   = URL(fileURLWithPath: diskPath).deletingLastPathComponent()
+let canaryDir    = URL(fileURLWithPath: diskPath).deletingLastPathComponent().path
+let canaryHost   = URL(fileURLWithPath: canaryDir)
                       .appendingPathComponent(canaryName).path
 let canarySecret = "CANARYLEAK_\(UUID().uuidString.prefix(8))"
+
+// The name is randomised, so unlike the scratch directory above a killed run
+// cannot have its leftovers overwritten by the next one -- they accumulate
+// forever. Sweep them, the same way the scratch disk is cleared first. Three
+// empty ones were found in the system disk itself, left there in July 2026
+// by the runs that predate the canary moving to the device root's parent.
+for stale in (try? FileManager.default.contentsOfDirectory(atPath: canaryDir)) ?? []
+where stale.hasPrefix("FSCANARY_") {
+    try? FileManager.default.removeItem(atPath: canaryDir + "/" + stale)
+}
+
 try? (canarySecret + "\r").write(toFile: canaryHost, atomically: true, encoding: .utf8)
 
 // Optional container image for testing
