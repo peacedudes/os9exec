@@ -1075,6 +1075,51 @@ void baud_drain_all_pending( void )
     } while (anyPending);
 } /* baud_drain_all_pending */
 
+/* Wait, in place, until the FIFO has room for <need> bytes -- for a writer that
+   CANNOT be parked.
+
+   ConsoleOut's normal backpressure is to park the writing process in pWaitWrite
+   and resume it later, which loses nothing. An INTERNAL COMMAND cannot be parked:
+   it is host C running straight through (mount_usage calls upe_printf eleven
+   times in a row), so the park has no one to suspend, the C code carries on, and
+   every byte past a full FIFO was silently dropped. `mount -?` printed 678 bytes
+   and about 262 reached the screen -- cut mid-word, no newline, the next prompt
+   landing on top of it, and the -k/-v lines gone. That is exactly the shape that
+   gets read as "this build has no -k option", and it did: it put a wrong entry on
+   the roadmap and survived a later "verification" that used -r (full speed, no
+   pacing), which is the one condition that hides it.
+
+   Pacing is preserved -- the bytes still leave at the configured rate, this just
+   waits for them instead of discarding them. Bounded by LACK OF PROGRESS rather
+   than by wall-clock, so a slow line (300 baud needs ~8.5s per FIFO-full) waits
+   as long as it genuinely takes, while a device that is never going to drain --
+   XOFF-held, with no OS-9 process left to send XON -- gives up after ~2s and
+   drops, which is no worse than what happened before. A hang would be. */
+static void baud_make_room( baud_device_t* d, int need )
+{
+    int   stalled= 0;
+    ulong delay;
+    ushort was;
+
+    while (BAUD_FIFO_SIZE - d->count < need) {
+        was= d->count;
+        baud_drain_due();
+        if (BAUD_FIFO_SIZE - d->count >= need) return;
+
+        if (d->count>=was) { if (++stalled > 200) return; } /* ~2s of no progress */
+        else                 stalled= 0;
+
+        delay= baud_next_wake_delay_us();
+        if (delay>0 && delay!=ULONG_MAX) {
+            struct timespec ts;
+            ulong capped= (delay>10000UL) ? 10000UL : delay; /* cap each nap at 10ms */
+            ts.tv_sec = 0;
+            ts.tv_nsec= (long)capped*1000L;
+            nanosleep( &ts, NULL );
+        }
+    } // while
+} /* baud_make_room */
+
 /* SCF baud rate code (PD_BAU) -> bits per second.  Codes verified against
    tmode on this build; 0 = unknown/unsupported, meaning "don't throttle". */
 static ulong baud_bps( byte code )
@@ -1199,6 +1244,14 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
               need   = needsLF ? 2 : 1;
 
               if (paced) {
+                  /* An internal command is host C and cannot be parked and
+                     resumed -- parking it drops the rest of its output. Wait
+                     for room instead. `paced` already excludes the other
+                     unparkable writers (pid 0, the MAXPROCESSES sentinel,
+                     pSysTask), so isIntUtil is the only case left here. */
+                  if (cp->isIntUtil && BAUD_FIFO_SIZE - dev->count < need)
+                      baud_make_room( dev, need );
+
                   if (BAUD_FIFO_SIZE - dev->count < need) {
                       cp->saved_cnt  = cnt;
                       cp->saved_state= cp->state;

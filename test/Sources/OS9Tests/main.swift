@@ -4125,6 +4125,45 @@ if runTracePairing {
     }
 }
 
+// ── An internal command's output survives baud pacing ────────────────────────
+// Paced output goes through a 256-byte FIFO. A real OS-9 process that fills it
+// is parked in pWaitWrite and resumed, losing nothing; an INTERNAL command is
+// host C running straight through and cannot be parked, so everything past the
+// full FIFO used to be dropped silently. `mount -?` prints 678 bytes and about
+// 262 arrived -- cut mid-word, no newline, the next prompt on the same line,
+// and the -k/-v lines missing entirely. That is what put a wrong "mount -? does
+// not document -k" entry on the roadmap, and it survived a later check that
+// used -r, which turns pacing off and hides the whole thing.
+//
+// Compared paced against unpaced rather than against a fixed byte count, so the
+// test keeps working when the usage text changes. `paced: true` is the point --
+// running this with the suite's default -r would assert nothing at all.
+let pacedUsageName = "console: an internal command's usage survives baud pacing"
+if filter.isEmpty || pacedUsageName.localizedCaseInsensitiveContains(filter) {
+    let unpaced = os9(["mount -?"])
+    let paced   = os9(["mount -?"], timeout: containerized ? 120 : 60, paced: true)
+
+    func usageLines(_ s: String) -> [String] {
+        s.split(whereSeparator: \.isNewline)
+         .map { $0.trimmingCharacters(in: .whitespaces) }
+         .filter { $0.hasPrefix("-") }
+    }
+    let u = usageLines(unpaced), p = usageLines(paced)
+
+    // The precondition guards against a vacuous pass: if the usage text ever
+    // shrinks below one FIFO, this test stops exercising the overflow at all.
+    let bigEnough = unpaced.utf8.count > 256
+    if bigEnough && p == u && u.contains(where: { $0.hasPrefix("-k=") }) {
+        print("PASS: \(pacedUsageName)")
+        passed += 1
+    } else {
+        print("FAIL: \(pacedUsageName)")
+        if !bigEnough { print("      usage text is now under 256 bytes -- this no longer tests the FIFO") }
+        else { print("      unpaced \(u.count) option lines, paced \(p.count); paced output is being dropped") }
+        failed += 1
+    }
+}
+
 // ── -M actually resizes the 68k arena ────────────────────────────────────────
 // -M was documented as "Set 68k arena size" and did nothing of the kind, for two
 // compounding reasons: the option switch lowercases its letter, so `case 'M'`
