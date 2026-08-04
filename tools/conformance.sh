@@ -193,21 +193,71 @@ build_68k() {
 #
 # It is also a real check in its own right -- it proves no test depends on
 # the shell for anything beyond being started.
+# Build and populate an RBF image with NO shell and no Microware software.
+#
+# This is what lets CI check the record-locking claims (t19-t31), which SKIP on
+# a host-native directory because there is no lock mechanism under it. It used
+# to need a shell for `mount -k`, which is why --rbf was a local-only gate --
+# but os9exec runs its own internal commands AS THE BOOT PROGRAM, so the whole
+# build is just four invocations of the emulator with no OS-9 system at all.
+#
+# `mount -k` writes to <startPath>/<name>, and startPath is the emulator's
+# working directory -- hence the subshell cd. The name has to be h0..hz.
+# Echoes the image path on success; returns non-zero having said why.
+build_rbf_image_noshell() {
+    local dir="$1" work="$2" img="$work/h7" m
+    ( cd "$work" && $TIMEOUT 60 "$REPO/os9exec" -r mount -k=800k h7 ) >/dev/null 2>&1
+    [ -f "$img" ] || { echo "  could not create $img" >&2; return 1; }
+
+    for m in CMDS SCRATCH RESULTS; do
+        $TIMEOUT 60 env OS9H7="$img" "$REPO/os9exec" -r makdir "/h7/$m" >/dev/null 2>&1
+    done
+    for m in "${MODULES[@]}"; do
+        $TIMEOUT 60 env OS9H7="$img" OS9H8="$dir" "$REPO/os9exec" \
+            -r copy -n "/h8/CMDS/$m" "/h7/CMDS/$m" >/dev/null 2>&1
+    done
+
+    # Prove the copy actually landed rather than trusting four silent runs --
+    # every one of those redirects to /dev/null, so a total failure would
+    # otherwise reach the tests as "everything SKIPped", which reads like a
+    # device limitation instead of a broken build.
+    if ! $TIMEOUT 60 env OS9H7="$img" "$REPO/os9exec" -r dir /h7/CMDS </dev/null 2>&1 \
+         | tr '\r' '\n' | grep -aq 'tally'; then
+        echo "  image built but CMDS/ is empty -- populate step failed" >&2
+        return 1
+    fi
+    echo "$img"
+}
+
 run_68k_noshell() {
-    local dir="$REPO/test/68k-conformance" rc=0 m out
-    echo "== CONF68K on os9exec (no shell, no SDK -- each test as its own boot program) =="
+    local use_rbf="${1:-no}" dir="$REPO/test/68k-conformance" rc=0 m out
+    local disk="$dir" work="" img=""
+
+    if [ "$use_rbf" = yes ]; then
+        work=$(mktemp -d)
+        img=$(build_rbf_image_noshell "$dir" "$work") || { rm -rf "$work"; return 1; }
+        disk="$img"
+    fi
+
+    echo "== CONF68K on os9exec (no shell, no SDK -- each test as its own boot program$([ "$use_rbf" = yes ] && echo ', RBF image')) =="
     printf 'RUN prebuilt\r' > "$dir/RESULTS/report"
     for m in "${MODULES[@]}"; do
         case "$m" in tally|mark) continue ;; esac
-        out=$($TIMEOUT 60 env OS9DISK="$dir" "$REPO/os9exec" -r "/dd/CMDS/$m" </dev/null 2>&1 \
+        out=$($TIMEOUT 60 env OS9DISK="$disk" "$REPO/os9exec" -r "/dd/CMDS/$m" </dev/null 2>&1 \
               | tr '\r' '\n' | grep -a '^RESULT ')
         [ -n "$out" ] && printf '%s\r' "$out" >> "$dir/RESULTS/report"
     done
     # tally is a module too, so it reads the report the same way it would on
-    # a real system rather than being reimplemented here in shell.
+    # a real system rather than being reimplemented here in shell. Always run
+    # it against the SUITE DIRECTORY, never the image: the report it counts is
+    # the host-side one this loop just wrote, and pointing /dd at the image
+    # instead had it read the image's own empty RESULTS/ and print nothing at
+    # all -- a missing totals line, with every test having passed.
     $TIMEOUT 60 env OS9DISK="$dir" "$REPO/os9exec" -r /dd/CMDS/tally </dev/null 2>&1 \
         | tr '\r' '\n' | grep -a 'CONF68K totals' | sed 's/^/  /'
-    compare "$dir" "$dir/RESULTS/report" || rc=1
+    compare "$dir" "$dir/RESULTS/report" \
+        "$([ "$use_rbf" = yes ] && echo expected-rbf || echo expected)" || rc=1
+    [ -n "$work" ] && rm -rf "$work"
     return $rc
 }
 
@@ -291,7 +341,7 @@ case "$which" in
               echo "note: no h0/CMDS system disk found -- using --noshell"
               no_shell=yes
           fi
-          if [ "$no_shell" = yes ]; then run_68k_noshell || overall=1
+          if [ "$no_shell" = yes ]; then run_68k_noshell "$use_rbf" || overall=1
           else run_68k "$use_rbf" || overall=1; fi ;;
     6809) run_6809 || overall=1 ;;
     all)  [ "$do_build" = yes ] && { build_68k "$REPO/test/68k-conformance" || exit 1; }

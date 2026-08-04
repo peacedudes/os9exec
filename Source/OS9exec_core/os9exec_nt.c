@@ -1237,6 +1237,32 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
 	  }
 	#endif
 
+    /* OS9DISK may name an RBF IMAGE FILE rather than a host directory, and a
+       host path cannot address anything INSIDE an image -- so the initial data
+       directory has to be the DEVICE path instead.
+
+       OS9CMDS already gets exactly this treatment, but only by accident: it
+       resolves to "<OS9DISK>/CMDS", which for an image is a host path that does
+       not exist, so egetenv's !F_Avail arm rewrites it to "/dd/CMDS"
+       (os9main.c). OS9DISK itself resolves to the image file, which DOES exist,
+       so that arm never fires and there is no "/dd" counterpart. The execution
+       directory therefore worked while the data directory did not: booting a
+       module from inside an image was fine, and then every RELATIVE open in it
+       returned E_UNIT -- I$Open "SCRATCH/x" gave 240 where a host-native /dd
+       correctly gives E_PNNF. CONF68K t01 FAILed on an image and PASSed on a
+       directory, same module, same claim.
+
+       A directory keeps the host path exactly as before; only a regular file
+       is redirected, and only for OS9DISK. Deliberately NOT done by asking
+       IO_Type here: the same test inside egetenv re-enters egetenv (the
+       recursion its own comment warns about) and kills the emulator with no
+       output at all. FileFound/PathFound are plain stat()s and cannot. */
+    if (ustrcmp( envname,"OS9DISK" )==0 && FileFound( p ) && !PathFound( p )) {
+        debugprintf(dbgStartup,dbgNorm,("# GetCurPaths: OS9DISK '%s' is an image -> /dd\n", p));
+        strcpy( tmp,"/dd" );
+        p= tmp;
+    } // if
+
         drP->type= IO_Type( 1,           p,mode ); // get device type: Mac/PC or RBF
     if (drP->type==fRBF) {
 		        change_dir( 1,drP->type, p,mode ); // set the types at procid 0

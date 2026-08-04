@@ -36,6 +36,18 @@ jobs:
     - name: Run the 68k conformance suite
       run: ./tools/conformance.sh 68k
 
+    # The same 33 tests again, on a real RBF image instead of a host-native
+    # directory. Worth the second run: 13 of them are record-locking claims
+    # (t19-t31) and a host directory has no lock mechanism under it, so above
+    # they report SKIP -- checked by nobody, on every push, since the suite
+    # was written. This was a local-only gate because building the image was
+    # believed to need a Microware shell for `mount -k`; it does not. os9exec
+    # runs its own internal commands as the boot program, so conformance.sh
+    # builds and populates the image with four invocations of the emulator and
+    # nothing else. A run here reports PASS=33 SKIP=0.
+    - name: Run the 68k conformance suite on an RBF image
+      run: ./tools/conformance.sh 68k --noshell --rbf
+
   build:
     runs-on: ${{ matrix.os }}
     strategy:
