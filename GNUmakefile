@@ -262,10 +262,22 @@ warnings:
 	  || echo "  BUILD FAILED -- see /tmp/os9exec-host.log"
 	@$(TALLY) /tmp/os9exec-host.log
 	@echo "=== linux (gcc, in docker) ==="
-	@rm -f /tmp/os9exec-linux-built
+# Seen 2026-08-04: the container's cp failed with "File exists", so the leg
+# reported NOT BUILT even though it had just compiled and linked 0/0 clean.
+# The destination is a FIXED path in /tmp shared by every run, and several
+# sessions share this repo -- two overlapping `make warnings` collide, one's rm
+# racing the other's cp. Root ownership was the first theory and is NOT the
+# cause: on macOS the bind mount maps ownership and the host rm removes the file
+# fine (checked). The rm below narrows the window; it does not close it. Closing
+# it wants a per-run unique path for the binary AND the four logs, which is a
+# rewrite of this target -- noted in ROADMAP-68k.md instead of done half-way.
+# The `test -x` guard already fails LOUD rather than scoring a phantom 0/0, so
+# this misreports in the safe direction.
+	@rm -f /tmp/os9exec-linux-built 2>/dev/null || true
 	@docker run --rm -v "$(CURDIR)/Source:/src/Source:ro" -v "$(CURDIR)/GNUmakefile:/src/GNUmakefile:ro" \
 	  -v /tmp:/out -w /src gcc:13 sh -c 'set -e; mkdir -p /tmp/b; \
 	  make CC=gcc OBJDIR=/tmp/b EXE=/tmp/b/os9exec 2>&1; \
+	  rm -f /out/os9exec-linux-built; \
 	  cp /tmp/b/os9exec /out/os9exec-linux-built' >/tmp/os9exec-linux.log 2>&1 \
 	  || echo "  BUILD OR SETUP FAILED -- see /tmp/os9exec-linux.log"
 	@test -x /tmp/os9exec-linux-built \
