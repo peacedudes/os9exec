@@ -4125,6 +4125,40 @@ if runTracePairing {
     }
 }
 
+// ── -M actually resizes the 68k arena ────────────────────────────────────────
+// -M was documented as "Set 68k arena size" and did nothing of the kind, for two
+// compounding reasons: the option switch lowercases its letter, so `case 'M'`
+// was unreachable and -M silently became -m (the first process's extra static
+// storage); and the option loop runs after os9exec_globinit(), which had already
+// allocated the arena. Together those made -M look like it could only SHRINK the
+// arena -- "-M 8M" appeared to work while "-M 32M", the default value itself,
+// died with "No more memory !!!" because 32 MB of extra process storage does not
+// fit in a 32 MB arena.
+//
+// Asserting on a RAM disk rather than on any printed size, because a RAM disk is
+// carved from the arena in one contiguous piece and so can only succeed if the
+// arena is genuinely bigger. The pair is the point: the refusal proves the test
+// is not vacuous (this size really is beyond a default arena), and the success
+// proves -M moved the ceiling. Verified to fail against the pre-fix binary.
+let arenaName = "memory: -M grows the 68k arena, not the first process's storage"
+if filter.isEmpty || arenaName.localizedCaseInsensitiveContains(filter) {
+    let tooBig  = os9(["mount -r=65536", "free /r0"])
+    let withBig = os9(["mount -r=65536", "free /r0"], flags: ["-M", "128M"])
+
+    let refused  = tooBig.contains("needs 65536 kB")
+    let accepted = withBig.contains("262144 sectors")
+
+    if refused && accepted {
+        print("PASS: \(arenaName)")
+        passed += 1
+    } else {
+        print("FAIL: \(arenaName)")
+        if !refused  { print("      a 64MB RAM disk was NOT refused by a default 32MB arena -- test is vacuous") }
+        if !accepted { print("      -M 128M did not make room for it; -M is inert again") }
+        failed += 1
+    }
+}
+
 // ── Results ───────────────────────────────────────────────────────────────────
 
 try? FileManager.default.removeItem(atPath: scratchDisk) // the run owns it; take it with us

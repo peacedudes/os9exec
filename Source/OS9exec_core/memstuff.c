@@ -189,7 +189,13 @@ void init_all_mem(void)
     if (emul_base==NULL) { /* allocate the 68k RAM arena once */
         emul_base= (unsigned char*)calloc( (size_t)emul_arena_size, 1 );
         if (emul_base==NULL) {
+            /* Was a bare message that then fell through to the pointer
+             * arithmetic below, leaving emul_next at 0x1000 and every
+             * subsequent get_mem handing out addresses into nothing. Nothing
+             * reached it while the arena was a fixed 32 MB compile-time
+             * constant; -M makes the size a user input, so it is reachable now. */
             upe_printf( "Cannot allocate 68k memory arena (%u bytes) !!!\n", (uint32_t)emul_arena_size );
+            exit( 1 );
         }
         emul_next= emul_base + EMUL_RESERVED; /* keep the low page out of circulation */
         emul_end = emul_base + emul_arena_size;

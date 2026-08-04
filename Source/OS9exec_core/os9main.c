@@ -653,6 +653,71 @@ void restore_term()
     #endif
 } // restore_term
 
+/* The smallest arena the first process can actually be loaded into, and the
+ * largest that still addresses as a 32-bit offset. Both are refusals rather
+ * than clamps: silently honouring a different size than the one asked for is
+ * how -M came to look like it worked in the first place. */
+#define ARENA_MIN (1u*1024u*1024u)
+#define ARENA_MAX 0x80000000u
+
+static void preparse_arena_size( int argc, char** argv )
+/* Applies -M <size> BEFORE os9exec_globinit() allocates the arena from it.
+ *
+ * -M was inert for two compounding reasons, and the first hid the second:
+ *
+ *  1. The main option switch lowercases its character (`tolower(*++p)`), so
+ *     `case 'M'` could never be reached -- -M fell into `case 'm'` and set
+ *     memplus, the FIRST PROCESS's extra static storage. That is why "-M 8M"
+ *     looked like it worked (an 8 MB process still fits in the arena) while
+ *     "-M 32M" died with "No more memory !!!": 32 MB of extra storage does not
+ *     fit in a 32 MB arena. The arena was never resized either way, which is
+ *     also why -M could only ever appear to SHRINK it.
+ *  2. The option loop runs after os9exec_globinit(), so even a reachable case
+ *     would have assigned emul_arena_size after init_all_mem had already
+ *     calloc'd the arena from its default.
+ *
+ * This scan fixes (2); the main loop's own -M case, now reachable via the raw
+ * option letter, fixes (1) and consumes the argument so it cannot reach
+ * memplus. Parse errors are left to that case, which reports them properly --
+ * this pass only bails out, so nothing is reported twice. */
+{
+    int           k;
+    unsigned long val;
+    char          modifier;
+    const char*   q;
+
+    for (k=1; k<argc; k++) {
+        #ifdef windows32
+          if (argv[k][0]!='-' && argv[k][0]!='/') continue;
+        #else
+          if (argv[k][0]!='-') continue;
+        #endif
+        if (argv[k][1]!='M' || argv[k][2]!=NUL) continue;
+        if (k+1>=argc) return; /* missing argument: the main loop says so */
+
+        q= argv[k+1];
+        modifier= 0;
+        if (*q=='$') { if (sscanf( q+1,"%lx%c", &val,&modifier )<1) return; }
+        else         { if (sscanf( q,  "%lu%c", &val,&modifier )<1) return; }
+
+        switch (tolower((unsigned char)modifier)) {
+            case 'm' : val*= 1024; /* fall into Kbytes */
+            case 'k' : val*= 1024;
+            case  0  : break;
+            default  : return; /* bad modifier: the main loop says so */
+        } // switch
+
+        if (val<ARENA_MIN || val>ARENA_MAX) {
+            printf( "# Error: -M %s is outside the usable range (%uM..%uM)\n",
+                       q, ARENA_MIN/(1024u*1024u), (unsigned)(ARENA_MAX/(1024u*1024u)) );
+            exit( 1 );
+        } // if
+
+        emul_arena_size= val;
+        return;
+    } // for
+} /* preparse_arena_size */
+
 // main program
 void os9_main( int argc, char **argv, char **envp )
 {
@@ -669,6 +734,7 @@ void os9_main( int argc, char **argv, char **envp )
   unsigned long lnum;
   ushort* usp;
   char    modifier;
+  char    optRaw;   /* the option letter as typed, before tolower */
   char*   toolname;
   ushort  level;
   ushort  err;
@@ -703,6 +769,10 @@ void os9_main( int argc, char **argv, char **envp )
     sec0= 0;
   #endif
     
+  // -M sizes the arena that the next line allocates, so it cannot wait for
+  // the option loop below. See preparse_arena_size.
+  preparse_arena_size( argc,argv );
+
   // set up global init stuff, so user path output will work
   os9exec_globinit();
   GetStartTick();
@@ -720,7 +790,8 @@ void os9_main( int argc, char **argv, char **envp )
       if (*p=='-')
     #endif
       {
-        switch (tolower((unsigned char)*++p)) {
+        optRaw= *++p; /* -M vs -m: the only pair this switch must tell apart */
+        switch (tolower((unsigned char)optRaw)) {
           case '?' :
           case 'h' :  if (*(p+1)=='h') { show_wish(); exit( 0 ); }
                       os9_usage( argv[0] );           exit( 0 );
@@ -846,8 +917,14 @@ void os9_main( int argc, char **argv, char **envp )
           case 'y' :  ulp=&screenH;      goto getlnum;
           case 'w' :  ulp=&spininterval; goto getlnum;
           case 'p' :  ulp=&iniprior;       goto getlnum;
-          case 'M' :  ulp=&emul_arena_size; goto getlnum;
-          case 'm' :  if (*(p+1)=='m') { ulp=&memplusall; goto getlnum; }
+          case 'm' :  /* -M and -m are DIFFERENT options, and this switch sees a
+                       * lowercased letter -- so the raw one decides. A plain
+                       * `case 'M'` here was unreachable, which silently turned
+                       * every -M into -m. preparse_arena_size() has already
+                       * applied -M; assigning it again is harmless and keeps
+                       * the argument from falling through to memplus. */
+                      if (optRaw=='M')   { ulp=&emul_arena_size; goto getlnum; }
+                      if (*(p+1)=='m') { ulp=&memplusall; goto getlnum; }
                       ulp=&memplus;      goto getlnum;
                             
                       getlnum:
