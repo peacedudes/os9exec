@@ -38,7 +38,7 @@ Since the tagged `v0.0.0`, this branch fixes a large class of crashes, hangs, an
 - **The GNU utilities work.** ~22 tools from the Microware GNU archive died at their first instruction on a spurious bounds trap (`CHK2`/`CMP2`) — fixed; they launch and run.
 - **Packed BASIC09 modules run under `runb`** (F$Link/F$Load wildcard and access-mode bugs fixed). *Behavior change:* a packed module in the current directory no longer auto-runs — `load` it, or put it in an execution directory.
 - **BASIC09 can call compiled C** through a small assembly shim.
-- **`ls` and `ls -l`** (freeware, `dd/CMDS/SHARE/ls`) list directories correctly.
+- **`ls` and `ls -l`** list directories correctly, given a disk that carries an `ls`.
 
 **Boots and interacts cleanly**
 - **`tsmon` → `login` boot reaches a prompt.** A keypress now delivers the data-ready signal `tsmon` blocks on, and the idle scheduler no longer deadlocks on an empty run queue. Set `OS9STOP=1` so a plain (non-super) login can still `stop`/`shutdown`.
@@ -236,7 +236,7 @@ Some real OS-9 binaries assume an RBF file system and use low-level disk calls w
 | `move` / `mv` | Move files or directories (replaces RBF-only real `mv`) |
 | `mount` / `unmount` | Mount, or create and mount, an RBF image or RAM disk at runtime |
 
-**Tip:** A freeware `ls` (compiled from K&R C source using the Microware cc toolchain) is included in `dd/CMDS/SHARE/ls`. Directory listing via `fopen()` is a known limitation — use `dir` for directory contents.
+**Tip:** Directory listing via `fopen()` is a known limitation — use `dir` for directory contents, or an `ls` from your own disk. A GNU `ls` built for OS-9/68k is in the companion `osk-freeware` collection.
 
 ---
 
@@ -332,7 +332,7 @@ Owner `0.0` is intentional, not unfinished — there's nowhere on a host-native 
 
 **Hardware-dependent commands** (`backup`, `format`, `tape`, `kermit`, raw `com`, `rdump`, `fsave`/`frestore`) require physical devices that are not emulated and will not work.
 
-**Terminal I/O:** Full screen apps (`vi`, `less`, editors) require `TERM` to be set and a compatible termcap entry. The included `dd/SYS/termcap` covers `xterm`, `xterm-256color`, and `vt100`. `vi` is included in `dd/CMDS/SHARE` and is the recommended editor.
+**Terminal I/O:** Full screen apps (`vi`, `less`, editors) require `TERM` to be set and a compatible termcap entry. Your disk needs a `SYS/termcap` covering your terminal; the one in the companion `osk-freeware` collection covers `xterm`, `xterm-256color` and `vt100`. An editor is not part of os9exec; `vi`, `sedt` and others are in the companion `osk-freeware` collection.
 
 Everything else in a standard OS-9/68k SDK CMDS directory can be expected to run. See [CMDS.md](CMDS.md) for a command-by-command status list.
 
