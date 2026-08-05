@@ -210,23 +210,36 @@ build_rbf_image_noshell() {
     ( cd "$work" && $TIMEOUT 60 "$REPO/os9exec" -r mount -k=800k h7 ) >/dev/null 2>&1
     [ -f "$img" ] || { echo "  could not create $img" >&2; return 1; }
 
+    # imakdir/icopy, NOT makdir/copy. The latter two are Microware modules off
+    # the system disk, and using them meant this whole function only worked on
+    # a machine that had one -- so the CI leg built with it had never passed
+    # once. os9exec grew its own pair (intcommand.c) precisely so that an image
+    # can be built where there is no OS-9 system to build it with.
     for m in CMDS SCRATCH RESULTS; do
-        $TIMEOUT 60 env OS9H7="$img" "$REPO/os9exec" -r makdir "/h7/$m" >/dev/null 2>&1
+        $TIMEOUT 60 env OS9H7="$img" "$REPO/os9exec" -r imakdir "/h7/$m" >/dev/null 2>&1
     done
     for m in "${MODULES[@]}"; do
         $TIMEOUT 60 env OS9H7="$img" OS9H8="$dir" "$REPO/os9exec" \
-            -r copy -n "/h8/CMDS/$m" "/h7/CMDS/$m" >/dev/null 2>&1
+            -r icopy "/h8/CMDS/$m" "/h7/CMDS/$m" >/dev/null 2>&1
     done
 
-    # Prove the copy actually landed rather than trusting four silent runs --
-    # every one of those redirects to /dev/null, so a total failure would
-    # otherwise reach the tests as "everything SKIPped", which reads like a
-    # device limitation instead of a broken build.
-    if ! $TIMEOUT 60 env OS9H7="$img" "$REPO/os9exec" -r dir /h7/CMDS </dev/null 2>&1 \
-         | tr '\r' '\n' | grep -aq 'tally'; then
-        echo "  image built but CMDS/ is empty -- populate step failed" >&2
+    # Prove the copy actually landed rather than trusting a pile of silent
+    # runs -- every one of those redirects to /dev/null, so a total failure
+    # would otherwise reach the tests as "everything MISSING", which reads
+    # like a device limitation instead of a broken build.
+    #
+    # The check reads a module back OUT of the image and compares it byte for
+    # byte with the original. That asks a harder question than listing the
+    # directory did: it proves the bytes are there and are the right bytes,
+    # not merely that a name appears in a catalogue.
+    $TIMEOUT 60 env OS9H7="$img" OS9H6="$work" "$REPO/os9exec" \
+        -r icopy /h7/CMDS/tally /h6/readback >/dev/null 2>&1
+    if ! cmp -s "$work/readback" "$dir/CMDS/tally"; then
+        echo "  image built but CMDS/ did not populate -- read-back differs" >&2
+        rm -f "$work/readback"
         return 1
     fi
+    rm -f "$work/readback"
     echo "$img"
 }
 
@@ -242,10 +255,30 @@ run_68k_noshell() {
 
     echo "== CONF68K on os9exec (no shell, no SDK -- each test as its own boot program$([ "$use_rbf" = yes ] && echo ', RBF image')) =="
     printf 'RUN prebuilt\r' > "$dir/RESULTS/report"
+    # Run from the image's own directory when there is one. That is a WORKAROUND
+    # for an os9exec defect, not a preference, and it is written down here
+    # because a silent `cd` in a test harness is the kind of thing nobody ever
+    # questions again:
+    #
+    #   OS9DISK=<absolute path to an RBF image> resolves the boot program
+    #   RELATIVE TO THE HOST WORKING DIRECTORY. Same absolute image, same
+    #   absolute module path, different cwd, different answer:
+    #
+    #     cd <dir holding the image>; OS9DISK=$PWD/h7 os9exec -r /dd/CMDS/t01open  -> runs
+    #     cd /                      ; OS9DISK=<same>  os9exec -r /dd/CMDS/t01open  -> E$PNNF
+    #
+    #   macOS is more forgiving than Linux (it also works from the repo root),
+    #   which is exactly why this never showed up locally and failed the moment
+    #   CI ran it. Module loading has its own path resolution that does not go
+    #   through AdjustPath (see the comment in filestuff.c TwoCharDev), so this
+    #   wants fixing there rather than here. Recorded in ROADMAP-68k.md.
+    #
+    # build_rbf_image_noshell already runs `mount -k` from inside "$work" for
+    # its own reasons, so this is at least consistent with the rest of the file.
     for m in "${MODULES[@]}"; do
         case "$m" in tally|mark) continue ;; esac
-        out=$($TIMEOUT 60 env OS9DISK="$disk" "$REPO/os9exec" -r "/dd/CMDS/$m" </dev/null 2>&1 \
-              | tr '\r' '\n' | grep -a '^RESULT ')
+        out=$(cd "${work:-$REPO}" && $TIMEOUT 60 env OS9DISK="$disk" "$REPO/os9exec" \
+              -r "/dd/CMDS/$m" </dev/null 2>&1 | tr '\r' '\n' | grep -a '^RESULT ')
         [ -n "$out" ] && printf '%s\r' "$out" >> "$dir/RESULTS/report"
     done
     # tally is a module too, so it reads the report the same way it would on

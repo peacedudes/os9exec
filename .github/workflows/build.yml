@@ -36,15 +36,18 @@ jobs:
     - name: Run the 68k conformance suite
       run: ./tools/conformance.sh 68k
 
-    # The same 33 tests again, on a real RBF image instead of a host-native
+    # The same 44 tests again, on a real RBF image instead of a host-native
     # directory. Worth the second run: 13 of them are record-locking claims
     # (t19-t31) and a host directory has no lock mechanism under it, so above
     # they report SKIP -- checked by nobody, on every push, since the suite
-    # was written. This was a local-only gate because building the image was
-    # believed to need a Microware shell for `mount -k`; it does not. os9exec
-    # runs its own internal commands as the boot program, so conformance.sh
-    # builds and populates the image with four invocations of the emulator and
-    # nothing else. A run here reports PASS=33 SKIP=0.
+    # was written. A run here reports PASS=44 SKIP=0.
+    #
+    # This leg was added believing os9exec could already populate the image
+    # with its own internal commands. It could not: only `mount` was one, and
+    # `makdir`, `copy` and `dir` were resolving as Microware modules off the
+    # developer's system disk -- which CI does not have and never did. The leg
+    # therefore failed on its first run here and every run after. os9exec grew
+    # `imakdir` and `icopy` (intcommand.c) so the claim is now true.
     - name: Run the 68k conformance suite on an RBF image
       run: ./tools/conformance.sh 68k --noshell --rbf
 
@@ -240,7 +243,11 @@ jobs:
         cache-to: type=gha,mode=max
 
   create-release:
-    needs: build
+    # Gated on the conformance job as well as the builds. It used to need only
+    # `build`, so a tag would have published binaries for all four platforms
+    # with the conformance suite red -- and the conformance suite is the whole
+    # claim this project makes about itself.
+    needs: [build, conformance]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
