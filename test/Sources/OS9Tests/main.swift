@@ -3025,6 +3025,20 @@ if !containerized {
 }
 
 // -- host-backed terminals -------------------------------------------------
+// Every block below that calls makePTY() is skipped under DOCKER_IMAGE /
+// CONTAINER_IMAGE, the same way several earlier blocks opt out. The reason is
+// not shyness about containers: makePTY() calls openpty() on the HOST, so the
+// name it hands to OS9T1 is a host device -- and the emulator is on the other
+// side of a kernel boundary. `make test-linux` said so in the emulator's own
+// words before these guards existed:
+//
+//     # OS9T1: cannot open '/dev/ttys012'
+//
+// A macOS pty name, offered to a Linux kernel. Ten tests failed that way on
+// every Linux run, which is worse than not running them: a permanently red
+// leg is one nobody reads. Tests that make the EMULATOR allocate the pty
+// (OS9T1=pty) are NOT skipped -- those work in a container and are left to
+// run, which is how the Linux leg still covers this feature at all.
 // An unconfigured /tN is not a device. It used to silently alias the main
 // console, so `echo` to it appeared to work while interleaving its bytes into
 // the shell's own prompt -- and `tsmon /t1` failed with a misleading E_NOTRDY
@@ -3131,7 +3145,7 @@ let hostRawModeName = "hostterm: raw mode passes control bytes through unmangled
 let runHostOutput   = filter.isEmpty || hostOutputName.localizedCaseInsensitiveContains(filter)
 let runHostRawMode  = filter.isEmpty || hostRawModeName.localizedCaseInsensitiveContains(filter)
 
-if runHostOutput || runHostRawMode {
+if (runHostOutput || runHostRawMode) && !containerized {
     if let (master, slave, slaveName) = makePTY() {
         _ = os9(["echo host-terminal-works >/t1"], env: ["OS9T1": slaveName])
         usleep(200_000)
@@ -3207,7 +3221,7 @@ if runHostOutput || runHostRawMode {
 let hostInputName = "hostterm: input arrives from the host endpoint"
 let runHostInput   = filter.isEmpty || hostInputName.localizedCaseInsensitiveContains(filter)
 
-if runHostInput {
+if runHostInput && !containerized {
     if let (master, slave, slaveName) = makePTY() {
         // Feed a whole COMMAND LINE into the pty before the emulator reads, so
         // the bytes are already waiting -- no race with the guest's scheduler.
@@ -3339,7 +3353,7 @@ func startDrainThread(_ master: Int32, _ collector: BackpressureCollector,
 let hostBackpressureName = "hostterm: a full endpoint blocks the writer, losing nothing"
 let runHostBackpressure   = filter.isEmpty || hostBackpressureName.localizedCaseInsensitiveContains(filter)
 
-if runHostBackpressure {
+if runHostBackpressure && !containerized {
     if let (master, slave, slaveName) = makePTY() {
         let collector    = BackpressureCollector()
         let drainStopped = DispatchSemaphore(value: 0)
@@ -3417,11 +3431,16 @@ if runHostPtyName || runHostPtyCarry {
     let ptyOut = os9(["dir /dd >/t1"], env: ["OS9T1": "pty"])
 
     if runHostPtyName {
-        if ptyOut.range(of: "/dev/[a-z]*tty[a-zA-Z0-9/]+", options: .regularExpression) != nil {
+        // Both spellings of a pty slave: /dev/ttysNNN (Darwin) and /dev/pts/N
+        // (Linux). The old pattern required the letters "tty" and so could
+        // only ever pass on macOS -- it failed every containerised run against
+        // an emulator that was reporting "/t1 is /dev/pts/0" perfectly well.
+        if ptyOut.range(of: "/dev/(pts/[0-9]+|[a-z]*tty[a-zA-Z0-9/]+)",
+                        options: .regularExpression) != nil {
             print("PASS: \(hostPtyNameName)"); passed += 1
         } else {
             print("FAIL: \(hostPtyNameName)")
-            print("      [no /dev/...tty... name found in emulator output]")
+            print("      [no /dev/ttysNNN or /dev/pts/N name in emulator output]")
             print("      got: \(ptyOut.debugDescription.prefix(200))")
             failed += 1
         }
@@ -3478,7 +3497,7 @@ if runHostSurvivesClose {
 let hostSpeedDefaultName = "hostterm: host port speed follows the path's PD_BAU"
 let runHostSpeedDefault  = filter.isEmpty || hostSpeedDefaultName.localizedCaseInsensitiveContains(filter)
 
-if runHostSpeedDefault {
+if runHostSpeedDefault && !containerized {
     if let (master, slave, slaveName) = makePTY() {
         _ = os9(["echo x >/t1"], env: ["OS9T1": slaveName])
 
@@ -3507,7 +3526,7 @@ if runHostSpeedDefault {
 let hostSpeedTmodeName = "hostterm: tmode baud= retunes a live host port"
 let runHostSpeedTmode  = filter.isEmpty || hostSpeedTmodeName.localizedCaseInsensitiveContains(filter)
 
-if runHostSpeedTmode {
+if runHostSpeedTmode && !containerized {
     if let (master, slave, slaveName) = makePTY() {
         _ = os9(["tmode </t1 baud=2400"], env: ["OS9T1": slaveName])
 
@@ -3590,7 +3609,7 @@ if runHostWildcardStrict {
 let dualDeviceName = "hostterm: paced output from two devices does not cross over"
 let runDualDevice   = filter.isEmpty || dualDeviceName.localizedCaseInsensitiveContains(filter)
 
-if runDualDevice {
+if runDualDevice && !containerized {
     if let (master1, slave1, slave1Name) = makePTY(),
        let (master2, slave2, slave2Name) = makePTY() {
         let collector1 = BackpressureCollector()
@@ -3664,7 +3683,7 @@ if runDualDevice {
 let tnAbortName = "hostterm: an abort key on /tN interrupts that terminal's writer"
 let runTNAbort  = filter.isEmpty || tnAbortName.localizedCaseInsensitiveContains(filter)
 
-if runTNAbort {
+if runTNAbort && !containerized {
     if let (master, slave, slaveName) = makePTY() {
         let collector = BackpressureCollector()
         let stopped   = DispatchSemaphore(value: 0)
@@ -3742,7 +3761,7 @@ let tnXoffAliveName = "hostterm: an XOFF hold does not stall the rest of the sys
 let runTNXoffHalt   = filter.isEmpty || tnXoffHaltName.localizedCaseInsensitiveContains(filter)
 let runTNXoffAlive  = filter.isEmpty || tnXoffAliveName.localizedCaseInsensitiveContains(filter)
 
-if runTNXoffHalt || runTNXoffAlive {
+if (runTNXoffHalt || runTNXoffAlive) && !containerized {
     if let (master, slave, slaveName) = makePTY() {
         let collector = BackpressureCollector()
         let stopped   = DispatchSemaphore(value: 0)
@@ -3848,7 +3867,7 @@ if runTNXoffHalt || runTNXoffAlive {
 let tnShutdownName = "hostterm: cleanup survives a process that wrote to /tN"
 let runTNShutdown  = filter.isEmpty || tnShutdownName.localizedCaseInsensitiveContains(filter)
 
-if runTNShutdown {
+if runTNShutdown && !containerized {
     if let (master, slave, slaveName) = makePTY() {
         let collector = BackpressureCollector()
         let stopped   = DispatchSemaphore(value: 0)
