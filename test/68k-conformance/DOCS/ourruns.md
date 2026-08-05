@@ -81,10 +81,15 @@ matters — `tools/conformance.sh 68k` and `tools/conformance.sh 68k --rbf`.
 - **The rebuild path has not been exercised end-to-end by an independent
   assembler.** The modules in `CMDS/` were built by the `r68`/`l68` on our
   own system disk, and that is the only assembler they have met.
-- **The two-process tests are only exercised on an RBF image.** t19–t31 need
-  real record locking underneath, so they SKIP on a host-native directory —
-  which is what CI and `--noshell` run. `tools/conformance.sh 68k --rbf` is
-  the only thing that exercises `fork.i` at all, and it is a local gate.
+- **The record-locking claims are only exercised on an RBF image.** t19–t31
+  need real record locking underneath, so they SKIP on a host-native
+  directory — which is what CI and `--noshell` run. Their verdicts come only
+  from `tools/conformance.sh 68k --rbf`, and that is a local gate.
+  The `fork.i` harness itself is exercised everywhere, by t33 (the negative
+  control, which deliberately holds no lock) and by t41 (Ev$Pulse, which
+  needs no file manager at all). An earlier version of this bullet said the
+  RBF leg was "the only thing that exercises fork.i", which was already
+  untrue of t33 when it was written.
 
 ## 2026-07-31 — t19 to t31, the record-locking tests
 
@@ -124,3 +129,56 @@ released, and 902 means it never returned and was killed. See the readme.
 
 **These are still os9exec results.** A FAIL here is os9exec disagreeing with
 the manual, and nothing in this file is evidence about real OS-9/68k.
+
+## 2026-08-04 — t40 and t41, Ev$Pulse
+
+Ev$Pulse was the last F$Event subfunction os9exec did not implement, and the
+one claim in `claims.md` recorded as out of reach rather than merely untested.
+Both facts had the same cause: os9exec kept no event queue. A waiter parked
+and re-tested the range whenever it was next scheduled, which is always after
+a pulse has restored the value, so no waiter could ever see one. The call
+answered E$UnkSvc rather than pretending.
+
+The queue was built (`Source/OS9exec_core/events.c`), and with it the search
+the manual describes — FIFO order, the first process in range, or every one of
+them when the MS bit of d1 asks. Three tests came with it:
+
+    host-native   29 PASS, 13 SKIP
+    RBF image     42 PASS,  0 SKIP
+
+```
+RESULT t40 PASS  obs=000100 exp=000100  Ev$Pulse restores the original event value
+RESULT t41 PASS  obs=000007 exp=000007  Ev$Pulse wakes a process already waiting on the event
+RESULT t42 PASS  obs=000001 exp=000001  Ev$Signl wakes a waiting process and leaves its value behind
+```
+
+t42 was not in the original plan, and it is there because the change created
+the gap it fills. The queue replaced the wake mechanism for EVERY event call,
+not just the new one — and until t42 no test anywhere had a process actually
+woken by an ordinary Ev$Signl. t14 is single-process and measures only the
+arithmetic. The one call the shipped network stack and Maui are most likely to
+depend on was the one with no coverage.
+
+All three were made to fail before any was believed, and each fails for its
+own reason, which is what makes them three tests rather than one:
+
+| sabotage | t40 | t41 | t42 |
+|---|---|---|---|
+| Ev$Pulse returned to E$UnkSvc | FAIL obs=000208 | FAIL obs=000208 | PASS |
+| pulse keeps set/restore, runs no search | PASS | FAIL obs=000902 | PASS |
+| Ev$Signl runs no search | PASS | PASS | FAIL obs=000902 |
+
+The middle row is the one worth reading. A pulse that sets the value and puts
+it back, waking nobody, is indistinguishable from a correct one to any single
+process — t40 cannot tell them apart and should not be able to. t41 reports
+902: its child was never woken, sat in Ev$Wait until the parent's timeout
+expired, and was killed. That is the whole reason the test needs two
+processes.
+
+t41 and t42 are the first two-process tests here that are not about record
+locking, and the first where the CHILD must be blocked before the PARENT acts.
+Both report the same verdict on a host directory and on an image, because
+F$Event is a kernel call with no file manager under it.
+
+**These are still os9exec results.** A PASS here says os9exec agrees with the
+manual; it is not evidence about real OS-9/68k.

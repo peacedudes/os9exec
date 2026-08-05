@@ -52,7 +52,8 @@ MODULES=(t01open t02eof t03bmode t04mode0 t05mode0rd t06short t07extend
          t14evsignl t15evset t16evsetr t17evinfo t18evwaitr
          t19lock t20read t21defr t22wrel t23whol t24rels t25eofl t26zrel
          t27shar t28exts t29self t30delo t31zrdr
-         t32ticks t33ctrl t34julian t35cent t36crchi t37crclo t38wild t39host tally mark)
+         t32ticks t33ctrl t34julian t35cent t36crchi t37crclo t38wild t39host
+         t40evpuls t41evwake t42evsigw tally mark)
 
 # ---------------------------------------------------------------- comparison
 
