@@ -95,6 +95,11 @@ os9err int_rename( ushort pid, int argc, char **argv );
 os9err int_move  ( ushort pid, int argc, char **argv );
 os9err int_help  ( ushort pid, int argc, char **argv );
 
+/* The two file operations os9exec could not do on its own. `i`-prefixed on
+   purpose -- see the comment on their definitions in intcommand.c. */
+os9err int_icopy  ( ushort pid, int argc, char **argv );
+os9err int_imakdir( ushort pid, int argc, char **argv );
+
 #ifdef windows32
 os9err int_wincmd( ushort pid, int argc, char **argv );
 #endif

@@ -1483,6 +1483,202 @@ static os9err int_ignored( _pid_, _argc_, _argv_ )
 {   return 0; /* do nothing */
 } /* int_ignored */
 
+
+
+/* icopy / imakdir */
+/* --------------- */
+
+/* The two file operations os9exec had no way to perform by itself. It could
+   CREATE an RBF image with `mount -k` and then not put a single byte in it,
+   because every utility that could -- copy, makdir, dir -- is a Microware
+   module off the system disk.
+
+   That gap was invisible for as long as everyone testing had a system disk.
+   tools/conformance.sh builds its RBF test image with the emulator alone, no
+   shell and no SDK, and its own comment claimed os9exec "runs its own internal
+   commands as the boot program" to populate it. Only `mount` was ever one.
+   On a bare checkout the other three came back E$MNF, the image stayed empty,
+   and the CI leg that ran the record-locking claims on a real image had never
+   passed once since the day it was added.
+
+   BOTH NAMES CARRY THE `i` PREFIX DELIBERATELY, like iprocs/imdir/idevs, and
+   it is not decoration. IntCmdIndex() matches this table by exact strcmp
+   BEFORE anything is looked up on disk, so a plain `copy` here would quietly
+   shadow Microware's copy for every lowercase invocation on a system that has
+   one -- changing what an existing command means, which is precisely the class
+   of surprise the F$Link/F$Fork intcmd hijack already cost this project once.
+   Nothing a user types changes meaning because these two exist. */
+
+static void icopy_usage( char* pname )
+{
+  upe_printf("Syntax:   %s <source> <destination>\n", pname );
+  upe_printf("Function: Copies a file byte for byte between any two devices\n");
+  upe_printf("          OS9exec can reach, an RBF image included\n");
+  upe_printf("          Creates the destination executable; it does NOT copy\n");
+  upe_printf("          the source's attributes the way Microware's copy does\n");
+  upe_printf("Options:  -? : this help\n");
+} /* icopy_usage */
+
+
+/* Big enough that a module-sized file moves in a few passes, small enough to
+   sit on the host stack without thought. Not tuned; this is a build tool. */
+#define ICOPY_CHUNK 4096
+
+/* Owner read/write/execute plus public read/execute. A FIXED value, and the
+   one real difference between this and Microware's `copy`, which preserves
+   whatever the source carried (measured: 644 stays 644, 755 stays 755).
+
+   Preserving would mean reading the source's attribute byte, and the only
+   route to it is an SS_FD getstat whose buffer argument travels as a ulong --
+   a pointer laundered through an integer, which is the exact shape that has
+   already cost this project bugs on LLP64. Not worth it for a tool whose job
+   is populating an image with executable modules: everything it copies has to
+   come out runnable, and a module that lands without its `e` attribute is a
+   test that mysteriously will not start.
+
+   This is why the command is not called `copy`. It is not one. */
+#define ICOPY_ATTR  0x2F
+
+os9err int_icopy( ushort pid, int argc, char** argv )
+{
+    os9err    err= 0, cer;
+    ushort    inP= 0, outP= 0;
+    Boolean   inOpen= false, outOpen= false;
+    ptype_typ tIn, tOut;
+    char      src[OS9PATHLEN], dst[OS9PATHLEN];
+    uint32_t  size= 0, done, len;
+    ushort    svAtt;
+    byte      buffer[ICOPY_CHUNK];
+    int       h, nargc= 0;
+    char*     p;
+    char*     nargv[2];
+
+    for (h=1; h<argc; h++) {
+        p= argv[h];
+        if (*p=='-') {
+            p++;
+            switch (tolower((unsigned char)*p)) {
+                case '?' : icopy_usage( argv[0] ); return 0;
+                default  : upe_printf("Error: unknown option '%c'!\n",*p);
+                           icopy_usage( argv[0] ); return 1;
+            }
+        }
+        else {
+            if (nargc>=2) {
+                upe_printf("Error: no more than 2 arguments allowed\n"); return 1;
+            }
+            nargv[nargc++]= argv[h];
+        }
+    } /* for */
+
+    if (nargc<2) { icopy_usage( argv[0] ); return 1; }
+
+    /* Copied out of argv because IO_Type takes a writable string. */
+    strncpy( src, nargv[0], OS9PATHLEN-1 ); src[OS9PATHLEN-1]= NUL;
+    strncpy( dst, nargv[1], OS9PATHLEN-1 ); dst[OS9PATHLEN-1]= NUL;
+
+    do {
+            tIn= IO_Type( pid, src, 0x01 );
+        if (tIn==fNone) { err= E_BPNAM; break; }
+            err= usrpath_open( pid,&inP, tIn, src, 0x01 ); if (err) break;
+        inOpen= true;
+
+        /* The length is asked for up front rather than read until something
+           reports end-of-file: a short read and a real EOF are not reliably
+           distinguishable through this API, and a copy that stops one block
+           early would produce a module that still links and then behaves
+           strangely -- far worse than an error here. */
+        err= usrpath_getstat( pid, inP, SS_Size, NULL, NULL,NULL,&size,NULL );
+        if (err) break;
+
+            tOut= IO_Type( pid, dst, poCreateMask|0x03 );
+        if (tOut==fNone) { err= E_BPNAM; break; }
+
+        /* I$Create carries its attribute byte in d1, and the path down to both
+           file managers picks it up from the process descriptor rather than
+           from a parameter (icalls.c does the same assignment). Saved and put
+           back because it is process state, not ours: leaving it changed would
+           silently re-attribute the next file this process created. */
+        svAtt= procs[pid].fileAtt;
+               procs[pid].fileAtt= ICOPY_ATTR;
+            err= usrpath_open( pid,&outP, tOut, dst, poCreateMask|0x03 );
+               procs[pid].fileAtt= svAtt;
+        if (err) break;
+        outOpen= true;
+
+        for (done= 0; done<size; done+= len) {
+                len= size-done;
+            if (len>ICOPY_CHUNK) len= ICOPY_CHUNK;
+
+                err= usrpath_read ( pid, inP,  &len, buffer, false ); if (err) break;
+            if (len==0) { err= E_EOF; break; } /* fewer bytes than SS_Size promised */
+                err= usrpath_write( pid, outP, &len, buffer, false ); if (err) break;
+        } /* for */
+    } while (false);
+
+    if (outOpen) { cer= usrpath_close( pid, outP ); if (!err) err= cer; }
+    if (inOpen)  { cer= usrpath_close( pid, inP  ); if (!err) err= cer; }
+
+    if (err) return _errmsg( err, "can't copy \"%s\" to \"%s\"\n", src, dst );
+    return 0;
+} /* int_icopy */
+
+
+
+static void imakdir_usage( char* pname )
+{
+  upe_printf("Syntax:   %s <directory>\n", pname );
+  upe_printf("Function: Creates a directory on any device OS9exec can reach\n");
+  upe_printf("Options:  -? : this help\n");
+} /* imakdir_usage */
+
+
+os9err int_imakdir( ushort pid, int argc, char** argv )
+{
+    os9err    err;
+    ptype_typ type;
+    char      path[OS9PATHLEN];
+    int       h, nargc= 0;
+    char*     p;
+    char*     nargv[1];
+
+    /* os9exec documents both the access mode and the file attributes of
+       I$MakDir as unused (icalls.c), so this is the shape of the call rather
+       than a considered permission choice. */
+    ushort    mode= poCreateMask | 0x03;
+
+    for (h=1; h<argc; h++) {
+        p= argv[h];
+        if (*p=='-') {
+            p++;
+            switch (tolower((unsigned char)*p)) {
+                case '?' : imakdir_usage( argv[0] ); return 0;
+                default  : upe_printf("Error: unknown option '%c'!\n",*p);
+                           imakdir_usage( argv[0] ); return 1;
+            }
+        }
+        else {
+            if (nargc>=1) {
+                upe_printf("Error: no more than 1 argument allowed\n"); return 1;
+            }
+            nargv[nargc++]= argv[h];
+        }
+    } /* for */
+
+    if (nargc<1) { imakdir_usage( argv[0] ); return 1; }
+
+    strncpy( path, nargv[0], OS9PATHLEN-1 ); path[OS9PATHLEN-1]= NUL;
+
+        type= IO_Type( pid, path, mode );
+    if (type==fNone) return _errmsg( E_BPNAM, "bad directory name \"%s\"\n", path );
+
+        err= make_dir( pid, type, path, mode );
+    if (err) return _errmsg( err, "can't create directory \"%s\"\n", path );
+    return 0;
+} /* int_imakdir */
+
+
+
 /* Command table */
 /* ------------- */
 
@@ -1501,6 +1697,8 @@ cmdtable_typ commandtable[] =
   { "stop/shutdown", int_stop,       "exit from OS9exec" },
   { "rename",        int_rename,     "renames a file or directory (100% compatible)" },
   { "move/mv",       int_move,       "moves files and directories" },
+  { "icopy",         int_icopy,      "copies a file between any two devices" },
+  { "imakdir",       int_imakdir,    "creates a directory" },
 
   #ifdef RBF_SUPPORT
   { "mount",         int_mount,      "mount   (RBF) device" },
