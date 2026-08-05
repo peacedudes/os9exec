@@ -314,6 +314,33 @@ Run `idbg` from the OS-9 shell to enter the emulator's own built-in debugger —
 
 See [CMDS.md](CMDS.md) for the full list of known OS-9 commands with status notes.
 
+## Checking a build
+
+One command runs every gate this project has and prints one verdict:
+
+```sh
+make verify         # host + Linux (docker)
+make verify-vms     # ... and the real virtual machines
+make verify-quick   # host only, no containers
+```
+
+It exits non-zero if anything failed, so it works as a pre-commit gate rather
+than something to read. The individual pieces are still there if you want one
+of them on its own — `make test`, `make test-notick`, `make warnings`,
+`make live-verify`, `make hammer`, `make test-linux`, and
+`tools/conformance.sh 68k [--noshell --rbf]`.
+
+The conformance suite also builds as a single disk you can carry to real
+hardware:
+
+```sh
+make selfhost68k          # build/selfhost68k/conf68k.dsk
+make selfhost68k-verify    # every file byte-checked, then all tests run off it
+```
+
+See `test/68k-conformance/readme` for how to run that disk on a real OS-9/68000
+system.
+
 ## Compatibility
 
 The full syscall surface — file I/O, process management, module loading, pipes, events, signals, traps, the shell — runs correctly.
