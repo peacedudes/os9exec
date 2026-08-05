@@ -611,12 +611,15 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
        Ev_AllProcs ("activate all processes in range"), a modifier that rides on
        the same word -- so the documented spelling of a broadcast signal,
        d1 = $8008, used to fall through to `default:` and come back E_UNKSVC
-       instead of signalling anything. Masking it off is the whole fix: os9exec
-       keeps no event queue, waiters poll evWait() and each one re-tests the
-       range for itself, so "wake every process in range" is already what
-       happens and the bit needs no behaviour of its own. */
-    short        evCode= (short)( loword(rp->d[1]) & ~Ev_AllProcs );
-    process_typ* cp    = &procs[cpid];
+       instead of signalling anything. It has to be masked off to dispatch, and
+       then PASSED ON to the four calls that run a signal search, where it
+       chooses between waking the first process in range and waking all of
+       them. It used to be masked off and dropped, which was right only while
+       waiters polled and re-tested the range for themselves: "wake everybody"
+       was then the only behaviour available, whether or not it was asked for. */
+    short        evCode  = (short)( loword(rp->d[1]) & ~Ev_AllProcs );
+    Boolean      allProcs= (Boolean)( (loword(rp->d[1]) & Ev_AllProcs)!=0 );
+    process_typ* cp      = &procs[cpid];
 
     int          evValue= 0; /* stays 0 if evWait() errors out before setting it */
     int          prvValue= 0;
@@ -670,8 +673,8 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
                         if (cp->state==pWaitRead) {
                             set_os9_state( cpid, cp->saved_state, "OS9_F_Event" );
                         }
-                        err= evWait( evId, minV,maxV, &evValue );
-                        /* EV_NOTYET (valid event, value not in range yet) parks the
+                        err= evWait( evId, minV,maxV, cpid, &evValue );
+                        /* EV_NOTYET (queued, not yet satisfied) parks the
                            process for a retry next round. Anything else -- most
                            notably a genuinely bad evId (E_EVNTID) -- must NOT park:
                            evWait() used to return E_EVNTID for both cases, so a bad
@@ -708,7 +711,7 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
                             cp->ev_maxV= maxV;
                         }
 
-                        err= evWait( evId, minV,maxV, &evValue );
+                        err= evWait( evId, minV,maxV, cpid, &evValue );
                         if (err==EV_NOTYET) { /* park and retry, exactly as Ev_Wait */
                             cp->saved_state= cp->state;
                             set_os9_state( cpid, pWaitRead, "OS9_F_Event" );
@@ -743,30 +746,25 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
                         break;
 
         case Ev_Signl:  evId= rp->d[0];
-        				err = evSignl( evId );
+        				err = evSignl( evId, allProcs );
         				break;
 
+        /* "d2.l = event pulse value". Nothing is returned: a pulse leaves the
+           event exactly as it found it, so there is no previous value worth
+           handing back the way Ev_Set and Ev_SetR do. */
+        case Ev_Pulse:  evId= rp->d[0];
+                        err = evPulse( evId, (int)rp->d[2], allProcs );
+                        break;
+
         case Ev_Set:    evId= rp->d[0];
-                            err= evSet ( evId, (int)rp->d[2], &prvValue );
+                            err= evSet ( evId, (int)rp->d[2], allProcs, &prvValue );
                         if (!err) rp->d[1]= prvValue;
                         break;
 
         case Ev_SetR:   evId= rp->d[0];
-                            err= evSetR( evId, (int)rp->d[2], &prvValue );
+                            err= evSetR( evId, (int)rp->d[2], allProcs, &prvValue );
                         if (!err) rp->d[1]= prvValue;
                         break;
-
-        /* Ev_Pulse is deliberately NOT implemented, and returns E_UNKSVC via
-           default: below rather than pretending. A pulse sets the event value,
-           runs the signal search, and RESTORES the original value -- so the
-           pulsed value only ever exists during that search. os9exec has no
-           event queue to search: a waiter parks and re-tests the range when it
-           is next scheduled, which is always after the value has been put back,
-           so every waiter would miss every pulse. Implementing it would mean
-           recording which process waits on which event with what range, i.e.
-           building the queue the manual describes. Accepting the call and
-           quietly waking nobody is the worse option -- it reports success for
-           work not done. See ROADMAP-68k.md. */
 
         default:        err= E_UNKSVC;
     }

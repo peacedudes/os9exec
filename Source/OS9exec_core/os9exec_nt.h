@@ -1071,10 +1071,21 @@ typedef struct {
             short   wInc;      
             short   sInc;
             ushort  e_linkcount;
-                
-            void*   next;
-            void*   prev;
-        } event_typ;            
+
+            /* The FIFO of processes waiting on this event, held as process
+               indices with MAXPROCESSES meaning "none" -- the same "no
+               process" sentinel currentpid already uses. Ev$Wait adds at the
+               tail, the Ev$Signl search (events.c) takes from the head, and
+               the links themselves live in process_typ: a process can wait on
+               at most one event, so its queue entry belongs to it rather than
+               to a per-event table that would have to be sized for every
+               process waiting on the same event at once.
+
+               These two replace a void* next/prev pair that carried the same
+               intent and was never read or written anywhere in the tree. */
+            ushort  qHead;
+            ushort  qTail;
+        } event_typ;
 
 /* a "process" */
 typedef enum {
@@ -1288,16 +1299,40 @@ typedef struct {
                 int        saved_cnt;
                 pstate_typ saved_state;     /* saved process' state */
 
-                /* Ev_WaitR: the ABSOLUTE range, resolved once from the caller's
-                   relative one. A waiter parks and has its syscall re-run with
-                   its ENTRY registers restored (os9exec_nt.c), so d2/d3 are the
-                   relative values again on every retry -- recomputing from them
-                   would re-anchor the window to the event's current value each
-                   round, and a relative range that brackets the current value
-                   is then satisfied immediately, so Ev_WaitR would never block
-                   at all. Resolved on the first pass, reused on every retry. */
+                /* This process' entry in one event's wait queue (events.c).
+                   ev_id is the event it is queued on, 0 when it is not waiting
+                   on any -- and it is what makes an entry safe against a
+                   reused process slot: the search honours a queued pid only
+                   when that process still claims the same event, and every new
+                   process starts with ev_id zeroed.
+
+                   The activation range is STORED rather than re-read from the
+                   registers on each retry. Ev_WaitR has to: a waiter parks and
+                   has its syscall re-run with its ENTRY registers restored
+                   (os9exec_nt.c), so d2/d3 are the RELATIVE values again every
+                   round, and recomputing from them would re-anchor the window
+                   to the event's current value -- a relative range bracketing
+                   that value is then satisfied at once, so Ev_WaitR would never
+                   block at all. Ev_Wait stores it for a different reason: the
+                   Ev$Signl search reads the range of OTHER processes, and
+                   reaching into a parked process' saved register image would
+                   tie the search to the shape of that image. */
+                uint32_t   ev_id;           /* event waited on, 0 = none */
+                ushort     ev_next;         /* queue link, MAXPROCESSES = end */
                 int        ev_minV;
                 int        ev_maxV;
+
+                /* Set by the search, consumed by the waiter when it next runs.
+                   The search decides who wakes, in what order and at what
+                   value, at signal or pulse time -- which for Ev$Pulse is the
+                   only moment the pulsed value exists at all. Only DELIVERY
+                   waits for the waiter's next slot, where the existing
+                   park/retry machinery re-runs its syscall. ev_wakeValue is
+                   therefore the value observed back then, not whatever the
+                   event happens to hold once the waiter is finally scheduled. */
+                Boolean    ev_woken;
+                int        ev_wakeValue;
+                os9err     ev_wakeErr;      /* E$EvNTID if the event went away */
                 
                 os9addr_t my_args;          /* 68k arena offset of process argument area */
                 #ifdef THREAD_SUPPORT

@@ -1764,8 +1764,11 @@ os9err syspath_read( ushort pid,ushort spnum, uint32_t *len, void* buffer, Boole
                           spP->signal_to_send= 0; /* and reset it */
     }
 
-    if (spP->set_evId && *len>0) 
-        evSet( spP->set_evId, 1, &prev );
+    /* Not a broadcast: data that has arrived on a path is consumed by whoever
+       takes it, so waking every waiter would hand the same bytes to all of
+       them. First in range, which is Ev$Signl's own default. */
+    if (spP->set_evId && *len>0)
+        evSet( spP->set_evId, 1, false, &prev );
              
     return err;
 } /* syspath_read */

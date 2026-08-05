@@ -66,18 +66,20 @@
 #define Ev_Set      0x0A
 #define Ev_SetR     0x0B
 
-/* evWait()-internal: value not yet in the requested range, distinct from a
-   genuinely invalid event ID (E_EVNTID). Never returned to guest code -- the
-   OS9_F_Event dispatcher (fcalls.c) uses it only to decide whether to park
-   the process and retry. Chosen well outside the real 0-255 OS-9 error-code
-   range (os9errno.h) so it can never collide with one. */
+/* evWait()-internal: the caller is queued and not yet satisfied, distinct
+   from a genuinely invalid event ID (E_EVNTID). Never returned to guest code
+   -- the OS9_F_Event dispatcher (fcalls.c) uses it only to decide whether to
+   park the process and retry. Chosen well outside the real 0-255 OS-9
+   error-code range (os9errno.h) so it can never collide with one. */
 #define EV_NOTYET   0xFFFF
 
 /* The MS bit of the function-code WORD, not a function code of its own:
    "d1.w = MS bit set to activate all processes in range / LS bits = <code>"
    (F$Event, Ev$Signl / Ev$Pulse / Ev$Set / Ev$SetR). It has to be masked off
    before dispatching, or the documented spelling of a signal -- d1 = $8008 --
-   does not match its own case. */
+   does not match its own case; the bit itself is then passed on to the four
+   calls that run a signal search, where it is the difference between waking
+   the first process in range and waking every one of them. */
 #define Ev_AllProcs 0x8000
 
 /* Size of the event information block Ev_Info copies to the caller. */
@@ -92,12 +94,28 @@ os9err evLink ( char* evName,                                           uint32_t
 os9err evUnLnk                                                        ( uint32_t  evId );
 os9err evCreat( char* evName, int evValue, short wInc, short sInc,     uint32_t *evId );
 os9err evDelet( char* evName );
-os9err evWait ( uint32_t evId, int minV, int maxV, int  *evValue );
-os9err evSignl( uint32_t evId );
-os9err evSet  ( uint32_t evId, int evValue,         int *prvValue );
+
+/* The four calls that run the documented signal search all take the
+   Ev_AllProcs modifier, because for each of them the manual spells it on the
+   same word as the function code. evPulse restores the event value once the
+   search is over, which is its whole difference from evSet. */
+os9err evSignl( uint32_t evId,                     Boolean allProcs );
+os9err evPulse( uint32_t evId, int pulseValue,     Boolean allProcs );
+os9err evSet  ( uint32_t evId, int evValue,        Boolean allProcs, int *prvValue );
+os9err evSetR ( uint32_t evId, int evIncr,         Boolean allProcs, int *prvValue );
+
+/* Takes the waiting process, because a waiter that cannot be satisfied at
+   once is queued on the event rather than left to re-test the range for
+   itself, and the queue is what a pulse searches. */
+os9err evWait ( uint32_t evId, int minV, int maxV, ushort pid, int *evValue );
+
 os9err evRead ( uint32_t evId,                      int *evValue  );
-os9err evSetR ( uint32_t evId, int evIncr,          int *prvValue );
 os9err evInfo ( ushort   index, byte* buffer,    ushort *foundP   );
+
+/* Take a process off whatever event queue it is on. Safe to call for a
+   process that is not queued, which is what lets kill_process call it
+   unconditionally. */
+void   evDequeue( ushort pid );
 
 /* Saturating signed add, exported because Ev_WaitR resolves its relative
    range with it before ever reaching evWait(). */

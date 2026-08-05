@@ -449,6 +449,19 @@ os9err new_process(ushort parentid, ushort *newpid, ushort numpaths)
             cp->wakeUpTick = 0;            /* to be woken up */
             cp->pW_age     = 0;            /* sleep aging */
 
+            /* Not waiting on any event. ev_id is what makes an event queue
+               entry safe against a reused process slot -- the search honours a
+               queued index only while that process still claims the same event
+               -- so it has to be cleared HERE, where a slot becomes somebody
+               new, and not merely when a wait ends. */
+            cp->ev_id      = 0;
+            cp->ev_next    = MAXPROCESSES;
+            cp->ev_minV    = 0;
+            cp->ev_maxV    = 0;
+            cp->ev_woken   = false;
+            cp->ev_wakeValue= 0;
+            cp->ev_wakeErr = 0;
+
             init_mem(npid);                /* init memory block list */
             init_traphandlers(npid);       /* init traphandlers */
             init_usrpaths    (npid);       /* init user paths */
@@ -614,6 +627,16 @@ os9err kill_process( ushort pid )
     }
     if (cp->state==pDead) return os9error(E_IPRCID); /* avoid killing again, because double close is not good */
     debugprintf(dbgProcess,dbgNorm,("# kill_process: set to unused\n" ));
+
+    /* A process killed while parked in Ev$Wait is still linked into that
+       event's queue. The search would drop the entry by itself the next time
+       it walked past -- it honours an entry only while the process still
+       claims the event, and a reused slot starts with ev_id 0 -- so nothing
+       depends on this call for correctness. It is here so the queue stops
+       naming the dead at the moment they die, rather than whenever somebody
+       next signals: state that is only ever cleaned up lazily is state that
+       is wrong in every debugger dump taken in between. */
+    evDequeue( pid );
 
     /* now kill the process */
         parentid= os9_word(cp->pd._pid); /* get parent ID */

@@ -161,7 +161,8 @@ why the links are still zero.
 
 ## Tests
 
-Two new CONF68K tests, both citing page 1-25.
+Three new CONF68K tests: t40 and t41 citing page 1-25, and t42 (added
+during implementation, see below) citing page 1-26.
 
 **t40evpuls** — single process. Create an event with value 100, `wInc` 0,
 `sInc` 5. Pulse it with d2 = 999. `Ev$Read` → expect 100. One test covering
@@ -169,6 +170,15 @@ both halves of the sentence: the original value is restored, and the signal
 auto-increment is not applied. `wInc` is 0 so the observation cannot depend
 on whether a wait increment was applied during a search that woke nobody,
 which the manual does not settle.
+
+**t42evsigw** — added during implementation, not in the original plan. The
+queue replaced the wake mechanism for every F$Event call, not only the new
+one, and no test anywhere had a process woken by an ordinary `Ev$Signl`: t14
+is single-process and measures only the arithmetic. The call most likely to
+matter to the shipped network stack and Maui was the one with no coverage.
+Same shape as t41 with a signal in place of the pulse, reporting what the
+parent reads after the child wakes — a signal leaves its value, a pulse
+restores the old one, and the child cannot tell the two apart.
 
 **t41evwake** — two processes on `fork.i`, using `ckrole`, `mkmark`,
 `ckmark`, `napticks`, `chdone` and `chfail` directly rather than `contend`,
@@ -194,7 +204,7 @@ there is deleted rather than reworded.
 | `Source/OS9exec_core/events.c` | `evSearch`, `evPulse`, enqueue/deliver in `evWait`, `evDelet` wake, `evInfo` comment |
 | `Source/OS9exec_core/fcalls.c` | `Ev_Pulse` case; `Ev_AllProcs` passed through instead of discarded |
 | `Source/OS9exec_core/procstuff.c` | clear waiter fields at creation; dequeue in `kill_process` |
-| `test/68k-conformance/SRC/t40evpuls.a`, `t41evwake.a` | new |
+| `test/68k-conformance/SRC/t40evpuls.a`, `t41evwake.a`, `t42evsigw.a` | new |
 | `test/68k-conformance/CMDS/` | rebuilt via `conformance.sh 68k --build` |
 | `test/68k-conformance/runall` | run the two new tests |
 | `test/68k-conformance/DOCS/claims.md` | two claims added, the omission note deleted |
