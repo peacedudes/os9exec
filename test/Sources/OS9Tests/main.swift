@@ -1828,6 +1828,12 @@ do {
         "  cmp.l   #8,d1",
         "  bne     fail",
         "",
+        "  lea     evId(pc),a1",     // Ev_UnLnk: the creator holds the one link
+        "  move.l  (a1),d0",         // Ev_Creat gave it, and Ev_Delet refuses
+        "  move.w  #1,d1",           // while the use count is not zero
+        "  OS9     F$Event",
+        "  bcs     fail",
+        "",
         "  lea     evname(pc),a0",   // Ev_Delet: by name, not by ID
         "  move.w  #3,d1",
         "  OS9     F$Event",
@@ -1892,12 +1898,19 @@ do {
 // already in range). This is the harder cross-process question its own comment
 // flagged as not attempted: process A parks on an OUT-of-range Ev_Wait, and a
 // separate backgrounded process B links the same event by name and signals it
-// into range. Nothing explicitly wakes A -- Ev_Signl (events.c) only bumps the
-// counter; A's parked wait is served solely by the poll-retry re-dispatch of a
-// pWaitRead process in do_arbitrate (procstuff.c ~1229, "only every nth time").
-// So a green here proves that poll-retry actually wakes a blocked waiter across
-// two processes, not just that a single process whose value is already in range
-// falls through. Verified non-vacuous 2026-07-22: a control signaler that links
+// into range. A green here proves that a signal from one process actually wakes
+// a waiter blocked in another, not just that a single process whose value is
+// already in range falls through.
+//
+// The mechanism underneath changed on 2026-08-04 and this comment used to
+// describe the old one. Ev_Signl no longer merely bumps a counter and leave
+// A's parked wait to be served by the poll-retry re-dispatch of a pWaitRead
+// process: events.c now keeps the FIFO wait queue the manual describes, and
+// the signal search picks A out of it and records the value it is to return.
+// The retry re-dispatch is still how A gets scheduled to collect that answer,
+// so what this test demands of the system is unchanged -- which is exactly why
+// it was worth keeping as written while the mechanism under it was replaced.
+// Verified non-vacuous 2026-07-22: a control signaler that links
 // the event but never signals it leaves the waiter parked forever (no "WAITER
 // WOKEN", run hangs to the timeout) -- so the wake is caused by the signal, not
 // by the mere existence of a second process. First automated coverage of a

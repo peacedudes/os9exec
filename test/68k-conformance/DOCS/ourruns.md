@@ -182,3 +182,51 @@ F$Event is a kernel call with no file manager under it.
 
 **These are still os9exec results.** A PASS here says os9exec agrees with the
 manual; it is not evidence about real OS-9/68k.
+
+## 2026-08-04 (later) — t43 and t44, the Ev$Delet use count
+
+Found while writing the queue above, and fixed rather than filed: `Ev$Delet`
+freed an event whatever its use count, where page 1-21 says an event "may not
+be deleted unless its use count is zero" and answers E$EvBusy when it is not.
+Since `Ev$Creat` sets the count to one, os9exec was allowing a delete that
+real OS-9 refuses in the most ordinary case there is — the creator deleting
+its own event.
+
+All six earlier F$Event tests ended with exactly that unchecked delete, and
+so did the three new ones. They now unlink first, which is what a program has
+to do on real OS-9 anyway; the forked children in t41 and t42 unlink their own
+link before exiting, since "OS-9 does not automatically unlink events when a
+F$Exit occurs".
+
+    host-native   31 PASS, 13 SKIP
+    RBF image     44 PASS,  0 SKIP
+
+```
+RESULT t43 PASS  obs=000169 exp=000169  Ev$Delet refuses an event whose use count is not zero
+RESULT t44 PASS  obs=000000 exp=000000  Ev$Delet succeeds once the use count has reached zero
+```
+
+**t44 is the interesting one, and it is not a test we can be sure of.** The
+manual contradicts itself: Ev$UnLnk (page 1-20) says the count is decremented
+"and the event is deleted when the count reaches zero", which would make
+Ev$Delet unreachable by any program. We went with the Ev$Delet page, backed by
+the OS-9 Guru ("the event can be deleted by a delete event call") and by OS-9
+Insights, whose evdel utility unlinks in a loop until the delete stops
+failing — a loop nobody would write if unlinking already deleted. Two of those
+three are not Microware.
+
+Both were made to fail before either was believed, and the second sabotage is
+the one that matters, because it is the rival reading implemented on purpose:
+
+| sabotage | t43 | t44 |
+|---|---|---|
+| link-count check removed from Ev$Delet | FAIL obs=000000 | PASS |
+| Ev$UnLnk deletes when the count hits zero | PASS | FAIL obs=000168 |
+
+So t44 does discriminate between the two readings of the manual rather than
+merely agreeing with the one we implemented. If real OS-9/68k hardware returns
+168 here, this suite is wrong and os9exec should follow the hardware — that is
+the single most valuable line a run elsewhere could send back.
+
+**These are still os9exec results.** A PASS here says os9exec agrees with our
+reading of the manual, which is weaker than agreeing with OS-9.
