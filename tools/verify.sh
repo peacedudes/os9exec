@@ -95,8 +95,15 @@ if [ "$want_vms" = yes ]; then
     else
         skip "Windows 11 ARM64 (UTM VM)" "utmctl not installed"
     fi
+    # A real Linux kernel and a real glibc, not a container: this is the
+    # machine whose warnings led to the egetenv overflow, so it earns a slot.
+    if command -v multipass >/dev/null 2>&1; then
+        stage "Ubuntu 24.04 aarch64 (multipass VM)" tools/verify-linuxvm.sh
+    else
+        skip "Ubuntu 24.04 aarch64 (multipass VM)" "multipass not installed"
+    fi
 else
-    skip "UTM virtual machines" "pass --vms to include"
+    skip "virtual machines (Windows, Ubuntu)" "pass --vms to include"
 fi
 
 echo
