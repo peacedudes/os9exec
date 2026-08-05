@@ -2453,6 +2453,13 @@ Boolean RBF_ImgSize( long size )
           oserr=FSpOpenDF( fs, fsRdPerm, &refnum );
       if (oserr) return host2os9err(oserr,E_PNNF);
 
+      /* Zeroed for the same reason as GetRBFName's copy further down: this
+         FSRead's result is overwritten by FSClose's on the very next line, so
+         a failed read was indistinguishable from a good one and the Cruzli
+         strcmp then ran on stack garbage. Zeroing makes a failed read compare
+         as "not an OS-9 image", which is the answer it should always have
+         given. Otherwise left as found -- Mac Classic, untestable here. */
+      memset( bb, 0, sizeof(bb) );
                                cnt= sizeof(bb);
       oserr= FSRead ( refnum, &cnt,       &bb );
       oserr= FSClose( refnum );     /* is this really an OS-9 partition ? */
@@ -2977,7 +2984,17 @@ Boolean RBF_ImgSize( long size )
           if (!RBF_ImgSize( info.st_size ))            { err= E_FNA;  break; }
 
           stream= fopen( pp,"rb" );  if (stream==NULL) { err= E_PNNF; break; }
-          (void)fread( &bb, 1,sizeof(bb), stream );
+          /* Zeroed first, and the count CHECKED. The `(void)` cast did not
+             silence glibc's warn_unused_result and should not have: on a short
+             or failed read <bb> kept whatever was on the stack, and the Cruzli
+             strcmp below then classified an image by uninitialised memory --
+             and could run past the buffer hunting a terminator that was never
+             written. Zeroing makes the comparison safe; checking the count
+             makes a truncated file answer "not an OS-9 image", which is true. */
+          memset( bb, 0, sizeof(bb) );
+          if (fread( &bb, 1,sizeof(bb), stream )!=sizeof(bb)) {
+              fclose( stream );                        err= E_FNA;  break;
+          }
           fclose( stream ); /* is this really an OS-9 partition ? => Cruzli check */
           if (strcmp( &bb[CRUZ_POS],Cruz_Str )!=0)     { err= E_FNA;  break; }
       } while (false);

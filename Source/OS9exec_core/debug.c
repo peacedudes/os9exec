@@ -159,6 +159,22 @@ ushort debughalt= 0;                    /* debug halt bitmask */
 
 char triggername[TRIGNAMELEN] = "";     /* debug trigger name */
 
+/* Echo to the debug console without discarding write()'s result. Same reason
+   as consio.c's ConsPutcTo: on glibc, write() is warn_unused_result, and a
+   dropped byte here is a character the operator typed that never echoes.
+
+   Guarded to match its only callers, which live in the #else arm of
+   `TERMINAL_CONSOLE && CON_SUPPORT` further down -- a configuration this tree
+   does not build, so an unguarded helper here is simply an unused function. */
+#if !(defined(TERMINAL_CONSOLE) && defined(CON_SUPPORT))
+static void dbg_echo( const char* s, size_t n )
+{
+    ssize_t w;
+    do { w= write( 1,s,n ); } while (w<0 && errno==EINTR);
+    (void)w;
+} /* dbg_echo */
+#endif
+
 static ushort tempmask;
 /* ---------------------------------------------------------- */
 
@@ -723,11 +739,11 @@ ushort debugwait( void )
                 n= read(0, &rc, 1);
                 if (n==0) continue;
                 if (n<0) break;
-                if (rc=='\r' || rc=='\n') { write(1,"\r\n",2); break; }
-                if ((rc==0x7f || rc=='\b') && cp>inp) { cp--; write(1,"\b \b",3); continue; }
+                if (rc=='\r' || rc=='\n') { dbg_echo("\r\n",2); break; }
+                if ((rc==0x7f || rc=='\b') && cp>inp) { cp--; dbg_echo("\b \b",3); continue; }
                 if (rc < 0x20) continue;
                 *cp++= rc;
-                write(1,&rc,1);
+                dbg_echo(&rc,1);
             } while (cp < inp+INPLEN-1);
             *cp= NUL;
             if (cp==inp) continue;

@@ -317,7 +317,18 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
           return;
       }
 
-      write( 1,&c,1 );
+      /* Retried, not ignored. glibc marks write() warn_unused_result and is
+         right to: a console byte dropped on EINTR or a partial write is a
+         character the guest printed that simply never appears, with nothing
+         anywhere saying so. Only a real glibc Linux flags this -- neither
+         macOS nor mingw annotates write() -- which is why it outlived every
+         earlier sweep until one ran on Ubuntu. A hard failure means stdout
+         itself is gone and there is nowhere left to report it, so it stops
+         here deliberately rather than silently. */
+      { ssize_t w;
+        do { w= write( 1,&c,1 ); } while (w<0 && errno==EINTR);
+        (void)w;
+      }
 
       // not yet supported for Mac Classic/Carbon
       #ifdef win_unix
