@@ -335,17 +335,39 @@ os9err evDelet( char* evName )
     for (k=0;  k<MAXEVENTS; k++) {
             ev= &events[k];
         if (ev->id!=0 && strcmp(ev->name,evName)==0 ) {
-            /* Anything still queued here has to be told, or it waits for an
-               event that no longer exists and nothing will ever wake it.
-               E$EvNTID is the documented answer to naming an event that is
-               not "a valid active event", which after this line is exactly
-               what its ID is.
+            /* "An event may not be deleted unless its use count is zero"
+               (Ev$Delet, page 1-21), which lists E$EvBusy as its answer when
+               the count is not. Ev$Creat sets that count to one, so a creator
+               has to Ev$UnLnk its own event before it can delete it -- this
+               call used to free the slot regardless.
 
-               That this can happen at all is a separate defect: the manual
-               says an event "may not be deleted unless its use count is
-               zero" and Ev$Creat sets that count to one, so this call should
-               be answering E$EvBusy here rather than deleting. Recorded in
-               ROADMAP-68k.md; until it is fixed, the queue must survive it. */
+               THE MANUAL CONTRADICTS ITSELF HERE, so the reading is recorded
+               rather than left implicit. Ev$UnLnk (page 1-20) says the count
+               is decremented "and the event is deleted when the count reaches
+               zero", which would make Ev$Delet unreachable: no count could
+               ever still be zero by the time anyone called it. Three
+               statements outweigh that one. The Ev$Delet page itself; the
+               OS-9 Guru, which says that once the count reaches zero "the
+               event can be deleted by a delete event call"; and OS-9
+               Insights, whose evdel utility unlinks in a LOOP until the
+               delete stops failing -- a loop that could not be written if the
+               unlink reaching zero had already done the deleting. The last
+               sentence of the Ev$UnLnk page, that OS-9 uses the count "only
+               for error checking", is the one that fits all three.
+
+               Neither book is Microware, so this stays a reading and not a
+               fact: CONF68K t43/t44 pin both halves so that real OS-9/68k
+               hardware can settle it. A system implementing the Ev$UnLnk
+               sentence literally answers E$EvNF where t44 expects success. */
+            if (ev->e_linkcount!=0) return E_EVBUSY;
+
+            /* "The kernel will wake up any processes waiting on an event that
+               is being deleted (returning them an invalid event ID error --
+               E$EvntID)", and the Guru gives the reason: a process can unlink
+               more than it linked, taking the count to zero while others are
+               still waiting. So this is reachable even now that the count is
+               enforced, and a waiter left behind would wait for an ID that no
+               longer exists with nothing able to wake it. */
             while (ev->qHead<MAXPROCESSES) {
                        pid= ev->qHead;
                 if    (evQueued( &procs[pid], ev ))
