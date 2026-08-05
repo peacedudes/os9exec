@@ -2393,6 +2393,19 @@ os9err int_mount( ushort pid, int argc, char** argv )
     } /* for */
 
     if (blankImage) {
+      /* A volume name with a space in it arrives here as extra positional
+       * arguments, because argv is built by splitting on spaces and nothing
+       * honours quotes -- see prepArgs, whose own comment says so. That is not
+       * an os9exec shortcut: real OS-9 utilities behave the same way, measured
+       * with a genuine Microware makdir, which turned `makdir "a b"` into a
+       * directory literally named `"a`. Microware's own format takes the same
+       * -v=<name> and has the same limit. So say what happened instead of
+       * printing a usage line the caller has probably already read: the name
+       * is the thing that is wrong, not the shape of the command.
+       * Host-side, tools/mkblank.py's RBF_VOLNAME takes spaces fine. */
+      if (nargc>1 && *volName!=NUL)
+        return _errmsg( E_BPNAM, "-v: a volume name cannot contain spaces "
+                                 "(got \"%s\", then \"%s\").\n", volName,nargv[0] );
       if (nargc!=1)
         return _errmsg( E_BPNAM, "usage: mount -k=<size> [-v=<name>] <h0..hz>\n" );
       err= CreateBlankDevice( pid, nargv[0], blankSizeKB, sctSize, cluSize, volName );

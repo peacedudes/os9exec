@@ -256,48 +256,54 @@ test-linux:
 TALLY = awk '/warning:/{w++} /error:/{e++} \
   END{printf "  warnings: %d  errors: %d\n", w+0, e+0}'
 
+# Every leg's log, object directory and binary used to be a FIXED path in /tmp,
+# shared by every concurrent run -- and several sessions share this repo, so two
+# overlapping `make warnings` runs are expected rather than hypothetical. The
+# binary was guarded (`test -x` -> a loud NOT BUILT, which is how this was
+# noticed 2026-08-04), but the LOGS were not, and they are what TALLY counts.
+# Each is opened with `>`, which truncates at open, so one run starting its host
+# leg while another is about to tally wipes the file being counted and that run
+# scores "warnings: 0  errors: 0" for a build that had warnings -- a phantom
+# pass, the exact trap the rest of this comment block exists to prevent. The two
+# mingw legs were worse in kind: their /tmp paths are OBJDIRs used with -B, so
+# two runs wrote .o files into one directory and either could link a
+# half-written object.
+#
+# One directory per make invocation fixes all of it. `:=` evaluates the $$ once,
+# at parse time, so every recipe line below sees the SAME value -- a plain `=`
+# would re-expand per line and hand each leg a different directory.
+WARNDIR := /tmp/os9exec-warnings-$(shell echo $$$$)
+
 warnings:
+	@mkdir -p $(WARNDIR)
 	@echo "=== host ($(CC)) ==="
-	@$(MAKE) -B --no-print-directory >/tmp/os9exec-host.log 2>&1 \
-	  || echo "  BUILD FAILED -- see /tmp/os9exec-host.log"
-	@$(TALLY) /tmp/os9exec-host.log
+	@$(MAKE) -B --no-print-directory >$(WARNDIR)/host.log 2>&1 \
+	  || echo "  BUILD FAILED -- see $(WARNDIR)/host.log"
+	@$(TALLY) $(WARNDIR)/host.log
 	@echo "=== linux (gcc, in docker) ==="
-# Seen 2026-08-04: the container's cp failed with "File exists", so the leg
-# reported NOT BUILT even though it had just compiled and linked 0/0 clean.
-# The destination is a FIXED path in /tmp shared by every run, and several
-# sessions share this repo -- two overlapping `make warnings` collide, one's rm
-# racing the other's cp. Root ownership was the first theory and is NOT the
-# cause: on macOS the bind mount maps ownership and the host rm removes the file
-# fine (checked). The rm below narrows the window; it does not close it. Closing
-# it wants a per-run unique path for the binary AND the four logs, which is a
-# rewrite of this target -- noted in ROADMAP-68k.md instead of done half-way.
-# The `test -x` guard already fails LOUD rather than scoring a phantom 0/0, so
-# this misreports in the safe direction.
-	@rm -f /tmp/os9exec-linux-built 2>/dev/null || true
 	@docker run --rm -v "$(CURDIR)/Source:/src/Source:ro" -v "$(CURDIR)/GNUmakefile:/src/GNUmakefile:ro" \
-	  -v /tmp:/out -w /src gcc:13 sh -c 'set -e; mkdir -p /tmp/b; \
+	  -v $(WARNDIR):/out -w /src gcc:13 sh -c 'set -e; mkdir -p /tmp/b; \
 	  make CC=gcc OBJDIR=/tmp/b EXE=/tmp/b/os9exec 2>&1; \
-	  rm -f /out/os9exec-linux-built; \
-	  cp /tmp/b/os9exec /out/os9exec-linux-built' >/tmp/os9exec-linux.log 2>&1 \
-	  || echo "  BUILD OR SETUP FAILED -- see /tmp/os9exec-linux.log"
-	@test -x /tmp/os9exec-linux-built \
+	  cp /tmp/b/os9exec /out/linux-built' >$(WARNDIR)/linux.log 2>&1 \
+	  || echo "  BUILD OR SETUP FAILED -- see $(WARNDIR)/linux.log"
+	@test -x $(WARNDIR)/linux-built \
 	  || echo "  NOT BUILT -- no Linux binary produced; the score below means nothing"
-	@$(TALLY) /tmp/os9exec-linux.log
+	@$(TALLY) $(WARNDIR)/linux.log
 	@echo "=== windows x86_64 (mingw-w64, LLP64) ==="
-	@rm -f /tmp/os9exec-win/os9exec.exe
 	@$(MAKE) -B --no-print-directory OS=Windows_NT CC=x86_64-w64-mingw32-gcc \
-	  OBJDIR=/tmp/os9exec-win EXE=/tmp/os9exec-win/os9exec.exe \
-	  >/tmp/os9exec-win.log 2>&1 \
-	  || echo "  BUILD FAILED -- see /tmp/os9exec-win.log"
-	@test -f /tmp/os9exec-win/os9exec.exe \
+	  OBJDIR=$(WARNDIR)/win EXE=$(WARNDIR)/win/os9exec.exe \
+	  >$(WARNDIR)/win.log 2>&1 \
+	  || echo "  BUILD FAILED -- see $(WARNDIR)/win.log"
+	@test -f $(WARNDIR)/win/os9exec.exe \
 	  || echo "  NOT BUILT -- no Windows binary produced; the score below means nothing"
-	@$(TALLY) /tmp/os9exec-win.log
+	@$(TALLY) $(WARNDIR)/win.log
 	@echo "=== windows i686 (mingw-w64, ILP32) ==="
-	@rm -f /tmp/os9exec-win32/os9exec.exe
 	@$(MAKE) -B --no-print-directory OS=Windows_NT CC=i686-w64-mingw32-gcc \
-	  OBJDIR=/tmp/os9exec-win32 EXE=/tmp/os9exec-win32/os9exec.exe \
-	  >/tmp/os9exec-win32.log 2>&1 \
-	  || echo "  BUILD FAILED -- see /tmp/os9exec-win32.log"
-	@test -f /tmp/os9exec-win32/os9exec.exe \
+	  OBJDIR=$(WARNDIR)/win32 EXE=$(WARNDIR)/win32/os9exec.exe \
+	  >$(WARNDIR)/win32.log 2>&1 \
+	  || echo "  BUILD FAILED -- see $(WARNDIR)/win32.log"
+	@test -f $(WARNDIR)/win32/os9exec.exe \
 	  || echo "  NOT BUILT -- no Windows binary produced; the score below means nothing"
-	@$(TALLY) /tmp/os9exec-win32.log
+	@$(TALLY) $(WARNDIR)/win32.log
+	@rm -rf $(WARNDIR)/win $(WARNDIR)/win32 $(WARNDIR)/linux-built
+	@echo "logs: $(WARNDIR)"
