@@ -1215,6 +1215,17 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
 	char*  p= egetenv( envname ); /* get path for default module loading dir */
 	if    (p==NULL) return;
 
+	/* BOUNDED. <tmp> is OS9PATHLEN (255) and <p> comes straight out of the
+	   environment -- OS9DISK, OS9CMDS, OS9Hx -- so a path longer than the
+	   buffer smashed this frame. Not a theoretical length either: a checkout
+	   under a sandboxed temp directory is easily half of it before the user
+	   adds anything. Truncating silently would be its own trap (the emulator
+	   would look for a device somewhere the user never named), so it says so. */
+	if (strlen(p)>=sizeof(tmp)) {
+	    uphe_printf( "# %s: path is %lu characters, over the %lu limit -- ignored\n",
+	                 envname, (unsigned long)strlen(p), (unsigned long)sizeof(tmp)-1 );
+	    return;
+	}
 	strcpy( tmp, p ); p= tmp; /* make a local copy */
 	MakeOS9Path( p );
 
@@ -2882,7 +2893,16 @@ ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
   #if defined win_unix
     /* establish the virtual mdir (dir used to load modules from by default) */
 	p= egetenv("OS9MDIR");    /* get path for default module loading dir */
-	strcpy( mdirPath,p );
+	/* BOUNDED, same reasoning as GetCurPaths above: this is an environment
+	   variable copied into a fixed buffer, and an over-long OS9MDIR wrote
+	   past mdirPath[] -- a global, so the damage landed on whatever the
+	   linker put next to it. */
+	if (p!=NULL && strlen(p)>=sizeof(mdirPath)) {
+	    uphe_printf( "# OS9MDIR: path is %lu characters, over the %lu limit -- ignored\n",
+	                 (unsigned long)strlen(p), (unsigned long)sizeof(mdirPath)-1 );
+	    *mdirPath= NUL;
+	}
+	else if (p!=NULL) strcpy( mdirPath,p );
 	      
 	debugprintf(dbgStartup,dbgNorm,( "# main startup: mdir='%s'\n",mdirPath ));
   #endif

@@ -1166,12 +1166,20 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
             if (*mdirPath!=0) {
                 char pathbuf[OS9_MAXPATH]; /* temp buffer for path */
                 debugprintf(dbgModules,dbgNorm,("# load_module: trying to load from OS9MDIR: %s\n",mdirPath));
-                strcpy(pathbuf,mdirPath);
-                strcat(pathbuf,PATHDELIM_STR ); /* at least Linux requires this separator */
-                strcat(pathbuf,name);
-
-                    stream= fopen(pathbuf,"rb"); /* open for read, binary mode (bfo) */
-                if (stream!=NULL) goto streamload;
+                /* Built with a bound. mdirPath is itself OS9_MAXPATH, so
+                   mdirPath + separator + module name could exceed pathbuf even
+                   when each part fits on its own -- three unchecked copies into
+                   one buffer. A name that will not fit cannot name a real file
+                   either, so the attempt is simply skipped. */
+                if (snprintf( pathbuf,sizeof(pathbuf), "%s%s%s",
+                              mdirPath, PATHDELIM_STR, name ) >= (int)sizeof(pathbuf)) {
+                    debugprintf(dbgModules,dbgNorm,
+                       ("# load_module: OS9MDIR path too long for '%s', skipped\n", name));
+                }
+                else {
+                        stream= fopen(pathbuf,"rb"); /* open for read, binary mode (bfo) */
+                    if (stream!=NULL) goto streamload;
+                }
             }
             #endif
             

@@ -226,6 +226,36 @@ Boolean F_Avail( const char* pathname )
   #define IsAbsHostPath(p) (*(p)==PATHDELIM)
 #endif
 
+/* Build "<a><sep><b>" into a fixed buffer, refusing rather than overflowing.
+   Returns false and empties <dst> when the result will not fit.
+
+   This exists because egetenv() assembled paths out of startPath and the raw
+   value of OS9DISK / OS9CMDS / OS9MDIR with strcpy+strcat into a 255-byte
+   static, and an over-long environment variable simply wrote past it. Proven
+   with AddressSanitizer 2026-08-05: OS9DISK set to a 305-character path gives
+   "global-buffer-overflow ... WRITE of size 306" inside egetenv, reached
+   straight from os9_main at startup. It did not crash without a sanitizer --
+   the overrun lands in the adjacent static, which is worse than a crash,
+   because the emulator then runs on quietly corrupted state. */
+static Boolean joinPath( char* dst, size_t dstsz,
+                         const char* a, const char* sep, const char* b )
+{
+    size_t need= strlen(a) + (sep!=NULL ? strlen(sep) : 0) + strlen(b) + 1;
+
+    if (need>dstsz) {
+        uphe_printf( "# path is %lu characters, over the %lu limit -- ignored\n",
+                     (unsigned long)(need-1), (unsigned long)(dstsz-1) );
+        *dst= NUL;
+        return false;
+    }
+
+    strcpy( dst,a );
+    if (sep!=NULL) strcat( dst,sep );
+    strcat( dst,b );
+    return true;
+} /* joinPath */
+
+
 char* egetenv( const char* name )
 {
     static char tmp[OS9PATHLEN];
@@ -274,8 +304,7 @@ char* egetenv( const char* name )
                       p= v;
                   }
 
-                  strcpy( tmp,startPath );
-                  strcat( tmp,p );
+                  if (!joinPath( tmp,sizeof(tmp), startPath,NULL,p )) return NULL;
                   return  tmp; /* found */
               }
 
@@ -318,6 +347,22 @@ char* egetenv( const char* name )
                        storage and the copy is genuinely needed -- so test for
                        the aliasing case rather than assuming either way. */
                     char* base= egetenv("OS9DISK");
+
+                    /* base can be NULL: egetenv now REFUSES a value too long
+                       for its own buffer instead of overflowing it, and that
+                       refusal reaches here. The pre-existing strcpy below
+                       would have dereferenced it just as happily -- it was
+                       simply unreachable while the overflow was the behaviour.
+                       Nothing sensible can be derived from a disk that has no
+                       usable name, so this says so the same way. */
+                    if (base==NULL ||
+                        strlen(base)+strlen(PATHDELIM_STR)+strlen("CMDS")
+                            >= sizeof(ocm)) {
+                        uphe_printf( "# OS9CMDS cannot be derived from OS9DISK"
+                                     " -- unset or too long\n" );
+                        return NULL;
+                    }
+
                     if   (base!=ocm) strcpy( ocm,base );
                     strcat( ocm,PATHDELIM_STR );
                     strcat( ocm,"CMDS" );
@@ -354,13 +399,16 @@ char* egetenv( const char* name )
                 if (cm) rslt= "/dd/CMDS"; /* make it suitable for RBF devices */
                 else {
                     debugprintf(dbgStartup,dbgNorm,("# startPath: '%s'\n", startPath));
-                    strcpy( tmp,startPath );
-                    if (!IsAbsHostPath(rslt)) strcat( tmp,PATHDELIM_STR );
-                    
+                    if (!joinPath( tmp,sizeof(tmp), startPath,
+                                   IsAbsHostPath(rslt) ? NULL : PATHDELIM_STR,
+                                   "" )) return NULL;
                     #ifdef windows32
                       if (*rslt==PATHDELIM && tmp[ strlen(tmp)-1 ]==PATHDELIM) rslt++;
                     #endif
-                    
+                    if (strlen(tmp)+strlen(rslt)+1 > sizeof(tmp)) {
+                        uphe_printf( "# %s: path is too long once resolved -- ignored\n", name );
+                        return NULL;
+                    }
                     strcat( tmp,rslt );
                     rslt=   tmp;
                     debugprintf(dbgStartup,dbgNorm,("# startPath: '%s'\n", rslt));
@@ -383,6 +431,11 @@ char* egetenv( const char* name )
                 while (*q!=PATHDELIM && q>tmp) q--;
                 *q= NUL; /* cut the string at delimiter */
 
+                if (strlen(tmp) + (IsAbsHostPath(rslt) ? 0 : strlen(PATHDELIM_STR))
+                                 + strlen(rslt) + 1 > sizeof(tmp)) {
+                    uphe_printf( "# %s: path is too long once resolved -- ignored\n", name );
+                    return NULL;
+                }
                 if (!IsAbsHostPath(rslt)) strcat( tmp,PATHDELIM_STR );
                 strcat( tmp,rslt );
                 rslt=   tmp;
