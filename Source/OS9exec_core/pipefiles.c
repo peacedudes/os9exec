@@ -337,7 +337,11 @@ os9err pPopen(ushort pid, syspath_typ *spP, ushort *modeP, char* name)
             /* no pipe with specified name exists yet */
             if (cre) {
                 /* ok, create new named pipe */
-                strncpy( spP->name,name,OS9NAMELEN );
+                /* -1 and terminate: a pipe name of OS9NAMELEN characters or
+                   more otherwise left spP->name unterminated, and every later
+                   strcmp/strcpy on it ran past the field. */
+                strncpy( spP->name,name,OS9NAMELEN-1 );
+                         spP->name[  OS9NAMELEN-1 ]= NUL;
             }
             else {
                 /* cannot open, pipe does not exist */

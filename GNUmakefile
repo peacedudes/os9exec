@@ -25,7 +25,16 @@ else
   LDFLAGS =
 endif
 
-CFLAGS  = -g -Wall -fcommon \
+# -fno-strict-aliasing is REQUIRED, not a preference. The 68k register halves
+# are reached by punning a 32-bit register through a ushort*/byte* --
+# loword/hiword/lobyte/retword in os9_ll.h, 125 call sites, 39 of them as
+# assignment targets. That is exactly what the hardware does and the macros are
+# already correct for both byte orders, but it is undefined behaviour under C's
+# strict-aliasing rule, which gcc -O2 is entitled to optimise on. gcc says so
+# 59 times at -O2; clang says nothing and has the same licence, so a quiet
+# build is not evidence of safety. The alternative is retyping the register
+# file as a union across all 125 sites -- a real option, and a separate change.
+CFLAGS  = -g -Wall -fcommon -fno-strict-aliasing \
           -DTERMINAL_CONSOLE \
           -DINT_CMD \
           -DRAM_SUPPORT \
@@ -96,7 +105,7 @@ all: $(OBJDIR) $(EXE)
 # Production build: optimised, no debug symbols.
 # Usage: make prod   (rebuilds from scratch with -O2)
 prod:
-	$(MAKE) -B CFLAGS="-O2 -Wall -fcommon \
+	$(MAKE) -B CFLAGS="-O2 -Wall -fcommon -fno-strict-aliasing \
 	          -DREUSE_MEM \
           -DTERMINAL_CONSOLE \
 	          -DINT_CMD \
@@ -274,23 +283,34 @@ TALLY = awk '/warning:/{w++} /error:/{e++} \
 # would re-expand per line and hand each leg a different directory.
 WARNDIR := /tmp/os9exec-warnings-$(shell echo $$$$)
 
+# Swept at PROD flags (-O2), not the default -g -O0 build. This target used to
+# run the plain `all` target, and -Wstrict-aliasing / -Wstringop-truncation /
+# -Wrestrict need optimisation to fire at all -- so it reported 0/0 on a
+# configuration nobody ships while `make prod` (what CI releases) emitted 69
+# warnings, two of them real overlapping-strcpy bugs. A sweep that cannot see
+# the shipping build is a sweep that cannot fail.
+#
+# The linux leg is pinned to --platform linux/amd64. Unpinned, whatever gcc:13
+# happens to be cached locally is used: on this machine that was a ppc64le
+# image running under QEMU, so the leg named "linux" was compiling for
+# powerpc64le and not for the architecture CI builds.
 warnings:
 	@mkdir -p $(WARNDIR)
 	@echo "=== host ($(CC)) ==="
-	@$(MAKE) -B --no-print-directory >$(WARNDIR)/host.log 2>&1 \
+	@$(MAKE) -B --no-print-directory prod >$(WARNDIR)/host.log 2>&1 \
 	  || echo "  BUILD FAILED -- see $(WARNDIR)/host.log"
 	@$(TALLY) $(WARNDIR)/host.log
 	@echo "=== linux (gcc, in docker) ==="
-	@docker run --rm -v "$(CURDIR)/Source:/src/Source:ro" -v "$(CURDIR)/GNUmakefile:/src/GNUmakefile:ro" \
+	@docker run --rm --platform linux/amd64 -v "$(CURDIR)/Source:/src/Source:ro" -v "$(CURDIR)/GNUmakefile:/src/GNUmakefile:ro" \
 	  -v $(WARNDIR):/out -w /src gcc:13 sh -c 'set -e; mkdir -p /tmp/b; \
-	  make CC=gcc OBJDIR=/tmp/b EXE=/tmp/b/os9exec 2>&1; \
+	  make CC=gcc OBJDIR=/tmp/b EXE=/tmp/b/os9exec prod 2>&1; \
 	  cp /tmp/b/os9exec /out/linux-built' >$(WARNDIR)/linux.log 2>&1 \
 	  || echo "  BUILD OR SETUP FAILED -- see $(WARNDIR)/linux.log"
 	@test -x $(WARNDIR)/linux-built \
 	  || echo "  NOT BUILT -- no Linux binary produced; the score below means nothing"
 	@$(TALLY) $(WARNDIR)/linux.log
 	@echo "=== windows x86_64 (mingw-w64, LLP64) ==="
-	@$(MAKE) -B --no-print-directory OS=Windows_NT CC=x86_64-w64-mingw32-gcc \
+	@$(MAKE) -B --no-print-directory OS=Windows_NT CC=x86_64-w64-mingw32-gcc prod \
 	  OBJDIR=$(WARNDIR)/win EXE=$(WARNDIR)/win/os9exec.exe \
 	  >$(WARNDIR)/win.log 2>&1 \
 	  || echo "  BUILD FAILED -- see $(WARNDIR)/win.log"
@@ -298,7 +318,7 @@ warnings:
 	  || echo "  NOT BUILT -- no Windows binary produced; the score below means nothing"
 	@$(TALLY) $(WARNDIR)/win.log
 	@echo "=== windows i686 (mingw-w64, ILP32) ==="
-	@$(MAKE) -B --no-print-directory OS=Windows_NT CC=i686-w64-mingw32-gcc \
+	@$(MAKE) -B --no-print-directory OS=Windows_NT CC=i686-w64-mingw32-gcc prod \
 	  OBJDIR=$(WARNDIR)/win32 EXE=$(WARNDIR)/win32/os9exec.exe \
 	  >$(WARNDIR)/win32.log 2>&1 \
 	  || echo "  BUILD FAILED -- see $(WARNDIR)/win32.log"

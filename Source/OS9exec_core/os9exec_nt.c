@@ -850,8 +850,12 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
  */
 static os9err prepLaunch(char *toolname, char **argv, int argc, char **envp, ulong memplus, ushort prior)
 {
-  uint32_t psiz;
-  byte*   pap;
+  /* Initialised because prepParams() sets them only on its success path, and
+     nothing but the `if (err)` below stops them being read. That reasoning is
+     correct today and is one edit away from not being -- gcc -O2 flags them as
+     maybe-uninitialised and it costs nothing to make it provable here. */
+  uint32_t psiz= 0;
+  byte*   pap= NULL;
   os9err  err;
   ushort  newpid;
   ushort  mid;
@@ -1292,7 +1296,14 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
 	  }  
 	#endif
 		      
-	if (p != tmp) strcpy( tmp, p );
+	/* memmove, not strcpy: <p> can point INSIDE <tmp>, so the two regions
+	   overlap and strcpy is undefined there. The `p != tmp` guard only ever
+	   caught the exact-equality case. The OS9DISK-image branch above sets
+	   p= tmp, and the MACOS9 arm then does p++ -- which is precisely a copy
+	   of a string onto itself shifted by one byte, the textbook overlapping
+	   copy. Caught by -Wrestrict, which only fires at -O2 and so was invisible
+	   to `make warnings`. */
+	if (p != tmp) memmove( tmp, p, strlen(p)+1 );
 	p= tmp;
 
 	if (doRep) {
@@ -1305,7 +1316,9 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
 	} // if
 	
 	/* do this before the recursive loop */
-	strncpy( drP->path,p, OS9PATHLEN );
+	/* -1 and terminate: drP->path is exactly OS9PATHLEN. */
+	strncpy( drP->path,p, OS9PATHLEN-1 );
+	         drP->path[   OS9PATHLEN-1 ]= NUL;
 			
 	#ifdef MACOS9
 	  get_dirid( &drP->volID, &drP->dirID, tmp );

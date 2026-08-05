@@ -835,7 +835,10 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
 
     /* remember for error tracebacks */
     lastpathparsed= pathbuf;
-    strncpy(out,pathbuf,OS9PATHLEN);
+    /* -1 and terminate: <out> is the caller's OS9PATHLEN buffer and a
+       full-length pathbuf otherwise handed it back unterminated. */
+    strncpy(out,pathbuf,OS9PATHLEN-1);
+            out[         OS9PATHLEN-1 ]= NUL;
 
     #else
     /* NOT MACINOTSH */
@@ -1063,7 +1066,9 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
     
     /* remember for error tracebacks */
     lastpathparsed= pathbuf;
-    strncpy   ( out,pathbuf,OS9PATHLEN );
+    /* -1 and terminate, as parsepathext above. */
+    strncpy   ( out,pathbuf,OS9PATHLEN-1 );
+                out[        OS9PATHLEN-1 ]= NUL;
     
     #ifdef windows32
       EatBack( out );
@@ -1287,7 +1292,11 @@ syspath_typ* get_syspath( ushort pid, ushort sp )
 
 static void showbuff( syspath_typ* spP, byte* buffer, ulong len )
 {
-    int  k, ii, sv;
+    /* sv=0: it is assigned on the k%16==0 pass, which is the first one, so it
+       is always set before the run-end print reads it -- but that is an
+       argument about modulo arithmetic that gcc -O2 will not follow, and a
+       hex dump is not worth making anyone re-derive it. */
+    int  k, ii, sv= 0;
     char c;
     
     if (in_recursion) return;

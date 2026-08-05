@@ -819,7 +819,10 @@ void os9_main( int argc, char **argv, char **envp )
 
           case 'n' :  k++; /* next arg */
                       if (k>=argc) {triggername[0]=0; break; }
-                      strncpy(triggername,argv[k],TRIGNAMELEN);
+                      /* -1 and terminate: the name comes straight off the
+                         command line and can be any length. */
+                      strncpy(triggername,argv[k],TRIGNAMELEN-1);
+                      triggername[TRIGNAMELEN-1]=0;
                       break;
 
           case 's' :  usp=&debughalt; goto getmask;

@@ -482,7 +482,13 @@ os9err new_process(ushort parentid, ushort *newpid, ushort numpaths)
                 cp->d.type = pap->d.type;
                 cp->d.dev  = pap->d.dev; 
                 cp->d.lsn  = pap->d.lsn;
-                strncpy( cp->d.path, pap->d.path, OS9PATHLEN );
+                /* memcpy of the WHOLE field, not strncpy: source and
+                   destination are both exactly OS9PATHLEN and every producer
+                   of a .path now NUL-terminates it, so copying the field
+                   entire carries the terminator with it. strncpy here either
+                   dropped the terminator (bound == size) or truncated by one
+                   (bound == size-1); the field copy does neither. */
+                memcpy( cp->d.path, pap->d.path, OS9PATHLEN );
             
                 #ifdef macintosh
                   cp->d.volID= pap->d.volID; 
@@ -492,7 +498,7 @@ os9err new_process(ushort parentid, ushort *newpid, ushort numpaths)
                 cp->x.type = pap->x.type;
                 cp->x.dev  = pap->x.dev;
                 cp->x.lsn  = pap->x.lsn;
-                strncpy( cp->x.path, pap->x.path, OS9PATHLEN );
+                memcpy( cp->x.path, pap->x.path, OS9PATHLEN );
             
                 #ifdef macintosh
                   cp->x.volID= pap->x.volID; 

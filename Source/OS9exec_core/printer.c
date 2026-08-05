@@ -192,8 +192,13 @@ BOOL DefaultPrinterName(char *aName, int aMaxNameLen)
         return FALSE;
       // copy only name
       p=strchr(buffer,',');
-      if (!p || p-buffer>aMaxNameLen) strncpy(aName,buffer,aMaxNameLen);
-      else strncpy(aName,buffer,p-buffer);
+      /* Both arms terminate now. Neither did: the first copied a full
+         aMaxNameLen with no room for a NUL, and the second copied exactly
+         (p-buffer) characters -- the name length -- which never includes one. */
+      if (!p || p-buffer>aMaxNameLen) { strncpy(aName,buffer,aMaxNameLen-1);
+                                                aName[   aMaxNameLen-1 ]= 0; }
+      else                            { strncpy(aName,buffer,p-buffer);
+                                                aName[   p-buffer     ]= 0; }
     }
   }
   return TRUE;

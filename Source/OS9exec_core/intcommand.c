@@ -362,7 +362,10 @@ static os9err int_debughalt( ushort pid, int argc, char** argv )
                                 
                 case 'n' :  k++; /* next arg */
                                 if (k>=argc) {triggername[0]=0; break; }
-                                strncpy(triggername,argv[k],TRIGNAMELEN);
+                                /* -1 and terminate, as os9main.c's copy of
+                                   this same option. */
+                                strncpy(triggername,argv[k],TRIGNAMELEN-1);
+                                triggername[TRIGNAMELEN-1]=0;
                                 break;
 
                 case 'q' :  return int_stop(pid, argc, argv);

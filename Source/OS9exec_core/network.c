@@ -531,7 +531,10 @@ os9err pNopen( _pid_, syspath_typ* spP, _modeP_, char* pathname)
       return E_UNKSVC;
     #endif
         
-    strncpy(spP->name,&pathname[1],OS9NAMELEN); /* assign the name */
+    /* -1 and terminate: spP->name is exactly OS9NAMELEN, so a name that long
+       left it unterminated for every later strcmp on it. */
+    strncpy(spP->name,&pathname[1],OS9NAMELEN-1); /* assign the name */
+            spP->name[             OS9NAMELEN-1 ]= NUL;
     err= NetInstall(); if (err) return err;
     
     /* not yet bound, install the struct */

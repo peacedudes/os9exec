@@ -1213,10 +1213,16 @@ static os9err RootLSN( _pid_, rbfdev_typ* dev, syspath_typ* spP, Boolean ignore 
 } /* RootLSN */
 
 static void CutPath( char* s )
+/* Reduce a path to its last element, in place. */
 {
   int  ii,len= strlen( s );
   for (ii=len-1; ii>=0; ii--) {
-     if (s[ii]==PSEP) { strcpy( s,&s[ii+1] ); break; }
+     /* memmove, not strcpy: source and destination are the SAME buffer, so the
+        regions overlap whenever the separator is not the first character --
+        undefined behaviour, and the second instance of it found in this sweep.
+        Only gcc-on-Linux reported it (-Wrestrict, and only at -O2); clang and
+        both mingw targets compiled it silently. */
+     if (s[ii]==PSEP) { memmove( s,&s[ii+1], (size_t)(len-ii) ); break; }
   } /* for */
 } /* CutPath */
 
@@ -2367,7 +2373,9 @@ os9err int_mount( ushort pid, int argc, char** argv )
                              p= argv[k];
                            } // if
 
-                           strncpy( devCopy, p, OS9PATHLEN );
+                           /* -1 and terminate: <p> is an argv string. */
+                           strncpy( devCopy, p, OS9PATHLEN-1 );
+                                    devCopy[  OS9PATHLEN-1 ]= NUL;
                            break;
 
                 case 'v' : if (*(p+1)=='=') p+=2;
@@ -3670,7 +3678,11 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     dirtable_entry* mP= NULL;
     #endif
 
-    strncpy ( tmp,name, OS9PATHLEN );
+    /* -1 and terminate: EatBack() and the root comparison below both walk
+       <tmp> as a C string, so an over-length pathname left it unterminated and
+       they ran off the end of the frame. */
+    strncpy ( tmp,name, OS9PATHLEN-1 );
+              tmp[      OS9PATHLEN-1 ]= NUL;
     pathname= tmp;
     EatBack ( tmp );  /* normalize /dev/. and /dev/./ to /dev before root check */
     debugprintf(dbgFiles,dbgNorm,("# RBF %s: '%s' (%s)\n" , co, pathname, fo ));

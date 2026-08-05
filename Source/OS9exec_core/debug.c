@@ -738,7 +738,14 @@ ushort debugwait( void )
             case 'q' : stop_os9exec(); /* --- and never come back */
                                            
             case 'n' : if (inp[1]>0x20) {
-                           strncpy(triggername,&inp[1],TRIGNAMELEN);
+                           /* TRIGNAMELEN-1 + explicit NUL: strncpy pads only
+                              when the source is SHORTER than the bound, so a
+                              long -n name left triggername unterminated and the
+                              strlen() below then walked off the end of it. The
+                              `inp[1]>0x20` guard above is also what keeps that
+                              strlen from being 0 and indexing [-1]. */
+                           strncpy(triggername,&inp[1],TRIGNAMELEN-1);
+                                   triggername[TRIGNAMELEN-1]=0;
                                    triggername[strlen(triggername)-1]=0; /* cut CR away */
                        }
                        else triggername[0]=0;
