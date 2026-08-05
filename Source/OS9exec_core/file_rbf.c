@@ -3098,7 +3098,13 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     Boolean     done= false;               // break condition for readln 
     Boolean     rOK = (remain==0);         // is true, if nothing to read
     Boolean     first= true;
-    Boolean     mlt, mltFirst;
+    /* mltFirst=false: it IS set before the read at the bottom of this loop
+       (`if (first)` a few lines above it, and `first` starts true), but that
+       is a correlation across a long body with several early exits -- gcc on
+       32-bit gives up on it, and so would anyone inserting a `continue`
+       between the two. This is the RBF read/write path; an undefined value
+       here would pick sector-cache behaviour at random. */
+    Boolean     mlt, mltFirst= false;
     ulong       n, n0, d;
     byte*       b;
     

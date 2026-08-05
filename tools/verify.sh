@@ -42,7 +42,10 @@ PASSES=(); FAILS=(); SKIPS=()
 # actual output is a summary nobody trusts.
 stage() {
     local name="$1"; shift
-    local log; log=$(mktemp "/tmp/verify-XXXXXX.log")
+    # mktemp needs its X's at the END of the template on BSD/macOS -- with a
+    # suffix after them the name is taken LITERALLY, so every stage shared one
+    # file and a failure pointed at the wrong log. Found by reading it.
+    local log; log=$(mktemp "/tmp/verify-XXXXXX")
     printf '  %-46s ' "$name"
     if "$@" >"$log" 2>&1; then
         printf 'ok\n'

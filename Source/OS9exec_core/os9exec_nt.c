@@ -2086,7 +2086,10 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
   ulong        my_tick;
   ulong        lastspin= GetSystemTick();
 
-  ushort       spid;          // will be assigned before use
+  // Zeroed rather than trusting the comment. Both this and <sigp> below are
+  // assigned together under `cwti` and read together under `cwti`, which is
+  // correct but is a correlation gcc cannot follow across the loop body.
+  ushort       spid= 0;       // assigned under cwti, read under cwti
 
   /* Start the optional system tick here rather than when -q is parsed: by now
    * start-up is done and there is something to pre-empt. Harmless to reach
@@ -2095,7 +2098,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
   ushort       svd_intpid= 0; // by default, we are not called from intutil
   ulong        resL;          // llm_os9_go result
   Boolean      last_arbitrate;
-  process_typ* sigp;
+  process_typ* sigp= NULL;    // see <spid> above
   
   // If call is coming from within intUtil, one loop thru all (active) processes
   // will be done. Exit criteria is the cp->isIntUtil call, which should be reached after
@@ -2382,7 +2385,10 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
             }
         }
 
-        if (cwti && cp->icpt_signal!=S_Wake && sigp->state!=pDead) {
+        // sigp!=NULL is belt to the cwti braces: this block DEREFERENCES it,
+        // so if the pairing with cwti is ever broken the failure should be a
+        // quiet no-op here rather than a write through a wild pointer.
+        if (cwti && sigp!=NULL && cp->icpt_signal!=S_Wake && sigp->state!=pDead) {
           sigp->masklevel   = 1;               // not interrupteable during intercept		
           sigp->os9regs.d[1]= cp->icpt_signal; // get signal code at icpt routine
           sigp->rtevector   = sigp->vector;

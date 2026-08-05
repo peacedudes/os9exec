@@ -292,7 +292,10 @@ void show_mem( ushort npid, Boolean mem_unused, Boolean mem_fulldisp )
     #ifdef REUSE_MEM
       #define UpL 0xffffffff
       void *nx, *nxMin;
-      ulong nxSiz, svSiz;
+      /* Both zeroed: they are assigned late in the loop and read on the NEXT
+         pass, guarded by `nx!=NULL` -- true today, and not something to have
+         to re-derive from the loop shape. */
+      ulong nxSiz= 0, svSiz= 0;
       memblock_typ* f;
       int diff, i;
     #endif
