@@ -313,6 +313,12 @@ WARNDIR := /tmp/os9exec-warnings-$(shell echo $$$$)
 # warnings, two of them real overlapping-strcpy bugs. A sweep that cannot see
 # the shipping build is a sweep that cannot fail.
 #
+# EVERY leg builds into WARNDIR, the host one included. It did not: the host
+# leg used the default OBJDIR/EXE, so a sweep quietly replaced ./os9exec in the
+# repo root -- and once this target started sweeping `prod`, that swapped the
+# dogfooded binary from a -g debug build to an optimised one, losing the
+# symbols `lldb bt` needs. A checking target must not modify what it checks.
+#
 # The linux leg is pinned to --platform linux/amd64. Unpinned, whatever gcc:13
 # happens to be cached locally is used: on this machine that was a ppc64le
 # image running under QEMU, so the leg named "linux" was compiling for
@@ -320,8 +326,12 @@ WARNDIR := /tmp/os9exec-warnings-$(shell echo $$$$)
 warnings:
 	@mkdir -p $(WARNDIR)
 	@echo "=== host ($(CC)) ==="
-	@$(MAKE) -B --no-print-directory prod >$(WARNDIR)/host.log 2>&1 \
+	@$(MAKE) -B --no-print-directory prod \
+	  OBJDIR=$(WARNDIR)/host EXE=$(WARNDIR)/host/os9exec \
+	  >$(WARNDIR)/host.log 2>&1 \
 	  || echo "  BUILD FAILED -- see $(WARNDIR)/host.log"
+	@test -x $(WARNDIR)/host/os9exec \
+	  || echo "  NOT BUILT -- no host binary produced; the score below means nothing"
 	@$(TALLY) $(WARNDIR)/host.log
 	@echo "=== linux (gcc, in docker) ==="
 	@docker run --rm --platform linux/amd64 -v "$(CURDIR)/Source:/src/Source:ro" -v "$(CURDIR)/GNUmakefile:/src/GNUmakefile:ro" \
