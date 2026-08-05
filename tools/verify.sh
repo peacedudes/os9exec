@@ -62,6 +62,7 @@ echo
 
 echo "-- build and static checks"
 stage "native build (warning-free)"      make -B
+stage "build the self-contained disk"     tools/selfhost68k/build-image.sh
 stage "warning sweep, 4 toolchains, -O2" tools/verify-warnings.sh
 
 echo "-- the emulator, on this machine"
@@ -71,6 +72,7 @@ stage "CONF68K, host-native directory"   tools/conformance.sh 68k
 stage "CONF68K, real RBF image"          tools/conformance.sh 68k --noshell --rbf
 stage "live-verification corpus"         make live-verify
 stage "RBF integrity hammer (gate)"      make hammer
+stage "self-contained CONF68K disk"      tools/selfhost68k/verify-image.sh
 
 if [ "$want_docker" = yes ]; then
     echo "-- other operating systems"

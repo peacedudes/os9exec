@@ -98,7 +98,7 @@ UAE_SUPPRESS = -Wno-unused-variable -Wno-unused-but-set-variable \
 
 VPATH = $(CORE):$(PLAT):Source/OS9execMPW:$(APPEMU):$(UAE)
 
-.PHONY: all prod clean test test-notick test-linux warnings hammer hammer-soak hammer-6809 conformance verify verify-vms
+.PHONY: all prod clean test test-notick test-linux warnings hammer hammer-soak hammer-6809 conformance verify verify-vms verify-quick selfhost68k selfhost68k-verify
 
 all: $(OBJDIR) $(EXE)
 
@@ -229,6 +229,16 @@ selfhost-6809:
 # and gcc-on-Linux warns about things clang and mingw-gcc both miss. The first
 # run of this target found os9exec spinning forever on every file read, because
 # `char c = fgetc(...)` could never equal EOF where char is unsigned.
+# The self-contained CONF68K disk: one RBF image carrying the whole suite,
+# mountable on real OS-9/68000 hardware. Mirrors tools/selfhost6809 for the
+# 6809 side. `selfhost68k-verify` proves every file landed byte for byte AND
+# that all 44 tests run off the image.
+selfhost68k:
+	@tools/selfhost68k/build-image.sh
+
+selfhost68k-verify: selfhost68k
+	@tools/selfhost68k/verify-image.sh
+
 # One button. Every gate, one verdict, non-zero exit if any of them failed.
 #   make verify        host + docker
 #   make verify-vms    ... and the real UTM machines
