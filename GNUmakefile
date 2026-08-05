@@ -98,7 +98,7 @@ UAE_SUPPRESS = -Wno-unused-variable -Wno-unused-but-set-variable \
 
 VPATH = $(CORE):$(PLAT):Source/OS9execMPW:$(APPEMU):$(UAE)
 
-.PHONY: all prod clean test test-notick test-linux warnings hammer hammer-soak hammer-6809 conformance
+.PHONY: all prod clean test test-notick test-linux warnings hammer hammer-soak hammer-6809 conformance verify verify-vms
 
 all: $(OBJDIR) $(EXE)
 
@@ -229,6 +229,19 @@ selfhost-6809:
 # and gcc-on-Linux warns about things clang and mingw-gcc both miss. The first
 # run of this target found os9exec spinning forever on every file read, because
 # `char c = fgetc(...)` could never equal EOF where char is unsigned.
+# One button. Every gate, one verdict, non-zero exit if any of them failed.
+#   make verify        host + docker
+#   make verify-vms    ... and the real UTM machines
+#   make verify-quick  host only
+verify:
+	@tools/verify.sh
+
+verify-vms:
+	@tools/verify.sh --vms
+
+verify-quick:
+	@tools/verify.sh --quick
+
 test-linux:
 	docker build -f docker/Dockerfile -t os9exec:linux .
 	DOCKER_IMAGE=os9exec:linux swift run --package-path test OS9Tests
