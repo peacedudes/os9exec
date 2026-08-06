@@ -32,7 +32,7 @@ rm -rf "$work"; mkdir -p "$work" "$crashes"
 
 # A real, freshly formatted image to mutate. mount -k writes it relative to cwd.
 rm -f "$repo/hf"
-printf 'mount -k=500K /hf\n\033\n' | OS9DISK="$repo/h0" ./os9exec -r shell >/dev/null 2>&1
+printf 'mount -k=500K /hf\n\033\n' | OS9DISK="${OS9DISK:-}" ./os9exec -r shell >/dev/null 2>&1
 [ -s "$repo/hf" ] || { echo "could not create a seed image"; exit 1; }
 cp "$repo/hf" "$seed"
 echo "seed: $(wc -c <"$seed") bytes"
@@ -57,7 +57,7 @@ PY
 
     # A corrupt image must be REJECTED, not crash the emulator and not hang.
     out=$(printf 'mount /hf\ndir /hf\nfree /hf\ndcheck /hf\n\033\n' \
-          | OS9DISK="$repo/h0" ./os9exec -r shell 2>&1)
+          | OS9DISK="${OS9DISK:-}" ./os9exec -r shell 2>&1)
     rc=$?
 
     # Signals (>=128) and any sanitizer report are real findings. An OS-9 level

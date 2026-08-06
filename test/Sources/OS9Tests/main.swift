@@ -45,9 +45,25 @@ let repoRoot = URL(fileURLWithPath: #filePath)
 
 let execURL  = repoRoot.appendingPathComponent("os9exec")
 
-// Primary test disk: the repo-root h0 (SDK toolchain) dir, mounted as /dd.
-// Same h0 the emulator itself already uses -- no test/-local symlink needed.
-let diskPath = repoRoot.appendingPathComponent("h0").path
+// Primary test disk, mounted as /dd: whatever the OPERATOR pointed OS9DISK at.
+// NOT a repo-relative guess. There are two system disks in play -- a licensed
+// one and a freeware one -- and each has to stand alone, carrying its own
+// termcap and SYS/errmsg; so nothing here may assume which is mounted, or that
+// either lives beside the checkout. Unset is a clear failure rather than a
+// fallback: silently testing somebody else's disk is worse than not running.
+let diskPath: String = {
+    guard let d = ProcessInfo.processInfo.environment["OS9DISK"], !d.isEmpty else {
+        FileHandle.standardError.write(Data(
+            "OS9DISK is not set -- point it at an OS-9 system disk, e.g.\n  OS9DISK=$HOME/Developer/os9/play/oskBoot make test\n".utf8))
+        exit(2)
+    }
+    guard FileManager.default.fileExists(atPath: d + "/CMDS") else {
+        FileHandle.standardError.write(Data(
+            "OS9DISK=\(d) has no CMDS/ -- that is not an OS-9 system disk\n".utf8))
+        exit(2)
+    }
+    return d
+}()
 
 // Per-run scratch device, mounted as /h5: every fixture this suite creates
 // lives here, never on the system disk. h0 IS the OS-9 system image -- the SDK
@@ -277,7 +293,7 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
         process.arguments = ["container", "run"] + containerRunArgs + callerEnvArgs
                           + [image] + speedFlag + ["shell"]
     } else {
-        // Run locally: OS9DISK points straight at the repo-root h0 dir.
+        // Run locally: OS9DISK points straight at the operator's system disk.
         process.executableURL = execURL
         process.arguments    = speedFlag + [shellArg]
         // OS9H5 gets the PHYSICALLY RESOLVED scratch path, not scratchDisk's own
@@ -751,7 +767,10 @@ check("chd: dir with no args lists dir", contains: "echo",
 // working, so the emulator still booted. Only meaningful for a local run: a
 // container mounts its disk at /dd directly, with no OS9DISK path to dot.
 if dockerImage == nil, containerImage == nil {
-    let dottedDisk = repoRoot.path + "/./h0"
+    // Same disk, spelled with an uncollapsed "/./" in the middle: <parent>/./<name>.
+    // Built from OS9DISK rather than the repo root, but the shape is the point.
+    let dottedDisk = (diskPath as NSString).deletingLastPathComponent
+                   + "/./" + (diskPath as NSString).lastPathComponent
 
     check("dotted OS9DISK: subdir is not clamped to root", contains: "errmsg",
           disk: dottedDisk, "dir /dd/SYS")

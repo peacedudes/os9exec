@@ -45,7 +45,7 @@ seed=$work/seed
 
 rm -rf "$work"; mkdir -p "$mdir" "$crashes"
 
-cp "$repo/h0/CMDS/free" "$seed" || { echo "no seed module"; exit 1; }
+cp "${OS9DISK:-}/CMDS/free" "$seed" || { echo "no seed module -- set OS9DISK"; exit 1; }
 echo "seed: $(wc -c <"$seed") bytes (h0/CMDS/free)"
 
 found=0
@@ -128,7 +128,7 @@ PY
     [ "$off" = "skip" ] && continue
 
     out=$(printf 'load fuzzmod\n\033\n' \
-          | OS9MDIR="$mdir" OS9DISK="$repo/h0" ./os9exec -r shell 2>&1)
+          | OS9MDIR="$mdir" OS9DISK="${OS9DISK:-}" ./os9exec -r shell 2>&1)
     rc=$?
 
     if [ "$rc" -ge 128 ] || printf '%s' "$out" | grep -q "Sanitizer"; then

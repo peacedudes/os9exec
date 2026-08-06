@@ -8,7 +8,7 @@ IMGDIR="$OUT/dev"           # os9exec startPath: the image appears here as h7
 ACCT=${CONF_ACCT:-claude}   # non-super account in h0/SYS/password (1.7)
 
 rm -rf "$OUT"; mkdir -p "$STAGE" "$IMGDIR" "$STAGE/CMDS" "$STAGE/SRC" "$STAGE/SCRATCH"
-ln -s "$REPO/h0" "$IMGDIR/h0"
+ln -s "${OS9DISK:?set OS9DISK to the system disk}" "$IMGDIR/h0"
 ln -s "$STAGE"   "$IMGDIR/h1"
 
 # t05fna's fixture: a file that exists but that t05fna must not be able to

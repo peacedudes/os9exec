@@ -141,10 +141,14 @@ compare() {
 
 # ------------------------------------------------------------------ 68k arm
 
+# The system disk is whatever the OPERATOR pointed OS9DISK at -- never a
+# guess about repository layout. Both the licensed disk and the freeware disk
+# have to stand alone (each carries its own termcap, SYS/errmsg and the rest),
+# so nothing here may assume WHICH one it is holding.
 os9exec_shell() {   # feed stdin to a throwaway os9exec shell
     local extra_h8="$1"; shift
     (cd "${1:-$REPO}" && $TIMEOUT 300 env OS9STOP=1 \
-        OS9DISK="$REPO/h0" OS9H8="$extra_h8" "$REPO/os9exec" -r /dd/CMDS/shell 2>&1) \
+        OS9DISK="${OS9DISK:-}" OS9H8="$extra_h8" "$REPO/os9exec" -r /dd/CMDS/shell 2>&1) \
         | tr '\r' '\n'
 }
 
@@ -368,11 +372,12 @@ done
 overall=0
 case "$which" in
     68k)  [ "$do_build" = yes ] && { build_68k "$REPO/test/68k-conformance" || exit 1; }
-          # No h0 means no Microware shell to run runall with. Fall back
-          # rather than fail: a fresh clone has no system disk, and the
-          # suite does not actually need one.
-          if [ ! -d "$REPO/h0/CMDS" ] && [ "$no_shell" = no ]; then
-              echo "note: no h0/CMDS system disk found -- using --noshell"
+          # No system disk means no Microware shell to run runall with. Fall
+          # back rather than fail: a fresh clone has none, and the suite does
+          # not actually need one. Degrading beats guessing a path -- a wrong
+          # guess would silently test somebody else's disk.
+          if [ ! -d "${OS9DISK:-}/CMDS" ] && [ "$no_shell" = no ]; then
+              echo "note: no OS9DISK system disk found -- using --noshell"
               no_shell=yes
           fi
           if [ "$no_shell" = yes ]; then run_68k_noshell "$use_rbf" || overall=1

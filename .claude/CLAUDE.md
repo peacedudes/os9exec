@@ -7,14 +7,26 @@ file is what you need to be useful in the first five minutes.
 ## Getting running
 
 ```sh
+export OS9DISK=$HOME/Developer/os9/play/oskBoot   # the OS-9 system disk
 make                      # build ./os9exec (warning-clean, or it is a bug)
-make test                 # the integration suite -- expect 148/0, ~1 min
-OS9DISK=$PWD/h0 ./os9exec shell     # a live OS-9 shell
+make test                 # the integration suite -- expect 192/0, ~1 min
+./os9exec shell           # a live OS-9 shell
 ```
 
-`h0/` is the OS-9 system disk (a symlink to `../os9/h0`): the SDK toolchain in
-`CMDS/`, headers in `DEFS/`, `startup`. **Inside OS-9 the boot disk is `/dd`.**
-Refer to it that way; `/h0` exists only to prove default device naming resolves.
+**`OS9DISK` names the system disk, and there is no `h0` in this repo.** The
+symlinks that used to sit here are gone: there are two system disks in play --
+a licensed one and the freeware one -- each has to stand alone (its own
+`termcap`, `SYS/errmsg`, the works), and **freeware must be `/h0` for
+historical reasons** (its `GAMES` and termcap expect that name). Nothing in
+the tree may assume which disk is mounted, so everything reads `$OS9DISK`.
+
+The rule, in one line: **host side names the disk with `$OS9DISK`; guest side
+says `/dd`.** A repo-relative path is neither, and is what was removed.
+
+Unset is handled honestly rather than guessed: `tools/conformance.sh` drops to
+`--noshell` (which needs no system disk at all) and says so; the Swift harness
+refuses with the line to type. Silently testing the wrong disk would be worse
+than not running.
 
 **Do not write to the system disk.** The suite writes everything to a per-run
 scratch device (`/h5` -> a private temp dir, plus the emulator's working

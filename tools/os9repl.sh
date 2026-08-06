@@ -136,13 +136,14 @@ cmd_start() {
     # (`cc: cannot execute the pre-processor`) but isn't one -- the fix is
     # more preloading, not chx surgery. If something you need still isn't
     # preloaded, add it to /dd/startup's `load` lines, don't patch chx.
-    # OS9DISK mounts $REPO/h0 as /dd, and /dd is what the boot disk IS inside
-    # OS-9 -- so every path here says /dd. It used to say /h0/startup, which
-    # worked only because os9exec ALSO maps an h0 directory sitting beside the
-    # binary to /h0: the same directory was mounted twice and the boot line
-    # depended on the working directory being $REPO. From anywhere else
-    # /h0/startup is "can't open" while /dd/startup is still right.
-    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9STOP=1 OS9DISK='$REPO/h0' ./os9exec $EXTRA_ARGS shell /dd/startup"
+    # OS9DISK names the system disk on the HOST side; /dd is what that disk
+    # IS inside OS-9 -- so every path below says /dd. It used to say
+    # /h0/startup, which worked only because os9exec ALSO maps an h0 directory
+    # sitting beside the binary to /h0: the same directory was mounted twice
+    # and the boot line depended on the working directory being $REPO. From
+    # anywhere else /h0/startup is "can't open" while /dd/startup is right.
+    # The disk itself is the operator's choice, never a repo-relative guess.
+    tmux new-session -d -s "$SESSION" -c "$REPO" -x 220 -y 60 "OS9STOP=1 OS9DISK='$OS9DISK' ./os9exec $EXTRA_ARGS shell /dd/startup"
     printf '[starting os9exec...]\n'
     # startup ends in `tsmon /term`, which waits for a keypress before
     # showing `User name?:` -- wait for that banner, then send one.

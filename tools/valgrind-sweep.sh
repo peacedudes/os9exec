@@ -38,7 +38,7 @@ run_scenario() {
     # in-container `timeout` is a second belt: without it, one wedged scenario
     # stalls the whole sweep with no output and nothing to look at.
     { printf '%s\n' "$@"; printf '\033\n'; } | docker run --rm -i \
-        -v "$repo/h0:/dd" \
+        -v "${OS9DISK:?set OS9DISK to the system disk}:/dd" \
         --entrypoint sh \
         "$image" -c '
             timeout 300 valgrind \
