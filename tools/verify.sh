@@ -34,6 +34,36 @@ for a in "$@"; do
     esac
 done
 
+# The system disk is REQUIRED, and this refuses rather than degrading.
+#
+# Individual stages cope with it missing -- conformance.sh drops to --noshell,
+# the Swift harnesses print the line to type -- and that is right for them.
+# It is wrong for THIS: verify is the gate, and a gate that quietly checks less
+# and still prints "all gates green" is a gate that cannot fail. That is the
+# same defect as a warning sweep run at -O0 while -O2 ships, and as a CI leg
+# that had never once passed; both were found in this repo the same week.
+#
+# If you genuinely have no system disk, run the pieces directly -- they will
+# tell you honestly what they could and could not do.
+if [ -z "${OS9DISK:-}" ]; then
+    cat >&2 <<'EOM'
+verify: OS9DISK is not set.
+
+  It names the OS-9 system disk on the HOST side (inside OS-9 it is /dd).
+  Several gates cannot run without one, and a partial pass reported as a
+  clean one would be worse than not running at all.
+
+      export OS9DISK=$HOME/Developer/os9/play/oskBoot
+      make verify
+
+EOM
+    exit 2
+fi
+if [ ! -d "$OS9DISK/CMDS" ]; then
+    echo "verify: OS9DISK=$OS9DISK has no CMDS/ -- that is not an OS-9 system disk" >&2
+    exit 2
+fi
+
 PASSES=(); FAILS=(); SKIPS=()
 
 # stage <name> <command...>
