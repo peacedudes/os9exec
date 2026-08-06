@@ -65,7 +65,28 @@ Write-Output ("ERROR=" + ($res | Where-Object {$_ -match " ERROR "}).Count)
 $res | Where-Object {$_ -match " FAIL | ERROR "}' 2>/dev/null | tr -d '\r')
 
 echo "$out"
-[ "$started_here" = yes ] && utmctl stop $VM >/dev/null 2>&1
+# Shut the guest down FROM INSIDE, and never force it.
+#
+# `utmctl stop` defaults to --force, which is a power-off event -- pulling the
+# plug on a running Windows. Doing that after every run corrupted this VM's
+# boot volume on 2026-08-06 ("Your device ran into a problem and couldn't be
+# repaired"). A test harness must not be able to damage the machine it tests.
+#
+# So: ask Windows to shut itself down, wait for sshd to go quiet, and if it is
+# still up after that, LEAVE IT RUNNING. A VM left on is a nuisance; a VM
+# left broken is somebody's evening.
+if [ "$started_here" = yes ]; then
+    $SSH "shutdown /s /t 0" >/dev/null 2>&1
+    for _ in $(seq 1 18); do
+        $SSH "echo up" >/dev/null 2>&1 || break
+        sleep 5
+    done
+    if $SSH "echo up" >/dev/null 2>&1; then
+        echo "note: $VM did not shut down; leaving it running rather than forcing it" >&2
+    else
+        utmctl stop --request $VM >/dev/null 2>&1   # ACPI, in case it lingers
+    fi
+fi
 
 total=$(sed -n 's/^TOTAL=//p' <<<"$out"); fail=$(sed -n 's/^FAIL=//p' <<<"$out")
 err=$(sed -n 's/^ERROR=//p'  <<<"$out")
