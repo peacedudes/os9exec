@@ -14,7 +14,7 @@ set -e
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 OS9EXEC="$REPO/os9exec"
-DISK="$REPO/h0"
+DISK="${OS9DISK:?set OS9DISK to an OS-9 system disk}"
 SRC="$(dirname "$0")/getwd-dirfd.a"
 SCR=$(mktemp -d)
 trap 'rm -rf "$SCR"' EXIT

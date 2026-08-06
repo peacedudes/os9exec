@@ -44,7 +44,18 @@ public protocol Adapter {
 /// Runs scenarios against the locally built os9exec binary.
 public struct Adapter68k: Adapter {
 
-    /// Repository root, containing `os9exec` and `h0`.
+    /// The OS-9 system disk, from `OS9DISK`. Never a repository-relative
+    /// path: two disks exist (licensed and freeware), each stands alone, and
+    /// nothing may assume which one is mounted.
+    static var systemDisk: String {
+        guard let d = ProcessInfo.processInfo.environment["OS9DISK"], !d.isEmpty else {
+            FileHandle.standardError.write(Data("OS9DISK is not set\n".utf8))
+            exit(2)
+        }
+        return d
+    }
+
+    /// Repository root, containing `os9exec`.
     private let repoRoot: URL
 
     /// The hammer worker template.
@@ -93,9 +104,10 @@ public struct Adapter68k: Adapter {
             .appendingPathComponent("rbfhammer-\(ProcessInfo.processInfo.processIdentifier)"
                                   + "-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        // The /h0 alias points at whatever disk OS9DISK names -- see systemDisk.
         try? FileManager.default.createSymbolicLink(
             atPath: scratch.appendingPathComponent("h0").path,
-            withDestinationPath: repoRoot.appendingPathComponent("h0").path)
+            withDestinationPath: Adapter68k.systemDisk)
         return scratch
     }
 
@@ -158,7 +170,7 @@ public struct Adapter68k: Adapter {
         process.currentDirectoryURL = scratch
         process.arguments = (scenario.tick == .disabled ? ["-q"] : []) + ["-r", "shell"]
         process.environment = [
-            "OS9DISK": repoRoot.appendingPathComponent("h0").path,
+            "OS9DISK": Adapter68k.systemDisk,
             "OS9H5": scratch.path
         ]
 

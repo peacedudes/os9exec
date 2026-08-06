@@ -16,7 +16,7 @@ set -e
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 OS9EXEC="$REPO/os9exec"
-DISK="$REPO/h0"
+DISK="${OS9DISK:?set OS9DISK to an OS-9 system disk}"
 SCR=$(mktemp -d)
 trap 'rm -rf "$SCR"' EXIT
 TIMEOUT=$(command -v gtimeout || command -v timeout)

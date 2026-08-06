@@ -45,10 +45,17 @@ public struct OS9Runner {
     private let execURL: URL
     private let diskPath: String
 
-    /// - Parameter repoRoot: directory containing `os9exec` and `h0`.
+    /// - Parameter repoRoot: directory containing `os9exec`.
+    ///
+    /// The system disk comes from `OS9DISK`, never from the repository: there
+    /// are two of them (a licensed disk and the freeware disk), each standing
+    /// alone, and nothing here may assume which is mounted.
     public init(repoRoot: URL) throws {
         execURL = repoRoot.appendingPathComponent("os9exec")
-        diskPath = repoRoot.appendingPathComponent("h0").path
+        guard let disk = ProcessInfo.processInfo.environment["OS9DISK"], !disk.isEmpty else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        diskPath = disk
         guard FileManager.default.isExecutableFile(atPath: execURL.path) else {
             throw CocoaError(.fileNoSuchFile)
         }
