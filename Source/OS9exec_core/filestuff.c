@@ -641,6 +641,29 @@ void TwoCharDev( char* p, char** p3, char* tmp )
             strncpy( tmp,*p3, OS9PATHLEN-1 );
                      tmp[     OS9PATHLEN-1 ]= NUL;
         }
+
+        /* Backslashes to forward, on a Windows host only, BEFORE the collapse
+           below -- and for the same reason the collapse is here: this is the
+           single point where every device root is produced, and every path
+           later compared against a root is '/'-separated. A root that kept its
+           backslashes matched nothing, and the confinement clamp then rewrote
+           every path to the root itself: `OS9DISK=C:\dir` gave E$PNNF for every
+           module, while `OS9DISK=C:/dir` worked. Backslash is what a Windows
+           user types, so that was the emulator failing to see the disk at all,
+           on the first thing anybody would try. Measured on the Windows ARM64
+           VM 2026-08-06.
+
+           Windows-only on purpose: on Unix a backslash is a legal character IN
+           a filename, and folding it here would corrupt real paths. The mingw
+           build does not define `windows32` (deliberately -- see the
+           `!defined MINGW` exclusion in os9main_incl_precomp.h), which is why
+           this cannot be keyed on PATHDELIM. */
+        #if defined MINGW || defined windows32
+        {   char* bs;
+            for (bs=tmp; *bs!=NUL; bs++) if (*bs=='\\') *bs= PSEP;
+        }
+        #endif
+
         CutUp( tmp,"/." );
         *p3= tmp;
     }

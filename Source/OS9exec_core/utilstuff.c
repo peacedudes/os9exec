@@ -2086,6 +2086,24 @@ uint32_t My_FD( const char* pathname )
   return fd;
 } /* My_FD */
 
+/* Is <c> a path separator on the HOST?
+ *
+ * On Windows BOTH slashes are, and PATHDELIM alone is not enough to say so:
+ * the mingw build deliberately does NOT define `windows32` (see the
+ * `!defined MINGW` exclusion in os9main_incl_precomp.h), so PATHDELIM there
+ * is '/', not '\\'. That left MakeOS9Path recognising "C:/dir" and not
+ * "C:\\dir" -- so OS9DISK spelled the way every Windows user spells it
+ * produced "/C:\\dir", which matches no device root, and every single module
+ * came back E$PNNF. Measured on the Windows ARM64 VM 2026-08-06.
+ *
+ * Kept to Windows on purpose: on Unix a backslash is a legal character IN a
+ * filename, and treating it as a separator there would corrupt real paths. */
+#if defined MINGW || defined windows32
+  #define IS_HOST_SEP(c)  ((c)==PATHDELIM || (c)=='\\')
+#else
+  #define IS_HOST_SEP(c)  ((c)==PATHDELIM)
+#endif
+
 void MakeOS9Path( char* pathname )
 {
   char  tmp[OS9PATHLEN];
@@ -2094,7 +2112,7 @@ void MakeOS9Path( char* pathname )
     
   if (*q!=PSEP) {
     if (q[ 1 ]==':' &&
-       (q[ 2 ]==PATHDELIM ||
+       (IS_HOST_SEP( q[ 2 ] ) ||
         q[ 2 ]=='\0')) {   /* windows */
         q[ 1 ]= q[ 0 ];    /* adapt it OS-9-like, same length */
         q[ 0 ]= PSEP;
@@ -2108,7 +2126,7 @@ void MakeOS9Path( char* pathname )
   strcpy( &tmp[ i ],q ); q= tmp;
             
   while  (*q!=NUL) { /* replace slashes */
-    if (*q==PATHDELIM) *q= PSEP;
+    if (IS_HOST_SEP( *q )) *q= PSEP;
     q++;
   } /* while */
     
