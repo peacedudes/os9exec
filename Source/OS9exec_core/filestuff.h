@@ -159,7 +159,8 @@ Boolean ConsGetc        ( char *c );
 void    ConsPutc        ( char  c );
 void    ConsPutcEdit    ( char  c, Boolean alf, char eorch );
 
-/* baud pacing (docs/superpowers/specs/2026-07-10-baud-fifo-pacing-design.md) */
+/* baud pacing: paces output to an emulated line rate, so a fast host does
+ * not outrun what a real serial terminal could have displayed. */
 void  baud_drain_due   ( void );          /* pop+display whatever is ready right now, cheap no-op if nothing queued */
 void  baud_flush_device( short term_id ); /* discard queued output for one device (Ctrl-C/E, kill) */
 ulong baud_next_wake_delay_us( void );    /* microseconds until baud_drain_due() has work, or ULONG_MAX if none */

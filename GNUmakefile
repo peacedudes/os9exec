@@ -181,9 +181,8 @@ conformance: $(EXE)
 	./tools/conformance.sh 68k --rbf
 
 # Wraps the 68k live-verification corpus (test/68k-live-verification/) into
-# a runnable PASS/FAIL suite -- see docs/superpowers/specs/
-# 2026-07-21-live-verification-suite-design.md. 6809 is deliberately not
-# wired in here (see that design doc's "6809 is deferred" section).
+# a runnable PASS/FAIL suite. 6809 is deliberately not wired in here: its
+# corpus needs a live NitrOS-9 under XRoar, not a self-contained host run.
 live-verify: $(EXE)
 	swift run --package-path test LiveVerify
 
@@ -217,7 +216,7 @@ hammer-6809:
 
 # Self-hosted OS-9/6809 conformance suite: builds a small RBF image
 # (build/selfhost6809/conf6809.dsk) that anyone with real 6809 hardware can
-# mount and run. See .superpowers/sdd/2026-07-25-6809-selfhosted-conformance-suite/.
+# mount and run on real hardware, with no host emulator involved.
 selfhost-6809:
 	./tools/selfhost6809/build-image.sh
 	./tools/selfhost6809/verify-image.sh build/selfhost6809/conf6809.dsk

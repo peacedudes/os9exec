@@ -3613,8 +3613,7 @@ if runHostWildcardStrict {
 // baud_drain_due (consio.c) drains every paced device's FIFO from the
 // scheduler, not from an fmgr entry point -- there is no ambient
 // gConsoleID for it to inherit the way pConsIn/pConsInLn/ConsoleOut/pCready/
-// pCclose do (see docs/superpowers/plans/2026-07-29-conspuctto-explicit-
-// destination.md, "Why, precisely"). Two devices with live backlogs at once
+// pCclose do. Two devices with live backlogs at once
 // is exactly the shape that could leak one device's bytes onto the other's
 // pty if the drain used ConsPutc's ambient gConsoleID instead of naming its
 // destination explicitly.

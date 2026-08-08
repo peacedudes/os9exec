@@ -1,7 +1,6 @@
 # kermit end-to-end between two emulator instances (hostterm-pty Task 6)
 
-Acceptance test for `docs/superpowers/plans/2026-07-29-hostterm-pty.md`,
-Task 6, run against commit `3e53f26` ("Core: OS9Tn=pty allocates a
+Acceptance test for the hostterm-pty work, Task 6, run against commit `3e53f26` ("Core: OS9Tn=pty allocates a
 terminal and reports its device"), the tip of the six commits listed as
 done. Backs no skill claim directly; records a defect and two kermit
 usage facts that should be added to `os9-dev` (see "Skill feedback").

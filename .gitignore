@@ -64,3 +64,13 @@ dd
 # revision. Build it, don't version it.
 /release/dd
 /release/*.rbf
+
+# Working material, not product. These are our notes, process and tooling; they
+# are kept locally but not published -- the repo goes to GitHub and to the
+# upstream SourceForge project, and nobody downloading os9exec needs our
+# scaffolding. The docs/superpowers cards in particular are reading notes taken
+# from copyrighted OS-9 manuals (the Guru, Insights, Microware TRMs), which are
+# not GPL and are not ours to redistribute.
+.claude/
+docs/superpowers/
+tools/audit-patterns.py
