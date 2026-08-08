@@ -2,7 +2,13 @@
 
 Run real OS-9/68k binaries on a modern machine. OS9exec emulates the 68000 and the OS-9 kernel — a genuine OS-9 shell with pipes, redirection, job control, and a full filesystem.
 
-**Platforms:** macOS (arm64/Intel), Linux (64-bit/32-bit), Windows (native x86_64, ARM64 and x86, via mingw-w64/MSYS2/llvm-mingw), Docker.
+**Platforms:** macOS (arm64/Intel), Linux (64-bit/32-bit), Windows (native x86_64, ARM64 and x86, via mingw-w64/MSYS2/llvm-mingw), Docker. Also built and test-verified on riscv64 and on two big-endian hosts, s390x and sparc64.
+
+> ### This is an unofficial continuation — and we are looking for the authors
+>
+> OS9exec was written by **Lukas Zeller** and **Beat Forster**, who released it under the GPL and last published **V3.39 in 2007**. This repository continues that work because the project appears dormant; it is **not endorsed by them**, and any bug you find here is ours, not theirs.
+>
+> **We would rather hand this back than hold it.** If you are Lukas or Beat, or you know how to reach them, please open an issue or write to <robert@peacedudes.com>. If the original authors want this merged upstream, renamed, or stopped, that is their call and we will honour it.
 
 ---
 
@@ -54,7 +60,11 @@ Since the tagged `v0.0.0`, this branch fixes a large class of crashes, hangs, an
 - **Devices stay inside their root** — no path can climb out of `/dd` into the host filesystem.
 - **`OS9DISK` / `OS9Hx` paths containing `./` or `../` work** — they used to silently redirect every file access to the device root.
 
+**Inter-process signalling**
+- **`F$Event` now has a real event queue.** Waiters are held FIFO and woken by value, instead of the previous approximation — so `Ev$Wait`, `Ev$Signal` and `Ev$Pulse` behave as the manual describes when more than one process is waiting. **`Ev$Pulse`** (wake whoever qualifies right now, then restore the value) is implemented, and **`Ev$Delet` refuses to delete an event that is still linked** (`E$EvBusy`) rather than deleting it under its users. 13 of the 218 modules in a stock SDK `CMDS` call `F$Event`.
+
 **Windows**
+- **`OS9DISK` written with backslashes now works.** `OS9DISK=C:\os9\disk` found nothing at all — every path lookup failed and every test reported `E$PNNF` — because only forward slashes were ever translated. Backslashes are now normalised at the single point where a device root is produced, so the native spelling of a Windows path just works.
 - **Non-interactive runs no longer hang.** Piped stdin (scripts, CI, `echo cmds | os9exec shell`) went unread entirely — every non-interactive Windows run just sat there.
 - **Drive-letter paths (`C:/...`) no longer get corrupted** by the `../` path-collapse logic, which assumed every path starts with a `/` the way Unix paths do.
 - **A UAE-internal macro leak fixed for real:** the emulator core's own Amiga-disk-image attribute flags were shadowing the standard POSIX `stat()` bit names on MINGW, silently breaking both file-attribute reads and directory detection.
@@ -68,6 +78,8 @@ Since the tagged `v0.0.0`, this branch fixes a large class of crashes, hangs, an
 
 **More platforms**
 - **Native Windows** (mingw-w64) and **ARM / 32-bit Linux** now run. ARM Linux was completely broken — an unsigned-`char` assumption made every file read hang.
+- **Big-endian works, for the first time since the PowerPC era.** os9exec had only ever run where the OS-9 byte swaps are effectively no-ops. Bringing it up on **s390x** and **sparc64** exposed two real bugs: Linux was assumed little-endian outright, and the register-half macros hardcoded 32-bit offsets, so on a 64-bit big-endian host every syscall read its trap vector from the wrong 16 bits. Both fixed; the conformance suite now passes identically on little- and big-endian.
+- **Verified on the machines, not just cross-compiled.** The suite is run on real macOS, Linux and Windows, plus riscv64, s390x and sparc64 — same results on every one (31 pass / 13 skip host-native, 44/44 on an RBF image). All six build warning-free.
 
 ---
 
@@ -479,11 +491,14 @@ overrides.
 
 ## Credits
 
-Original OS9exec authors: Lukas Zeller, Beat Forster  
+**OS9exec was created by Lukas Zeller and Beat Forster**, 1993–2007, and is theirs. Everything below stands on their work.
+
 Original project: <http://www.synthesis.ch/os9exec>  
-Source repository: <https://sourceforge.net/p/os9exec/git_code/ci/master/tree/>  
-arm64 port and debug fix: Robert Doggett, with Claude Sonnet 4.6 (Anthropic)  
-License: GNU General Public License v2 (see source file headers)
+Their final release: **V3.39**, 11 May 2007 — archived at <https://sourceforge.net/projects/os9exec/> (historical; this fork does not publish there)  
+This continuation: <https://github.com/peacedudes/os9exec> — Robert Doggett, with Claude (Anthropic)  
+License: GNU General Public License v2 or later (see source file headers)
+
+Work in this fork: ports to Apple Silicon, modern Linux and native Windows; verification on riscv64 and on big-endian s390x and sparc64; a 68k conformance suite run against the published manuals; and fixes across the syscall surface, RBF record locking, terminal I/O and the scheduler. Roughly 800 commits on top of V3.39 — see [What's new](#whats-new).
 
 ### Reference
 
