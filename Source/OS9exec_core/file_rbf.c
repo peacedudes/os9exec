@@ -1704,6 +1704,7 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
     ushort       scsiSas   = 0;
     byte         scsiPDTyp = 0;
     
+    Boolean      imgIsHost= false; /* <imgpath> holds a resolved HOST path */
     Boolean      mock  = *mnt_name!=NUL;
     Boolean      fu    = spP->fullsearch;
     Boolean      fum   = fu && mock;
@@ -1826,6 +1827,7 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
                       GetOS9Dev( pathname, (char*)&cmp );
                       if (*cmp==NUL) strcpy( cmp,rbfname );
                       strcpy( imgpath,rbfhost );
+                      imgIsHost= true; /* a host path now -- see the IO_Type call */
 
                     #else
                       /* %%% some fixed devices defined currently */
@@ -1995,7 +1997,20 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
         
         if (IsSCSI(dev)) break; /* no more actions for SCSI */
             
-        type    = IO_Type( pid, imgpath, poRead );
+        /* <imgpath> is the HOST path GetRBFName resolved, so it must not be
+         * classified by IO_Type -- that parses its argument as an OS-9 path.
+         * The two spellings only agree by luck: "/deep/img" cannot be a device
+         * name so it survives the round trip, but a single-component "/zz" is
+         * exactly the shape of one, and parsepathext duly resolved it as device
+         * "zz" at <startPath>/zz -- a different file, usually absent. IO_Type
+         * then answered fNone and Open_Image failed E$MNF, which is why an
+         * image sitting DIRECTLY IN THE FILESYSTEM ROOT was unusable from any
+         * working directory while the same image one level down worked.
+         * GetRBFName has already established this is a readable file carrying a
+         * valid OS-9 identification sector, so fFile is what it is. The `mount`
+         * path (fu) leaves <imgpath> as the OS-9 path it was given, and still
+         * needs the lookup. */
+        type    = imgIsHost ? fFile : IO_Type( pid, imgpath, poRead );
         wProtect= mnt_wProtect;
 
         /* inherit write protection to sub device */

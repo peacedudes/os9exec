@@ -956,6 +956,82 @@ if !containerized {
     }
 }
 
+// An RBF image FILE sitting directly in the filesystem root must work, from any
+// working directory. It did not, and three separate root-directory blind spots
+// had to be cleared: AdjustPath's backward walk NUL'd the leading '/' (leaving
+// "" rather than "/", so the root was never tried as an anchor), CaseSens split
+// a top-level component the same way and called opendir(""), and DeviceInit
+// classified the resolved HOST path with IO_Type, which re-parses its argument
+// as an OS-9 path -- harmless for "/deep/img" but not for a single-component
+// path, which is exactly the shape of a device name.
+//
+// Not a container-only curiosity: `docker run -v disk.img:/dd` is the shape the
+// Dockerfile itself suggests, and `mount -k` in "/" hits the same wall.
+//
+// GUARDED, and honest about it: the defect requires the image's parent to BE the
+// root, so the test has to write there. On a normal developer box it cannot, and
+// skips with a note rather than passing vacuously. It executes where the root is
+// writable -- a container running as root, which is where the bug lives.
+if !containerized {
+    let name = "rbf: an RBF image in the filesystem root is usable"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let rootImage = "/os9test-rootimage.dsk"
+        let base = scratchDisk + "/rootimg", out = base + "/out"
+        let payload = Data("root-image".utf8)
+        try? FileManager.default.removeItem(atPath: base)
+        try? FileManager.default.createDirectory(atPath: out,
+                                                 withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: base + "/payload", contents: payload)
+
+        func emulator(_ args: [String], cwd: String, _ vars: [String: String]) {
+            var env = ProcessInfo.processInfo.environment
+            env.removeValue(forKey: "OS9H0")
+            env.removeValue(forKey: "OS9DISK")
+            for (k, v) in vars { env[k] = v }
+            let p = Process()
+            p.executableURL = execURL
+            p.arguments = ["-r"] + args
+            p.environment = env
+            p.currentDirectoryURL = URL(fileURLWithPath: cwd)
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError  = FileHandle.nullDevice
+            try? p.run()
+            p.waitUntilExit()
+        }
+
+        // Build and populate the image somewhere ordinary, then move it to the
+        // root -- `mount -k` writes relative to the emulator's cwd, and the
+        // whole point is that its FINAL location is what matters.
+        let staged = base + "/h7"
+        emulator(["mount", "-k=200K", "h7"], cwd: base, [:])
+        emulator(["imakdir", "/h7/SUB"], cwd: base, ["OS9H7": staged])
+        emulator(["icopy", "/h8/payload", "/h7/SUB/probe"], cwd: base,
+                 ["OS9H7": staged, "OS9H8": base])
+
+        try? FileManager.default.removeItem(atPath: rootImage)
+        let placed = (try? FileManager.default.moveItem(atPath: staged,
+                                                        toPath: rootImage)) != nil
+        if !placed {
+            print("SKIP: \(name) (the filesystem root is not writable here)")
+        } else {
+            emulator(["icopy", "/dd/SUB/probe", "/h8/got"], cwd: scratchDisk,
+                     ["OS9DISK": rootImage, "OS9H8": out])
+            let got = FileManager.default.contents(atPath: out + "/got")
+            try? FileManager.default.removeItem(atPath: rootImage)
+
+            if got == payload {
+                print("PASS: \(name)"); passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      [/dd/SUB/probe copied from an image at \(rootImage)]")
+                print("      output: bytes via /dd: \(got?.count ?? -1) of \(payload.count)")
+                failed += 1
+            }
+        }
+        try? FileManager.default.removeItem(atPath: base)
+    }
+}
+
 // Mounts its own image (self-contained, so a container's throwaway filesystem is
 // fine), and asserts on the DUMPED BYTES of the copied file ("dsav" = 6473 6176)
 // rather than on the name "f1": the shell echoes every command line back, so

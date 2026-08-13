@@ -94,6 +94,7 @@ Boolean CaseSens( char* pathname, char* filename, Boolean *reduS )
 /* Case sensitivity handling: Make it insensitive for OS-9 */
 {
     Boolean     ok= false; /* not yet found */
+    Boolean     topLevel;  /* <filename> sits directly under the root */
     DIR*        d;
     dirent_typ* dEnt;
 //  int  P_Len= strlen(".");
@@ -101,11 +102,18 @@ Boolean CaseSens( char* pathname, char* filename, Boolean *reduS )
     char        name[DIRNAMSZ];
     
     *reduS= false;
-    *(filename-1)= '\0'; /* cut the string into two pieces, 2nd accessible by <filename> */
 
-    debugprintf( dbgFiles,dbgNorm,("# CaseSens:  (in) '%s' - '%s'\n", pathname,filename ));
-    
-        d=  opendir( pathname );
+    /* The directory to scan is everything BEFORE <filename>'s separator. For a
+     * component sitting directly under the root there is nothing before it, and
+     * NUL-ing the leading '/' leaves "", which opendir() rejects -- so no
+     * top-level name could ever be case-corrected. The parent of "/x" is "/". */
+    topLevel= (filename-1)==pathname;
+    if (!topLevel) *(filename-1)= '\0'; /* cut the string into two pieces, 2nd accessible by <filename> */
+
+    debugprintf( dbgFiles,dbgNorm,("# CaseSens:  (in) '%s' - '%s'\n",
+                 topLevel ? PSEP_STR : pathname, filename ));
+
+        d=  opendir( topLevel ? PSEP_STR : pathname );
     if (d==NULL) { *(filename-1)= PATHDELIM; return false; } /* shouldn't happen */
     
     strcpy     ( tmp,filename );
@@ -149,6 +157,7 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
     char    *v, *q, *qs, *qc;
     char    startRoot[PATH_MAX];
     Boolean hadRoot;
+    Boolean atRoot= false; /* the backward walk stopped at the root -- see below */
 
     /* Check BEFORE CutUp mutates anything below -- <pathname> is still
      * the pristine input here, so this reflects whether the caller's
@@ -236,9 +245,21 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
         if (PathFound( adname )) break; /* if the path is found, leave the loop */
         
         while   (q>=adname) { /* cut the next subpath */
-            if (*q==PATHDELIM) { *q= '\0'; break; }
+            if (*q==PATHDELIM) {
+                /* The LEADING '/' is the root DIRECTORY, not a separator with a
+                 * component in front of it to cut away. NUL-ing it leaves "",
+                 * which exists nowhere, so the walk fell off the top and any
+                 * path whose only surviving ancestor is the root came back
+                 * E$PNNF. Stop AT the root instead, leaving the '/' in place:
+                 * the forward pass writes PATHDELIM over it (a no-op) and
+                 * carries on from the component after it, as for any anchor. */
+                if (q==adname) { atRoot= true; break; }
+                *q= '\0'; break;
+            }
             q--;
         } /* while */
+
+        if (atRoot) break;
     } /* loop */
 
     /* If the backward search consumed the ENTIRE path without finding any
