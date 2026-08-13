@@ -25,16 +25,18 @@ else
   LDFLAGS =
 endif
 
-# -fno-strict-aliasing is REQUIRED, not a preference. The 68k register halves
-# are reached by punning a 32-bit register through a ushort*/byte* --
-# loword/hiword/lobyte/retword in os9_ll.h, 125 call sites, 39 of them as
-# assignment targets. That is exactly what the hardware does and the macros are
-# already correct for both byte orders, but it is undefined behaviour under C's
-# strict-aliasing rule, which gcc -O2 is entitled to optimise on. gcc says so
-# 59 times at -O2; clang says nothing and has the same licence, so a quiet
-# build is not evidence of safety. The alternative is retyping the register
-# file as a union across all 125 sites -- a real option, and a separate change.
-CFLAGS  = -g -Wall -fcommon -fno-strict-aliasing \
+# -fno-strict-aliasing was REMOVED 2026-08-12, after the reason for it was.
+# The 68k register halves used to be reached by punning a 32-bit register
+# through a ushort*/byte* (loword/hiword/lobyte in os9_ll.h) -- undefined under
+# C's strict-aliasing rule and something gcc -O2 may optimise on. Those macros
+# are now value-based masks, which raise no aliasing question and, as a bonus,
+# need no per-byte-order fork: verified identical to the old behaviour on
+# little-endian arm64 and on real big-endian s390x, for 32- and 64-bit operands.
+# retword/retbyte never punned (PARTIALRETURNREGS is undefined everywhere).
+#
+# If this flag ever has to come back, that means punning was reintroduced
+# somewhere -- find it and fix it there rather than restoring the flag.
+CFLAGS  = -g -Wall -fcommon \
           -DTERMINAL_CONSOLE \
           -DINT_CMD \
           -DRAM_SUPPORT \
@@ -105,7 +107,7 @@ all: $(OBJDIR) $(EXE)
 # Production build: optimised, no debug symbols.
 # Usage: make prod   (rebuilds from scratch with -O2)
 prod:
-	$(MAKE) -B CFLAGS="-O2 -Wall -fcommon -fno-strict-aliasing \
+	$(MAKE) -B CFLAGS="-O2 -Wall -fcommon \
 	          -DREUSE_MEM \
           -DTERMINAL_CONSOLE \
 	          -DINT_CMD \
