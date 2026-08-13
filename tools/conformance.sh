@@ -259,23 +259,19 @@ run_68k_noshell() {
 
     echo "== CONF68K on os9exec (no shell, no SDK -- each test as its own boot program$([ "$use_rbf" = yes ] && echo ', RBF image')) =="
     printf 'RUN prebuilt\r' > "$dir/RESULTS/report"
-    # Run from the image's own directory when there is one. That is a WORKAROUND
-    # for an os9exec defect, not a preference, and it is written down here
-    # because a silent `cd` in a test harness is the kind of thing nobody ever
-    # questions again:
+    # Run from the image's own directory when there is one.
     #
-    #   OS9DISK=<absolute path to an RBF image> resolves the boot program
-    #   RELATIVE TO THE HOST WORKING DIRECTORY. Same absolute image, same
-    #   absolute module path, different cwd, different answer:
+    # CORRECTED 2026-08-12: this used to claim it was a WORKAROUND for an
+    # os9exec defect that made the boot program resolve relative to the HOST
+    # working directory. That is wrong, and the wrong version cost a later
+    # session an hour chasing cwd. Measured in Docker: this leg passes 44/44 on
+    # Linux from ANY directory, and cwd makes no difference on macOS either.
     #
-    #     cd <dir holding the image>; OS9DISK=$PWD/h7 os9exec -r /dd/CMDS/t01open  -> runs
-    #     cd /                      ; OS9DISK=<same>  os9exec -r /dd/CMDS/t01open  -> E$PNNF
-    #
-    #   macOS is more forgiving than Linux (it also works from the repo root),
-    #   which is exactly why this never showed up locally and failed the moment
-    #   CI ran it. Module loading has its own path resolution that does not go
-    #   through AdjustPath (see the comment in filestuff.c TwoCharDev), so this
-    #   wants fixing there rather than here. Recorded in ROADMAP-68k.md.
+    # There IS a real defect nearby, but it is a different one: `/dd` does not
+    # resolve to an RBF image on Linux, while `/hN` does (same image, same file
+    # -- see ROADMAP-68k.md). This script never trips it, because it builds the
+    # image entirely through /h7 and /h8, and by the time a test runs via /dd
+    # its module is already in the module directory.
     #
     # build_rbf_image_noshell already runs `mount -k` from inside "$work" for
     # its own reasons, so this is at least consistent with the rest of the file.

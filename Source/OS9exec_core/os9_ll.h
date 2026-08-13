@@ -153,10 +153,8 @@
  * little-endian control build of the identical source, where the same disk and
  * commands worked. */
 #if defined __INTEL__ && !defined OS9_HOST_BIG_ENDIAN
-    /* access register parts */
-    #define loword(reg) (*(((ushort*)&(reg))+0))
-    #define hiword(reg) (*(((ushort*)&(reg))+1))
-    #define lobyte(reg) (*((  (byte*)&(reg))+0))
+    /* access register parts -- see the VALUE-BASED note below; defined once,
+       outside this endian fork. */
 
     /* return word/byte values */
     #ifdef PARTIALRETURNREGS
@@ -203,9 +201,7 @@
      * it reproduces the original +1/+0/+3, and for a 64-bit one holding a
      * 32-bit value it lands on the same significant bits. Kept as lvalues --
      * three call sites assign through these macros. */
-    #define loword(reg) (*(((ushort*)&(reg)) + (sizeof(reg)/sizeof(ushort) - 1)))
-    #define hiword(reg) (*(((ushort*)&(reg)) + (sizeof(reg)/sizeof(ushort) - 2)))
-    #define lobyte(reg) (*(((byte*)  &(reg)) + (sizeof(reg) - 1)))
+    /* access register parts -- value-based, defined once below. */
     /* return word/byte values */
     #ifdef PARTIALRETURNREGS
         #define retword(reg) (*(((ushort*)&(reg)) + (sizeof(reg)/sizeof(ushort) - 1)))
@@ -221,6 +217,38 @@
     #define os9_word(w) (w)
     #define os9_long(l) (l)
 #endif
+
+/* Register halves, BY VALUE rather than by pointing a ushort* at the object.
+ *
+ * These used to be `*((ushort*)&reg + n)`: the right bytes, but two hazards.
+ *
+ *  1. ALIASING. Reading a 32-bit object through a ushort* is undefined -- the
+ *     compiler may assume the two can never denote the same storage and
+ *     reorder around it. The tree carries -fno-strict-aliasing purely to keep
+ *     that legal; gcc reports it 59 times at -O2 and clang silently takes the
+ *     same licence. A mask raises no aliasing question at all.
+ *
+ *  2. WIDTH x ENDIANNESS. The offsets had to differ per byte order, and the
+ *     big-endian form had to be sizeof-relative because the low half of a
+ *     64-bit host `ulong` is not where it is in a 32-bit one. That went wrong
+ *     once already: hardcoded offsets read bits 63..48 of os9exec_nt.c's
+ *     `resL`, giving every system call a garbage vector on s390x. A mask is
+ *     defined by VALUE, so it is correct for both widths AND both byte orders,
+ *     and needs no fork -- which is why these now live outside it.
+ *
+ * retword/retbyte are deliberately left as they are: PARTIALRETURNREGS is not
+ * defined in any shipping configuration, so they are identity macros and do no
+ * punning. Only these three ever did.
+ */
+#define loword(reg)  ((ushort)( (reg)        & 0xFFFF ))
+#define hiword(reg)  ((ushort)(((reg) >> 16) & 0xFFFF ))
+#define lobyte(reg)  ((byte)  ( (reg)        & 0xFF   ))
+
+/* Assignment forms. The old macros were lvalues, so `loword(x) = v` compiled;
+ * a mask cannot be assigned to. Only three sites in the tree need these
+ * (fcalls.c twice, modstuff.c once). */
+#define set_loword(reg,v) ((reg) = ((reg) & ~(uint32_t)0xFFFF) |  ((uint32_t)(v) & 0xFFFF))
+#define set_hiword(reg,v) ((reg) = ((reg) &  (uint32_t)0xFFFF) | (((uint32_t)(v) & 0xFFFF) << 16))
 
 /* Safe typed accessors for OS-9 big-endian fields embedded in byte arrays.
    Always read/write exactly 2 or 4 bytes regardless of host word size.

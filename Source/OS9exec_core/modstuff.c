@@ -345,7 +345,7 @@ void Update_MDir( void )
             ok= (mod!=NULL) && !modK->isBuiltIn; /* built-ins are not real 68k modules */
         if (ok) {
             b = 0;
-            hiword( b ) = (ushort)modK->linkcount;
+            set_hiword( b, (ushort)modK->linkcount );
 
             en->m1  = os9_long( TO68K(mod) );
             en->m2  = en->m1;               /* %%% module groups not yet supported */

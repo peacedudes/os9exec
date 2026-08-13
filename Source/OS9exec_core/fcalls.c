@@ -570,8 +570,8 @@ os9err OS9_F_Time( regs_type *rp, _pid_ )
 
     if (withTicks) {
         /* we need some ticks, too */
-        hiword( rp->d[3] )= TICKS_PER_SEC;
-        loword( rp->d[3] )= currentTick;
+        set_hiword( rp->d[3], TICKS_PER_SEC );
+        set_loword( rp->d[3], currentTick );
     } // if
      
     return 0;
