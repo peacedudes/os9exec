@@ -1114,11 +1114,41 @@ static void baud_make_room( baud_device_t* d, int need )
 
     while (BAUD_FIFO_SIZE - d->count < need) {
         was= d->count;
+
+        /* Pump INPUT as well as output. Without this the loop was deaf: it
+           drained and slept, so an XOFF hold could never be lifted from here
+           and the ~2s give-up below fired every single time. Measured: with
+           `^S` typed at the prompt BEFORE running a built-in, `dhelp` produced
+           11 bytes instead of 1184 -- 1173 dropped silently, and never
+           delivered even after `^Q`. The give-up is meant for a device with
+           nobody left to release it; an interactive user IS somebody, and this
+           is what lets their XON be seen.
+
+           This is not the `while (held) CheckInputBuffers()` spin warned about
+           in ConsoleOut: that one stalled a whole cooperative system inside a
+           GUEST process's write syscall. Here the caller is an internal
+           command, which is unparkable host C and is already spinning in this
+           loop -- pumping input only makes the spin productive. */
+        CheckInputBuffers();
+
         baud_drain_due();
         if (BAUD_FIFO_SIZE - d->count >= need) return;
 
-        if (d->count>=was) { if (++stalled > 200) return; } /* ~2s of no progress */
-        else                 stalled= 0;
+        /* An XOFF hold is not a stall -- it is the terminal doing exactly what
+           it was asked. Counting it toward the give-up budget meant a user who
+           held ^S for longer than two seconds lost the rest of the output, with
+           no error, and did not get it back on ^Q. Hold the budget still while
+           the device is held; it then measures only what it was meant to: a
+           device making no progress for reasons nobody is going to fix.
+
+           This cannot spin forever in practice. The holder is a person, who can
+           release it, and CheckInputBuffers() above is what lets their XON be
+           seen. At shutdown console_held() answers false unconditionally
+           (g_final_drain), so the exit path still drains rather than waiting on
+           a hold whose owner has gone. */
+        if (console_held( d->term_id )) stalled= 0;               /* held: not a stall */
+        else if (d->count>=was) { if (++stalled > 200) return; }  /* ~2s of no progress */
+        else                      stalled= 0;
 
         delay= baud_next_wake_delay_us();
         if (delay>0 && delay!=ULONG_MAX) {
@@ -1219,8 +1249,34 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
              pid 0 / the MAXPROCESSES sentinel / pSysTask cannot be parked (see
              the two branches below); their output goes out regardless, which is
              the same compromise those branches already make. */
+          /* ...but an INTERNAL COMMAND cannot be parked either: it is host C
+             running straight through, with no emulated PC to rewind, so the
+             park above drops everything it had left to say. Measured before
+             this: with `^S` typed at the prompt and then `dhelp`, 11 bytes of
+             1184 arrived and the other 1173 were never delivered, not even
+             after `^Q`. Wait for the release in place instead, pumping input
+             so the XON can actually be seen -- the loop was otherwise deaf and
+             the hold could never lift from here.
+
+             Spinning here does NOT cost the concurrency the park exists to
+             protect: an internal command already runs to completion as host C,
+             so nothing else is running during it either way. Bounded so a hold
+             whose owner has gone cannot wedge the emulator; at shutdown
+             console_held() answers false anyway (g_final_drain). */
+          if (cp->isIntUtil && console_held( (short)gConsoleID )) {
+              int spins= 0;
+              while (console_held( (short)gConsoleID ) && ++spins <= 12000) {
+                  struct timespec ts;
+                  CheckInputBuffers();   /* so a typed XON is seen */
+                  baud_drain_due();
+                  ts.tv_sec= 0; ts.tv_nsec= 10L*1000L*1000L; /* 10ms */
+                  nanosleep( &ts, NULL );
+              }
+          }
+
           held= console_held( (short)gConsoleID ) &&
-                pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask;
+                pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask &&
+                !cp->isIntUtil; /* handled above; parking it would drop output */
 
           while (cnt<*maxlenP) {
               Boolean needsLF; /* does this char carry a trailing auto-LF? */

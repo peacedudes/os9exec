@@ -3943,6 +3943,85 @@ if runTNShutdown && !containerized {
 // unpredictable point -- possibly before the shell has even printed the prompt
 // it then parks on -- and the run's outcome stops depending on the thing under
 // test. Real timing is the point here, as it is for the raw-mode test below.
+// -- an XOFF held BEFORE a built-in runs must not eat its output ------------
+// An INTERNAL COMMAND is host C running straight through: no emulated PC to
+// rewind, so ConsoleOut's normal backpressure (park the writer in pWaitWrite)
+// has nobody to suspend and the rest of its output went nowhere. Measured
+// before the fix: `dhelp` with ^S typed at the prompt first produced 11 bytes
+// of 1184, and the missing 1173 never arrived even after XON.
+//
+// Typing ^S DURING the output does not show this -- the command never yields
+// to the input pump, so the XOFF is not seen until it has already finished.
+// The hold has to be in place BEFORE the command starts, which is why earlier
+// hunts using `mount -?` mid-output came back clean.
+//
+// Both halves are asserted, because a "fix" that simply ignored the hold would
+// pass the second alone: almost nothing may arrive WHILE held (XOFF halts
+// output -- Technical I/O Manual V2.4, PD_XOFF), and everything must arrive
+// after XON. Paced on purpose: -r has no FIFO and cannot show it.
+let xoffIntUtilName = "console: an XOFF held before a built-in does not eat its output"
+let runXoffIntUtil  = filter.isEmpty || xoffIntUtilName.localizedCaseInsensitiveContains(filter)
+
+if runXoffIntUtil && !containerized {
+    if let (master, slave, _) = makePTY() {
+        let process = Process()
+        process.executableURL       = execURL
+        process.arguments           = [shellArg]        // NO -r: pacing is the point
+        process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
+        process.environment         = ["OS9DISK": diskPath, "OS9STOP": "1"]
+        let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
+        process.standardInput  = slaveHandle
+        process.standardOutput = slaveHandle
+        process.standardError  = slaveHandle
+
+        var duringHold = -1
+        var afterXon   = -1
+
+        if (try? process.run()) != nil {
+            func send(_ s: String) { var b = Array(s.utf8); _ = write(master, &b, b.count) }
+            func drain(_ seconds: Double, into total: inout Int) {
+                let end = Date().addingTimeInterval(seconds)
+                var buf = [UInt8](repeating: 0, count: 65536)
+                while Date() < end {
+                    var fds = pollfd(fd: master, events: Int16(POLLIN), revents: 0)
+                    if poll(&fds, 1, 200) > 0 {
+                        let n = read(master, &buf, buf.count)
+                        if n <= 0 { return }
+                        total += n
+                    }
+                }
+            }
+            var discard = 0
+            drain(2.0, into: &discard)          // settle, then ignore the banner
+            send("\u{13}")                      // XOFF *before* the command
+            usleep(400_000)
+            send("dhelp\n")
+            duringHold = 0
+            drain(5.0, into: &duringHold)       // must stay ~0: the hold is real
+            send("\u{11}")                      // XON
+            afterXon = duringHold
+            drain(4.0, into: &afterXon)         // the whole listing must land here
+            send("\u{1B}\n\u{04}\n")
+            usleep(500_000)
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+        close(master); close(slave)
+
+        // dhelp is ~1184 bytes; the echo of the command line is the only thing
+        // allowed through while held (echo is best-effort and unparkable --
+        // DECISIONS-68k.md), so allow a few bytes but not the listing.
+        if duringHold >= 0 && duringHold < 60 && afterXon > 900 {
+            print("PASS: \(xoffIntUtilName)"); passed += 1
+        } else {
+            print("FAIL: \(xoffIntUtilName)")
+            print("      [held: <60 bytes during, >900 after XON]")
+            print("      during hold: \(duringHold)   after XON: \(afterXon)")
+            failed += 1
+        }
+    }
+}
+
 let xoffInputName = "console: XOFF halts output but input is still taken"
 let runXoffInput  = filter.isEmpty || xoffInputName.localizedCaseInsensitiveContains(filter)
 
