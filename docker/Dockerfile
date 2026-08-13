@@ -27,25 +27,17 @@ RUN apt-get update && apt-get install -y \
 # Copy binary from builder
 COPY --from=builder /build/os9exec /usr/local/bin/os9exec
 
-# Run from a real directory, NOT from "/", and keep RBF IMAGE FILES out of the
-# container root -- `mount -k=500K h9` at "/" reports success and the device is
-# then unusable (`dir /h9` -> E_MNF).
+# Runs from a real directory rather than "/". This is now a tidiness choice --
+# it keeps scratch disk images out of the container root -- and no longer a
+# workaround: an RBF image sitting directly in "/" used to be unusable from any
+# working directory (`OS9DISK=/disk.img` found nothing, `mount -k` at "/"
+# produced a device that then failed E$MNF), which is what this line originally
+# dodged. Fixed 2026-08-13; three root-directory blind spots, see ROADMAP-68k.md.
 #
-# The reason is NOT that the host and OS-9 namespaces collide, which is what
-# this comment used to say; that was measured wrong (2026-08-13). An image file
-# whose parent directory is "/" is unusable from ANY working directory --
-# `OS9DISK=/disk.img` fails just as `mount -k` at "/" does, while the same image
-# one directory down works. A host DIRECTORY at the root is unaffected, which is
-# why `-v /your/os9:/dd` (below) is fine and why this hid for so long.
-#
-# Two layers, both traced: AdjustPath's backward search for an existing ancestor
-# (linuxfiles.c) writes NUL over the LEADING '/', so the prefix becomes "" and
-# the root is never tried as an anchor; and even past that, GetRBFName
-# (utilstuff.c) refuses a path that IS exactly the image file with E$FNA. Full
-# write-up in ROADMAP-68k.md.
-#
-# So: mount a DIRECTORY of OS-9 files at /dd, or put an image file anywhere but
-# the container root.
+# One narrow case remains: an image in the root whose filename is exactly TWO
+# characters and is mounted as a DIFFERENT device (`OS9H9=/zz`) still fails, so
+# a two-character name at the root is worth avoiding. `/dd`, and any name longer
+# than two characters, work.
 WORKDIR /work
 
 # os9exec looks for ./dd by default
