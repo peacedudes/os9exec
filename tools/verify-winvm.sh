@@ -10,10 +10,14 @@
 #   - UTM guest named os9exec-windows, SSH forwarded to localhost:2222
 #   - key auth as user `claude` (~/.ssh/os9exec_winvm)
 #
-# FORWARD SLASHES in OS9DISK are not a style choice: with backslashes the
-# emulator finds nothing at all and every test reports E$PNNF. That is a real
-# defect, recorded in ROADMAP-68k.md; this script sidesteps it deliberately
-# rather than accidentally.
+# The suite runs TWICE, once with OS9DISK spelled "C:/..." and once "C:\...",
+# and both must agree. Backslashes used to find nothing at all -- every module
+# reported E$PNNF, because only forward slashes were ever translated (fixed in
+# b32cd3a). This script used to sidestep that spelling deliberately, which left
+# the fix asserted and never once executed: it is Windows-only by construction
+# (on Unix a backslash is a legal character in a filename), so there is nowhere
+# else it CAN be tested. The forward-slash run is the control that tells a
+# broken translation apart from a broken everything.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -51,8 +55,7 @@ scp -q -r -o StrictHostKeyChecking=no -P 2222 "$REPO/test/68k-conformance" claud
 
 # Run every test module as its own boot program and tally the RESULT lines,
 # which is exactly what conformance.sh's --noshell leg does on Unix.
-out=$($SSH 'cd C:\verify\68k-conformance; $env:OS9DISK="C:/verify/68k-conformance"
-$mods = Get-ChildItem CMDS | Where-Object { $_.Name -ne "tally" -and $_.Name -ne "mark" } | Sort-Object Name
+ps_body='$mods = Get-ChildItem CMDS | Where-Object { $_.Name -ne "tally" -and $_.Name -ne "mark" } | Sort-Object Name
 $res=@(); foreach ($m in $mods) {
   $o = (C:\verify\os9exec.exe -r ("/dd/CMDS/" + $m.Name) 2>&1 | Out-String)
   $res += (($o -replace "`r","`n") -split "`n" | Where-Object { $_ -match "^RESULT " })
@@ -62,9 +65,23 @@ Write-Output ("PASS="  + ($res | Where-Object {$_ -match " PASS "}).Count)
 Write-Output ("FAIL="  + ($res | Where-Object {$_ -match " FAIL "}).Count)
 Write-Output ("SKIP="  + ($res | Where-Object {$_ -match " SKIP "}).Count)
 Write-Output ("ERROR=" + ($res | Where-Object {$_ -match " ERROR "}).Count)
-$res | Where-Object {$_ -match " FAIL | ERROR "}' 2>/dev/null | tr -d '\r')
+$res | Where-Object {$_ -match " FAIL | ERROR "}'
 
+run_suite() {   # $1 = the OS9DISK spelling to run under
+    $SSH 'cd C:\verify\68k-conformance
+$env:OS9DISK="'"$1"'"
+'"$ps_body" 2>/dev/null | tr -d '\r'
+}
+
+out=$(run_suite 'C:/verify/68k-conformance')
 echo "$out"
+
+# The same suite through the native spelling. Compared on the whole tally, not
+# just TOTAL: a translation that mangles the root would report modules that all
+# fail, which counts the same as a clean run if you only count lines.
+echo "-- same suite, OS9DISK spelled with backslashes --"
+out_bs=$(run_suite 'C:\verify\68k-conformance')
+echo "$out_bs"
 # Shut the guest down FROM INSIDE, and never force it.
 #
 # `utmctl stop` defaults to --force, which is a power-off event -- pulling the
@@ -94,4 +111,17 @@ err=$(sed -n 's/^ERROR=//p'  <<<"$out")
 # A silent run is a failed run: if no module reported, the suite did not run.
 [ -n "$total" ] && [ "$total" -gt 0 ] || { echo "no RESULT lines came back"; exit 1; }
 [ "${fail:-1}" = 0 ] && [ "${err:-1}" = 0 ] || exit 1
+
+# Both spellings must produce the same tally. Comparing the four counters
+# rather than TOTAL alone, so a run that reports the right NUMBER of modules
+# and fails all of them cannot pass here.
+# grep -E, not `sed 's/\(a\|b\)/'`: BSD sed has no \| alternation, so that
+# spelling matched nothing here and the comparison was empty-vs-empty -- a
+# check that passes however Windows behaves. This script runs on macOS.
+tally()  { grep -E '^(TOTAL|PASS|FAIL|SKIP|ERROR)=' <<<"$1" | sort; }
+if [ -z "$(tally "$out")" ] || [ "$(tally "$out")" != "$(tally "$out_bs")" ]; then
+    echo "OS9DISK spelled with backslashes does not match the forward-slash run:"
+    diff <(tally "$out") <(tally "$out_bs") | sed 's/^/  /'
+    exit 1
+fi
 exit 0
