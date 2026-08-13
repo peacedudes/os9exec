@@ -505,6 +505,34 @@ static void CheckH0( char* name, char* p, char** p3 )
 
       q= name + strlen( name )-2; *q= NUL; /* cut "h0" again */
       strcat          ( name,"dd" );
+
+      /* The candidate must be a real HOST object before we hand it to
+       * MountDev, because MountDev resolves what it is given as an OS-9 path
+       * -- and one spelling of this candidate is not a host path at all.
+       *
+       * <startPath> is the emulator's working directory, and this fallback is
+       * also tried against its parent, so when the emulator runs in "/" or in
+       * a direct child of it the string built above is exactly "/dd" -- the
+       * DEVICE name, not a directory beside the binary. MountDev then happily
+       * resolved it through OS9DISK, mounted the RBF image, and registered it
+       * under mnt_name "h0" (pOpen copies mnt_name over dev->name). The disk
+       * was thereafter owned by h0, so the real /dd mount that followed was
+       * refused E$DevBsy and every /dd/... lookup failed -- E$PNNF for a full
+       * path, E$UNIT for a bare name -- while the identical image reached
+       * through /hN worked fine.
+       *
+       * That made it look like a Linux defect: containers run in /work, /src
+       * or /repo, all one level below the root, whereas a developer shell sits
+       * deep in a home directory and usually has OS9H0 set, which short-
+       * circuits this function before it ever gets here. It is neither
+       * platform- nor filesystem-dependent -- only depth. Reproduced on macOS
+       * with `cd /` and OS9H0 unset.
+       *
+       * Requiring the file to exist keeps the intended behaviour (a real "dd"
+       * disk sitting next to the emulator is still found) and drops only the
+       * case where the name was never a host path to begin with. */
+      if (!FileFound( name ) && !PathFound( name )) return;
+
       MakeOS9Path     ( name ); /* it might come as Mac or DOS path name ... --> OS-9 notation */
 
       inProgress= true;

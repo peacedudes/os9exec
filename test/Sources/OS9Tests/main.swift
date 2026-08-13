@@ -873,6 +873,89 @@ if !containerized {
     try? FileManager.default.removeItem(atPath: scratchHostPath)
 }
 
+// `/dd` must reach an RBF image from ANY working directory -- including the
+// filesystem root.
+//
+// It did not. CheckH0's fallback for an unset OS9H0 looks for a "dd" disk
+// beside the emulator by building "<startPath>/dd", and it tries the PARENT
+// too; run from "/" or from a direct child of it, that string is exactly
+// "/dd" -- which is not a host path at all but the OS-9 DEVICE name. MountDev
+// resolved it through OS9DISK, mounted the image, and registered it under
+// mnt_name "h0". The disk then belonged to h0, the real /dd mount that
+// followed was refused E$DevBsy, and every /dd/... lookup failed (E$PNNF for a
+// full path, E$UNIT for a bare name) while the SAME image reached through /hN
+// worked perfectly.
+//
+// It looked like a Linux-only defect for a while, and is not: containers just
+// happen to run in /work, /src or /repo, all one level below the root, whereas
+// a developer shell sits deep in a home directory and usually has OS9H0 set,
+// which returns from CheckH0 long before this point. Reproduced on macOS with
+// `cd /` and OS9H0 unset, which is what this test does.
+//
+// Runs the emulator DIRECTLY rather than through os9(): the whole point is to
+// control its working directory, which os9() deliberately pins to the scratch.
+// Internal commands only -- no shell, no SDK, no system disk -- so what it
+// proves is not entangled with what is installed. The assertion is on the
+// COPIED BYTES: os9exec's exit status does not distinguish "copied nothing"
+// from "copied something", and the failure mode here is silence.
+//
+// Skipped under a container, where os9exec's cwd is the container's, not ours.
+if !containerized {
+    let name = "rbf: /dd resolves to an RBF image from the filesystem root"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let base = scratchDisk + "/ddroot", out = base + "/out"
+        let img  = base + "/h7", payload = Data("dd-from-root".utf8)
+        try? FileManager.default.removeItem(atPath: base)
+        try? FileManager.default.createDirectory(atPath: out,
+                                                 withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: base + "/payload", contents: payload)
+
+        // OS9H0 must be absent or CheckH0 never reaches the branch under test,
+        // and the test would pass on broken code.
+        func emulator(_ args: [String], cwd: String, _ vars: [String: String]) {
+            var env = ProcessInfo.processInfo.environment
+            env.removeValue(forKey: "OS9H0")
+            env.removeValue(forKey: "OS9DISK")
+            for (k, v) in vars { env[k] = v }
+            let p = Process()
+            p.executableURL = execURL
+            p.arguments = ["-r"] + args
+            p.environment = env
+            p.currentDirectoryURL = URL(fileURLWithPath: cwd)
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError  = FileHandle.nullDevice
+            try? p.run()
+            p.waitUntilExit()
+        }
+
+        emulator(["mount", "-k=200K", "h7"], cwd: base, [:])
+        emulator(["imakdir", "/h7/CMDS"], cwd: base, ["OS9H7": img])
+        emulator(["icopy", "/h8/payload", "/h7/CMDS/probe"], cwd: base,
+                 ["OS9H7": img, "OS9H8": base])
+        // Fixture check: without this the real assertion below could fail for
+        // want of a file to copy and be read as the defect returning.
+        var built = false
+        emulator(["icopy", "/h7/CMDS/probe", "/h8/viaHN"], cwd: base,
+                 ["OS9H7": img, "OS9H8": out])
+        built = FileManager.default.contents(atPath: out + "/viaHN") == payload
+
+        emulator(["icopy", "/dd/CMDS/probe", "/h8/viaDD"], cwd: "/",
+                 ["OS9DISK": img, "OS9H8": out])
+        let viaDD = FileManager.default.contents(atPath: out + "/viaDD")
+
+        if built && viaDD == payload {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [/dd/CMDS/probe copied from cwd \"/\"]")
+            print("      output: image built via /h7: \(built); "
+                  + "bytes via /dd: \(viaDD?.count ?? -1) of \(payload.count)")
+            failed += 1
+        }
+        try? FileManager.default.removeItem(atPath: base)
+    }
+}
+
 // Mounts its own image (self-contained, so a container's throwaway filesystem is
 // fine), and asserts on the DUMPED BYTES of the copied file ("dsav" = 6473 6176)
 // rather than on the name "f1": the shell echoes every command line back, so
