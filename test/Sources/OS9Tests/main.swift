@@ -3894,17 +3894,34 @@ if runTNAbort && !containerized {
         let stopped   = DispatchSemaphore(value: 0)
         _ = startDrainThread(master, collector, stopped)
 
-        // Ctrl-E (the default PD_QUT) once a paced backlog exists but long
-        // before the ~3226-byte listing could finish on its own.
+        // Ctrl-E (the default PD_QUT) once the listing has demonstrably STARTED,
+        // but long before the ~3226-byte listing could finish on its own.
+        //
+        // Waits for the condition rather than for a fixed 0.6s. That delay
+        // assumed the writer had produced output by then, which is true on an
+        // idle machine and false on a loaded one: with several container builds
+        // running this failed 3 runs in 5, always the same way -- 61 bytes
+        // collected, the abort landing before "BOOTOBJS" was ever emitted, so
+        // the test reported "started: false" and blamed the emulator for the
+        // machine being busy. Polling for the first entry makes the injection
+        // point depend on the writer, not on the load average.
         DispatchQueue.global().async {
-            Thread.sleep(forTimeInterval: 0.6)
+            let deadline = Date().addingTimeInterval(3.0)
+            while Date() < deadline {
+                if String(decoding: collector.snapshot(), as: UTF8.self)
+                    .contains("BOOTOBJS") { break }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
             var abortChar: UInt8 = 0x05
             _ = write(master, &abortChar, 1)
         }
 
+        // holdOpen covers the poll window above plus the run that follows it;
+        // it must outlast the worst case, or the shell exits first and the FIFO
+        // flush truncates the listing whatever the emulator did.
         _ = os9(["dir /dd/CMDS >/t1 &", "free /dd"],
                 timeout: 120, paced: true,
-                env: ["OS9T1": slaveName], holdOpen: 3.0)
+                env: ["OS9T1": slaveName], holdOpen: 6.0)
 
         usleep(500_000)
         collector.requestStop(); stopped.wait()
