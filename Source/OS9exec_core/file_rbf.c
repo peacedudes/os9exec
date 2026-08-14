@@ -2019,11 +2019,13 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
 
         /* try to open in read/write mode first (if not asking for wProtection */
         /* if not possible, open it readonly */
+        img_hostPath= imgIsHost; /* lowered again immediately below */
         if (!wProtect) {
                err= Open_Image( pid,dev, type,imgpath, poUpdate );
-          if (!err) { opened= true; break; }
+          if (!err) { img_hostPath= false; opened= true; break; }
         }
                err= Open_Image( pid,dev, type,imgpath, poRead );
+               img_hostPath= false;
         if   (!err) { opened= true; dev->wProtected= true; }
     } while (false);
 

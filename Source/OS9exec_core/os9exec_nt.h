@@ -1641,6 +1641,9 @@ extern  short   mnt_scsiBus;
 extern  short   mnt_scsiLUN;
 
 extern  Boolean mnt_wProtect;
+/* Set ONLY around Open_Image's syspath_open, to tell the host file manager that
+   the path it is being handed is already a resolved HOST path. See pFopen. */
+extern  Boolean img_hostPath;
 extern  Boolean mnt_imgMode;
 
 /* additional memory for all processes */

@@ -1221,7 +1221,21 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
         
     
     pastpath= ploc;
-    err     = parsepath( pid, &pastpath,hostpath, exedir ); if (err) return err;
+    if (img_hostPath) {
+        /* <ploc> is the host path GetRBFName already resolved for an RBF image,
+           so parsing it AS AN OS-9 PATH would be a round trip it need not
+           survive -- and a single-component one does not: "/zz" is exactly the
+           shape of a device name, so parsepath resolved it to device "zz" at
+           <startPath>/zz, a different file. That is why an image in the
+           filesystem root whose name is two characters and which is mounted as
+           some OTHER device could not be opened. Only Open_Image sets this, and
+           only around its own syspath_open. */
+        strncpy( hostpath, ploc, OS9PATHLEN-1 );
+                 hostpath[ OS9PATHLEN-1 ]= NUL;
+    }
+    else {
+        err = parsepath( pid, &pastpath,hostpath, exedir ); if (err) return err;
+    }
     pp      = hostpath;
 
     if (spP->rawMode) {        /* rawmode allows only reading of 1st sector */

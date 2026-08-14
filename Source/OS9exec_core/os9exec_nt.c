@@ -707,6 +707,7 @@ short   mnt_scsiAdapt=  -1; // use default adaptor
 short   mnt_scsiBus  =  -1; // use default bus
 short   mnt_scsiLUN  =  -1; // use default LUN
 Boolean mnt_wProtect = false;
+Boolean img_hostPath = false;
 Boolean mnt_imgMode  = false;
 /* ---------------------------------------- */
 
