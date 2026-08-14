@@ -668,8 +668,20 @@ check("merge: two files two lines", contains: "2 lines",
 // what isolates the cost to the host-file walk rather than to dsave itself.
 // Budgeted for the real cost instead of thinning the test: walking a real
 // host-backed tree is exactly the coverage this one contributes.
+//
+// The budget follows the environment, as defaultTimeout already does, and the
+// container figure is large on purpose. Measured on macOS Docker Desktop, where
+// every bind mount is virtualised: the same walk takes 42s through ONE mount
+// and 534s through the set this harness uses (the SDK disk is mounted twice --
+// at /dd and at its own host path -- plus two canaries and the scratch). Output
+// was byte-identical at both speeds, all 1468 copy lines, so this is host I/O
+// cost and not an emulator defect. A flat 60s made `make test-linux` fail on
+// macOS for a dsave that had worked perfectly. Native Linux bind mounts are
+// namespace operations rather than a virtualised filesystem, so this ceiling
+// should never be approached there -- if it IS hit on a real Linux host, that
+// is a new fact and worth investigating rather than raising again.
 run("dsave: generates script", expectation: "contains: copy",
-    commands: ["dsave /dd"], timeout: 60) { $0.contains("copy") }
+    commands: ["dsave /dd"], timeout: containerized ? 900 : 60) { $0.contains("copy") }
 
 // module integrity checker
 check("fixmod: good CRC",        contains: "CRC matches", "fixmod \(sdkCmds)/echo")
