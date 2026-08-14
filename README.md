@@ -4,11 +4,13 @@ Run real OS-9/68k binaries on a modern machine. OS9exec emulates the 68000 and t
 
 **Platforms:** macOS (arm64/Intel), Linux (64-bit/32-bit), Windows (native x86_64, ARM64 and x86, via mingw-w64/MSYS2/llvm-mingw), Docker. Also built and test-verified on riscv64 and on two big-endian hosts, s390x and sparc64.
 
-> ### This is an unofficial continuation — and we are looking for the authors
+> ### A continuation, with the original authors' blessing
 >
-> OS9exec was written by **Lukas Zeller** and **Beat Forster**, who released it under the GPL and last published **V3.39 in 2007**. This repository continues that work because the project appears dormant; it is **not endorsed by them**, and any bug you find here is ours, not theirs.
+> OS9exec was written by **Lukas Zeller** and **Beat Forster**, who released it under the GPL and last published **V3.39 in 2007**. Both were contacted in August 2026, and both replied.
 >
-> **We would rather hand this back than hold it.** If you are Lukas or Beat, or you know how to reach them, please open an issue or write to <robert@peacedudes.com>. If the original authors want this merged upstream, renamed, or stopped, that is their call and we will honour it.
+> **Lukas Zeller** endorses this continuation on GitHub, and does not wish to resume the project himself. **Beat Forster** has no objection to it being published here, and intends to try it on macOS, Linux and Windows.
+>
+> The emulator is their work. Everything since V3.39 is ours — as is any bug you find in it.
 
 ---
 
