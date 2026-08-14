@@ -3642,6 +3642,34 @@ if runHostPtyName || runHostPtyCarry {
     }
 }
 
+// `idevs` must report a bound /tN AND the host endpoint behind it. The endpoint
+// is announced once, at allocation; on a busy screen that line scrolls away,
+// and there was then no way to discover where the terminal's output had gone.
+//
+// The assertion ties the two together: it pulls the path out of the
+// ANNOUNCEMENT and then demands a "t1  hostterm  scf ... <that same path>" row.
+// Checking only for "/dev/..." somewhere in the output would be vacuous -- the
+// announcement itself contains one. Checking only for a "t1" row would pass on
+// a row that reported the wrong device.
+let hostDevsName = "hostterm: idevs reports a bound /tN and its host endpoint"
+if filter.isEmpty || hostDevsName.localizedCaseInsensitiveContains(filter) {
+    let out = os9(["dir /dd >/t1", "idevs"], env: ["OS9T1": "pty"])
+    let announced = out.range(of: "/dev/(pts/[0-9]+|[a-z]*tty[a-zA-Z0-9/]+)",
+                              options: .regularExpression).map { String(out[$0]) }
+    let row = out.replacingOccurrences(of: "\r", with: "\n")
+                 .split(separator: "\n")
+                 .first { $0.hasPrefix("t1 ") && $0.contains("hostterm") }
+
+    if let announced, let row, row.contains(announced) {
+        print("PASS: \(hostDevsName)"); passed += 1
+    } else {
+        print("FAIL: \(hostDevsName)")
+        print("      [an idevs row \"t1 hostterm scf ... \(announced ?? "/dev/...")\"]")
+        print("      announced: \(announced ?? "none")  row: \(row.map(String.init) ?? "none")")
+        failed += 1
+    }
+}
+
 // Two commands, each opening and closing /t1. With OS9T1=pty the emulator
 // announces the slave name once per ALLOCATION. If the binding is torn down
 // when the first command's path closes, the second command allocates again and

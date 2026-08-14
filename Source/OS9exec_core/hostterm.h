@@ -22,6 +22,16 @@ Boolean hostterm_configured( int term_id );
 /* Is this device currently open on a host fd? */
 Boolean hostterm_bound    ( int term_id );
 
+/* The HOST endpoint this device is bound to ("/dev/ttys010", "pty" having been
+   resolved to the slave it allocated), for reporting. Empty string when the id
+   is out of range or nothing is bound. Stays valid while bound, which outlives
+   any individual OS-9 path on it. */
+const char* hostterm_endpoint( int term_id );
+
+/* The syspath number currently open on it, or -1 when none is. A bound device
+   with no path is normal -- the endpoint is never closed once bound. */
+int     hostterm_syspath  ( int term_id );
+
 /* Open the configured endpoint and bind it to <spP>.
    Returns 0, or an os9err (E_UNIT if unconfigured or the spelling is
    unsupported, E_DEVBSY if the host refuses). */

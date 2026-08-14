@@ -122,6 +122,25 @@ Boolean hostterm_bound( int term_id )
     return hostterms[ term_id ].open;
 } /* hostterm_bound */
 
+const char* hostterm_endpoint( int term_id )
+{
+    hostterm_init();
+    if (!hostterm_in_range( term_id )) return "";
+    if (!hostterms[ term_id ].open   ) return "";
+    return hostterms[ term_id ].endpoint;
+} /* hostterm_endpoint */
+
+
+int hostterm_syspath( int term_id )
+{
+    hostterm_init();
+    if (!hostterm_in_range( term_id ))      return -1;
+    if (!hostterms[ term_id ].open)         return -1;
+    if ( hostterms[ term_id ].dev.spP==NULL) return -1;
+    return hostterms[ term_id ].dev.spP->nr;
+} /* hostterm_syspath */
+
+
 #if defined UNIX && !defined MINGW
 
 /* Put a tty into 8-bit-transparent raw mode.

@@ -690,6 +690,32 @@ static os9err int_devs( _pid_, int argc, char** argv )
                 }
             }
         } /* for */
+
+        /* Host-backed /tN terminals, with the HOST endpoint they are bound to.
+         * That endpoint is the whole point of listing them: it is announced
+         * once, when the device is opened ("/t1 is /dev/ttys010   (attach
+         * with: screen /dev/ttys010)"), and on a busy screen that line scrolls
+         * away -- after which there was no way to find out where the output
+         * had gone. Listed whenever the device is BOUND, not merely while a
+         * path is open on it: the endpoint is never closed once bound, so a
+         * device with no current path is the normal state between one
+         * `tsmon /t1` exiting and the next login. */
+        for (ii=1; ii<=HOSTTERM_MAX; ii++) {
+            const char* endp= hostterm_endpoint( ii );
+            char        tnam[OS9NAMELEN];
+            char        tnr [12]; /* any int, sign included, plus NUL */
+            int         nr;
+
+            if (*endp==NUL) continue;
+            snprintf( tnam,sizeof(tnam), "t%d", ii );
+
+                nr= hostterm_syspath( ii );
+            if (nr<0) *tnr= NUL; /* bound, but nothing has it open right now */
+            else      snprintf( tnr,sizeof(tnr), "%d", nr );
+
+            upo_printf( "%-10s %-8s %-7s %2s %4s %-4s %s\n",
+                        tnam, "hostterm","scf", tnr, "","", endp );
+        } /* for */
     } /* if */
     
     return 0;
