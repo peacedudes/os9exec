@@ -33,11 +33,6 @@ COPY --from=builder /build/os9exec /usr/local/bin/os9exec
 # working directory (`OS9DISK=/disk.img` found nothing, `mount -k` at "/"
 # produced a device that then failed E$MNF), which is what this line originally
 # dodged. Fixed 2026-08-13; three root-directory blind spots, see ROADMAP-68k.md.
-#
-# One narrow case remains: an image in the root whose filename is exactly TWO
-# characters and is mounted as a DIFFERENT device (`OS9H9=/zz`) still fails, so
-# a two-character name at the root is worth avoiding. `/dd`, and any name longer
-# than two characters, work.
 WORKDIR /work
 
 # os9exec looks for ./dd by default
