@@ -873,6 +873,53 @@ if !containerized {
     try? FileManager.default.removeItem(atPath: scratchHostPath)
 }
 
+// Run the emulator DIRECTLY -- no shell, no system disk -- with a chosen
+// WORKING DIRECTORY, environment and bind mounts.
+//
+// os9() cannot serve these: it pins the working directory to the scratch, and
+// the working directory is the variable under test. This runs whichever binary
+// the suite is testing: the local build, or the SAME container image every
+// other test uses. Both tests below used to skip under a container, which meant
+// the Linux and big-endian legs of a release run exercised neither -- the exact
+// place the defects they cover actually live.
+//
+// Internal commands only, so nothing here depends on a system disk being
+// present. Output is discarded: every assertion is on the BYTES COPIED, because
+// os9exec's exit status does not distinguish "copied nothing" from "copied".
+@discardableResult
+func rawEmulator( _ args: [String], cwd: String,
+                  env vars: [String: String] = [:],
+                  mounts: [(host: String, guest: String)] = [] ) -> Bool {
+    let process = Process()
+    if let image = dockerImage ?? containerImage {
+        let runner = dockerImage != nil ? "docker" : "container"
+        var a = [runner, "run", "--rm", "-w", cwd]
+        for m in mounts                                  { a += ["-v", "\(m.host):\(m.guest)"] }
+        for (k, v) in vars.sorted(by: { $0.key < $1.key }) { a += ["-e", "\(k)=\(v)"] }
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments     = a + [image, "-r"] + args
+    } else {
+        // OS9H0/OS9DISK must not leak in from the operator's shell: OS9H0 in
+        // particular short-circuits the very code path under test.
+        var env = ProcessInfo.processInfo.environment
+        env.removeValue(forKey: "OS9H0")
+        env.removeValue(forKey: "OS9DISK")
+        for (k, v) in vars { env[k] = v }
+        process.executableURL       = execURL
+        process.arguments           = ["-r"] + args
+        process.environment         = env
+        process.currentDirectoryURL = URL(fileURLWithPath: cwd)
+    }
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError  = FileHandle.nullDevice
+    do { try process.run() } catch { return false }
+    process.waitUntilExit()
+    return true
+}
+
+/// True when the suite drives a container rather than the local binary.
+let viaContainer = (dockerImage ?? containerImage) != nil
+
 // `/dd` must reach an RBF image from ANY working directory -- including the
 // filesystem root.
 //
@@ -899,55 +946,46 @@ if !containerized {
 // COPIED BYTES: os9exec's exit status does not distinguish "copied nothing"
 // from "copied something", and the failure mode here is silence.
 //
-// Skipped under a container, where os9exec's cwd is the container's, not ours.
-if !containerized {
+// Runs in BOTH modes: locally the emulator's own cwd is set to "/", and under a
+// container the container's is, which is the same question asked of the same
+// binary.
+do {
     let name = "rbf: /dd resolves to an RBF image from the filesystem root"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         let base = scratchDisk + "/ddroot", out = base + "/out"
-        let img  = base + "/h7", payload = Data("dd-from-root".utf8)
+        let payload = Data("dd-from-root".utf8)
         try? FileManager.default.removeItem(atPath: base)
         try? FileManager.default.createDirectory(atPath: out,
                                                  withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: base + "/payload", contents: payload)
 
-        // OS9H0 must be absent or CheckH0 never reaches the branch under test,
-        // and the test would pass on broken code.
-        func emulator(_ args: [String], cwd: String, _ vars: [String: String]) {
-            var env = ProcessInfo.processInfo.environment
-            env.removeValue(forKey: "OS9H0")
-            env.removeValue(forKey: "OS9DISK")
-            for (k, v) in vars { env[k] = v }
-            let p = Process()
-            p.executableURL = execURL
-            p.arguments = ["-r"] + args
-            p.environment = env
-            p.currentDirectoryURL = URL(fileURLWithPath: cwd)
-            p.standardOutput = FileHandle.nullDevice
-            p.standardError  = FileHandle.nullDevice
-            try? p.run()
-            p.waitUntilExit()
-        }
+        // Where the fixture lives as the EMULATOR sees it, and what to mount.
+        let fix   = viaContainer ? "/fix" : base
+        let outD  = viaContainer ? "/out" : out
+        let mnts: [(host: String, guest: String)] =
+            viaContainer ? [(base, "/fix"), (out, "/out")] : []
+        let img   = fix + "/h7"
 
-        emulator(["mount", "-k=200K", "h7"], cwd: base, [:])
-        emulator(["imakdir", "/h7/CMDS"], cwd: base, ["OS9H7": img])
-        emulator(["icopy", "/h8/payload", "/h7/CMDS/probe"], cwd: base,
-                 ["OS9H7": img, "OS9H8": base])
-        // Fixture check: without this the real assertion below could fail for
-        // want of a file to copy and be read as the defect returning.
-        var built = false
-        emulator(["icopy", "/h7/CMDS/probe", "/h8/viaHN"], cwd: base,
-                 ["OS9H7": img, "OS9H8": out])
-        built = FileManager.default.contents(atPath: out + "/viaHN") == payload
+        rawEmulator(["mount", "-k=200K", "h7"], cwd: fix, mounts: mnts)
+        rawEmulator(["imakdir", "/h7/CMDS"], cwd: fix,
+                    env: ["OS9H7": img], mounts: mnts)
+        rawEmulator(["icopy", "/h8/payload", "/h7/CMDS/probe"], cwd: fix,
+                    env: ["OS9H7": img, "OS9H8": fix], mounts: mnts)
+        // Fixture check: without it the real assertion could fail for want of a
+        // file to copy and read as the defect returning.
+        rawEmulator(["icopy", "/h7/CMDS/probe", "/h8/viaHN"], cwd: fix,
+                    env: ["OS9H7": img, "OS9H8": outD], mounts: mnts)
+        let built = FileManager.default.contents(atPath: out + "/viaHN") == payload
 
-        emulator(["icopy", "/dd/CMDS/probe", "/h8/viaDD"], cwd: "/",
-                 ["OS9DISK": img, "OS9H8": out])
+        rawEmulator(["icopy", "/dd/CMDS/probe", "/h8/viaDD"], cwd: "/",
+                    env: ["OS9DISK": img, "OS9H8": outD], mounts: mnts)
         let viaDD = FileManager.default.contents(atPath: out + "/viaDD")
 
         if built && viaDD == payload {
             print("PASS: \(name)"); passed += 1
         } else {
             print("FAIL: \(name)")
-            print("      [/dd/CMDS/probe copied from cwd \"/\"]")
+            print("      [/dd/CMDS/probe copied with the emulator running in \"/\"]")
             print("      output: image built via /h7: \(built); "
                   + "bytes via /dd: \(viaDD?.count ?? -1) of \(payload.count)")
             failed += 1
@@ -968,11 +1006,13 @@ if !containerized {
 // Not a container-only curiosity: `docker run -v disk.img:/dd` is the shape the
 // Dockerfile itself suggests, and `mount -k` in "/" hits the same wall.
 //
-// GUARDED, and honest about it: the defect requires the image's parent to BE the
-// root, so the test has to write there. On a normal developer box it cannot, and
-// skips with a note rather than passing vacuously. It executes where the root is
-// writable -- a container running as root, which is where the bug lives.
-if !containerized {
+// Under a container the image is BIND-MOUNTED at the container's root, which is
+// both writable and exactly the shape a user hits (`docker run -v disk.img:/dd`).
+// Locally it has to be MOVED to "/", which macOS forbids even to root (the root
+// volume is read-only), so there the test says so and skips rather than passing
+// vacuously. A release run's Linux and big-endian legs are containerised, so
+// this does execute where it matters.
+do {
     let name = "rbf: an RBF image in the filesystem root is usable"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         let rootImage = "/os9test-rootimage.dsk"
@@ -983,41 +1023,38 @@ if !containerized {
                                                  withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: base + "/payload", contents: payload)
 
-        func emulator(_ args: [String], cwd: String, _ vars: [String: String]) {
-            var env = ProcessInfo.processInfo.environment
-            env.removeValue(forKey: "OS9H0")
-            env.removeValue(forKey: "OS9DISK")
-            for (k, v) in vars { env[k] = v }
-            let p = Process()
-            p.executableURL = execURL
-            p.arguments = ["-r"] + args
-            p.environment = env
-            p.currentDirectoryURL = URL(fileURLWithPath: cwd)
-            p.standardOutput = FileHandle.nullDevice
-            p.standardError  = FileHandle.nullDevice
-            try? p.run()
-            p.waitUntilExit()
+        let fix  = viaContainer ? "/fix" : base
+        let outD = viaContainer ? "/out" : out
+        let mnts: [(host: String, guest: String)] =
+            viaContainer ? [(base, "/fix"), (out, "/out")] : []
+        let staged = fix + "/h7"
+
+        // Built somewhere ordinary, then put at the root -- its FINAL location
+        // is the whole point.
+        rawEmulator(["mount", "-k=200K", "h7"], cwd: fix, mounts: mnts)
+        rawEmulator(["imakdir", "/h7/SUB"], cwd: fix,
+                    env: ["OS9H7": staged], mounts: mnts)
+        rawEmulator(["icopy", "/h8/payload", "/h7/SUB/probe"], cwd: fix,
+                    env: ["OS9H7": staged, "OS9H8": fix], mounts: mnts)
+
+        var placed = true
+        var probeMounts = mnts
+        if viaContainer {
+            probeMounts = [(base + "/h7", rootImage), (out, "/out")]
+        } else {
+            try? FileManager.default.removeItem(atPath: rootImage)
+            placed = (try? FileManager.default.moveItem(atPath: base + "/h7",
+                                                        toPath: rootImage)) != nil
         }
 
-        // Build and populate the image somewhere ordinary, then move it to the
-        // root -- `mount -k` writes relative to the emulator's cwd, and the
-        // whole point is that its FINAL location is what matters.
-        let staged = base + "/h7"
-        emulator(["mount", "-k=200K", "h7"], cwd: base, [:])
-        emulator(["imakdir", "/h7/SUB"], cwd: base, ["OS9H7": staged])
-        emulator(["icopy", "/h8/payload", "/h7/SUB/probe"], cwd: base,
-                 ["OS9H7": staged, "OS9H8": base])
-
-        try? FileManager.default.removeItem(atPath: rootImage)
-        let placed = (try? FileManager.default.moveItem(atPath: staged,
-                                                        toPath: rootImage)) != nil
         if !placed {
             print("SKIP: \(name) (the filesystem root is not writable here)")
         } else {
-            emulator(["icopy", "/dd/SUB/probe", "/h8/got"], cwd: scratchDisk,
-                     ["OS9DISK": rootImage, "OS9H8": out])
+            rawEmulator(["icopy", "/dd/SUB/probe", "/h8/got"], cwd: outD,
+                        env: ["OS9DISK": rootImage, "OS9H8": outD],
+                        mounts: probeMounts)
             let got = FileManager.default.contents(atPath: out + "/got")
-            try? FileManager.default.removeItem(atPath: rootImage)
+            if !viaContainer { try? FileManager.default.removeItem(atPath: rootImage) }
 
             if got == payload {
                 print("PASS: \(name)"); passed += 1

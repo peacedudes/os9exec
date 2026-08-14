@@ -22,7 +22,18 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 VM=os9exec-windows
-SSH="ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -p 2222 claude@localhost"
+# The key is named explicitly, and IdentitiesOnly stops ssh offering the
+# default identities first. Without -i this script could only ever work on a
+# machine where the key happened to be in the agent or named in ~/.ssh/config:
+# ssh offered ~/.ssh/id_rsa, the VM refused it, and the run died at "never
+# answered on ssh" -- indistinguishable from a VM that had not booted, which is
+# how it was misread twice. The key has been documented in the header since the
+# script was written; it just was not being used.
+KEY="$HOME/.ssh/os9exec_winvm"
+SSHOPTS="-i $KEY -o IdentitiesOnly=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+SSH="ssh $SSHOPTS -p 2222 claude@localhost"
+
+[ -r "$KEY" ] || { echo "no ssh key at $KEY -- see project memory windows-vm-access"; exit 1; }
 BUILD=/tmp/verify-winvm
 
 command -v utmctl >/dev/null 2>&1 || { echo "utmctl not installed"; exit 1; }
@@ -50,8 +61,8 @@ rm -rf "$BUILD"; mkdir -p "$BUILD"
   || { echo "windows cross-build failed -- $BUILD/build.log"; exit 1; }
 
 $SSH 'if (Test-Path C:\verify) { Remove-Item -Recurse -Force C:\verify }; New-Item -ItemType Directory C:\verify | Out-Null' >/dev/null 2>&1
-scp -q -o StrictHostKeyChecking=no -P 2222 "$BUILD/os9exec.exe" claude@localhost:C:/verify/os9exec.exe || exit 1
-scp -q -r -o StrictHostKeyChecking=no -P 2222 "$REPO/test/68k-conformance" claude@localhost:C:/verify/ || exit 1
+scp -q $SSHOPTS -P 2222 "$BUILD/os9exec.exe" claude@localhost:C:/verify/os9exec.exe || exit 1
+scp -q -r $SSHOPTS -P 2222 "$REPO/test/68k-conformance" claude@localhost:C:/verify/ || exit 1
 
 # Run every test module as its own boot program and tally the RESULT lines,
 # which is exactly what conformance.sh's --noshell leg does on Unix.
