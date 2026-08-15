@@ -36,7 +36,17 @@ endif
 #
 # If this flag ever has to come back, that means punning was reintroduced
 # somewhere -- find it and fix it there rather than restoring the flag.
-CFLAGS  = -g -Wall -fcommon \
+# Large-file support, and it is NOT optional on 32-bit.
+#
+# Without it off_t is 32 bits, and glibc's readdir() then fails with EOVERFLOW
+# ("Value too large for defined data type") whenever a directory entry's offset
+# does not fit -- which on overlayfs, ext4 and most modern filesystems is every
+# entry. Measured on i386: readdir returned 0 entries and errno 75 for a plain
+# directory holding one file. os9exec reads directories to case-correct paths,
+# so on 32-bit hosts nothing that needed a directory scan worked -- mounting an
+# RBF image failed with E$FNA, while the emulator itself ran fine. It is a
+# no-op on 64-bit, where off_t is already 64 bits.
+CFLAGS  = -g -Wall -fcommon -D_FILE_OFFSET_BITS=64 \
           -DTERMINAL_CONSOLE \
           -DINT_CMD \
           -DRAM_SUPPORT \
@@ -107,7 +117,7 @@ all: $(OBJDIR) $(EXE)
 # Production build: optimised, no debug symbols.
 # Usage: make prod   (rebuilds from scratch with -O2)
 prod:
-	$(MAKE) -B CFLAGS="-O2 -Wall -fcommon \
+	$(MAKE) -B CFLAGS="-O2 -Wall -fcommon -D_FILE_OFFSET_BITS=64 \
 	          -DREUSE_MEM \
           -DTERMINAL_CONSOLE \
 	          -DINT_CMD \
