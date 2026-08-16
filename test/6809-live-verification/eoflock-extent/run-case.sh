@@ -6,7 +6,10 @@
 # with no way to tell whether the intended holder or the stale one was holding
 # it. Booting per case makes exactly one holder exist by construction.
 set -uo pipefail
-cd /Users/rdoggett/mine/os9/XXX/os9exec/os9exec-git_code
+# Repo root, derived rather than hardcoded: this file used to cd to one
+# developer's absolute path, so it broke for every clone and would have
+# broken again the moment the checkout moved.
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 export NITROS9REPL_DISKDIR=$HOME/.cache/nitros9repl/eof-probe
 export NITROS9REPL_EXTRA_XROAR="-no-ratelimit -ram 2048"
 R=./tools/nitros9repl.sh
