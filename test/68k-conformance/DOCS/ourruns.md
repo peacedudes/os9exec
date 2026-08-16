@@ -230,3 +230,30 @@ the single most valuable line a run elsewhere could send back.
 
 **These are still os9exec results.** A PASS here says os9exec agrees with our
 reading of the manual, which is weaker than agreeing with OS-9.
+
+## 2026-08-15 - full-system emulation cannot give this suite a verdict
+
+riscv64 here runs under QEMU's full-system TCG emulation, where every guest
+instruction is interpreted. The suite does not survive that, and it is worth
+recording how it fails rather than what it scored.
+
+Two runs completed and each reported two locking failures, but not the same two:
+t21 and t23 on one, t19 and t21 on the next, same binary, idle host. The obs=
+value was 901 both times, which is the suite's own marker for "the access
+succeeded only after the holder let go". So the lock deferred the contender
+exactly as claimed; the contender simply lost a race against the holder's rescue
+timer. That is a statement about machine speed, not about locking.
+
+Three further runs never got that far: `mount -k` could not produce an 800K
+image inside conformance.sh's 60-second budget, so the RBF leg reported "could
+not create". Earlier runs had squeaked past the same budget. Anything measured
+here is dominated by timeouts.
+
+Read it as: riscv64 BUILDS clean (0 warnings, gcc 15.3), and this environment
+cannot run the suite reliably enough to give a verdict either way. A 901 or a
+"could not create" from a full-system emulator means rerun on real hardware, not
+disagreement with the manual. s390x, which is emulated per instruction rather
+than per machine and is far quicker, runs the whole suite cleanly.
+
+An earlier riscv64 run reported 44/44. That was a single sample, and this file
+should not have carried it as evidence.
