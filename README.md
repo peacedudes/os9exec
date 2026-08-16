@@ -413,12 +413,10 @@ Everything else in a standard OS-9/68k SDK CMDS directory can be expected to run
 
 ## Other ways to run it
 
-The [3-step Quick start](#quick-start) is the recommended path - one `make`, and you get every fix above. The [GitHub Releases](https://github.com/peacedudes/os9exec/releases) page still carries only the older tagged `v0.0.0` binaries; no new release has been cut yet.
+The [3-step Quick start](#quick-start) is the recommended path: one `make`, and you get everything described above. Prebuilt binaries for each tagged release are on the [GitHub Releases](https://github.com/peacedudes/os9exec/releases) page.
 
 <details>
 <summary>Download a binary instead of building</summary>
-
-**These are the `v0.0.0` release binaries - older than this branch.**
 
 - macOS ARM64 (M1/M2/M3): `os9exec-macos-arm64`
 - Linux 64-bit: `os9exec-linux-x64`
