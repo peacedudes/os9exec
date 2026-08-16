@@ -179,10 +179,17 @@ jobs:
         echo "$OUTPUT" | grep -q "OS9exec" || { echo "FAIL: expected OS9exec header"; exit 1; }
         echo "✓ Windows binary runs under Wine and shows internal help"
 
+    # Every asset in a GitHub release shares one namespace, so each uploaded
+    # file needs a DISTINCT name. Only the 32-bit Docker build was renamed,
+    # which left linux-x64 and macos-arm64 both shipping a file called
+    # "os9exec": the second upload overwrote the first and v4.0.0's first cut
+    # contained no Linux 64-bit binary at all. Renaming every platform's
+    # binary to its artifact name also makes the release match what the README
+    # tells people to download. After the smoke tests, which run ./os9exec.
     - name: Rename artifact
-      if: matrix.cc == 'docker'
       run: |
-        mv os9exec os9exec-linux-i386 || true
+        mv "${{ matrix.binary }}" "${{ matrix.artifact }}"
+        ls -l "${{ matrix.artifact }}"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v6
@@ -270,7 +277,7 @@ jobs:
       uses: softprops/action-gh-release@v3
       with:
         files: |
-          os9exec-linux-x64/os9exec
+          os9exec-linux-x64/os9exec-linux-x64
           os9exec-linux-i386/os9exec-linux-i386
-          os9exec-macos-arm64/os9exec
-          os9exec-windows-x64.exe/os9exec.exe
+          os9exec-macos-arm64/os9exec-macos-arm64
+          os9exec-windows-x64.exe/os9exec-windows-x64.exe
