@@ -922,9 +922,26 @@ func rawEmulator( _ args: [String], cwd: String,
         process.environment         = env
         process.currentDirectoryURL = URL(fileURLWithPath: cwd)
     }
+    // stdin MUST be detached. Without this the emulator inherits the terminal
+    // the suite was launched from, puts it into raw mode and waits for a key --
+    // so `make test` run interactively hung here forever while the same code
+    // passed when stdin was already a pipe. Piping it is not enough either:
+    // these are internal commands that read nothing, and a closed stdin is the
+    // honest description of that.
+    process.standardInput  = FileHandle.nullDevice
     process.standardOutput = FileHandle.nullDevice
     process.standardError  = FileHandle.nullDevice
     do { try process.run() } catch { return false }
+
+    // And bounded, for the same reason every other run in this file is: a hang
+    // must cost one test its verdict, never the whole suite.
+    let deadline = Date().addingTimeInterval(60)
+    while process.isRunning && Date() < deadline { usleep(50_000) }
+    if process.isRunning {
+        process.terminate()
+        usleep(200_000)
+        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+    }
     process.waitUntilExit()
     return true
 }
