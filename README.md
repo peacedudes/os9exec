@@ -12,7 +12,9 @@ and runs on 32- and 64-bit machines, big-endian and little-endian alike.
 
 OS9exec was written by **Lukas Zeller** and **Beat Forster**. They both know of
 this work, and are pleased to see os9exec given a new life on today's computers.
-The emulator is their work.
+The emulator is their work: the [original project page](http://www.synthesis.ch/os9exec)
+is still online, and V3.39 is still on [SourceForge](https://sourceforge.net/projects/os9exec/)
+where they published it.
 
 Everything since V3.39 is ours - as is any bug you may find in it.
 
