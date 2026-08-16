@@ -1,6 +1,6 @@
 # Building a system disk the tests can pass with
 
-The suites in `test/` are all in git — 443 files. The **disk** they run against is
+The suites in `test/` are all in git - 443 files. The **disk** they run against is
 not, and cannot be: it is a licensed Microware OS-9/68k system disk. This is the
 missing half of the setup, and without it a fresh clone can build `os9exec` and
 run only the parts that need no disk at all.
@@ -10,7 +10,7 @@ run only the parts that need no disk at all.
 ## What you need
 
 Point `OS9DISK` at a directory (or an RBF image) laid out like this. Inside OS-9
-that directory **is `/dd`** — that is what a boot disk is. `/h0` is only a
+that directory **is `/dd`** - that is what a boot disk is. `/h0` is only a
 default alias os9exec adds for a directory sitting beside the binary; don't
 build anything that depends on it.
 
@@ -30,15 +30,15 @@ Copy `docs/h0-template/` to wherever you keep it, then fill `CMDS/`.
 This is a **subset of Microware's documented layout**, not an invention of ours.
 *Using Professional OS-9*, chapter 2, page 2-7, "Directories Contained on the
 System Disk", lists what a Professional OS-9 root normally holds: `BOOTOBJS`,
-`C`, `CMDS`, `DEFS`, `IO`, `LIB`, `MACROS`, `SYS` — naming `Errmsg`, `password`
-and `termcap` inside it — and `SYSMODS`, with `startup` and `OS9Boot` at the
+`C`, `CMDS`, `DEFS`, `IO`, `LIB`, `MACROS`, `SYS` - naming `Errmsg`, `password`
+and `termcap` inside it - and `SYSMODS`, with `startup` and `OS9Boot` at the
 root "by convention". The template ships only the parts that are ours to ship
 and that the tests need; everything else on that list is either yours to copy or
 irrelevant to running the suite. If you are building a disk for real use rather
 than just for `make test`, follow the manual's list, not this one.
 
 Two of those deserve a note. `SYS/termcap` is standard and every
-screen-oriented program wants it — `vi`, `less`, `emacs` — but nothing in the
+screen-oriented program wants it - `vi`, `less`, `emacs` - but nothing in the
 test suite reads it, so its absence costs you nothing here and a lot elsewhere.
 `USR` does not appear in the page 2-7 table at all, yet the same chapter says
 the disk holds "a directory for each user" and the manual's own example root
@@ -54,18 +54,18 @@ copy step below boots, logs in as `dog`, and runs `procs`.
 
 ## Why so little of SYS/
 
-Measured the same way as the command list — only **`SYS/password`** is referenced
+Measured the same way as the command list - only **`SYS/password`** is referenced
 by anything in the suite. Nothing reads `termcap`, `motd`, `MENUS`,
 `moded.fields` or `umacs.hlp`; those are data files for utilities the tests do
 not run, and most are Microware's or third-party anyway.
 
 **`SYS/errmsg` deserves its own warning.** `h0/SYS/errmsg` is **Microware's
-copyrighted file** — the error-code numbers and `E$` names are facts, but the
+copyrighted file** - the error-code numbers and `E$` names are facts, but the
 message prose is expression. Do not copy it into anything shippable. Nothing in
 the suite needs it; its absence only means the shell prints bare numbers instead
 of sentences. A clean-room replacement written from our own `error-codes.md`
 exists at `freeware/SYS/errmsg` (not in this repo). If you want readable errors
-on your own disk, copy Microware's from your own OS-9 disk — that is yours to
+on your own disk, copy Microware's from your own OS-9 disk - that is yours to
 use, just not to redistribute.
 
 ## Exactly which commands to copy
@@ -86,10 +86,10 @@ tar     tee     tmode   touch   tr      tsmon   unlink  what
 
 ### Where they come from
 
-These live under `OS9/<cpu>/CMDS` on a Microware **OS-9 for 68K SDK** — v1.2 is
+These live under `OS9/<cpu>/CMDS` on a Microware **OS-9 for 68K SDK** - v1.2 is
 the one this project was developed against. Our disk was built by copying
 **all of `OS9/68000/CMDS`**
-and then **all of `OS9/68020/CMDS` over the top** — the 68020 build replaces
+and then **all of `OS9/68020/CMDS` over the top** - the 68020 build replaces
 same-named modules and adds none, so the file *set* is the 68000 one and the
 *contents* are 68020 where a 68020 build exists. Either layer alone should work
 under os9exec, which emulates a 68020/68881; the doubled copy is simply what we
@@ -98,7 +98,7 @@ have measured against.
 `CPU32/CMDS`, `68040/CMDS` and `68060/CMDS` exist on the SDK too and were not
 used here.
 
-The SDK itself is Microware's and is not ours to point you at — but the
+The SDK itself is Microware's and is not ours to point you at - but the
 **manuals** this project cites throughout are separately archived in public,
 and are what every claim in `test/68k-conformance/DOCS/claims.md` is checked
 against:
@@ -111,7 +111,7 @@ Three of the 62 are trap handlers rather than utilities and are the ones most
 often missing: **`cio`**, **`csl`**, **`math`**. Without `cio` most archived
 OS-9 binaries die with `**** Can't install trap handler ****`; the suite needs
 it. `math881` is a drop-in replacement for `math` on a 68881 build and is more
-accurate — see the note in `startup`.
+accurate - see the note in `startup`.
 
 To reproduce the measurement after changing the suite:
 
@@ -138,7 +138,7 @@ required. The template has none of it.
 `shell /dd/startup`, and `startup`'s only job is to `load` the modules you want
 resident so that bare-name `F$Fork` lookups resolve regardless of any account's
 execution directory. If you would rather not keep a `startup` at all, load what
-you need by hand once the REPL is up — the harness does not care.
+you need by hand once the REPL is up - the harness does not care.
 
 It does **not** require a disk structured specially for it. If your disk boots
 `shell`, the REPL works.
@@ -147,10 +147,10 @@ It does **not** require a disk structured specially for it. If your disk boots
 
 Two things need nothing at all:
 
-- `tools/conformance.sh 68k --noshell` — CONF68K runs each test as its own boot
+- `tools/conformance.sh 68k --noshell` - CONF68K runs each test as its own boot
   program. Every module in `test/68k-conformance/CMDS/` is our own 68000
   assembly. This is what CI runs.
-- `make warnings` — compiles only.
+- `make warnings` - compiles only.
 
 `make test`, `make hammer`, `make live-verify` and the REPL all need the disk
 above.
