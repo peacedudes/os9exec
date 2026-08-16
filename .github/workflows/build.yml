@@ -3,6 +3,12 @@ name: Build os9exec (all platforms)
 on:
   push:
     branches: [ master, arm64-uae-integration ]
+    # Tags must be listed explicitly. Without this the workflow does not run
+    # for a tag at all, so create-release -- which is gated on
+    # startsWith(github.ref, 'refs/tags/') -- could never fire, and tagging
+    # produced no release and no binaries. Found while preparing the first
+    # real tag; the release job had been unreachable since it was written.
+    tags: [ 'v*' ]
   pull_request:
     branches: [ master ]
   workflow_dispatch:
