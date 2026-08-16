@@ -109,8 +109,11 @@ void getversion( unsigned short *ver,
     } // if
   #else
     // simply hardwired for all other platforms
-    *ver=    3;
-    *rev= 0x40; /* V3.40 — arm64 port */
+    *ver=    4;
+    *rev= 0x00; /* V4.00 - first release of this continuation, tagged v4.0.0.
+                   Reported by `os9exec -ih`, returned to guests by lVersion(),
+                   and stamped into the OS9exec module header (modstuff.c), so
+                   a bug report names the version it was actually run on. */
   #endif
 } // getversion
 
