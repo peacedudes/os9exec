@@ -256,6 +256,13 @@ jobs:
     needs: [build, conformance]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    # Creating a release WRITES to the repository, and this workflow's token is
+    # read-only by default -- publish-docker declares its own permissions and
+    # this job never did. The first tag ever pushed therefore built all four
+    # binaries, passed conformance, and then failed with
+    # "403 Resource not accessible by integration" at the last step.
+    permissions:
+      contents: write
     steps:
     - uses: actions/download-artifact@v8
 
