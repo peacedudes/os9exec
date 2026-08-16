@@ -421,10 +421,14 @@ The [3-step Quick start](#quick-start) is the recommended path - one `make`, and
 **These are the `v0.0.0` release binaries - older than this branch.**
 
 - macOS ARM64 (M1/M2/M3): `os9exec-macos-arm64`
-- macOS Intel: (available in releases)
 - Linux 64-bit: `os9exec-linux-x64`
 - Linux 32-bit: `os9exec-linux-i386`
-- Windows: no tagged release binary yet - build from source or use Docker
+- Windows 64-bit: `os9exec-windows-x64.exe`
+
+There is no macOS Intel binary. The build works and is tested, but nothing
+publishes it: CI runs on Apple Silicon, and an Intel binary built there cannot
+be smoke-tested on the same machine. Build it yourself with
+`make CC="cc -arch x86_64" prod`, which is what we test.
 
 ```sh
 mkdir -p dd/CMDS
