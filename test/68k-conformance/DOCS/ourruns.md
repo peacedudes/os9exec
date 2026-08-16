@@ -234,26 +234,35 @@ reading of the manual, which is weaker than agreeing with OS-9.
 ## 2026-08-15 - full-system emulation cannot give this suite a verdict
 
 riscv64 here runs under QEMU's full-system TCG emulation, where every guest
-instruction is interpreted. The suite does not survive that, and it is worth
-recording how it fails rather than what it scored.
+instruction is interpreted. The suite is not reproducible there, and the useful
+record is what the cause is NOT.
 
-Two runs completed and each reported two locking failures, but not the same two:
-t21 and t23 on one, t19 and t21 on the next, same binary, idle host. The obs=
-value was 901 both times, which is the suite's own marker for "the access
-succeeded only after the holder let go". So the lock deferred the contender
-exactly as claimed; the contender simply lost a race against the holder's rescue
-timer. That is a statement about machine speed, not about locking.
+Five runs of the RBF leg scored 44, 42, 42, 43 and 41. Every failure was in the
+two-process locking family, never the same set twice, on an idle host with one
+binary. The obs= value was 901, the suite's own marker for "the access succeeded
+only after the holder let go".
 
-Three further runs never got that far: `mount -k` could not produce an 800K
-image inside conformance.sh's 60-second budget, so the RBF leg reported "could
-not create". Earlier runs had squeaked past the same budget. Anything measured
-here is dominated by timeouts.
+That marker suggests an obvious explanation: fork.i's holder releases after
+RELDELAY, which is 60 ticks, and os9exec's tick is 100Hz of real time, so the
+contended child has 0.6 real seconds to fork, open and block. On a machine this
+slow it might simply not get there. **That was tested and is wrong.** Running the
+same binary with the tick stretched tenfold (`-q100`, making RELDELAY 6 seconds)
+produced 44, 42 and 42 against 43 and 41 at the default tick, with the harness
+timeouts held at 600s in both arms. The distributions overlap; the tick is not
+the variable. A single 44/44 in the slow arm looked like proof and was not.
 
-Read it as: riscv64 BUILDS clean (0 warnings, gcc 15.3), and this environment
-cannot run the suite reliably enough to give a verdict either way. A 901 or a
-"could not create" from a full-system emulator means rerun on real hardware, not
-disagreement with the manual. s390x, which is emulated per instruction rather
-than per machine and is far quicker, runs the whole suite cleanly.
+Raising conformance.sh's per-invocation timeout from 60s to 600s IS necessary
+here - without it `mount -k` cannot produce an 800K image in time and the leg
+reports "could not create" before any test runs - but it does not make the
+locking results reproducible.
 
-An earlier riscv64 run reported 44/44. That was a single sample, and this file
-should not have carried it as evidence.
+So the remaining suspect is scheduling jitter between the two emulated
+processes, where a 100x interpretation penalty lands unevenly on whichever one
+holds the CPU. Untested.
+
+Read a 901 from a full-system emulator as "inconclusive, rerun on real
+hardware". riscv64 BUILDS clean here (0 warnings, gcc 15.3). s390x, emulated per
+instruction rather than per machine, runs the whole suite cleanly and repeatedly.
+
+An earlier riscv64 run reported 44/44 and this file should not have carried that
+single sample as evidence.
