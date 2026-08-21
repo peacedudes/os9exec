@@ -346,11 +346,25 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
       ConsPutcTo( gConsoleID, c, currentpid );
   } /* ConsPutc */
 
-  void ConsPutcEdit( char c, Boolean alf, char eorch )
+  void ConsPutcEdit( char c, Boolean alf )
   /* put char to console and perform CR/LF expansion etc. */
   {
-      ConsPutc ( c );          /* Auto LF */
-      if (alf && c!=NUL && c==eorch) ConsPutc( LF );
+      /* PD_ALF is keyed on the CARRIAGE RETURN, not on PD_EOR, and the two
+       * are only the same character because PD_EOR normally holds $0D.
+       * v2.4 Technical I/O Manual, SCF path options: "PD_ALF Automatic line
+       * feed -- If PD_ALF is not zero, carriage returns are automatically
+       * followed by line-feeds." The Guru says the same thing from the other
+       * side: the auto-linefeed "is implemented only if a Carriage Return
+       * character is output, not an 'end of record' character", and the EOR
+       * character "is echoed without converting it to a Carriage Return".
+       *
+       * This used to compare against PD_EOR, which is right until something
+       * moves PD_EOR: `tmode eor=0A` then cost every echoed line its LF, so
+       * the CR returned the cursor to column 0 and the next line was typed
+       * over the last one. Terminating a record is PD_EOR's job (ConsRead's
+       * endchar, ConsoleOut's wrln break); ending a display line is CR's. */
+      ConsPutc ( c );
+      if (alf && c==CR) ConsPutc( LF );
   } /* ConsPutcEdit */
 #endif
 
@@ -447,7 +461,26 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
         cnt=                cp->saved_cnt;
     }
 
-    while (cnt<*maxlenP) {
+    /* I$Read stops when the requested count is reached; I$ReadLn does NOT.
+     * v2.4 Technical I/O Manual, SCF chapter: "If I$ReadLn has satisfied its
+     * input byte count, SCF ignores any further input characters until an
+     * end-of-record character (PD_EOR) is received. It echoes the PD_OVF
+     * character for each byte ignored." The Guru states the same rule as a
+     * warning to callers -- "input does not terminate when the requested
+     * number of characters has been input" -- so an over-long line is
+     * TRUNCATED here, not split into a second read.
+     *
+     * `full` is derived from cnt every pass rather than latched in a flag, so
+     * it needs no extra state to survive the pWaitRead park-and-resume above.
+     * Compared as uint32_t because cnt is a (never negative) long and
+     * *maxlenP a uint32_t: on LP64 the promotion is to long and on ILP32 to
+     * unsigned int, and the cast makes both models agree instead of leaving
+     * the signedness to the target. */
+    while (true) {
+        Boolean full= ((uint32_t)cnt >= *maxlenP); /* requested count reached */
+
+        if (full && !edit) break; /* I$Read: done. I$ReadLn: keep going */
+
         if (!dupMode && !ConsGetc(&c)) { 
             err= E_READ;
             if (!devIsReady) {
@@ -504,6 +537,27 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
             term_line = 0;
         }
         else {
+            /* Both of these run BEFORE the dup expansion below, because that
+               reads buffer[cnt] and buffer[cnt+1] -- one and two past the end
+               of the caller's buffer once the count is reached. The old loop
+               bound made that unreachable; `full` is now a state the loop
+               stays in, so it has to be handled before the read. */
+            if (dupMode && full) { dupMode= false; continue; } /* replay hit the count */
+
+            if (full) {
+                /* I$ReadLn past its count: the byte is neither stored nor
+                   edited. PD_EOR still ends the read (and is discarded with
+                   the rest, since there is nowhere to put it); every other
+                   byte is answered with PD_OVF, the terminal's bell. Note
+                   this is not gated on PD_EKO -- the manual describes PD_OVF
+                   as an alert for a byte being thrown away, not as an echo of
+                   input, and a path with echo off still overflows. */
+                if (endchar!=0 && endchar==c) break;
+                if (ot->_sgs_ovfch)          ConsPutc( ot->_sgs_ovfch );
+                fflush(stdout);
+                continue;
+            }
+
             if (dupMode) {
                 c=  *(buffer+cnt);
                 if (*(buffer+cnt+1)==NUL) dupMode= false;
@@ -519,7 +573,7 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
             if (edit) {
                 /* basic line editing  */
                 if (c!=NUL && c==ot->_sgs_eofch) {
-                    ConsPutcEdit( CR, alf,ot->_sgs_eorch );
+                    ConsPutcEdit( CR, alf );
                     err= E_EOF;
                     break;
                 }
@@ -558,7 +612,7 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
                 }
                 else {
                     cnt++;
-                    if (ot->_sgs_echo) ConsPutcEdit( c, alf,ot->_sgs_eorch );
+                    if (ot->_sgs_echo) ConsPutcEdit( c, alf );
                 }
             }
             else {
@@ -776,10 +830,32 @@ os9err pSclose( _pid_, _spP_ )
 os9err pConsIn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
 {
     #ifdef TERMINAL_CONSOLE
+      /* I$Read stops at the path's end-of-record character. d1.l is a
+       * MAXIMUM, not a count to wait for -- v2.4 Technical I/O Manual, SCF
+       * chapter: the read terminates when "the requested number of bytes has
+       * been read", when "an end-of-record character is detected (PD_EOR)",
+       * on PD_EOF as the first character, or on error. The same page names
+       * zeroing PD_EOR as the supported way to ask for the count instead:
+       * "De-select (set to zero) the end-of-record (PD_EOR) character ...
+       * This prevents the read from terminating early".
+       *
+       * A literal 0 was passed here, and 0 means "no terminator" to
+       * ConsRead, so every terminal read behaved as if PD_EOR were disabled
+       * and waited for the full count: a program asking for more bytes than
+       * were typed hung for ever. pdksh reads its command line with
+       * read(ttyfd,line,256) and so never saw a single typed command, while
+       * bash and sh -- which use I$ReadLn -- were unaffected. Live: pdksh
+       * and umacs both zero PD_EKO and PD_EOF on entry and deliberately
+       * LEAVE PD_EOR at $0D, which is exactly the contract they are relying
+       * on; tsmon zeroes PD_EOR and then reads one byte, which is the other
+       * half of it.
+       */
+      struct _sgs* ot= (struct _sgs*)&spP->opt; /* path opt table */
+
       gConsoleID= spP->term_id;
       g_spP     = spP;
-      return ConsRead( pid,spP, maxlenP,buffer,false, 0);
-    
+      return ConsRead( pid,spP, maxlenP,buffer,false, ot->_sgs_eorch );
+
     #else
       return pUnimp  ( pid,spP );
     #endif
@@ -791,9 +867,32 @@ os9err pConsInLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer 
 	os9err err= 0;
 	
     #ifdef TERMINAL_CONSOLE
+      /* I$ReadLn ends the line at the path's end-of-record character, not at
+       * a carriage return. v2.4 Technical I/O Manual, SCF chapter: the read
+       * terminates when "an end-of-record character is detected (PD_EOR)",
+       * on PD_EOF as the first character, or on error -- and, pointedly, not
+       * on the byte count (ConsRead handles that half). The Guru puts the
+       * same sentence the other way round: SCF "terminates when the
+       * character read matches the 'end of record' character (PD_EOR),
+       * rather than the Carriage Return character".
+       *
+       * A literal CR was passed here while the echo beside it already read
+       * PD_EOR, so the two disagreed the moment anything moved PD_EOR: the
+       * line still ended on CR but lost its auto-LF. `tmode eor=<h>` is a
+       * documented v2.4 parameter and reaches this path, and tsmon zeroes
+       * PD_EOR outright on /term at boot, so this is not hypothetical.
+       *
+       * PD_EOR of zero is passed straight through, which the manual is
+       * explicit about and warns callers of: "If PD_EOR is set to zero,
+       * SCF's I$ReadLn will never terminate, unless an EOF or error occurs."
+       * PD_EOF (ESC by default) and PD_QUT still end the read, so a path put
+       * in that state is recoverable rather than wedged.
+       */
+      struct _sgs* ot= (struct _sgs*)&spP->opt; /* path opt table */
+
       gConsoleID= spP->term_id;
       g_spP     = spP;
-      err= ConsRead( pid,spP,maxlenP,buffer,true,CR );
+      err= ConsRead( pid,spP,maxlenP,buffer,true, ot->_sgs_eorch );
     
     #else
       long cnt,i;
@@ -1206,7 +1305,10 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                     c= buffer[cnt++];
                 if (c!=NUL && c==ot->_sgs_eorch) {
                     *maxlenP= cnt;
-                    do_lf= ot->_sgs_alf;
+                    /* The record ends on PD_EOR; the auto-LF belongs to the
+                       CARRIAGE RETURN -- see ConsPutcEdit for the citation.
+                       Same character in every ordinary configuration. */
+                    do_lf= (ot->_sgs_alf && c==CR);
                     break;
                 }
             } /* while */
@@ -1307,7 +1409,10 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                * for both, and if there isn't room, park BEFORE pushing the CR so
                * resume retries the pair (never a lone CR). Unpaced output goes
                * straight to the screen and can't drop anything, exactly as before. */
-              needsLF= (wrln && c!=NUL && c==ot->_sgs_eorch && ot->_sgs_alf);
+              /* PD_ALF follows a CARRIAGE RETURN, not PD_EOR -- citation in
+                 ConsPutcEdit. Ending the RECORD is still PD_EOR's job, and
+                 that test is the `wrln` break at the bottom of this loop. */
+              needsLF= (wrln && c==CR && ot->_sgs_alf);
               need   = needsLF ? 2 : 1;
 
               if (paced) {

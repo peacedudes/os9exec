@@ -725,7 +725,7 @@ ushort debugwait( void )
                * allowing read() to be called again on the next ConsGetc iteration. */
               do { clearerr(stdin); ConsGetc(cp);
               } while (!devIsReady);
-              ConsPutcEdit(*cp, true,CR); /* do echo */
+              ConsPutcEdit(*cp, true);   /* do echo -- auto-LF follows the CR */
               if          (*cp!=CR) cp++;
           } while         (*cp!=CR);
              *cp= NUL; /* string termination */

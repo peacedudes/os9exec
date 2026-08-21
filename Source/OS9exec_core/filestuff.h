@@ -157,7 +157,7 @@ void close_syspaths      ( void );
 /* external consio support routines */
 Boolean ConsGetc        ( char *c );
 void    ConsPutc        ( char  c );
-void    ConsPutcEdit    ( char  c, Boolean alf, char eorch );
+void    ConsPutcEdit    ( char  c, Boolean alf );
 
 /* baud pacing: paces output to an emulated line rate, so a fast host does
  * not outrun what a real serial terminal could have displayed. */
