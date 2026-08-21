@@ -4563,6 +4563,113 @@ if filter.isEmpty || pacedUsageName.localizedCaseInsensitiveContains(filter) {
     }
 }
 
+// ── SCF honours PD_EOR, the path's end-of-record character ───────────────────
+// PD_EOR is a path option ($8B in the SCF option section), settable with
+// `tmode eor=<h>` and with I$SetStt SS_Opt, and it is what ends a record --
+// not a hardcoded carriage return. The console read paths used to disagree
+// with each other about that: the echo already read PD_EOR while the
+// terminator test was a literal CR, so moving PD_EOR left lines ending on a
+// character SCF no longer considered a terminator.
+//
+// This is not a theoretical option nobody moves. Instrumented run against the
+// v2.4 system disk, 2026-08-21: tsmon sets PD_EOR=$00 (with PD_EOF and PD_EKO)
+// on /term at boot and then does a one-byte I$Read; pdksh and umacs both zero
+// PD_EKO and PD_EOF on entry and deliberately LEAVE PD_EOR at $0D, which is
+// the contract that makes their raw reads return on Enter at all.
+//
+// $5F is chosen as the stand-in terminator because it is not a shell
+// metacharacter and cannot be produced by the harness's own line endings: the
+// obvious $0A can never reach an OS-9 program on a Unix host at all, since
+// ConsGetc swaps LF and CR unconditionally (consio.c).
+//
+// `noecho` is load-bearing, not tidiness: with echo on, the captured stream
+// carries the typed characters as well as the program's output, and the two
+// run together on one line precisely because the EOR character correctly gets
+// no auto-LF -- which makes a substring assertion match in both directions.
+
+// Claim: v2.4 Technical I/O Manual, SCF chapter -- I$ReadLn terminates when
+// "an end-of-record character is detected (PD_EOR)". Two commands are sent as
+// ONE line with no CR between them, so only a build that terminates on $5F
+// can run them as two. Verified to fail against the pre-change binary: the
+// whole text ran as a single command, echoing "EORONE_echo EORTWO_".
+run("console: I$ReadLn ends the line at PD_EOR, not at CR",
+    expectation: "one line ending in EORONE and another ending in EORTWO",
+    commands: ["tmode noecho eor=5F", "echo EORONE_echo EORTWO_"]) { out in
+    let lines = out.split(whereSeparator: \.isNewline)
+                   .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    return lines.contains { $0.hasSuffix("EORONE") }
+        && lines.contains { $0.hasSuffix("EORTWO") }
+}
+
+// Claim: same chapter, PD_ALF -- "If PD_ALF is not zero, carriage returns are
+// automatically followed by line-feeds." The auto-LF follows the CARRIAGE
+// RETURN; ending the record is PD_EOR's separate job. This build used to key
+// the LF on PD_EOR, so with PD_EOR moved every written line lost its LF and
+// the next one was printed over it.
+//
+// The line still has to be delivered through the $5F terminator to get here,
+// so this rides on the ReadLn fix above rather than failing on its own -- the
+// two ship together. Asserted on bytes, not on Characters: Swift folds CR LF
+// into a single grapheme, which would make a String search read the same
+// whether or not the LF is there.
+run("console: PD_ALF adds the LF after CR, not after PD_EOR",
+    expectation: "an output line still ends CR LF when PD_EOR is not CR",
+    commands: ["tmode noecho eor=5F", "echo ALFMARK_"]) { out in
+    Data(out.utf8).range(of: Data("ALFMARK\r\n".utf8)) != nil
+}
+
+// Claim: same chapter -- "If I$ReadLn has satisfied its input byte count, SCF
+// ignores any further input characters until an end-of-record character
+// (PD_EOR) is received. It echoes the PD_OVF character for each byte ignored."
+// An over-long line is TRUNCATED, not split: the tail is thrown away, never
+// handed to a second read.
+//
+// The shell asks for $200 = 512 bytes (measured from a `-d 2` syscall trace),
+// which is also SCF's own editing-buffer size, so 700 X's overflow it by a
+// wide margin. Verified to fail against the pre-change binary: the tail came
+// back as a second command and the run printed
+// `shell: can't execute "XXXX...ZZTAILZZ"`.
+//
+// The run-length bounds are the vacuity guard. Too short and the line never
+// reached the shell at all; a run of the full 700 would mean the count no
+// longer truncates anything and the absence of the tail marker proves nothing.
+let eorPad = String(repeating: "X", count: 700)
+run("console: I$ReadLn discards the excess past its byte count",
+    expectation: "the tail never runs as a command, and the line was truncated",
+    commands: ["echo \(eorPad)ZZTAILZZ"]) { out in
+    var longest = 0, current = 0
+    for ch in out {
+        if ch == "X" { current += 1; if current > longest { longest = current } }
+        else { current = 0 }
+    }
+    return !out.contains("ZZTAILZZ") && longest > 100 && longest < 700
+}
+
+// I$Read's own half of this contract -- "the read terminates ... when an
+// end-of-record character is detected (PD_EOR)", and zeroing PD_EOR is the
+// documented way to ask for the byte count instead -- is fixed in pConsIn but
+// is NOT asserted here, deliberately, because no check written against the
+// software on this disk could be made to discriminate. Measured 2026-08-21,
+// so the next person does not repeat the search:
+//
+//   * ConsRead already returns short whenever the device runs dry (it parks in
+//     pWaitRead and hands back what it has). So a raw reader gets its line the
+//     moment typing stops, terminator or no terminator. PD_EOR changes the
+//     outcome only when a SECOND record is already buffered behind the first.
+//   * pdksh -- named in pConsIn's own comment as the program the defect broke
+//     -- reads the console ONE BYTE AT A TIME on this disk (`-d 2` trace:
+//     `I$Read D1.l=$1`, repeatedly), so a terminator can never affect it. It
+//     runs correctly on the pre-fix binary, over a pipe and over a bound pty
+//     alike; a check built on it passes either way and asserts nothing.
+//   * Every other console reader surveyed uses I$ReadLn, not I$Read, so it
+//     exercises the path the three checks above already cover: tee, cat, pr
+//     and list each showed only `I$ReadLn` in a `-d 2` trace while reading a
+//     bound pty. No multi-byte console I$Read was found on this disk at all.
+//
+// A test would need a reader of our own -- a CONF68K-style module that does
+// one I$Read of n>1 and prints the count it got -- fed two records at once.
+// Recorded on the roadmap rather than faked with a check that cannot fail.
+
 // ── -M actually resizes the 68k arena ────────────────────────────────────────
 // -M was documented as "Set 68k arena size" and did nothing of the kind, for two
 // compounding reasons: the option switch lowercases its letter, so `case 'M'`
