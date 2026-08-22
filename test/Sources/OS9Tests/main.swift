@@ -4688,30 +4688,40 @@ if !containerized {   // the instrument lives in the repo, not in the image
     }
 }
 
-// I$Read's own half of this contract -- "the read terminates ... when an
-// end-of-record character is detected (PD_EOR)", and zeroing PD_EOR is the
-// documented way to ask for the byte count instead -- is fixed in pConsIn but
-// is NOT asserted here, deliberately, because no check written against the
-// software on this disk could be made to discriminate. Measured 2026-08-21,
-// so the next person does not repeat the search:
+// Claim: v2.4 Technical I/O Manual, SCF chapter -- I$Read's count is a
+// MAXIMUM. The read also ends when "an end-of-record character is detected
+// (PD_EOR)", and de-selecting PD_EOR is named there as the supported way to
+// ask for the count instead. A literal 0 was passed, so every console
+// I$Read behaved as though PD_EOR were disabled.
 //
-//   * ConsRead already returns short whenever the device runs dry (it parks in
-//     pWaitRead and hands back what it has). So a raw reader gets its line the
-//     moment typing stops, terminator or no terminator. PD_EOR changes the
-//     outcome only when a SECOND record is already buffered behind the first.
-//   * pdksh -- named in pConsIn's own comment as the program the defect broke
-//     -- reads the console ONE BYTE AT A TIME on this disk (`-d 2` trace:
-//     `I$Read D1.l=$1`, repeatedly), so a terminator can never affect it. It
-//     runs correctly on the pre-fix binary, over a pipe and over a bound pty
-//     alike; a check built on it passes either way and asserts nothing.
-//   * Every other console reader surveyed uses I$ReadLn, not I$Read, so it
-//     exercises the path the three checks above already cover: tee, cat, pr
-//     and list each showed only `I$ReadLn` in a `-d 2` trace while reading a
-//     bound pty. No multi-byte console I$Read was found on this disk at all.
+// This needs an instrument (test/68k-console/rdecho: one raw I$Read with a
+// 1024-byte count, then write back exactly what it returned), because the
+// difference only shows when a SECOND record is already buffered behind the
+// first -- which is precisely what the harness's pipe provides, all of the
+// input being written before the emulator starts.
 //
-// A test would need a reader of our own -- a CONF68K-style module that does
-// one I$Read of n>1 and prints the count it got -- fed two records at once.
-// Recorded on the roadmap rather than faked with a check that cannot fail.
+// Verified against master, and it is worth knowing how it fails: the raw
+// read swallows BOTH records and then the session's own ESC as well, so the
+// module exits on E$EOF having written nothing, and the shell -- whose EOF
+// character has just been eaten by someone else -- waits for input that can
+// never arrive. The run dies on the harness timeout. An earlier note here
+// claimed no check could discriminate, on the reasoning that ConsRead
+// always returns short once input runs dry; that was wrong. It parks in
+// pWaitRead and is rescheduled, indefinitely.
+//
+// Two assertions, because either alone is weaker: AAAA proves the read
+// returned at the record boundary, and the shell's complaint about BBBB
+// proves the rest was LEFT for the next reader rather than consumed.
+let rawReadName = "console: I$Read stops at PD_EOR and leaves the next record"
+if !containerized {   // the instrument lives in the repo, not in the image
+    let consoleTools = repoRoot.appendingPathComponent("test/68k-console").path
+    run(rawReadName,
+        expectation: "the raw read returns AAAA and leaves BBBB for the shell",
+        commands: ["tmode noecho", "/h6/CMDS/rdecho", "AAAA", "BBBB"],
+        env: ["OS9H6": consoleTools]) { out in
+        out.contains("AAAA") && out.contains("BBBB")
+    }
+}
 
 // ── -M actually resizes the 68k arena ────────────────────────────────────────
 // -M was documented as "Set 68k arena size" and did nothing of the kind, for two
