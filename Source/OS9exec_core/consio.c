@@ -439,6 +439,12 @@ Boolean ConsGetc( char* c )
     return true;
 } /* ConsGetc */
 
+/* SCF's per-path line-editing buffer, and so the longest line I$ReadLn can
+   return from a terminal -- terminator included. 512 since OS-9 v2.3; 256
+   before it, which os9exec has no reason to emulate (it reports V4.00 and
+   presents a v2.4 system). Citation and the evidence for it: pConsInLn. */
+#define SCF_LINEBUF  512
+
 static os9err ConsRead( ushort pid, syspath_typ* spP,
                         uint32_t *maxlenP, char* buffer, Boolean edit, char endchar )
 {
@@ -889,6 +895,29 @@ os9err pConsInLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer 
        * in that state is recoverable rather than wedged.
        */
       struct _sgs* ot= (struct _sgs*)&spP->opt; /* path opt table */
+
+      /* SCF edits an input line in a buffer it allocates at I$Open, and that
+       * buffer is the hard ceiling on a line however much the caller asks
+       * for. `Guru` (Galactic Industrial, "The OS-9 Guru -- The Facts"),
+       * which says it three times and consistently: SCF "allocates a buffer
+       * of 512 bytes (256 bytes prior to OS-9 version 2.3) for input line
+       * editing"; "the buffer is 512 bytes, so this is the maximum length of
+       * a line typed in, including the [CR]"; input "is restricted to 512
+       * bytes ... including the 'end of record' character". A separate buffer
+       * per open path, so one path's line editing cannot affect another's.
+       *
+       * NOT Microware's word: no statement of a line-length limit appears in
+       * the v2.4 Technical I/O Manual or the Technical Reference -- every
+       * "input buffer" there is the DRIVER's hardware buffer, in the
+       * flow-control sections. Two pieces of circumstantial support from
+       * Microware's own binaries, measured by `-d 2` trace on a v2.4 disk:
+       * the shell asks for exactly $200 (512) on a console I$ReadLn, and
+       * BASIC09 for $1FF (511) -- 511 plus its terminator being 512 exactly.
+       * Nothing on that disk asks for MORE, which is why the emulator went
+       * four major versions without the ceiling mattering, and why the only
+       * thing able to exercise it is test/68k-console/rdlnecho.
+       */
+      if (*maxlenP>SCF_LINEBUF) *maxlenP= SCF_LINEBUF;
 
       gConsoleID= spP->term_id;
       g_spP     = spP;
