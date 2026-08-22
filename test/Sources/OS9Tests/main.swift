@@ -4645,6 +4645,49 @@ run("console: I$ReadLn discards the excess past its byte count",
     return !out.contains("ZZTAILZZ") && longest > 100 && longest < 700
 }
 
+// Claim: SCF allocates a per-path buffer for input line editing, and that
+// buffer is the ceiling on a line however much the caller asks for. `Guru`
+// (Galactic Industrial, "The OS-9 Guru -- The Facts"), stated three times and
+// consistently: "SCF allocates a buffer of 512 bytes (256 bytes prior to OS-9
+// version 2.3) for input line editing"; "the buffer is 512 bytes, so this is
+// the maximum length of a line typed in, including the [CR]".
+//
+// NOT Microware's word -- no line-length limit appears in the v2.4 Technical
+// I/O Manual or the Technical Reference, where every "input buffer" is the
+// DRIVER's, in the flow-control sections. Two pieces of circumstantial
+// support from Microware's own binaries, `-d 2` traces on a v2.4 disk: the
+// shell asks for exactly $200 (512) on a console I$ReadLn and BASIC09 for
+// $1FF (511), which with its terminator is 512 exactly.
+//
+// Nothing on that disk asks for MORE than 512, which is why this went four
+// major versions without mattering and why the test needs an instrument of
+// its own: test/68k-console/rdlnecho reads one line with a 1024-byte count
+// and writes back exactly the bytes I$ReadLn returned. Its SRC/ carries the
+// 68000 source; it links against no C library and needs no SDK to run.
+//
+// `tmode noecho` is the vacuity guard, not tidiness: with echo on, the
+// console's own echo of the typed line is ALSO 512 X's, so a broken run
+// where the module never executed would still show a 512-run and pass.
+// With echo off the only X's in the stream are ones the module wrote, so
+// "module did not run" scores zero and fails. Verified to fail against the
+// pre-clamp binary: 600 X's came back, and no bells.
+let scfBufName = "console: SCF's 512-byte line buffer caps what I$ReadLn returns"
+if !containerized {   // the instrument lives in the repo, not in the image
+    let consoleTools = repoRoot.appendingPathComponent("test/68k-console").path
+    run(scfBufName,
+        expectation: "a 600-character line returns 512 bytes, the excess belled away",
+        commands: ["tmode noecho", "/h6/CMDS/rdlnecho", String(repeating: "X", count: 600)],
+        env: ["OS9H6": consoleTools]) { out in
+        var longest = 0, current = 0
+        for ch in out {
+            if ch == "X" { current += 1; if current > longest { longest = current } }
+            else { current = 0 }
+        }
+        // 88 = 600 typed - 512 kept, each ignored byte answered with PD_OVF.
+        return longest == 512 && out.filter { $0 == "\u{07}" }.count == 88
+    }
+}
+
 // I$Read's own half of this contract -- "the read terminates ... when an
 // end-of-record character is detected (PD_EOR)", and zeroing PD_EOR is the
 // documented way to ask for the byte count instead -- is fixed in pConsIn but
