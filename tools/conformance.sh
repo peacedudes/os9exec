@@ -53,7 +53,7 @@ MODULES=(t01open t02eof t03bmode t04mode0 t05mode0rd t06short t07extend
          t19lock t20read t21defr t22wrel t23whol t24rels t25eofl t26zrel
          t27shar t28exts t29self t30delo t31zrdr
          t32ticks t33ctrl t34julian t35cent t36crchi t37crclo t38wild t39host
-         t40evpuls t41evwake t42evsigw t43evbusy t44evunlk t45seek tally mark)
+         t40evpuls t41evwake t42evsigw t43evbusy t44evunlk t45seek t46pos tally mark)
 
 # ---------------------------------------------------------------- comparison
 
@@ -264,7 +264,7 @@ run_68k_noshell() {
     # CORRECTED 2026-08-12: this used to claim it was a WORKAROUND for an
     # os9exec defect that made the boot program resolve relative to the HOST
     # working directory. That is wrong, and the wrong version cost a later
-    # session an hour chasing cwd. Measured in Docker: this leg passes 45/45 on
+    # session an hour chasing cwd. Measured in Docker: this leg passes 46/46 on
     # Linux from ANY directory, and cwd makes no difference on macOS either.
     #
     # There IS a real defect nearby, but it is a different one: `/dd` does not
