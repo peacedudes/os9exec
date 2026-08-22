@@ -450,6 +450,17 @@ check("pipe: echo ! dump",     contains: "6162 630d",    "echo abc ! dump")
 check("pipe: echo ! count",    contains: "1",            "echo hello ! count")
 check("pipe: echo ! tr",       contains: "HELLO",        "echo hello ! tr a-z A-Z")
 
+// "The I$MakDir and I$ChgDir service requests are illegal service routines on
+// pipes. They return E$UnkSvc (unknown service request)" -- v2.4 Technical
+// Reference, pipeman chapter. MakDir already inherited pUnimp (E_UNKSVC) and
+// was right; chd inherited pNoModule from init_None and answered E_MNF (221),
+// so `chd /pipe` reported a missing MODULE for a manager that simply has no
+// directories. Asserting the NAME rather than the number so the check reads
+// as the claim; verified to fail against the pre-change binary, which said
+// E_MNF here.
+check("pipe: I$ChgDir on a pipe reports E$UnkSvc, not a missing module",
+      contains: "E_UNKSVC", "chd /pipe")
+
 // named pipes (/pipe)
 check("namedpipe: write+read", contains: "6162 630d",
     "echo abc >/pipe/t1", "dump </pipe/t1")
