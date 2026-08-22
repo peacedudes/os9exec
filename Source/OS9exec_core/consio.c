@@ -214,9 +214,20 @@ void init_NIL( fmgr_typ* f )
     gs->_SS_Size = (pathopfunc_typ)pUnimp;   /* -- not used */
     gs->_SS_Opt  = (pathopfunc_typ)pSCFopt;
     gs->_SS_DevNm= (pathopfunc_typ)pSCFnam;
-    gs->_SS_Pos  = (pathopfunc_typ)pBadMode; /* not allowed */
+    /* E_BMODE was wrong for both of these, and wrong in a way that misleads:
+       it says the PATH WAS OPENED IN THE WRONG ACCESS MODE, when what is
+       actually true is that this manager does not implement the code. The
+       unimplemented answer is E$UnkSvc -- the same principle CONF68K t32
+       already pins from the SetStat side. SS_Pos is scoped to "(RBF, PIPE)"
+       in the v2.4 Technical Reference heading, so SCF answering at all is
+       out of scope; SS_Ready is "(RBF, SCF, PIPE)" and so IS in scope, but
+       neither the manual nor anything else says what a null or virtual-module
+       device should report as ready, and E$UnkSvc is the honest answer to a
+       code this manager does not handle rather than an invented count.
+       Both are pinned by CONF68K t46. */
+    gs->_SS_Pos  = (pathopfunc_typ)pUnimp;    /* E$UnkSvc, not E$BMode */
     gs->_SS_EOF  = (pathopfunc_typ)pNop;         /* ignored */
-    gs->_SS_Ready= (pathopfunc_typ)pBadMode; /* not allowed */
+    gs->_SS_Ready= (pathopfunc_typ)pUnimp;    /* E$UnkSvc, not E$BMode */
 
     /* setstat */
     ss->_SS_Size = (pathopfunc_typ)pNop;         /* ignored */
@@ -255,9 +266,20 @@ void init_SCF( fmgr_typ* f )
     gs->_SS_Size  = (pathopfunc_typ)pUnimp;   /* -- not used */
     gs->_SS_Opt   = (pathopfunc_typ)pSCFopt;
     gs->_SS_DevNm = (pathopfunc_typ)pSCFnam;
-    gs->_SS_Pos   = (pathopfunc_typ)pBadMode; /* not allowed */
+    /* E_BMODE was wrong for both of these, and wrong in a way that misleads:
+       it says the PATH WAS OPENED IN THE WRONG ACCESS MODE, when what is
+       actually true is that this manager does not implement the code. The
+       unimplemented answer is E$UnkSvc -- the same principle CONF68K t32
+       already pins from the SetStat side. SS_Pos is scoped to "(RBF, PIPE)"
+       in the v2.4 Technical Reference heading, so SCF answering at all is
+       out of scope; SS_Ready is "(RBF, SCF, PIPE)" and so IS in scope, but
+       neither the manual nor anything else says what a null or virtual-module
+       device should report as ready, and E$UnkSvc is the honest answer to a
+       code this manager does not handle rather than an invented count.
+       Both are pinned by CONF68K t46. */
+    gs->_SS_Pos   = (pathopfunc_typ)pUnimp;   /* E$UnkSvc, not E$BMode */
     gs->_SS_EOF   = (pathopfunc_typ)pNop;         /* ignored */
-    gs->_SS_Ready = (pathopfunc_typ)pBadMode; /* not allowed */
+    gs->_SS_Ready = (pathopfunc_typ)pUnimp;   /* E$UnkSvc, not E$BMode */
     gs->_SS_LBlink= (pathopfunc_typ)pGBlink;     /* specific */
     gs->_SS_Undef = (pathopfunc_typ)pVMod;
 
