@@ -144,6 +144,12 @@ void init_Pipe( fmgr_typ* f )
     f->write     = (pathopfunc_typ)pPwrite;
     f->writeln   = (pathopfunc_typ)pPwriteln;
     f->seek      = (pathopfunc_typ)pNop;      /* ignored */
+    /* "The I$MakDir and I$ChgDir service requests are illegal service
+       routines on pipes. They return E$UnkSvc (unknown service request)"
+       -- v2.4 Technical Reference, pipeman chapter. MakDir already inherited
+       pUnimp (E_UNKSVC) and was right; chd inherited pNoModule (E_MNF) from
+       init_None and was not, so `chd /pipe` reported a missing MODULE. */
+    f->chd       = (pathopfunc_typ)pUnimp;    /* E_UNKSVC, per pipeman */
     f->del       = (pathopfunc_typ)pPdelete;
     
     /* getstat */
@@ -175,7 +181,14 @@ void init_PTY( fmgr_typ* f )
     f->readln    = (pathopfunc_typ)pKreadln;
     f->write     = (pathopfunc_typ)pKwrite;
     f->writeln   = (pathopfunc_typ)pKwriteln;
-    f->seek      = (pathopfunc_typ)pBadMode; /* not allowed */
+    /* Same rule as the pipe manager above, and for the same reason: a
+       manager without random access "usually does nothing during the I$Seek
+       operation, and does not return an error" (v2.4 Technical I/O Manual,
+       I$Seek). `General rule`, not an explicit statement -- neither manual
+       covers a pseudo-terminal, which is os9exec's own device -- but SCF and
+       PIPEMAN, the two documented managers it sits between, both answer this
+       way, and E_BMODE matched neither. */
+    f->seek      = (pathopfunc_typ)pNop;      /* no-op, and no error */
     
     /* getstat */
     gs->_SS_Size = (pathopfunc_typ)pUnimp;      /* not used */

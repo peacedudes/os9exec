@@ -158,7 +158,18 @@ void init_Cons( fmgr_typ* f )
     f->readln    = (pathopfunc_typ)pConsInLn;
     f->write     = (pathopfunc_typ)pConsOut;
     f->writeln   = (pathopfunc_typ)pConsOutLn;
-    f->seek      = (pathopfunc_typ)pBadMode; /* not allowed */
+    /* I$Seek is not a valid request on SCF, and yet it must NOT report one.
+       v2.4 Technical I/O Manual, SCF chapter: "The following I/O service
+       requests are not valid for SCF: I$ChgDir I$Delete I$MakDir I$Seek",
+       and immediately after -- "When an I$ChgDir, I$Delete, or I$MakDir is
+       made to SCF, an appropriate error code is returned. I$Seek does not
+       return an error." The general statement agrees (I$Seek's own entry):
+       managers that "do not support random access usually do nothing during
+       the I$Seek operation, and do not return an error". SBF is the stated
+       exception that DOES error, and it is not this.
+       This was pBadMode (E_BMODE), which matters because ported C calls
+       fseek/ftell/rewind on a terminal as a matter of course. */
+    f->seek      = (pathopfunc_typ)pNop;      /* no-op, and no error */
     
     /* getstat */
     gs->_SS_Size = (pathopfunc_typ)pUnimp;   /* -- not used */
@@ -186,7 +197,18 @@ void init_NIL( fmgr_typ* f )
     f->readln    = (pathopfunc_typ)pEOF;      /* as in OS-9 */
     f->write     = (pathopfunc_typ)pNop;         /* ignored */
     f->writeln   = (pathopfunc_typ)pNop;         /* ignored */
-    f->seek      = (pathopfunc_typ)pBadMode; /* not allowed */
+    /* I$Seek is not a valid request on SCF, and yet it must NOT report one.
+       v2.4 Technical I/O Manual, SCF chapter: "The following I/O service
+       requests are not valid for SCF: I$ChgDir I$Delete I$MakDir I$Seek",
+       and immediately after -- "When an I$ChgDir, I$Delete, or I$MakDir is
+       made to SCF, an appropriate error code is returned. I$Seek does not
+       return an error." The general statement agrees (I$Seek's own entry):
+       managers that "do not support random access usually do nothing during
+       the I$Seek operation, and do not return an error". SBF is the stated
+       exception that DOES error, and it is not this.
+       This was pBadMode (E_BMODE), which matters because ported C calls
+       fseek/ftell/rewind on a terminal as a matter of course. */
+    f->seek      = (pathopfunc_typ)pNop;      /* no-op, and no error */
 
     /* getstat */
     gs->_SS_Size = (pathopfunc_typ)pUnimp;   /* -- not used */
@@ -215,7 +237,19 @@ void init_SCF( fmgr_typ* f )
     f->readln     = (pathopfunc_typ)pBadMode; /* not allowed */
     f->write      = (pathopfunc_typ)pBadMode; /* not allowed */
     f->writeln    = (pathopfunc_typ)pBadMode; /* not allowed */
-    f->seek       = (pathopfunc_typ)pBadMode; /* not allowed */
+    /* I$Seek is not a valid request on SCF, and yet it must NOT report one.
+       v2.4 Technical I/O Manual, SCF chapter: "The following I/O service
+       requests are not valid for SCF: I$ChgDir I$Delete I$MakDir I$Seek",
+       and immediately after -- "When an I$ChgDir, I$Delete, or I$MakDir is
+       made to SCF, an appropriate error code is returned. I$Seek does not
+       return an error." The general statement agrees (I$Seek's own entry):
+       managers that "do not support random access usually do nothing during
+       the I$Seek operation, and do not return an error". SBF is the stated
+       exception that DOES error, and it is not this.
+       This was pBadMode (E_BMODE), which matters because ported C calls
+       fseek/ftell/rewind on a terminal as a matter of course. */
+    f->seek       = (pathopfunc_typ)pNop;      /* no-op, and no error */
+
 
     /* getstat */
     gs->_SS_Size  = (pathopfunc_typ)pUnimp;   /* -- not used */
