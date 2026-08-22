@@ -848,13 +848,26 @@ os9err pConsIn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
        * A literal 0 was passed here, and 0 means "no terminator" to
        * ConsRead, so every terminal read behaved as if PD_EOR were disabled
        * and waited for the full count: a program asking for more bytes than
-       * were typed hung for ever. pdksh reads its command line with
-       * read(ttyfd,line,256) and so never saw a single typed command, while
-       * bash and sh -- which use I$ReadLn -- were unaffected. Live: pdksh
-       * and umacs both zero PD_EKO and PD_EOF on entry and deliberately
-       * LEAVE PD_EOR at $0D, which is exactly the contract they are relying
-       * on; tsmon zeroes PD_EOR and then reads one byte, which is the other
-       * half of it.
+       * were typed hung for ever.
+       *
+       * The freeware `ksh` is the program that found it, and it is worth
+       * naming the RIGHT one. `-d 2` against the freeware disk: ksh reads its
+       * command line with one `I$Read` of $100 = 256 bytes on its own dup of
+       * stdin -- read(ttyfd,line,256) -- so with no terminator it waited for
+       * 256 bytes that were never coming. Measured both ways: on the
+       * pre-change build the shell never returns and the run has to be killed;
+       * with PD_EOR honoured the same read comes back at the CR.
+       *
+       * Do NOT re-test this with /dd/CMDS/SHARE/sh on a Microware disk and
+       * conclude the story is wrong -- that is a DIFFERENT pdksh build, it
+       * reads the console ONE BYTE AT A TIME (`I$Read D1.l=$1`), and a
+       * one-byte read is satisfied by its count no matter what the terminator
+       * is. It runs fine on the broken build, which is exactly why the defect
+       * survived a release. That mistake was made here once already.
+       *
+       * The other half of the contract, also live: pdksh and umacs zero
+       * PD_EKO and PD_EOF on entry and deliberately LEAVE PD_EOR at $0D,
+       * while tsmon zeroes PD_EOR and then reads a single byte.
        */
       struct _sgs* ot= (struct _sgs*)&spP->opt; /* path opt table */
 
