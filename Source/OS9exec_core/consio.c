@@ -114,7 +114,7 @@
 
 /* --- local procedure definitions for object definition ------------------- */
 void   init_Cons ( fmgr_typ* f );
-os9err pCopen    ( ushort pid, syspath_typ*, ushort  *modeP, char* pathname );
+os9err pCopen    ( ushort pid, syspath_typ*, ushort  *modeP, const char* pathname );
 os9err pCclose   ( ushort pid, syspath_typ* );
 os9err pConsIn   ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
 os9err pConsInLn ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
@@ -130,7 +130,7 @@ void   init_NIL  ( fmgr_typ* f );
 os9err pEOF      ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
 
 void   init_SCF  ( fmgr_typ* f );
-os9err pSopen    ( ushort pid, syspath_typ*, ushort  *modeP, char* pathname );
+os9err pSopen    ( ushort pid, syspath_typ*, ushort  *modeP, const char* pathname );
 os9err pSclose   ( ushort pid, syspath_typ* );
 os9err pSBlink   ( ushort pid, syspath_typ*, uint32_t   *d2 );
 os9err pGBlink   ( ushort pid, syspath_typ*, uint32_t   *d2 );
@@ -152,12 +152,12 @@ void init_Cons( fmgr_typ* f )
     ss_typ* ss= &f->ss;
     
     /* main procedures */
-    f->open      = (pathopfunc_typ)pCopen;
-    f->close     = (pathopfunc_typ)pCclose;
-    f->read      = (pathopfunc_typ)pConsIn;
-    f->readln    = (pathopfunc_typ)pConsInLn;
-    f->write     = (pathopfunc_typ)pConsOut;
-    f->writeln   = (pathopfunc_typ)pConsOutLn;
+    f->open      = pCopen;
+    f->close     = pCclose;
+    f->read      = pConsIn;
+    f->readln    = pConsInLn;
+    f->write     = pConsOut;
+    f->writeln   = pConsOutLn;
     /* I$Seek is not a valid request on SCF, and yet it must NOT report one.
        v2.4 Technical I/O Manual, SCF chapter: "The following I/O service
        requests are not valid for SCF: I$ChgDir I$Delete I$MakDir I$Seek",
@@ -169,12 +169,12 @@ void init_Cons( fmgr_typ* f )
        exception that DOES error, and it is not this.
        This was pBadMode (E_BMODE), which matters because ported C calls
        fseek/ftell/rewind on a terminal as a matter of course. */
-    f->seek      = (pathopfunc_typ)pNop;      /* no-op, and no error */
+    f->seek      = pNop_num;      /* no-op, and no error */
     
     /* getstat */
-    gs->_SS_Size = (pathopfunc_typ)pUnimp;   /* -- not used */
-    gs->_SS_Opt  = (pathopfunc_typ)pCopt;
-    gs->_SS_DevNm= (pathopfunc_typ)pSCFnam;
+    gs->_SS_Size = pUnimp_num;   /* -- not used */
+    gs->_SS_Opt  = pCopt;
+    gs->_SS_DevNm= pSCFnam;
     /* SCF handles SS_Opt and passes "all other GetStat calls ... directly to
        the driver" (v2.4 Technical I/O Manual, SCF I$GetStt); SS_Pos is scoped
        "(RBF, PIPE)" and no terminal driver implements it, so the answer is
@@ -182,14 +182,14 @@ void init_Cons( fmgr_typ* f )
        none, which a caller cannot tell from a real one. Removing it is a
        deliberate behaviour REMOVAL: ported C calling ftell on a terminal now
        gets the error it would get on real OS-9. Pinned by CONF68K t46. */
-    gs->_SS_Pos  = (pathopfunc_typ)pUnimp;
-    gs->_SS_EOF  = (pathopfunc_typ)pNop;         /* ignored */
-    gs->_SS_Ready= (pathopfunc_typ)pCready;
+    gs->_SS_Pos  = pUnimp_num;
+    gs->_SS_EOF  = pNop;         /* ignored */
+    gs->_SS_Ready= pCready;
 
     /* setstat */
-    ss->_SS_Size = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Opt  = (pathopfunc_typ)pCsetopt;
-    ss->_SS_Attr = (pathopfunc_typ)pNop;         /* ignored */
+    ss->_SS_Size = pNop_num;         /* ignored */
+    ss->_SS_Opt  = pCsetopt;
+    ss->_SS_Attr = pNop_num;         /* ignored */
 } /* init_Cons */
 
 void init_NIL( fmgr_typ* f )
@@ -198,12 +198,12 @@ void init_NIL( fmgr_typ* f )
     ss_typ* ss= &f->ss;
     
     /* main procedures */
-    f->open      = (pathopfunc_typ)pNop;         /* ignored */
-    f->close     = (pathopfunc_typ)pNop;         /* ignored */
-    f->read      = (pathopfunc_typ)pEOF;      /* as in OS-9 */
-    f->readln    = (pathopfunc_typ)pEOF;      /* as in OS-9 */
-    f->write     = (pathopfunc_typ)pNop;         /* ignored */
-    f->writeln   = (pathopfunc_typ)pNop;         /* ignored */
+    f->open      = pNop_path;         /* ignored */
+    f->close     = pNop;         /* ignored */
+    f->read      = pEOF;      /* as in OS-9 */
+    f->readln    = pEOF;      /* as in OS-9 */
+    f->write     = pNop_data;         /* ignored */
+    f->writeln   = pNop_data;         /* ignored */
     /* I$Seek is not a valid request on SCF, and yet it must NOT report one.
        v2.4 Technical I/O Manual, SCF chapter: "The following I/O service
        requests are not valid for SCF: I$ChgDir I$Delete I$MakDir I$Seek",
@@ -215,12 +215,12 @@ void init_NIL( fmgr_typ* f )
        exception that DOES error, and it is not this.
        This was pBadMode (E_BMODE), which matters because ported C calls
        fseek/ftell/rewind on a terminal as a matter of course. */
-    f->seek      = (pathopfunc_typ)pNop;      /* no-op, and no error */
+    f->seek      = pNop_num;      /* no-op, and no error */
 
     /* getstat */
-    gs->_SS_Size = (pathopfunc_typ)pUnimp;   /* -- not used */
-    gs->_SS_Opt  = (pathopfunc_typ)pSCFopt;
-    gs->_SS_DevNm= (pathopfunc_typ)pSCFnam;
+    gs->_SS_Size = pUnimp_num;   /* -- not used */
+    gs->_SS_Opt  = pSCFopt;
+    gs->_SS_DevNm= pSCFnam;
     /* E_BMODE was wrong for both of these, and wrong in a way that misleads:
        it says the PATH WAS OPENED IN THE WRONG ACCESS MODE, when what is
        actually true is that this manager does not implement the code. The
@@ -232,14 +232,14 @@ void init_NIL( fmgr_typ* f )
        device should report as ready, and E$UnkSvc is the honest answer to a
        code this manager does not handle rather than an invented count.
        Both are pinned by CONF68K t46. */
-    gs->_SS_Pos  = (pathopfunc_typ)pUnimp;    /* E$UnkSvc, not E$BMode */
-    gs->_SS_EOF  = (pathopfunc_typ)pNop;         /* ignored */
-    gs->_SS_Ready= (pathopfunc_typ)pNotReady; /* in SCF's scope: E$NotRdy */
+    gs->_SS_Pos  = pUnimp_num;    /* E$UnkSvc, not E$BMode */
+    gs->_SS_EOF  = pNop;         /* ignored */
+    gs->_SS_Ready= pNotReady; /* in SCF's scope: E$NotRdy */
 
     /* setstat */
-    ss->_SS_Size = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Opt  = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Attr = (pathopfunc_typ)pNop;         /* ignored */
+    ss->_SS_Size = pNop_num;         /* ignored */
+    ss->_SS_Opt  = pNop_opt;         /* ignored */
+    ss->_SS_Attr = pNop_num;         /* ignored */
 } /* init_NIL */
 
 void init_SCF( fmgr_typ* f )
@@ -249,12 +249,12 @@ void init_SCF( fmgr_typ* f )
     ss_typ* ss= &f->ss;
     
     /* main procedures */
-    f->open       = (pathopfunc_typ)pSopen;
-    f->close      = (pathopfunc_typ)pSclose;
-    f->read       = (pathopfunc_typ)pBadMode; /* not allowed */
-    f->readln     = (pathopfunc_typ)pBadMode; /* not allowed */
-    f->write      = (pathopfunc_typ)pBadMode; /* not allowed */
-    f->writeln    = (pathopfunc_typ)pBadMode; /* not allowed */
+    f->open       = pSopen;
+    f->close      = pSclose;
+    f->read       = pBadMode_data; /* not allowed */
+    f->readln     = pBadMode_data; /* not allowed */
+    f->write      = pBadMode_data; /* not allowed */
+    f->writeln    = pBadMode_data; /* not allowed */
     /* I$Seek is not a valid request on SCF, and yet it must NOT report one.
        v2.4 Technical I/O Manual, SCF chapter: "The following I/O service
        requests are not valid for SCF: I$ChgDir I$Delete I$MakDir I$Seek",
@@ -266,13 +266,13 @@ void init_SCF( fmgr_typ* f )
        exception that DOES error, and it is not this.
        This was pBadMode (E_BMODE), which matters because ported C calls
        fseek/ftell/rewind on a terminal as a matter of course. */
-    f->seek       = (pathopfunc_typ)pNop;      /* no-op, and no error */
+    f->seek       = pNop_num;      /* no-op, and no error */
 
 
     /* getstat */
-    gs->_SS_Size  = (pathopfunc_typ)pUnimp;   /* -- not used */
-    gs->_SS_Opt   = (pathopfunc_typ)pSCFopt;
-    gs->_SS_DevNm = (pathopfunc_typ)pSCFnam;
+    gs->_SS_Size  = pUnimp_num;   /* -- not used */
+    gs->_SS_Opt   = pSCFopt;
+    gs->_SS_DevNm = pSCFnam;
     /* E_BMODE was wrong for both of these, and wrong in a way that misleads:
        it says the PATH WAS OPENED IN THE WRONG ACCESS MODE, when what is
        actually true is that this manager does not implement the code. The
@@ -284,18 +284,18 @@ void init_SCF( fmgr_typ* f )
        device should report as ready, and E$UnkSvc is the honest answer to a
        code this manager does not handle rather than an invented count.
        Both are pinned by CONF68K t46. */
-    gs->_SS_Pos   = (pathopfunc_typ)pUnimp;   /* E$UnkSvc, not E$BMode */
-    gs->_SS_EOF   = (pathopfunc_typ)pNop;         /* ignored */
-    gs->_SS_Ready = (pathopfunc_typ)pNotReady;/* in SCF's scope: E$NotRdy */
-    gs->_SS_LBlink= (pathopfunc_typ)pGBlink;     /* specific */
-    gs->_SS_Undef = (pathopfunc_typ)pVMod;
+    gs->_SS_Pos   = pUnimp_num;   /* E$UnkSvc, not E$BMode */
+    gs->_SS_EOF   = pNop;         /* ignored */
+    gs->_SS_Ready = pNotReady;/* in SCF's scope: E$NotRdy */
+    gs->_SS_LBlink= pGBlink;     /* specific */
+    gs->_SS_Undef = pVMod;
 
     /* setstat */
-    ss->_SS_Size  = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Opt   = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Attr  = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_LBlink= (pathopfunc_typ)pSBlink;     /* specific */
-    ss->_SS_Undef = (pathopfunc_typ)pNop;         /* ignored */
+    ss->_SS_Size  = pNop_num;         /* ignored */
+    ss->_SS_Opt   = pNop_opt;         /* ignored */
+    ss->_SS_Attr  = pNop_num;         /* ignored */
+    ss->_SS_LBlink= pSBlink;     /* specific */
+    ss->_SS_Undef = pNop_buf;         /* ignored */
 } /* init_SCF */
 
 /* --------------------------------------------------------- */
@@ -740,10 +740,10 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
 #endif
 
 /* returns index for numbered descriptors like tty00,01,02... */
-static Boolean ConsId( char* name, char* family, int range, int offs, int *result )
+static Boolean ConsId( const char* name, const char* family, int range, int offs, int *result )
 {
-    int   flen= strlen(family);
-    char* nInd;
+    int         flen= strlen(family);
+    const char* nInd;
     int   ii;
 
     if (ustrncmp( name,family, flen )!=0) return false; /* family name correct ? */
@@ -755,7 +755,7 @@ static Boolean ConsId( char* name, char* family, int range, int offs, int *resul
     return false;
 } /* ConsId */
 
-os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
+os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, const char* name )
 /* routine for opening serial devices */
 {
     /* `id` is left deliberately uninitialised: every path that reaches the use
@@ -828,7 +828,7 @@ os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
     return 0;
 } /* pCOpen */
 
-os9err pSopen( _pid_, syspath_typ* spP, _modeP_, char* name )
+os9err pSopen( _pid_, syspath_typ* spP, _modeP_, const char* name )
 /* routine for opening SCF devices */
 {   
     int k;

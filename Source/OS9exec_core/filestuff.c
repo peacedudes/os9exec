@@ -158,20 +158,6 @@
 #include "os9exec_incl.h"
 #include <ctype.h>
 
-/* arm64: pathopfunc_typ uses ... (variadic) which misaligns registers on arm64
- * when calling non-variadic callees. Each dispatch site casts to the concrete
- * non-variadic type matching the actual callee signature before calling. */
-typedef os9err (*pfunc_od_t )(ushort, syspath_typ*, ushort*,  const char*); /* open/chd/del/makdir */
-typedef os9err (*pfunc_rw_t )(ushort, syspath_typ*, uint32_t*, void*);        /* read/write/readln/writeln */
-typedef os9err (*pfunc_sk_t )(ushort, syspath_typ*, uint32_t*);               /* seek */
-typedef os9err (*pfunc_cl_t )(ushort, syspath_typ*);                          /* close */
-typedef os9err (*pfunc_p1_t )(ushort, syspath_typ*, uint32_t*);               /* 1 data arg */
-typedef os9err (*pfunc_p2_t )(ushort, syspath_typ*, uint32_t*, uint32_t*);    /* 2 data args */
-typedef os9err (*pfunc_p3_t )(ushort, syspath_typ*, uint32_t*, uint32_t*, uint32_t*); /* 3 data args */
-typedef os9err (*pfunc_pa_t )(ushort, syspath_typ*, void*);                   /* 1 byte* arg */
-typedef os9err (*pfunc_p2a_t)(ushort, syspath_typ*, uint32_t*, void*);        /* uint32_t* + byte* */
-typedef os9err (*pfunc_p3a_t)(ushort, syspath_typ*, uint32_t*, uint32_t*, void*); /* 2 uint32_t* + byte* */
-
 /* I/O routines */
 /* ============ */
 
@@ -209,41 +195,41 @@ void init_None( fmgr_typ* f )
     gs_typ* gs= &f->gs;
     ss_typ* ss= &f->ss;
     
-    f->open        = (pathopfunc_typ)pNoModule; /* E_MNF, as in OS-9 */
-    f->close       = (pathopfunc_typ)pUnimp;
-    f->write       = (pathopfunc_typ)pUnimp;
-    f->writeln     = (pathopfunc_typ)pUnimp;
-    f->read        = (pathopfunc_typ)pUnimp;
-    f->readln      = (pathopfunc_typ)pUnimp;
-    f->seek        = (pathopfunc_typ)pUnimp;
-    f->chd         = (pathopfunc_typ)pNoModule; /* E_MNF, as in OS-9 */
-    f->del         = (pathopfunc_typ)pUnimp;
-    f->makdir      = (pathopfunc_typ)pUnimp;
+    f->open        = pNoModule; /* E_MNF, as in OS-9 */
+    f->close       = pUnimp;
+    f->write       = pUnimp_data;
+    f->writeln     = pUnimp_data;
+    f->read        = pUnimp_data;
+    f->readln      = pUnimp_data;
+    f->seek        = pUnimp_num;
+    f->chd         = pNoModule; /* E_MNF, as in OS-9 */
+    f->del         = pUnimp_path;
+    f->makdir      = pUnimp_path;
 
     /* driver's getstt */
-    gs->_SS_Size   = (pathopfunc_typ)pUnimp;
-    gs->_SS_Opt    = (pathopfunc_typ)pUnimp;
-    gs->_SS_DevNm  = (pathopfunc_typ)pUnimp;
-    gs->_SS_Pos    = (pathopfunc_typ)pUnimp;
-    gs->_SS_EOF    = (pathopfunc_typ)pUnimp;
-    gs->_SS_Ready  = (pathopfunc_typ)pUnimp;
-    gs->_SS_FD     = (pathopfunc_typ)pUnimp;
-    gs->_SS_FDInf  = (pathopfunc_typ)pUnimp;
-    gs->_SS_DSize  = (pathopfunc_typ)pUnimp;
+    gs->_SS_Size   = pUnimp_num;
+    gs->_SS_Opt    = pUnimp_opt;
+    gs->_SS_DevNm  = pUnimp_name;
+    gs->_SS_Pos    = pUnimp_num;
+    gs->_SS_EOF    = pUnimp;
+    gs->_SS_Ready  = pUnimp_num;
+    gs->_SS_FD     = pUnimp_buf;
+    gs->_SS_FDInf  = pUnimp_buf2;
+    gs->_SS_DSize  = pUnimp_num2;
     
-    gs->_SS_PCmd   = (pathopfunc_typ)pUnimp; /* network specific function  */
+    gs->_SS_PCmd   = pUnimp_opt; /* network specific function  */
     
-    gs->_SS_LBlink = (pathopfunc_typ)pUnimp; /* /L2 specific function */
+    gs->_SS_LBlink = pUnimp_num; /* /L2 specific function */
     
-    gs->_SS_Undef  = (pathopfunc_typ)pUnimp; /* any other getstat */
+    gs->_SS_Undef  = pUnimp_num2; /* any other getstat */
 
     /* driver's setstat */
-    ss->_SS_Size   = (pathopfunc_typ)pUnimp;
-    ss->_SS_Opt    = (pathopfunc_typ)pUnimp;
-    ss->_SS_Attr   = (pathopfunc_typ)pUnimp;
-    ss->_SS_FD     = (pathopfunc_typ)pUnimp;
-    ss->_SS_Lock   = (pathopfunc_typ)pUnimp;
-    ss->_SS_Ticks  = (pathopfunc_typ)pUnimp; /* RBF overrides this with pRticks.
+    ss->_SS_Size   = pUnimp_num;
+    ss->_SS_Opt    = pUnimp_opt;
+    ss->_SS_Attr   = pUnimp_num;
+    ss->_SS_FD     = pUnimp_opt;
+    ss->_SS_Lock   = pUnimp_lock;
+    ss->_SS_Ticks  = pUnimp_num; /* RBF overrides this with pRticks.
                                                 Without a default the slot stayed
                                                 NULL for every other file manager
                                                 while the dispatcher (SS_Ticks in
@@ -253,22 +239,22 @@ void init_None( fmgr_typ* f )
                                                 pipe or /nil called through a null
                                                 pointer and the guest got a bus
                                                 error instead of E$UnkSvc. */
-    ss->_SS_WTrk   = (pathopfunc_typ)pUnimp;
+    ss->_SS_WTrk   = pUnimp_buf;
     
-    ss->_SS_Bind   = (pathopfunc_typ)pUnimp; /* network specific functions */
-    ss->_SS_Listen = (pathopfunc_typ)pUnimp;
-    ss->_SS_Connect= (pathopfunc_typ)pUnimp;
-    ss->_SS_Accept = (pathopfunc_typ)pUnimp;
-    ss->_SS_Recv   = (pathopfunc_typ)pUnimp;
-    ss->_SS_Send   = (pathopfunc_typ)pUnimp;
-    ss->_SS_GNam   = (pathopfunc_typ)pUnimp;
-    ss->_SS_SOpt   = (pathopfunc_typ)pUnimp;
-    ss->_SS_SendTo = (pathopfunc_typ)pUnimp;
-    ss->_SS_PCmd   = (pathopfunc_typ)pUnimp;
+    ss->_SS_Bind   = pUnimp_buf; /* network specific functions */
+    ss->_SS_Listen = pUnimp_buf;
+    ss->_SS_Connect= pUnimp_buf;
+    ss->_SS_Accept = pUnimp_buf;
+    ss->_SS_Recv   = pUnimp_buf2;
+    ss->_SS_Send   = pUnimp_buf2;
+    ss->_SS_GNam   = pUnimp_buf2;
+    ss->_SS_SOpt   = pUnimp_num2;
+    ss->_SS_SendTo = pUnimp_buf2;
+    ss->_SS_PCmd   = pUnimp_opt;
     
-    ss->_SS_LBlink = (pathopfunc_typ)pUnimp; /* /L2 specific function */
+    ss->_SS_LBlink = pUnimp_num; /* /L2 specific function */
     
-    ss->_SS_Undef  = (pathopfunc_typ)pUnimp; /* any other setstat */
+    ss->_SS_Undef  = pUnimp_buf; /* any other setstat */
 } /* init_None */
 
 /* --------------------------------------------------------- */
@@ -1142,32 +1128,49 @@ os9err parsepath(ushort pid, char **inp, char *out, Boolean exedir)
 /* Generic I/O routines */
 /* -------------------- */
 
+/* The stock answers a file manager gives for a slot it does not implement.
+ *
+ * Each exists once per slot shape it is installed in, because a slot carries
+ * the signature its dispatcher calls with: handing a two-parameter function
+ * to a four-argument call is undefined even where the callee never looks at
+ * what it was passed (C11 6.5.2.2). One variadic type and a cast at either
+ * end is what these replace, and what let three genuinely wrong signatures
+ * sit here unnoticed. The unsuffixed name is the bare (pid, path) shape; the
+ * suffix elsewhere is the slot type's, so the two read alike at the call.
+ */
+
 /* unimplemented function */
-os9err pUnimp( _pid_, _spP_ )
-{   return os9error(E_UNKSVC);
-} /* pUnimp */
+os9err pUnimp     ( _pid_, _spP_ )                                                      { return os9error(E_UNKSVC); }
+os9err pUnimp_num ( _pid_, _spP_, uint32_t* d )                                         { return os9error(E_UNKSVC); }
+os9err pUnimp_num2( _pid_, _spP_, uint32_t* d, uint32_t* dd )                           { return os9error(E_UNKSVC); }
+os9err pUnimp_lock( _pid_, _spP_, uint32_t* d0, uint32_t* d1, uint32_t* d2 )            { return os9error(E_UNKSVC); }
+os9err pUnimp_opt ( _pid_, _spP_, byte* buffer )                                        { return os9error(E_UNKSVC); }
+os9err pUnimp_name( _pid_, _spP_, char* volname )                                       { return os9error(E_UNKSVC); }
+os9err pUnimp_data( _pid_, _spP_, uint32_t* len, char* buffer )                         { return os9error(E_UNKSVC); }
+os9err pUnimp_buf ( _pid_, _spP_, uint32_t* d, byte* buffer )                           { return os9error(E_UNKSVC); }
+os9err pUnimp_buf2( _pid_, _spP_, uint32_t* d, uint32_t* dd, byte* buffer )             { return os9error(E_UNKSVC); }
+os9err pUnimp_path( _pid_, _spP_, _modeP_, const char* pathname )                       { return os9error(E_UNKSVC); }
 
 /* unimplemented function, but that's OS9-conformant and therefore not to be alerted */
-os9err pUnimpOk( _pid_, _spP_ )
-{   return E_UNKSVC+E_OKFLAG;
-} /* pUnimpOk */
+os9err pUnimpOk   ( _pid_, _spP_, uint32_t* d )                                         { return E_UNKSVC+E_OKFLAG; }
 
 /* bad mode */
-os9err pBadMode( _pid_, _spP_ )
-{   return os9error(E_BMODE);
-} /* pBadMode */
+os9err pBadMode_num ( _pid_, _spP_, uint32_t* d )                                       { return os9error(E_BMODE); }
+os9err pBadMode_data( _pid_, _spP_, uint32_t* len, char* buffer )                       { return os9error(E_BMODE); }
 
 /* no operation (allowed, but useless) */
-os9err pNop( _pid_, _spP_ )
-{   return 0;
-} /* pNop */
+os9err pNop       ( _pid_, _spP_ )                                                      { return 0; }
+os9err pNop_num   ( _pid_, _spP_, uint32_t* d )                                         { return 0; }
+os9err pNop_lock  ( _pid_, _spP_, uint32_t* d0, uint32_t* d1, uint32_t* d2 )            { return 0; }
+os9err pNop_opt   ( _pid_, _spP_, byte* buffer )                                        { return 0; }
+os9err pNop_data  ( _pid_, _spP_, uint32_t* len, char* buffer )                         { return 0; }
+os9err pNop_buf   ( _pid_, _spP_, uint32_t* d, byte* buffer )                           { return 0; }
+os9err pNop_path  ( _pid_, _spP_, _modeP_, const char* pathname )                       { return 0; }
 
 /* unavailable 'open' function, as in OS-9 */
-os9err pNoModule( _pid_, _spP_ )
-{   return os9error(E_MNF);
-} /* pNoModule */
+os9err pNoModule  ( _pid_, _spP_, _modeP_, const char* pathname )                       { return os9error(E_MNF); }
 
-os9err pNotReady( _pid_, _spP_ )
+os9err pNotReady( _pid_, _spP_, uint32_t* n )
 /* SS_Ready on a device that can never have input. SS_Ready IS in SCF's scope
    -- "Test for Data Ready (RBF, SCF, PIPE)" -- so E$UnkSvc would be wrong:
    the code is implemented, there is simply nothing to report. The manual
@@ -1425,7 +1428,7 @@ os9err syspath_close( ushort pid, ushort sp )
     debugprintf(dbgFiles,dbgNorm,("# syspath_close: close of syspath=%d really closes path\n",
                                      sp));
 
-        err= ((pfunc_cl_t)fmgr_op[spP->type]->close)( pid,spP );
+        err= fmgr_op[spP->type]->close( pid,spP );
     if (err==1) return 0;     /* err=1: let the path open, this is not an error */
   //if (err)    return err;   /* do not invalidate, if error */
     
@@ -1563,7 +1566,7 @@ os9err syspath_open( ushort pid, ushort *sp, ptype_typ type, const char* pathnam
     spP=     &syspaths[*sp];                                /* this is a free syspath */
     spP->mode   = mode;                                         /* store this as well */
     spP->fileAtt= procs[ pid ].fileAtt;
-    err= ((pfunc_od_t)fmgr_op[spP->type]->open)( pid, spP, &mode, pathname );  /* specific */
+    err= fmgr_op[spP->type]->open( pid, spP, &mode, pathname );  /* specific */
 
     /* successful ? */
     if (err) {                               /* in E_PLINK case, syspath open routine */
@@ -1610,7 +1613,7 @@ os9err syspath_write( ushort pid,ushort spnum, uint32_t *len, void* buffer, Bool
     os9err         err;
     procid*        pd= &procs[proc_slot(pid)].pd;
     fmgr_typ*      f;
-    pathopfunc_typ wproc;
+    pathop_data_typ wproc;
     syspath_typ*   spP= get_syspathd( pid,spnum );
     
     if (spP==NULL) {
@@ -1646,7 +1649,7 @@ os9err syspath_write( ushort pid,ushort spnum, uint32_t *len, void* buffer, Bool
                      f= fmgr_op[spP->type];
     if (wrln) wproc= f->writeln;
     else      wproc= f->write;
-    err=     ((pfunc_rw_t)wproc)( pid,spP, len,(char*)buffer );
+    err=     wproc( pid,spP, len,(char*)buffer );
     
     if (!err) os9_long_inc( &pd->_wbytes, *len ); /* for statistics*/
     if (!err && debugcheck(dbgSysCall,dbgDetail)) showbuff( spP, buffer,*len );
@@ -1809,7 +1812,7 @@ os9err syspath_read( ushort pid,ushort spnum, uint32_t *len, void* buffer, Boole
     procid*        pd= &procs[pid].pd;
     int            prev;
     fmgr_typ*      f;
-    pathopfunc_typ rproc;
+    pathop_data_typ rproc;
     syspath_typ*   spP= get_syspathd( pid,spnum );
 
     if  (spP==NULL) return os9error(E_BPNUM);
@@ -1823,7 +1826,7 @@ os9err syspath_read( ushort pid,ushort spnum, uint32_t *len, void* buffer, Boole
                      f= fmgr_op[spP->type];
     if (rdln) rproc= f->readln;
     else      rproc= f->read;
-    err=     ((pfunc_rw_t)rproc)( pid,spP, len,(char*)buffer );
+    err=     rproc( pid,spP, len,(char*)buffer );
     
     
     if (!err) os9_long_inc( &pd->_rbytes, *len ); /* for statistics */
@@ -1857,7 +1860,7 @@ os9err syspath_seek(ushort pid,ushort spnum, uint32_t pos)
     syspath_typ* spP= get_syspathd( pid,spnum ); 
     if          (spP==NULL) return os9error(E_BPNUM);
 
-    return ((pfunc_sk_t)fmgr_op[spP->type]->seek)( pid,spP,&pos );
+    return fmgr_op[spP->type]->seek( pid,spP,&pos );
 } /* syspath_seek */
 
    
@@ -1904,21 +1907,21 @@ os9err syspath_getstat( ushort pid, ushort sp, ushort func,
     
     /* call appropriate service */
     switch (func) {
-        case SS_Size   : err= ((pfunc_p1_t )g->_SS_Size  )( pid,spP, d2          ); break;
-        case SS_Opt    : err= ((pfunc_pa_t )g->_SS_Opt   )( pid,spP,       *a    ); break;
-        case SS_DevNm  : err= ((pfunc_pa_t )g->_SS_DevNm )( pid,spP,       *a    ); break;
-        case SS_Pos    : err= ((pfunc_p1_t )g->_SS_Pos   )( pid,spP, d2          ); break;
-        case SS_EOF    : err= ((pfunc_cl_t )g->_SS_EOF   )( pid,spP );    *d1= 0;  break;
-        case SS_Ready  : err= ((pfunc_p1_t )g->_SS_Ready )( pid,spP, d1 ); arbitrate= true; break;
-        case SS_FD     : err= ((pfunc_p2a_t)g->_SS_FD    )( pid,spP, d2,  *a    ); break;
-        case SS_FDInf  : err= ((pfunc_p3a_t)g->_SS_FDInf )( pid,spP, d2,d3,*a  ); break;
-        case SS_DSize  : err= ((pfunc_p2_t )g->_SS_DSize )( pid,spP, d2,d3      ); break;
+        case SS_Size   : err= g->_SS_Size  ( pid,spP, d2          ); break;
+        case SS_Opt    : err= g->_SS_Opt   ( pid,spP,        *a   ); break;
+        case SS_DevNm  : err= g->_SS_DevNm ( pid,spP, (char*)*a   ); break;
+        case SS_Pos    : err= g->_SS_Pos   ( pid,spP, d2          ); break;
+        case SS_EOF    : err= g->_SS_EOF   ( pid,spP );    *d1= 0;  break;
+        case SS_Ready  : err= g->_SS_Ready ( pid,spP, d1 ); arbitrate= true; break;
+        case SS_FD     : err= g->_SS_FD    ( pid,spP, d2,    *a   ); break;
+        case SS_FDInf  : err= g->_SS_FDInf ( pid,spP, d2,d3, *a   ); break;
+        case SS_DSize  : err= g->_SS_DSize ( pid,spP, d2,d3       ); break;
 
         /* $7A protocol direct command */
-        case SS_PCmd   : err= ((pfunc_pa_t )g->_SS_PCmd  )( pid,spP,       *a    ); break;
+        case SS_PCmd   : err= g->_SS_PCmd  ( pid,spP,        *a   ); break;
 
         /* $80 + 32: "/L2" specific */
-        case SS_LBlink : err= ((pfunc_p1_t )g->_SS_LBlink)( pid,spP, d2          ); break;
+        case SS_LBlink : err= g->_SS_LBlink( pid,spP, d2          ); break;
 
         /* get ETC path name and more */
         case SS_Etc    : err=       etc_path( pid,spP, d2,    *a );                  break;
@@ -1927,7 +1930,7 @@ os9err syspath_getstat( ushort pid, ushort sp, ushort func,
         case SS_201    : err= 0;                                                     break;
 
         /* undefined */
-        default        : err= ((pfunc_p2_t )g->_SS_Undef)( pid,spP, d1,d2 );       break;
+        default        : err= g->_SS_Undef ( pid,spP, d1,d2       ); break;
     } /* switch */
           
     return err;
@@ -1977,19 +1980,19 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
     
     /* call appropriate service */
     switch (func) {
-        case SS_Size   : err= ((pfunc_p1_t )s->_SS_Size  )( pid,spP, d2       ); break;
-        case SS_Opt    : err= ((pfunc_pa_t )s->_SS_Opt   )( pid,spP, *a       ); break;
-        case SS_Attr   : err= ((pfunc_p1_t )s->_SS_Attr  )( pid,spP, d2       ); break;
-        case SS_FD     : err= ((pfunc_pa_t )s->_SS_FD    )( pid,spP, *a       ); break;
+        case SS_Size   : err= s->_SS_Size   ( pid,spP, d2       ); break;
+        case SS_Opt    : err= s->_SS_Opt    ( pid,spP, *a       ); break;
+        case SS_Attr   : err= s->_SS_Attr   ( pid,spP, d2       ); break;
+        case SS_FD     : err= s->_SS_FD     ( pid,spP, *a       ); break;
         /* d1 carries the setstat code itself, so a lock size cannot live there:
          * <d2> is the parameter register, as for SS_Size/SS_Attr above. The PTY
          * manager uses d0/d1 as outputs and ignores d2. */
-        case SS_Lock   : err= ((pfunc_p3_t )s->_SS_Lock  )( pid,spP, d0,d1,d2 ); break; /* $11 */
-        case SS_Ticks  : err= ((pfunc_p1_t )s->_SS_Ticks )( pid,spP, d2       ); break; /* $10 */
+        case SS_Lock   : err= s->_SS_Lock   ( pid,spP, d0,d1,d2 ); break; /* $11 */
+        case SS_Ticks  : err= s->_SS_Ticks  ( pid,spP, d2       ); break; /* $10 */
 
         case SS_SSig   : spP->signal_to_send=  loword(*d2);        /* $1A: sends signal on data ready */
                          spP->signal_pid    =  pid;                /* if ready, send immediately */
-                         err= ((pfunc_p1_t)f->gs._SS_Ready)( pid,spP, &n );
+                         err= f->gs._SS_Ready( pid,spP, &n );
             if (!err)  { send_signal(spP->signal_pid,spP->signal_to_send );
                                                      spP->signal_to_send= 0; }
                          err= 0; break;
@@ -2000,22 +2003,22 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
 
         case SS_SEvent : err= 0; spP->set_evId= *d2;              break; /* $3A set event on data ready */
         case SS_Reset  : err= 0; /* do nothing */                 break;
-        case SS_WTrk   : err= ((pfunc_p2a_t)s->_SS_WTrk   )( pid,spP, d2,  *a ); break;
+        case SS_WTrk   : err= s->_SS_WTrk   ( pid,spP, d2,  *a ); break;
 
-        case SS_LBlink : err= ((pfunc_p1_t )s->_SS_LBlink  )( pid,spP, d2      ); break; /* $80+32 */
+        case SS_LBlink : err= s->_SS_LBlink ( pid,spP, d2       ); break; /* $80+32 */
 
         /* socket connections */
-        case SS_Bind   : err= ((pfunc_p2a_t)s->_SS_Bind   )( pid,spP, d2,  *a ); break; /* $6C */
-        case SS_Listen : err= ((pfunc_p2a_t)s->_SS_Listen )( pid,spP, d2,  *a ); break; /* $6D */
-        case SS_Connect: err= ((pfunc_p2a_t)s->_SS_Connect)( pid,spP, d2,  *a ); break; /* $6E */
+        case SS_Bind   : err= s->_SS_Bind   ( pid,spP, d2,  *a ); break; /* $6C */
+        case SS_Listen : err= s->_SS_Listen ( pid,spP, d2,  *a ); break; /* $6D */
+        case SS_Connect: err= s->_SS_Connect( pid,spP, d2,  *a ); break; /* $6E */
         case SS_Resv   : err=  0;    /* do nothing at the moment */               break; /* $6F */
-        case SS_Accept : err= ((pfunc_p2a_t)s->_SS_Accept )( pid,spP, d1,  *a ); break; /* $70 */
-        case SS_Recv   : err= ((pfunc_p3a_t)s->_SS_Recv   )( pid,spP, d1,d2,*a); break; /* $71 */
-        case SS_Send   : err= ((pfunc_p3a_t)s->_SS_Send   )( pid,spP, d1,d2,*a); break; /* $72 */
-        case SS_GNam   : err= ((pfunc_p3a_t)s->_SS_GNam   )( pid,spP, d1,d2,*a); break; /* $73 */
-        case SS_SOpt   : err= ((pfunc_p2_t )s->_SS_SOpt   )( pid,spP, d1,d2   ); break; /* $74 */
-        case SS_SendTo : err= ((pfunc_p3a_t)s->_SS_SendTo )( pid,spP, d1,d2,*a); break; /* $77 */
-        case SS_PCmd   : err= ((pfunc_pa_t )s->_SS_PCmd   )( pid,spP,      *a ); break; /* $7A */
+        case SS_Accept : err= s->_SS_Accept ( pid,spP, d1,  *a ); break; /* $70 */
+        case SS_Recv   : err= s->_SS_Recv   ( pid,spP, d1,d2,*a ); break; /* $71 */
+        case SS_Send   : err= s->_SS_Send   ( pid,spP, d1,d2,*a ); break; /* $72 */
+        case SS_GNam   : err= s->_SS_GNam   ( pid,spP, d1,d2,*a ); break; /* $73 */
+        case SS_SOpt   : err= s->_SS_SOpt   ( pid,spP, d1,d2    ); break; /* $74 */
+        case SS_SendTo : err= s->_SS_SendTo ( pid,spP, d1,d2,*a ); break; /* $77 */
+        case SS_PCmd   : err= s->_SS_PCmd   ( pid,spP,      *a ); break; /* $7A */
 
         /* general block read — RBF only; non-block devices return E_UNIT */
         case SS_BlkRd:
@@ -2042,7 +2045,7 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
             err= 0; break;
                         
         /* undefined */ 
-        default: err= ((pfunc_p2a_t)s->_SS_Undef)( pid,spP, d2,*a ); break;
+        default: err= s->_SS_Undef( pid,spP, d2,*a ); break;
     } /* switch */
 
     return err;
@@ -2091,10 +2094,10 @@ os9err get_locations( ushort pid, ptype_typ type, const char* pathname,
     err= usrpath_close( pid,path ); return err;
 } /* get_locations */
 
-static os9err doCmd( pathopfunc_typ cmd, ushort pid, ptype_typ type, ushort mode,
+static os9err doCmd( pathop_path_typ cmd, ushort pid, ptype_typ type, ushort mode,
                                          const char* pathname, const char* txt )
 {
-    os9err err= ((pfunc_od_t)cmd)( pid,NULL, &mode,pathname ); /* specific call */
+    os9err err= cmd( pid,NULL, &mode,pathname ); /* specific call */
     debugprintf( dbgFiles,dbgNorm,( "# %s '%s' (type=%s) err=%d\n",
                                    txt,pathname,TypeStr(type), err ));
     return err;

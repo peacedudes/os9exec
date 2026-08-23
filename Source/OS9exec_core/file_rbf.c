@@ -235,10 +235,9 @@ os9err pRreadln  ( ushort pid, syspath_typ*, uint32_t *lenP,    char* buffer );
 os9err pRwrite   ( ushort pid, syspath_typ*, uint32_t *lenP,    char* buffer );
 os9err pRwriteln ( ushort pid, syspath_typ*, uint32_t *lenP,    char* buffer );
 os9err pRseek    ( ushort pid, syspath_typ*, uint32_t *posP );
-os9err pRchd     ( ushort pid, syspath_typ*, ushort *modeP,   char* pathname );
-os9err pRdelete  ( ushort pid, syspath_typ*, ushort *modeP,   char* pathname );
-os9err pRmakdir  ( ushort pid, syspath_typ*, ushort *modeP,   char* pathname );
-
+os9err pRchd     ( ushort pid, syspath_typ*, ushort *modeP,   const char* pathname );
+os9err pRdelete  ( ushort pid, syspath_typ*, ushort *modeP,   const char* pathname );
+os9err pRmakdir  ( ushort pid, syspath_typ*, ushort *modeP,   const char* pathname );
 os9err pRsize    ( ushort pid, syspath_typ*, uint32_t *sizeP );
 os9err pRopt     ( ushort pid, syspath_typ*,                  byte* buffer );
 os9err pRnam     ( ushort pid, syspath_typ*,                  char* volname );
@@ -267,36 +266,36 @@ void init_RBF( fmgr_typ* f )
     ss_typ* ss= &f->ss;
     
     /* main procedures */
-    f->open      = (pathopfunc_typ)pRopen;
-    f->close     = (pathopfunc_typ)pRclose;
-    f->read      = (pathopfunc_typ)pRread;
-    f->readln    = (pathopfunc_typ)pRreadln;
-    f->write     = (pathopfunc_typ)pRwrite;
-    f->writeln   = (pathopfunc_typ)pRwriteln;
-    f->seek      = (pathopfunc_typ)pRseek;
-    f->chd       = (pathopfunc_typ)pRchd;
-    f->del       = (pathopfunc_typ)pRdelete;
-    f->makdir    = (pathopfunc_typ)pRmakdir;
+    f->open      = pRopen;
+    f->close     = pRclose;
+    f->read      = pRread;
+    f->readln    = pRreadln;
+    f->write     = pRwrite;
+    f->writeln   = pRwriteln;
+    f->seek      = pRseek;
+    f->chd       = pRchd;
+    f->del       = pRdelete;
+    f->makdir    = pRmakdir;
     
     /* getstat */
-    gs->_SS_Size = (pathopfunc_typ)pRsize;
-    gs->_SS_Opt  = (pathopfunc_typ)pRopt;
-    gs->_SS_DevNm= (pathopfunc_typ)pRnam;
-    gs->_SS_Pos  = (pathopfunc_typ)pRpos;
-    gs->_SS_EOF  = (pathopfunc_typ)pReof;
-    gs->_SS_Ready= (pathopfunc_typ)pRready;
-    gs->_SS_FD   = (pathopfunc_typ)pRgetFD;
-    gs->_SS_FDInf= (pathopfunc_typ)pRgetFDInf;
-    gs->_SS_DSize= (pathopfunc_typ)pRdsize;   /* get drive size in sectors */
+    gs->_SS_Size = pRsize;
+    gs->_SS_Opt  = pRopt;
+    gs->_SS_DevNm= pRnam;
+    gs->_SS_Pos  = pRpos;
+    gs->_SS_EOF  = pReof;
+    gs->_SS_Ready= pRready;
+    gs->_SS_FD   = pRgetFD;
+    gs->_SS_FDInf= pRgetFDInf;
+    gs->_SS_DSize= pRdsize;   /* get drive size in sectors */
 
     /* setstat */
-    ss->_SS_Size = (pathopfunc_typ)pRsetsz;
-    ss->_SS_Opt  = (pathopfunc_typ)pNop;      /* ignored */
-    ss->_SS_Attr = (pathopfunc_typ)pRsetatt;
-    ss->_SS_FD   = (pathopfunc_typ)pRsetFD;
-    ss->_SS_Lock = (pathopfunc_typ)pRlock;
-    ss->_SS_Ticks= (pathopfunc_typ)pRticks;
-    ss->_SS_WTrk = (pathopfunc_typ)pRWTrk;
+    ss->_SS_Size = pRsetsz;
+    ss->_SS_Opt  = pNop_opt;      /* ignored */
+    ss->_SS_Attr = pRsetatt;
+    ss->_SS_FD   = pRsetFD;
+    ss->_SS_Lock = pRlock;
+    ss->_SS_Ticks= pRticks;
+    ss->_SS_WTrk = pRWTrk;
     
      init_RBF_devs(); /* init RBF devices */
 } /* init_RBF */
@@ -4017,7 +4016,7 @@ os9err pRseek( _pid_, syspath_typ* spP, uint32_t *posP )
   return 0;
 } /* pRseek */
 
-os9err pRchd( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
+os9err pRchd( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname )
 {
     os9err       err;
     ushort       path;
@@ -4062,7 +4061,7 @@ os9err pRchd( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
     return 0;
 } /* pRchd */
 
-os9err pRdelete( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
+os9err pRdelete( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname )
 {
     os9err      err, cer;
     rbfdev_typ* dev;
@@ -4113,7 +4112,7 @@ os9err pRdelete( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname )
     return err;
 } /* pRdelete */
 
-os9err pRmakdir( ushort pid, syspath_typ* spP, _modeP_, char* pathname )
+os9err pRmakdir( ushort pid, syspath_typ* spP, _modeP_, const char* pathname )
 {
     os9err   err;
     uint32_t size= 2*DIRENTRYSZ;

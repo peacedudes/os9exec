@@ -994,11 +994,35 @@ typedef struct {
 
 
 
-/* path operation function def */
-// Originally variadic (...) to accept different 3rd/4th arg types across file managers.
-// arm64: variadic call through fn pointer misaligns registers vs non-variadic callees.
-// Call sites must cast to an explicit non-variadic type before dispatching.
-typedef os9err(*pathopfunc_typ) ( ushort pid, syspath_typ*, ... );
+/* path operation function types
+ *
+ * There was one type here, variadic: os9err(*)( ushort, syspath_typ*, ... ).
+ * Every file manager cast its handler INTO a slot of that type, and every
+ * dispatch site cast the slot back OUT to the shape it was about to call
+ * with -- two casts that had to agree, with nothing checking that they did,
+ * a cast being precisely how one tells the compiler to stop looking. Calling
+ * a function through a pointer of incompatible type is undefined however
+ * carefully they agree (C11 6.5.2.2), and it hid real mistakes: handlers
+ * declared with fewer parameters than the dispatcher passes, a register read
+ * four bytes too wide, a buffer declared char** and cast back to char* in the
+ * body.
+ *
+ * So each slot is declared below with the shape its dispatcher calls it with,
+ * and both ends are the compiler's business again. The suffix names what
+ * follows (pid, path): `num` a data register, `opt`/`buf` the buffer an
+ * address register points at -- the same d/a split the 68k registers these
+ * arguments arrive in already make.
+ */
+typedef os9err (*pathop_typ)     ( ushort pid, syspath_typ* );
+typedef os9err (*pathop_num_typ) ( ushort pid, syspath_typ*, uint32_t* );
+typedef os9err (*pathop_num2_typ)( ushort pid, syspath_typ*, uint32_t*, uint32_t* );
+typedef os9err (*pathop_lock_typ)( ushort pid, syspath_typ*, uint32_t*, uint32_t*, uint32_t* );
+typedef os9err (*pathop_opt_typ) ( ushort pid, syspath_typ*, byte* );
+typedef os9err (*pathop_name_typ)( ushort pid, syspath_typ*, char* );
+typedef os9err (*pathop_data_typ)( ushort pid, syspath_typ*, uint32_t*, char* );
+typedef os9err (*pathop_buf_typ) ( ushort pid, syspath_typ*, uint32_t*, byte* );
+typedef os9err (*pathop_buf2_typ)( ushort pid, syspath_typ*, uint32_t*, uint32_t*, byte* );
+typedef os9err (*pathop_path_typ)( ushort pid, syspath_typ*, ushort*, const char* );
 
                 
 /* system task function def */
@@ -1016,65 +1040,65 @@ typedef void (*dbg_func)(void);
 
 /* the file manager system */
 typedef struct {
-            pathopfunc_typ _SS_Size,
-                           _SS_Opt,
-                           _SS_DevNm,
-                           _SS_Pos,
-                           _SS_EOF,
-                           _SS_Ready,
-                           _SS_FD,
-                           _SS_FDInf,
-                           _SS_DSize,
-                           
-                           _SS_PCmd,   /* network specific function */
+            pathop_num_typ  _SS_Size;
+            pathop_opt_typ  _SS_Opt;
+            pathop_name_typ _SS_DevNm;
+            pathop_num_typ  _SS_Pos;
+            pathop_typ      _SS_EOF;
+            pathop_num_typ  _SS_Ready;
+            pathop_buf_typ  _SS_FD;
+            pathop_buf2_typ _SS_FDInf;
+            pathop_num2_typ _SS_DSize;
 
-                           _SS_LBlink,                /* L2 support */
-                           
-                           _SS_Undef; /* any other getstat function */
+            pathop_opt_typ  _SS_PCmd;   /* network specific function */
+
+            pathop_num_typ  _SS_LBlink;                /* L2 support */
+
+            pathop_num2_typ _SS_Undef; /* any other getstat function */
         } gs_typ;
 
 
 typedef struct {
-            pathopfunc_typ _SS_Size,
-                           _SS_Opt,
-                           _SS_Attr,
-                           _SS_FD,
-                           _SS_Lock,
-                           _SS_Ticks,   /* how long to wait for someone else's lock */
-                           _SS_WTrk,
+            pathop_num_typ  _SS_Size;
+            pathop_opt_typ  _SS_Opt;
+            pathop_num_typ  _SS_Attr;
+            pathop_opt_typ  _SS_FD;
+            pathop_lock_typ _SS_Lock;
+            pathop_num_typ  _SS_Ticks;   /* how long to wait for someone else's lock */
+            pathop_buf_typ  _SS_WTrk;
 
-                           _SS_Bind,    /* network spefic functions */
-                           _SS_Listen,
-                           _SS_Connect,
-                           _SS_Accept,
-                           _SS_Recv,
-                           _SS_Send,
-                           _SS_GNam,
-                           _SS_SOpt,
-                           _SS_SendTo,
-                           _SS_PCmd,
-                           
-                           _SS_LBlink,                /* L2 support */
-                           
-                           _SS_Undef; /* any other setstat function */
+            pathop_buf_typ  _SS_Bind;    /* network spefic functions */
+            pathop_buf_typ  _SS_Listen;
+            pathop_buf_typ  _SS_Connect;
+            pathop_buf_typ  _SS_Accept;
+            pathop_buf2_typ _SS_Recv;
+            pathop_buf2_typ _SS_Send;
+            pathop_buf2_typ _SS_GNam;
+            pathop_num2_typ _SS_SOpt;
+            pathop_buf2_typ _SS_SendTo;
+            pathop_opt_typ  _SS_PCmd;
+
+            pathop_num_typ  _SS_LBlink;                /* L2 support */
+
+            pathop_buf_typ  _SS_Undef; /* any other setstat function */
         } ss_typ;
 
 
 typedef struct {
-            pathopfunc_typ open,
-                           close,
-                           write,
-                           writeln,
-                           read,
-                           readln,
-                           seek,
-                           
-                           chd,
-                           del,
-                           makdir;
-                           
-            gs_typ         gs;
-            ss_typ         ss;
+            pathop_path_typ open;
+            pathop_typ      close;
+            pathop_data_typ write,
+                            writeln,
+                            read,
+                            readln;
+            pathop_num_typ  seek;
+
+            pathop_path_typ chd,
+                            del,
+                            makdir;
+
+            gs_typ          gs;
+            ss_typ          ss;
         } fmgr_typ;
 
 

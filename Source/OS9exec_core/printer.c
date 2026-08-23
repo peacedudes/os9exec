@@ -88,7 +88,7 @@ BOOL ClosePrinterRaw(HANDLE hPrinter);
 
 
 /* --- local procedure definitions for object definition ------------------- */
-os9err pPrOpen   ( ushort pid, syspath_typ*, ushort  *modeP, char* pathname );
+os9err pPrOpen   ( ushort pid, syspath_typ*, ushort  *modeP, const char* pathname );
 os9err pPrClose  ( ushort pid, syspath_typ* );
 os9err pPrOut    ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
 os9err pPrOutLn  ( ushort pid, syspath_typ*, uint32_t *maxlenP, char* buffer );
@@ -111,26 +111,26 @@ void init_Printer( fmgr_typ* f )
     ss_typ* ss= &f->ss;
     
     /* main procedures */
-    f->open      = (pathopfunc_typ)pPrOpen;
-    f->close     = (pathopfunc_typ)pPrClose;
-    f->read      = (pathopfunc_typ)pEOF;
-    f->readln    = (pathopfunc_typ)pEOF;
-    f->write     = (pathopfunc_typ)pPrOut;
-    f->writeln   = (pathopfunc_typ)pPrOutLn;
-    f->seek      = (pathopfunc_typ)pBadMode; /* not allowed */
+    f->open      = pPrOpen;
+    f->close     = pPrClose;
+    f->read      = pEOF;
+    f->readln    = pEOF;
+    f->write     = pPrOut;
+    f->writeln   = pPrOutLn;
+    f->seek      = pBadMode_num; /* not allowed */
     
     /* getstat */
-    gs->_SS_Size = (pathopfunc_typ)pUnimp;   /* -- not used */
-    gs->_SS_Opt  = (pathopfunc_typ)pCopt;
-    gs->_SS_DevNm= (pathopfunc_typ)pSCFnam;
-    gs->_SS_Pos  = (pathopfunc_typ)pBadMode;
-    gs->_SS_EOF  = (pathopfunc_typ)pNop;         /* ignored */
-    gs->_SS_Ready= (pathopfunc_typ)pPrReady;
+    gs->_SS_Size = pUnimp_num;   /* -- not used */
+    gs->_SS_Opt  = pCopt;
+    gs->_SS_DevNm= pSCFnam;
+    gs->_SS_Pos  = pBadMode_num;
+    gs->_SS_EOF  = pNop;         /* ignored */
+    gs->_SS_Ready= pPrReady;
 
     /* setstat */
-    ss->_SS_Size = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Opt  = (pathopfunc_typ)pCsetopt;
-    ss->_SS_Attr = (pathopfunc_typ)pNop;         /* ignored */
+    ss->_SS_Size = pNop_num;         /* ignored */
+    ss->_SS_Opt  = pCsetopt;
+    ss->_SS_Attr = pNop_num;         /* ignored */
 } /* init_Cons */
 
 
@@ -304,7 +304,7 @@ BOOL ClosePrinterRaw(HANDLE hPrinter)
 
 
 
-os9err pPrOpen(ushort pid, syspath_typ* spP, _modeP_, char* name)
+os9err pPrOpen(ushort pid, syspath_typ* spP, _modeP_, const char* name)
 /* routine for opening printer devices */
 {
     os9err err; 

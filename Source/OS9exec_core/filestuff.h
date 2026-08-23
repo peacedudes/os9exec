@@ -83,13 +83,35 @@ os9err parsepathext      ( ushort pid, char** inp, char* out, Boolean exedir, Bo
 os9err parsepath         ( ushort pid, char** inp, char* out, Boolean exedir );
 void   TwoCharDev        ( char* p, char** p3, char* tmp );
 
-/* Generic */
+/* Generic -- the stock answer for a slot a file manager does not implement,
+   one per slot shape it is installed in. See the definitions in filestuff.c
+   for why a single variadic one will not do. */
 os9err pUnimp            ( ushort pid, syspath_typ* );
-os9err pUnimpOk          ( ushort pid, syspath_typ* );
-os9err pBadMode          ( ushort pid, syspath_typ* );
+os9err pUnimp_num        ( ushort pid, syspath_typ*, uint32_t* );
+os9err pUnimp_num2       ( ushort pid, syspath_typ*, uint32_t*, uint32_t* );
+os9err pUnimp_lock       ( ushort pid, syspath_typ*, uint32_t*, uint32_t*, uint32_t* );
+os9err pUnimp_opt        ( ushort pid, syspath_typ*, byte* );
+os9err pUnimp_name       ( ushort pid, syspath_typ*, char* );
+os9err pUnimp_data       ( ushort pid, syspath_typ*, uint32_t*, char* );
+os9err pUnimp_buf        ( ushort pid, syspath_typ*, uint32_t*, byte* );
+os9err pUnimp_buf2       ( ushort pid, syspath_typ*, uint32_t*, uint32_t*, byte* );
+os9err pUnimp_path       ( ushort pid, syspath_typ*, ushort*, const char* );
+
+os9err pUnimpOk          ( ushort pid, syspath_typ*, uint32_t* );
+
+os9err pBadMode_num      ( ushort pid, syspath_typ*, uint32_t* );
+os9err pBadMode_data     ( ushort pid, syspath_typ*, uint32_t*, char* );
+
 os9err pNop              ( ushort pid, syspath_typ* );
-os9err pNoModule         ( ushort pid, syspath_typ* );
-os9err pNotReady         ( ushort pid, syspath_typ* );
+os9err pNop_num          ( ushort pid, syspath_typ*, uint32_t* );
+os9err pNop_lock         ( ushort pid, syspath_typ*, uint32_t*, uint32_t*, uint32_t* );
+os9err pNop_opt          ( ushort pid, syspath_typ*, byte* );
+os9err pNop_data         ( ushort pid, syspath_typ*, uint32_t*, char* );
+os9err pNop_buf          ( ushort pid, syspath_typ*, uint32_t*, byte* );
+os9err pNop_path         ( ushort pid, syspath_typ*, ushort*, const char* );
+
+os9err pNoModule         ( ushort pid, syspath_typ*, ushort*, const char* );
+os9err pNotReady         ( ushort pid, syspath_typ*, uint32_t* );
 
 /* SCF-like */
 os9err pSCFnam           ( ushort pid, syspath_typ*, char* volname );

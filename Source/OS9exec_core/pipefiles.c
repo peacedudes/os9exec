@@ -98,13 +98,13 @@
 /* --- local procedure definitions for object definition ------------------- */
 /* --- pipes */
 void   init_Pipe( fmgr_typ* f );
-os9err pPopen   ( ushort pid, syspath_typ*, ushort *modeP,  char* pathname );
+os9err pPopen   ( ushort pid, syspath_typ*, ushort *modeP,  const char* pathname );
 os9err pPclose  ( ushort pid, syspath_typ* );
 os9err pPreadln ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer   );
 os9err pPread   ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer   );
 os9err pPwriteln( ushort pid, syspath_typ*, uint32_t *n,      char* buffer   );
 os9err pPwrite  ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer   );
-os9err pPdelete ( ushort pid, syspath_typ*, ushort  *modeP,   char* pathname );
+os9err pPdelete ( ushort pid, syspath_typ*, ushort  *modeP,   const char* pathname );
 
 os9err pPsize   ( ushort pid, syspath_typ*, uint32_t *sizeP );
 os9err pPopt    ( ushort pid, syspath_typ*,                    byte* buffer   );
@@ -119,7 +119,7 @@ os9err pPsetsz  ( ushort pid, syspath_typ*, uint32_t *sizeP );
 
 /* --- ptys */
 void   init_PTY  ( fmgr_typ* f );
-os9err pKopen    ( ushort pid, syspath_typ*, ushort *modeP, char* pathname );
+os9err pKopen    ( ushort pid, syspath_typ*, ushort *modeP, const char* pathname );
 os9err pKclose   ( ushort pid, syspath_typ* );
 os9err pKread    ( ushort pid, syspath_typ*, uint32_t *n,     char* buffer   );
 os9err pKreadln  ( ushort pid, syspath_typ*, uint32_t *n,     char* buffer   );
@@ -139,41 +139,41 @@ void init_Pipe( fmgr_typ* f )
     ss_typ* ss= &f->ss;
 
     /* main procedures */
-    f->open      = (pathopfunc_typ)pPopen;
-    f->close     = (pathopfunc_typ)pPclose;
-    f->read      = (pathopfunc_typ)pPread;
-    f->readln    = (pathopfunc_typ)pPreadln;
-    f->write     = (pathopfunc_typ)pPwrite;
-    f->writeln   = (pathopfunc_typ)pPwriteln;
-    f->seek      = (pathopfunc_typ)pNop;      /* ignored */
+    f->open      = pPopen;
+    f->close     = pPclose;
+    f->read      = pPread;
+    f->readln    = pPreadln;
+    f->write     = pPwrite;
+    f->writeln   = pPwriteln;
+    f->seek      = pNop_num;      /* ignored */
     /* "The I$MakDir and I$ChgDir service requests are illegal service
        routines on pipes. They return E$UnkSvc (unknown service request)"
        -- v2.4 Technical Reference, pipeman chapter. MakDir already inherited
        pUnimp (E_UNKSVC) and was right; chd inherited pNoModule (E_MNF) from
        init_None and was not, so `chd /pipe` reported a missing MODULE. */
-    f->chd       = (pathopfunc_typ)pUnimp;    /* E_UNKSVC, per pipeman */
-    f->del       = (pathopfunc_typ)pPdelete;
+    f->chd       = pUnimp_path;    /* E_UNKSVC, per pipeman */
+    f->del       = pPdelete;
     
     /* getstat */
-    gs->_SS_Size = (pathopfunc_typ)pPsize;
-    gs->_SS_Opt  = (pathopfunc_typ)pPopt;
-    gs->_SS_DevNm= (pathopfunc_typ)pSCFnam;
-    gs->_SS_Pos  = (pathopfunc_typ)pUnimpOk;      /* ??? */
-    gs->_SS_EOF  = (pathopfunc_typ)pPeof;
-    gs->_SS_Ready= (pathopfunc_typ)pPready;
-    gs->_SS_FD   = (pathopfunc_typ)pPgetFD;   /* pipeman lists SS_FD */
-    gs->_SS_FDInf= (pathopfunc_typ)pPFDInf;
+    gs->_SS_Size = pPsize;
+    gs->_SS_Opt  = pPopt;
+    gs->_SS_DevNm= pSCFnam;
+    gs->_SS_Pos  = pUnimpOk;      /* ??? */
+    gs->_SS_EOF  = pPeof;
+    gs->_SS_Ready= pPready;
+    gs->_SS_FD   = pPgetFD;   /* pipeman lists SS_FD */
+    gs->_SS_FDInf= pPFDInf;
 
     /* setstat */
-    ss->_SS_Size = (pathopfunc_typ)pPsetsz;
+    ss->_SS_Size = pPsetsz;
     /* pipeman's own SetStat list: "SS_Opt Does nothing, but returns without
        error" and "SS_FD Does nothing, but returns without error" -- so pNop
        is right for both, and SS_FD needed a slot because inheriting pUnimp
        answered E$UnkSvc for a code the manual says succeeds. SS_Attr does
        NOT do nothing: it "Changes the pipe file's attributes". */
-    ss->_SS_Opt  = (pathopfunc_typ)pNop;      /* per pipeman: no-op, no error */
-    ss->_SS_FD   = (pathopfunc_typ)pNop;      /* per pipeman: no-op, no error */
-    ss->_SS_Attr = (pathopfunc_typ)pPsetatt;
+    ss->_SS_Opt  = pNop_opt;      /* per pipeman: no-op, no error */
+    ss->_SS_FD   = pNop_opt;      /* per pipeman: no-op, no error */
+    ss->_SS_Attr = pPsetatt;
 } /* init_Pipe */
 
 
@@ -184,12 +184,12 @@ void init_PTY( fmgr_typ* f )
     ss_typ* ss= &f->ss;
     
     /* main procedures */
-    f->open      = (pathopfunc_typ)pKopen;
-    f->close     = (pathopfunc_typ)pKclose;
-    f->read      = (pathopfunc_typ)pKread;
-    f->readln    = (pathopfunc_typ)pKreadln;
-    f->write     = (pathopfunc_typ)pKwrite;
-    f->writeln   = (pathopfunc_typ)pKwriteln;
+    f->open      = pKopen;
+    f->close     = pKclose;
+    f->read      = pKread;
+    f->readln    = pKreadln;
+    f->write     = pKwrite;
+    f->writeln   = pKwriteln;
     /* Same rule as the pipe manager above, and for the same reason: a
        manager without random access "usually does nothing during the I$Seek
        operation, and does not return an error" (v2.4 Technical I/O Manual,
@@ -197,23 +197,23 @@ void init_PTY( fmgr_typ* f )
        covers a pseudo-terminal, which is os9exec's own device -- but SCF and
        PIPEMAN, the two documented managers it sits between, both answer this
        way, and E_BMODE matched neither. */
-    f->seek      = (pathopfunc_typ)pNop;      /* no-op, and no error */
+    f->seek      = pNop_num;      /* no-op, and no error */
     
     /* getstat */
-    gs->_SS_Size = (pathopfunc_typ)pUnimp;      /* not used */
-    gs->_SS_Opt  = (pathopfunc_typ)pKopt;
-    gs->_SS_DevNm= (pathopfunc_typ)pSCFnam;
-    gs->_SS_Pos  = (pathopfunc_typ)pKpos;
-    gs->_SS_EOF  = (pathopfunc_typ)pNop;         /* ignored */
-    gs->_SS_Ready= (pathopfunc_typ)pKready;
-    gs->_SS_Undef= (pathopfunc_typ)pUnimp;      /* not used */
+    gs->_SS_Size = pUnimp_num;      /* not used */
+    gs->_SS_Opt  = pKopt;
+    gs->_SS_DevNm= pSCFnam;
+    gs->_SS_Pos  = pKpos;
+    gs->_SS_EOF  = pNop;         /* ignored */
+    gs->_SS_Ready= pKready;
+    gs->_SS_Undef= pUnimp_num2;      /* not used */
 
     /* setstat */
-    ss->_SS_Size = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Opt  = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Attr = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Lock = (pathopfunc_typ)pKlock;
-    ss->_SS_Undef= (pathopfunc_typ)pNop;         /* ignored */
+    ss->_SS_Size = pNop_num;         /* ignored */
+    ss->_SS_Opt  = pNop_opt;         /* ignored */
+    ss->_SS_Attr = pNop_num;         /* ignored */
+    ss->_SS_Lock = pKlock;
+    ss->_SS_Undef= pNop_buf;         /* ignored */
 } /* init_PTY */
 
 /* -------------------------------------------------------- */
@@ -312,7 +312,7 @@ static void releasePipe_svd( ushort pid, syspath_typ* spP, Boolean forced )
 
 
 
-os9err pPopen(ushort pid, syspath_typ *spP, ushort *modeP, char* name)
+os9err pPopen(ushort pid, syspath_typ *spP, ushort *modeP, const char* name)
 /* open pipe, make it anonymous if name==NULL, named otherwise */
 {
     uint32_t pipesz;
@@ -410,7 +410,7 @@ os9err pPclose( ushort pid, syspath_typ* spP )
 } /* pPclose */
 
 
-os9err pPdelete ( _pid_, _spP_, ushort *modeP, char* pathname )
+os9err pPdelete ( _pid_, _spP_, ushort *modeP, const char* pathname )
 /* delete pipe */
 {
   char pipename[ OS9NAMELEN ];
@@ -1002,7 +1002,7 @@ os9err pPsetsz( _pid_, syspath_typ* spP, uint32_t *sizeP )
 
 
 /* ------------------------- packet manager routines --------- */
-os9err pKopen( ushort pid, syspath_typ* spP, _modeP_, char* pathname )
+os9err pKopen( ushort pid, syspath_typ* spP, _modeP_, const char* pathname )
 {
     os9err        err;  
     syspath_typ*  spK;

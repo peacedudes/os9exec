@@ -198,7 +198,7 @@
 /* --- local procedure definitions for object definition ------------------- */
 void   init_Net ( fmgr_typ* f );
 
-os9err pNopen   ( ushort pid, syspath_typ* spP, ushort *modeP, char* pathname );
+os9err pNopen   ( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname );
 os9err pNclose  ( ushort pid, syspath_typ* spP );
 os9err pNread   ( ushort pid, syspath_typ* spP, uint32_t *lenP,  char* buffer );
 os9err pNreadln ( ushort pid, syspath_typ* spP, uint32_t *lenP,  char* buffer );
@@ -211,19 +211,19 @@ os9err pNready  ( ushort pid, syspath_typ* spP, uint32_t *n    );
 
        /* network specific functions */
 os9err pNbind   ( ushort pid, syspath_typ* spP, uint32_t *n,     byte* ispP );
-os9err pNlisten ( ushort pid, syspath_typ* spP );
+os9err pNlisten ( ushort pid, syspath_typ* spP, uint32_t *n,     byte* ispP );
 os9err pNconnect( ushort pid, syspath_typ* spP, uint32_t *n,     byte* ispP );
-os9err pNaccept ( ushort pid, syspath_typ* spP, uint32_t *d1 );
+os9err pNaccept ( ushort pid, syspath_typ* spP, uint32_t *d1,    byte* ispP );
 os9err pNrecv   ( ushort pid, syspath_typ* spP, uint32_t *d1,
-                                                uint32_t *d2,    char* *a0  );
+                                                uint32_t *d2,    byte* buffer );
 os9err pNsend   ( ushort pid, syspath_typ* spP, uint32_t *d1,
-                                                uint32_t *d2,    char* *a0  );
+                                                uint32_t *d2,    byte* buffer );
 os9err pNGNam   ( ushort pid, syspath_typ* spP, uint32_t *d1,
                                                 uint32_t *d2,    byte* ispP );
 os9err pNSOpt   ( ushort pid, syspath_typ* spP, uint32_t *d1,    uint32_t *d2  );
 
-os9err pNgPCmd  ( ushort pid, syspath_typ *spP, ulong32 *a0 );
-os9err pNsPCmd  ( ushort pid, syspath_typ *spP, ulong32 *a0 );
+os9err pNgPCmd  ( ushort pid, syspath_typ *spP, byte* a0 );
+os9err pNsPCmd  ( ushort pid, syspath_typ *spP, byte* a0 );
 /* ------------------------------------------------------------------------- */
 
 
@@ -235,45 +235,45 @@ void init_Net( fmgr_typ* f )
     ss_typ* ss= &f->ss;
     
     /* main procedures */
-    f->open        = (pathopfunc_typ)pNopen;
-    f->close       = (pathopfunc_typ)pNclose;
-    f->read        = (pathopfunc_typ)pNread;
-    f->readln      = (pathopfunc_typ)pNreadln;
-    f->write       = (pathopfunc_typ)pNwrite;
-    f->writeln     = (pathopfunc_typ)pNwriteln;
-    f->seek        = (pathopfunc_typ)pBadMode; /* not allowed */
+    f->open        = pNopen;
+    f->close       = pNclose;
+    f->read        = pNread;
+    f->readln      = pNreadln;
+    f->write       = pNwrite;
+    f->writeln     = pNwriteln;
+    f->seek        = pBadMode_num; /* not allowed */
 
 
     /* getstat */
-    gs->_SS_Size   = (pathopfunc_typ)pUnimp;   /* -- not used */
-    gs->_SS_Opt    = (pathopfunc_typ)pNopt;
-    gs->_SS_DevNm  = (pathopfunc_typ)pSCFnam;
-    gs->_SS_Pos    = (pathopfunc_typ)pNpos;
-    gs->_SS_EOF    = (pathopfunc_typ)pNop;         /* ignored */
-    gs->_SS_Ready  = (pathopfunc_typ)pNready;
+    gs->_SS_Size   = pUnimp_num;   /* -- not used */
+    gs->_SS_Opt    = pNopt;
+    gs->_SS_DevNm  = pSCFnam;
+    gs->_SS_Pos    = pNpos;
+    gs->_SS_EOF    = pNop;         /* ignored */
+    gs->_SS_Ready  = pNready;
 
-    gs->_SS_PCmd   = (pathopfunc_typ)pNgPCmd;  /* network spefic function */
+    gs->_SS_PCmd   = pNgPCmd;  /* network spefic function */
 
-    gs->_SS_Undef  = (pathopfunc_typ)pUnimp;   /* -- not used, if any other function */
+    gs->_SS_Undef  = pUnimp_num2;   /* -- not used, if any other function */
 
 
     /* setstat */
-    ss->_SS_Size   = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Opt    = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Attr   = (pathopfunc_typ)pNop;         /* ignored */
+    ss->_SS_Size   = pNop_num;         /* ignored */
+    ss->_SS_Opt    = pNop_opt;         /* ignored */
+    ss->_SS_Attr   = pNop_num;         /* ignored */
     
-    ss->_SS_Bind   = (pathopfunc_typ)pNbind;   /* network spefic functions */
-    ss->_SS_Listen = (pathopfunc_typ)pNlisten;
-    ss->_SS_Connect= (pathopfunc_typ)pNconnect;
-    ss->_SS_Accept = (pathopfunc_typ)pNaccept;
-    ss->_SS_Recv   = (pathopfunc_typ)pNrecv;
-    ss->_SS_Send   = (pathopfunc_typ)pNsend;
-    ss->_SS_GNam   = (pathopfunc_typ)pNGNam;
-    ss->_SS_SOpt   = (pathopfunc_typ)pNSOpt;
-    ss->_SS_SendTo = (pathopfunc_typ)pNsend;
-    ss->_SS_PCmd   = (pathopfunc_typ)pNsPCmd;
+    ss->_SS_Bind   = pNbind;   /* network spefic functions */
+    ss->_SS_Listen = pNlisten;
+    ss->_SS_Connect= pNconnect;
+    ss->_SS_Accept = pNaccept;
+    ss->_SS_Recv   = pNrecv;
+    ss->_SS_Send   = pNsend;
+    ss->_SS_GNam   = pNGNam;
+    ss->_SS_SOpt   = pNSOpt;
+    ss->_SS_SendTo = pNsend;
+    ss->_SS_PCmd   = pNsPCmd;
 
-    ss->_SS_Undef  = (pathopfunc_typ)pNop;         /* ignored, if any other function */
+    ss->_SS_Undef  = pNop_buf;         /* ignored, if any other function */
 } /* init_Net */
 
 /* ----------------------------------------------- */
@@ -522,7 +522,7 @@ static os9err GetBuffers( net_typ* net )
 
 
 
-os9err pNopen( _pid_, syspath_typ* spP, _modeP_, char* pathname)
+os9err pNopen( _pid_, syspath_typ* spP, _modeP_, const char* pathname)
 {
     OSStatus err;
     net_typ* net= &spP->u.net;
@@ -883,7 +883,7 @@ os9err pNbind( _pid_, syspath_typ* spP, _d2_, byte *ispP )
 
 
 
-os9err pNlisten( ushort pid, syspath_typ* spP )
+os9err pNlisten( ushort pid, syspath_typ* spP, uint32_t *n, byte* ispP )
 {
     /* Initialised: the #if/#elif chain below only assigns <err> on the MacOS
        and win_unix branches, so on any platform that is neither it reached the
@@ -1093,7 +1093,7 @@ os9err pNconnect( ushort pid, syspath_typ* spP, _d2_, byte *ispP)
 
 
 
-os9err pNaccept( ushort pid, syspath_typ* spP, uint32_t *d1 )
+os9err pNaccept( ushort pid, syspath_typ* spP, uint32_t *d1, byte* ispP )
 {
     OSStatus     err= 0;
     net_typ*     net= &spP->u.net;
@@ -1124,7 +1124,7 @@ os9err pNaccept( ushort pid, syspath_typ* spP, uint32_t *d1 )
     #ifdef MACOS9
               state= OTGetEndpointState( net->ep );
       switch (state) {
-          case T_IDLE:      err= pNlisten( pid, spP ); 
+          case T_IDLE:      err= pNlisten( pid, spP, NULL,NULL ); 
                         if (err) return err;
                         break;
           case T_INCON: break;
@@ -1204,7 +1204,7 @@ os9err pNaccept( ushort pid, syspath_typ* spP, uint32_t *d1 )
 
 
 
-os9err pNrecv( ushort pid, syspath_typ* spP, uint32_t* d1, uint32_t* d2, char** a0 )
+os9err pNrecv( ushort pid, syspath_typ* spP, uint32_t* d1, uint32_t* d2, byte* buffer )
 /* for TCP protocol, 2 additional bytes with length info will be received */
 {
     os9err   err;
@@ -1213,14 +1213,14 @@ os9err pNrecv( ushort pid, syspath_typ* spP, uint32_t* d1, uint32_t* d2, char** 
     ushort n; /* the length fill be filled in here */
     
     err= netRead( pid, spP, &lenB, (char*)&n, false );
-    err= netRead( pid, spP, &len,  (char*)a0, false );
+    err= netRead( pid, spP, &len,  (char*)buffer, false );
 
     if   (!err) *d1= len;
     return err;
 } /* pNrecv */
 
 
-os9err pNsend( ushort pid, syspath_typ* spP, uint32_t *d1, uint32_t *d2, char** a0 )
+os9err pNsend( ushort pid, syspath_typ* spP, uint32_t *d1, uint32_t *d2, byte* buffer )
 /* for TCP protocol, 2 additional bytes with length info must be sent */
 {
     os9err   err;
@@ -1229,7 +1229,7 @@ os9err pNsend( ushort pid, syspath_typ* spP, uint32_t *d1, uint32_t *d2, char** 
     ushort n   = os9_word( (ushort)len );
     
     err= netWrite( pid, spP, &lenB, (char*)&n, false );
-    err= netWrite( pid, spP, &len,  (char*)a0, false );
+    err= netWrite( pid, spP, &len,  (char*)buffer, false );
  
     if   (!err) *d1= len;
     return err;
@@ -1310,7 +1310,7 @@ static ushort checksum( ushort *buffer, int size )
 
 
 
-os9err pNsPCmd( _pid_, syspath_typ *spP, ulong32 *a0 )
+os9err pNsPCmd( _pid_, syspath_typ *spP, byte* a0 )
 {
     OSStatus   err= 0;
     net_typ*   net= &spP->u.net;
@@ -1342,7 +1342,7 @@ os9err pNsPCmd( _pid_, syspath_typ *spP, ulong32 *a0 )
     icmp.i_type = ICMP_ECHO;
     icmp.i_code = 0;
     icmp.i_cksum= 0;   // dummy checksum of 0 for purposes of checksum calculation
-    icmp.i_ISP  = *a0;
+    icmp.i_ISP  = *(ulong32*)a0;
     icmp.i_magic= kOurMagic;
     icmp.i_cksum= checksum( (ushort*)&icmp, sizeof(icmp));
     
@@ -1384,7 +1384,7 @@ os9err pNsPCmd( _pid_, syspath_typ *spP, ulong32 *a0 )
 
 
 
-os9err pNgPCmd( _pid_, syspath_typ *spP, ulong32 *a0 )
+os9err pNgPCmd( _pid_, syspath_typ *spP, byte* a0 )
 {
     OSStatus    err= 0;
     long        start_time;
@@ -1434,7 +1434,7 @@ os9err pNgPCmd( _pid_, syspath_typ *spP, ulong32 *a0 )
           if (err==noErr) {
                   icmp= (IcmpHeader*)&icmp_data[20];
               if (icmp->i_type==ICMP_ECHOREPLY
-               && icmp->i_magic==kOurMagic) { *a0= icmp->i_ISP; return 0; }
+               && icmp->i_magic==kOurMagic) { *(ulong32*)a0= icmp->i_ISP; return 0; }
           } 
           else {
               if (err==kOTNoDataErr) {
@@ -1472,7 +1472,7 @@ os9err pNgPCmd( _pid_, syspath_typ *spP, ulong32 *a0 )
                                                            
                   if (err>0 && icmp->i_type==0
                             && icmp->i_magic==kOurMagic) {
-                          *a0= icmp->i_ISP; return 0;
+                          *(ulong32*)a0= icmp->i_ISP; return 0;
                    }
               } /* if */
               

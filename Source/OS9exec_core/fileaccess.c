@@ -209,7 +209,7 @@ os9err pFreadln  ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
 os9err pFwrite   ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
 os9err pFwriteln ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
 os9err pFseek    ( ushort pid, syspath_typ*, uint32_t  *posP );
-os9err pFdelete  ( ushort pid, syspath_typ*, ushort   *modeP,  char* pathname );
+os9err pFdelete  ( ushort pid, syspath_typ*, ushort   *modeP,  const char* pathname );
 
 os9err pFsize    ( ushort pid, syspath_typ*, uint32_t *sizeP );
 os9err pFopt     ( ushort pid, syspath_typ*,                   byte* buffer );
@@ -231,8 +231,8 @@ os9err pDopen    ( ushort pid, syspath_typ*, ushort  *modeP,  const char* pathna
 os9err pDclose   ( ushort pid, syspath_typ* );
 os9err pDread    ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
 os9err pDseek    ( ushort pid, syspath_typ*, uint32_t  *posP );
-os9err pDchd     ( ushort pid, syspath_typ*, ushort  *modeP,  char* pathname );
-os9err pDmakdir  ( ushort pid, syspath_typ*, ushort  *modeP,  char* pathname );
+os9err pDchd     ( ushort pid, syspath_typ*, ushort  *modeP,  const char* pathname );
+os9err pDmakdir  ( ushort pid, syspath_typ*, ushort  *modeP,  const char* pathname );
 
 os9err pDsize    ( ushort pid, syspath_typ*, uint32_t *sizeP );
 os9err pDopt     ( ushort pid, syspath_typ*,                   byte* buffer );
@@ -248,33 +248,33 @@ void init_File( fmgr_typ* f )
     ss_typ* ss= &f->ss;
     
     /* main procedures */
-    f->open       = (pathopfunc_typ)pFopen;
-    f->close      = (pathopfunc_typ)pFclose;
-    f->read       = (pathopfunc_typ)pFread;
-    f->readln     = (pathopfunc_typ)pFreadln;
-    f->write      = (pathopfunc_typ)pFwrite;
-    f->writeln    = (pathopfunc_typ)pFwriteln;
-    f->seek       = (pathopfunc_typ)pFseek;
-    f->del        = (pathopfunc_typ)pFdelete;
-    f->makdir     = (pathopfunc_typ)pDmakdir; /* access to directory will be done via fFile */
+    f->open       = pFopen;
+    f->close      = pFclose;
+    f->read       = pFread;
+    f->readln     = pFreadln;
+    f->write      = pFwrite;
+    f->writeln    = pFwriteln;
+    f->seek       = pFseek;
+    f->del        = pFdelete;
+    f->makdir     = pDmakdir; /* access to directory will be done via fFile */
     
     /* getstat */
-    gs->_SS_Size  = (pathopfunc_typ)pFsize;
-    gs->_SS_Opt   = (pathopfunc_typ)pFopt;
-    gs->_SS_DevNm = (pathopfunc_typ)pHvolnam;
-    gs->_SS_Pos   = (pathopfunc_typ)pFpos;
-    gs->_SS_EOF   = (pathopfunc_typ)pFeof;
-    gs->_SS_Ready = (pathopfunc_typ)pFready;
-    gs->_SS_FD    = (pathopfunc_typ)pHgetFD;
-    gs->_SS_FDInf = (pathopfunc_typ)pHgetFDInf;
-    gs->_SS_DSize = (pathopfunc_typ)pHdsize;
+    gs->_SS_Size  = pFsize;
+    gs->_SS_Opt   = pFopt;
+    gs->_SS_DevNm = pHvolnam;
+    gs->_SS_Pos   = pFpos;
+    gs->_SS_EOF   = pFeof;
+    gs->_SS_Ready = pFready;
+    gs->_SS_FD    = pHgetFD;
+    gs->_SS_FDInf = pHgetFDInf;
+    gs->_SS_DSize = pHdsize;
 
     /* setstat */
-    ss->_SS_Size  = (pathopfunc_typ)pFsetsz;
-    ss->_SS_Opt   = (pathopfunc_typ)pNop;    /* ignored */
-    ss->_SS_Attr  = (pathopfunc_typ)pFsetatt;
-    ss->_SS_FD    = (pathopfunc_typ)pHsetFD;
-    ss->_SS_WTrk  = (pathopfunc_typ)pUnimp; /* not used */
+    ss->_SS_Size  = pFsetsz;
+    ss->_SS_Opt   = pNop_opt;    /* ignored */
+    ss->_SS_Attr  = pFsetatt;
+    ss->_SS_FD    = pHsetFD;
+    ss->_SS_WTrk  = pUnimp_buf; /* not used */
 } /* init_File */
 
 void init_Dir( fmgr_typ* f )
@@ -284,34 +284,34 @@ void init_Dir( fmgr_typ* f )
     ss_typ* ss= &f->ss;
     
     /* main procedures */
-    f->open      = (pathopfunc_typ)pDopen;
-    f->close     = (pathopfunc_typ)pDclose;
-    f->read      = (pathopfunc_typ)pDread;
-    f->readln    = (pathopfunc_typ)pDread;   /* the same as read */
-    f->write     = (pathopfunc_typ)pBadMode; /* not allowed */
-    f->writeln   = (pathopfunc_typ)pBadMode; /* not allowed */
-    f->seek      = (pathopfunc_typ)pDseek;
-    f->chd       = (pathopfunc_typ)pDchd;
-    f->makdir    = (pathopfunc_typ)pDmakdir;
+    f->open      = pDopen;
+    f->close     = pDclose;
+    f->read      = pDread;
+    f->readln    = pDread;   /* the same as read */
+    f->write     = pBadMode_data; /* not allowed */
+    f->writeln   = pBadMode_data; /* not allowed */
+    f->seek      = pDseek;
+    f->chd       = pDchd;
+    f->makdir    = pDmakdir;
     
     /* getstat */
-    gs->_SS_Size = (pathopfunc_typ)pDsize;
-    gs->_SS_Opt  = (pathopfunc_typ)pDopt;
-    gs->_SS_DevNm= (pathopfunc_typ)pHvolnam;
-    gs->_SS_Pos  = (pathopfunc_typ)pDpos;
-    gs->_SS_EOF  = (pathopfunc_typ)pDeof;
-    gs->_SS_Ready= (pathopfunc_typ)pUnimp;      /* not used */
-    gs->_SS_FD   = (pathopfunc_typ)pHgetFD;
-    gs->_SS_FDInf= (pathopfunc_typ)pHgetFDInf;
-    gs->_SS_DSize= (pathopfunc_typ)pHdsize;
+    gs->_SS_Size = pDsize;
+    gs->_SS_Opt  = pDopt;
+    gs->_SS_DevNm= pHvolnam;
+    gs->_SS_Pos  = pDpos;
+    gs->_SS_EOF  = pDeof;
+    gs->_SS_Ready= pUnimp_num;      /* not used */
+    gs->_SS_FD   = pHgetFD;
+    gs->_SS_FDInf= pHgetFDInf;
+    gs->_SS_DSize= pHdsize;
 
     /* setstat */
-    ss->_SS_Size = (pathopfunc_typ)pBadMode; /* not allowed */
-    ss->_SS_Opt  = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_Attr = (pathopfunc_typ)pDsetatt;
-    ss->_SS_FD   = (pathopfunc_typ)pHsetFD;
-    ss->_SS_Lock = (pathopfunc_typ)pNop;         /* ignored */
-    ss->_SS_WTrk = (pathopfunc_typ)pUnimp;      /* not used */
+    ss->_SS_Size = pBadMode_num; /* not allowed */
+    ss->_SS_Opt  = pNop_opt;         /* ignored */
+    ss->_SS_Attr = pDsetatt;
+    ss->_SS_FD   = pHsetFD;
+    ss->_SS_Lock = pNop_lock;         /* ignored */
+    ss->_SS_WTrk = pUnimp_buf;      /* not used */
 } /* init_Dir */
 
 /* -------------------------------------------------------- */
@@ -1566,7 +1566,7 @@ os9err pFseek( _pid_, syspath_typ* spP, uint32_t *posP )
     #endif
 } /* pFseek */
 
-os9err pFdelete( ushort pid, _spP_, ushort *modeP, char* pathname )
+os9err pFdelete( ushort pid, _spP_, ushort *modeP, const char* pathname )
 {
     os9err  err;    
     OSErr   oserr= 0;
@@ -1590,7 +1590,9 @@ os9err pFdelete( ushort pid, _spP_, ushort *modeP, char* pathname )
     #endif
     
 
-    pastpath= pathname;
+    /* parsepath advances this cursor through the name; it never writes
+       through it, so the cast adds nothing the callee could act on. */
+    pastpath= (char*)pathname;
     err     = parsepath( pid, &pastpath,pp, exedir ); if (err) return err;  
     pathname= pp;
 
@@ -2956,7 +2958,7 @@ os9err pDseek( ushort pid, syspath_typ* spP, uint32_t *posP )
     return 0;
 } /* pDseek */
 
-os9err pDchd( ushort pid, _spP_, ushort *modeP, char* pathname )
+os9err pDchd( ushort pid, _spP_, ushort *modeP, const char* pathname )
 {
     os9err       err= 0;
     char*        pastpath;
@@ -2979,7 +2981,9 @@ os9err pDchd( ushort pid, _spP_, ushort *modeP, char* pathname )
     #endif
     
     /* now obtain volume and directory of new path */
-    pastpath= pathname;
+    /* parsepath advances this cursor through the name; it never writes
+       through it, so the cast adds nothing the callee could act on. */
+    pastpath= (char*)pathname;
     err     = parsepath( pid, &pastpath,p, exedir);
     pathname= p;
      
@@ -3018,7 +3022,7 @@ os9err pDchd( ushort pid, _spP_, ushort *modeP, char* pathname )
     return 0; /* ok */
 } /* pDchd */
 
-os9err pDmakdir( ushort pid, _spP_, ushort *modeP, char* pathname )
+os9err pDmakdir( ushort pid, _spP_, ushort *modeP, const char* pathname )
 {
   os9err       err;
   OSErr        oserr= 0;
@@ -3036,7 +3040,9 @@ os9err pDmakdir( ushort pid, _spP_, ushort *modeP, char* pathname )
     char adapted[ OS9PATHLEN ];
   #endif
 
-  pastpath= pathname;
+  /* parsepath advances this cursor through the name; it never writes
+     through it, so the cast adds nothing the callee could act on. */
+  pastpath= (char*)pathname;
   err     = parsepath( pid, &pastpath,p,exedir ); if (err) return err;
   pathname= p;
     
