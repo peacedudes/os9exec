@@ -212,6 +212,17 @@ typedef char _sgs_size_check[(sizeof(struct _sgs) == 128) ? 1 : -1];
 #ifndef PD_STP
 #define PD_STP      0x82 - PthOffs   /* b  step rate */
 #endif
+/* The RBF offsets below are the v2.4 Technical Manual's own two tables --
+   the RBF device descriptor ($48..) and the RBF path descriptor ($80..),
+   which describe the same fields at the two anchors. Seven of them were a
+   byte or three low here (PD_CYL, PD_SID, PD_VFY, PD_TOS, PD_ILV, PD_TFM,
+   PD_TOffs) and PD_SAS was tagged a byte where both tables make it a word:
+   PD_ILV starts at $90, two past PD_SAS at $8E, not one. Nothing in the tree
+   used these -- the RBF option initialiser in utilstuff.c carries the right
+   offsets in its own comments -- but "nothing uses it" is exactly how a wrong
+   number survives to mislead the first person who does. One already did: see
+   the PD_SAS read in utilstuff.c's IsDesc-fed SCSI branch. Corrected
+   2026-08-23 against the manual, not against this tree. */
 /* PD_TYP: already defined by os9exec_nt.h */
 #ifndef PD_TYP
 #define PD_TYP      0x83 - PthOffs   /* b  media type flags */
@@ -220,29 +231,29 @@ typedef char _sgs_size_check[(sizeof(struct _sgs) == 128) ? 1 : -1];
 #define PD_DNS      0x84 - PthOffs   /* b  density */
 #endif
 #ifndef PD_CYL
-#define PD_CYL      0x85 - PthOffs   /* w  number of cylinders */
+#define PD_CYL      0x86 - PthOffs   /* w  number of cylinders */
 #endif
 #ifndef PD_SID
-#define PD_SID      0x87 - PthOffs   /* b  number of sides */
+#define PD_SID      0x88 - PthOffs   /* b  number of heads/sides */
 #endif
 #ifndef PD_VFY
-#define PD_VFY      0x88 - PthOffs   /* b  verify writes (0=yes) */
+#define PD_VFY      0x89 - PthOffs   /* b  verify writes (0=yes) */
 #endif
 #ifndef PD_TOS
-#define PD_TOS      0x89 - PthOffs   /* w  track-zero offset in sectors */
+#define PD_TOS      0x8C - PthOffs   /* w  default sectors on track 0 */
 #endif
 /* PD_SCT: already defined by os9exec_nt.h */
 #ifndef PD_SCT
 #define PD_SCT      0x8A - PthOffs   /* w  sectors per track */
 #endif
 #ifndef PD_ILV
-#define PD_ILV      0x8F - PthOffs   /* b  sector interleave factor */
+#define PD_ILV      0x90 - PthOffs   /* b  sector interleave factor */
 #endif
 #ifndef PD_TFM
-#define PD_TFM      0x90 - PthOffs   /* b  DMA transfer mode */
+#define PD_TFM      0x91 - PthOffs   /* b  DMA transfer mode */
 #endif
 #ifndef PD_TOffs
-#define PD_TOffs    0x91 - PthOffs   /* b  track-to-track offset */
+#define PD_TOffs    0x92 - PthOffs   /* b  track base offset */
 #endif
 #ifndef PD_SOffs
 #define PD_SOffs    0x93 - PthOffs   /* b  sector offset */
@@ -284,7 +295,7 @@ typedef char _sgs_size_check[(sizeof(struct _sgs) == 128) ? 1 : -1];
 #endif
 /* PD_SAS: already defined by os9exec_nt.h */
 #ifndef PD_SAS
-#define PD_SAS      0x8E - PthOffs   /* b  segment allocation size */
+#define PD_SAS      0x8E - PthOffs   /* w  segment allocation size */
 #endif
 /* PD_ATT, PD_FD, PD_DFD, PD_DCP, PD_DVT, PD_SctSiz, PD_NAME:            */
 /* all defined by os9exec_nt.h.                                             */
