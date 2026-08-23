@@ -115,6 +115,7 @@ os9err pPFDInf  ( ushort pid, syspath_typ*, uint32_t *maxbytP,
 os9err pPgetFD  ( ushort pid, syspath_typ*, uint32_t *maxbytP, byte* buffer   );
 os9err pPsetatt ( ushort pid, syspath_typ*, uint32_t *attr );
 os9err pPsetsz  ( ushort pid, syspath_typ*, uint32_t *sizeP );
+os9err pPbreak  ( ushort pid, syspath_typ* );
 
 
 /* --- ptys */
@@ -174,6 +175,7 @@ void init_Pipe( fmgr_typ* f )
     ss->_SS_Opt  = pNop_opt;      /* per pipeman: no-op, no error */
     ss->_SS_FD   = pNop_opt;      /* per pipeman: no-op, no error */
     ss->_SS_Attr = pPsetatt;
+    ss->_SS_Break= pPbreak;       /* per pipeman: forces disconnection */
 } /* init_Pipe */
 
 
@@ -241,6 +243,7 @@ os9err getPipe( _pid_, syspath_typ* spP, uint32_t buffsize )
 //  p->sp_win    = 0;        /* no windows info at the beginning */
     p->do_lf     = false;    /* auto linefeed support */
     p->broken    = false;    /* not yet broken */
+    p->pathlost  = false;    /* and not disconnected by SS_Break */
     p->pipeDirCnt= 0;        /* pipe dir count */
     
     debugprintf( dbgFiles,dbgDetail,("# getPipe: (name='%s') created with buffer[%u] @ %p\n",
@@ -471,6 +474,16 @@ static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
     Boolean       wrln_break;
     process_typ*  cp= &procs[pid];
     
+    /* SS_Break disconnected this channel: "a pipe path has been broken due to
+       an SS_Break SetStat" is one of the three things E$PthLost names (v2.4
+       Technical Manual, error 000:173). Tested here rather than in pPwrite so
+       that a writer already parked in the system task is told the same thing,
+       and told it whether or not its bytes would have fit. */
+    if (p->pathlost) {
+        Reactivate( pid, cp, "Reactivate pWriteSysTaskExe (SS_Break)" );
+        return os9error(E_PTHLOST);
+    }
+
     if (spP->name[ 0 ]!=NUL) {
       GetTim( &p->pipeTim );
     } // if
@@ -657,7 +670,15 @@ static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP,
     process_typ*  cp= &procs[pid];
     
     if (pp->i_svd_pchP!=NULL) releasePipe_svd( pid, spP, false );    
-    
+
+    /* see pWriteSysTaskExe: a reader parked here is waiting on a channel that
+       SS_Break has since disconnected, and E$EOF would tell it the writers
+       merely finished. */
+    if (p->pathlost) {
+        if (!syW) Reactivate( pid, cp, "Reactivate pReadSysTaskExe (SS_Break)" );
+        return os9error(E_PTHLOST);
+    }
+
     /* find out how many bytes are here to be read */
   //if (p->prp>p->pwp) numready= p->pwp-p->prp + p->size;
   //else               numready= p->pwp-p->prp;
@@ -808,7 +829,8 @@ os9err pPread( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
     return ShowPipeDir( spP, buffer );
   } // if
     
-  if (p->broken) return E_EOF;
+  if (p->pathlost) return os9error(E_PTHLOST); /* SS_Break disconnected it */
+  if (p->broken)   return E_EOF;
     
   debugprintf( dbgFiles,dbgDetail,("# pPread: requests %d bytes\n",*n ));
   p->bread= 0;    /* start of new read request */
@@ -826,7 +848,8 @@ os9err pPreadln( ushort pid, syspath_typ *spP, uint32_t *n, char* buffer )
   Boolean       syW;
   process_typ*  cp = &procs[pid];
   pipechan_typ* p  = spP->u.pipe.pchP;
-  if           (p->broken) return E_EOF;
+  if           (p->pathlost) return os9error(E_PTHLOST); /* SS_Break */
+  if           (p->broken)   return E_EOF;
     
   debugprintf( dbgFiles,dbgDetail,("# pPreadln: requests %d bytes\n",*n ));
   p->bread=0;     /* start of new read request */
@@ -955,6 +978,27 @@ os9err pPFDInf( _pid_, _spP_, uint32_t *maxbytP,
 /* SS_FDInf: the pseudo-FD of the path named in d3 */
 { return pipeFDImage( &syspaths[ *fdinf ], maxbytP, buffer );
 } /* pPFDInf */
+
+
+os9err pPbreak( _pid_, syspath_typ* spP )
+/* SS_Break on a pipe: "forces disconnection", the meaning pipeman's SetStat
+   list gives this code. (SCF gives the same code a different meaning -- a
+   break condition on a serial line -- which is why the two cannot share one
+   implementation and why SCF leaves the slot at its E$UnkSvc default.)
+
+   Disconnection is a property of the CHANNEL, not of the path that asked for
+   it: both ends share one pipechan_typ, so marking it here is what the other
+   end sees. That is the same flag releasePipe and pKclose raise when an end
+   goes away, so a reader gets E$EOF and a writer E$Write by the paths that
+   already existed -- what this adds is only the ability to ask for it. */
+{
+    pipechan_typ* p= spP->u.pipe.pchP;
+    if           (p==NULL) return os9error(E_UNIT); /* no channel behind this path */
+
+    p->pathlost= true;
+    debugprintf( dbgFiles,dbgNorm,("# pPbreak: pipe '%s' disconnected\n", spP->name ));
+    return 0;
+} /* pPbreak */
 
 
 os9err pPsetatt( _pid_, syspath_typ* spP, uint32_t *attr )

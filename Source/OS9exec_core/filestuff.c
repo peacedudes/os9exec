@@ -239,6 +239,13 @@ void init_None( fmgr_typ* f )
                                                 pipe or /nil called through a null
                                                 pointer and the guest got a bus
                                                 error instead of E$UnkSvc. */
+    /* SS_Break is in scope for two managers with two different meanings.
+       PIPEMAN's ("forces disconnection") is implemented, in init_Pipe.
+       SCF's ("send break out serial device") is a real break condition on
+       a wire, which only a /tN bound to a host serial port could produce and
+       which nothing here can verify against a pty -- so SCF keeps this
+       default and answers E$UnkSvc rather than pretending. */
+    ss->_SS_Break  = pUnimp;
     ss->_SS_WTrk   = pUnimp_buf;
     
     ss->_SS_Bind   = pUnimp_buf; /* network specific functions */
@@ -1989,6 +1996,7 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
          * manager uses d0/d1 as outputs and ignores d2. */
         case SS_Lock   : err= s->_SS_Lock   ( pid,spP, d0,d1,d2 ); break; /* $11 */
         case SS_Ticks  : err= s->_SS_Ticks  ( pid,spP, d2       ); break; /* $10 */
+        case SS_Break  : err= s->_SS_Break  ( pid,spP            ); break; /* $1D */
 
         case SS_SSig   : spP->signal_to_send=  loword(*d2);        /* $1A: sends signal on data ready */
                          spP->signal_pid    =  pid;                /* if ready, send immediately */

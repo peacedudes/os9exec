@@ -763,6 +763,12 @@ typedef struct {
             ushort    sp_lock;            /* if <> 0, tty/pty to this system path nr */
             Boolean   do_lf;
             Boolean   broken;             /* broken pipe or tty/pty */
+            /* Disconnection asked for by SS_Break, which the manual keeps
+               distinct from <broken>: an end going away is end-of-file, but
+               "a pipe path has been broken due to an SS_Break SetStat" is one
+               of the three things E$PthLost names (v2.4 Technical Manual,
+               error 000:173). Two flags, therefore, and not one. */
+            Boolean   pathlost;
             ushort    pipeDirCnt;         /* pipe dir count */
             struct tm pipeTim;
         } pipechan_typ;
@@ -1065,6 +1071,7 @@ typedef struct {
             pathop_opt_typ  _SS_FD;
             pathop_lock_typ _SS_Lock;
             pathop_num_typ  _SS_Ticks;   /* how long to wait for someone else's lock */
+            pathop_typ      _SS_Break;   /* pipeman: forces disconnection */
             pathop_buf_typ  _SS_WTrk;
 
             pathop_buf_typ  _SS_Bind;    /* network spefic functions */
