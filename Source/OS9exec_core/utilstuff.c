@@ -2250,14 +2250,27 @@ Boolean SCSI_Device( const char* os9path,
          * decays to a plain byte pointer and gives the intended byte
          * offset. ssize (PD_SSize, book-tagged "w") needs the
          * big-endian-on-disk -> host swap (GET_OS9W, matching this
-         * file's own idiom); sas (PD_SAS, book-tagged "b") does NOT --
-         * it's a single byte, and PD_SAS+1 is PD_ILV (sector interleave
-         * factor), a real unrelated field, not padding, so a 2-byte
-         * read there was splicing PD_ILV's byte into the SAS value
-         * instead of adding harmless zero bits. Done once here so the
-         * immediate output params and the scsi[] cache below
-         * (previously inconsistent: raw here, os9_word()'d there) agree
-         * on the same host-order value. */
+         * file's own idiom), and so does sas (PD_SAS).
+         *
+         * sas was read as ONE byte here until 2026-08-23, on the reasoning
+         * that PD_SAS is byte-tagged and "PD_SAS+1 is PD_ILV, a real
+         * unrelated field, so a 2-byte read splices PD_ILV's byte into the
+         * value". The premise came from this tree's reconstructed header and
+         * is wrong: BOTH of the manual's tables put PD_ILV two bytes past
+         * PD_SAS ($58 after $56 in the device descriptor, $90 after $8E in
+         * the path descriptor), making PD_SAS a word with nothing spliced
+         * into it. The header has been corrected to match.
+         *
+         * What the one-byte read cost: a big-endian word holding 4 or 32
+         * (RBF_MINALLOC, DD__MINALLOC) has zero in its HIGH byte, so every
+         * SCSI RBF descriptor reported a segment allocation size of 0 and
+         * the descriptor's real value never reached dev->sas. Max() against
+         * the cluster size hid the consequence in the allocator, which is
+         * why nothing failed visibly.
+         *
+         * Done once here so the immediate output params and the scsi[] cache
+         * below (previously inconsistent: raw here, os9_word()'d there)
+         * agree on the same host-order value. */
         id   = mod->_mdtype[PD_CtrlID];
         lun  = mod->_mdtype[PD_LUN];
 
@@ -2267,7 +2280,7 @@ Boolean SCSI_Device( const char* os9path,
         *scsiAdapt= defSCSIAdaptNo; // bus and adaptor come from defaults
         *scsiBus  = defSCSIBusNo;
         ssize     = GET_OS9W( mod->_mdtype, PD_SSize ); *scsiSsize= ssize;
-        sas       = mod->_mdtype[PD_SAS];                *scsiSas  = sas;
+        sas       = GET_OS9W( mod->_mdtype, PD_SAS );   *scsiSas  = sas;
         pdtyp     = mod->_mdtype[PD_TYP];                *scsiPDTyp= pdtyp;
         
         // find empty scsi entry
@@ -2283,7 +2296,7 @@ Boolean SCSI_Device( const char* os9path,
                 scsi[ ii ].bus   = defSCSIBusNo;
                 // - params (ssize is already host-order -- swapped once
                 // above via GET_OS9W; os9_word() here would swap it a
-                // second time. sas is a single byte, no swap applies.)
+                // second time. Same for sas, swapped once above.)
                 scsi[ ii ].ssize= ssize;
                 scsi[ ii ].sas  = sas;
                 scsi[ ii ].pdtyp= pdtyp;
