@@ -238,7 +238,7 @@ os9err pDsize    ( ushort pid, syspath_typ*, uint32_t *sizeP );
 os9err pDopt     ( ushort pid, syspath_typ*,                   byte* buffer );
 os9err pDpos     ( ushort pid, syspath_typ*, uint32_t  *posP );
 os9err pDeof     ( ushort pid, syspath_typ* );
-os9err pDsetatt  ( ushort pid, syspath_typ*, ulong   *attr );
+os9err pDsetatt  ( ushort pid, syspath_typ*, uint32_t *attr );
 /* ------------------------------------------------------------------------- */
 
 void init_File( fmgr_typ* f )
@@ -3129,7 +3129,7 @@ os9err pDmakdir( ushort pid, _spP_, ushort *modeP, char* pathname )
   } // FSRename_Unique
 #endif
 
-os9err pDsetatt( ushort pid, syspath_typ* spP, ulong *attr )
+os9err pDsetatt( ushort pid, syspath_typ* spP, uint32_t *attr )
 {
     os9err err= 0;
 
@@ -3167,6 +3167,13 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, ulong *attr )
     #endif
           
 
+    /* <attr> is the caller's d2 register, a uint32_t. It used to be declared
+       `ulong *` here, which is 64 bits on every LP64 host: the read took four
+       bytes that do not belong to it. Little-endian hosts got the right byte
+       anyway; a big-endian LP64 host (s390x, sparc64) tested the NEXT word
+       instead, missed the directory bit, and fell through to the delete-and-
+       recreate-as-file path below -- destroying the directory it was asked to
+       leave alone. */
     if (*attr & 0x80 ) return 0; /* it is already a directory */
       
     #ifdef win_unix
