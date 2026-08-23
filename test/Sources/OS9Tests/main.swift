@@ -4574,6 +4574,38 @@ if filter.isEmpty || pacedUsageName.localizedCaseInsensitiveContains(filter) {
     }
 }
 
+// ── a module's own offsets are not trusted ───────────────────────────────────
+// os9exec patches four modules as they load (init, le0, inetdb, L2) to hand
+// the guest the host's network settings. inetdb's adaption reads the position
+// of the "hosts" field FROM THE MODULE, at a fixed offset, and used to trust
+// whatever it found there.
+//
+// This disk carries a module that fails that trust: /dd/CMDS/BOOTOBJS/SPF/
+// inetdb (SPF, edition 9) is 2008 bytes and declares a hosts offset of
+// 16777229 with an end of 116. The size is computed as end-minus-start into a
+// uint32_t, so the negative difference becomes ~4.2 billion, and memcpy walks
+// off the end of the arena -- a bus error every time, on the plain `load` of a
+// module that ships on the system disk. Guest data driving an unchecked
+// pointer, which is the worst shape a defect can have here.
+//
+// The fix bounds-checks every offset the module supplies (and the hardcoded
+// ones le0 and L2 write at, which had the same hole in the WRITE direction),
+// and leaves a module that is not the expected shape alone -- adapting it is a
+// convenience, not a precondition for loading it.
+//
+// ONE check, asserting both halves. A separate "the module still loads" check
+// was written first and then deleted: it passes on master, because the module
+// reaches the module directory even though the adaption bus-errors on the way
+// -- so it could never fail and proved nothing. The mdir half survives here as
+// the vacuity guard it always was, and no bus error alone would pass if the
+// load had failed for some unrelated reason.
+// Verified to fail against master: `Error #000:102 (E_BUSERR)`.
+run("modules: a bad inetdb offset does not bus-error the loader",
+    expectation: "no E_BUSERR from load",
+    commands: ["load /dd/CMDS/BOOTOBJS/SPF/inetdb", "mdir"]) {
+    $0.contains("inetdb") && !$0.contains("BUSERR")
+}
+
 // ── SCF honours PD_EOR, the path's end-of-record character ───────────────────
 // PD_EOR is a path option ($8B in the SCF option section), settable with
 // `tmode eor=<h>` and with I$SetStt SS_Opt, and it is what ends a record --
