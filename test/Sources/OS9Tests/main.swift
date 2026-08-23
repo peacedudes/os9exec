@@ -483,6 +483,24 @@ check("rename: new name present", contains: "t_echo2",
     "rename /h5/t_echo t_echo2", "dir /dd")
 check("rename: old name gone",   absent:   "t_echo ",  "dir /dd")
 noError("attr: shows attrs",     "attr /h5/t_echo2")
+
+// SS_Attr on a host-native DIRECTORY: the handler's first act is to check the
+// directory bit and return, because a directory's attributes cannot be changed
+// on a host filesystem. If that check reads the wrong bits it falls through to
+// the branch below it, which closes the path, DELETES the directory and
+// recreates it as a file -- so `chd` into it afterwards is the whole assertion.
+//
+// This cannot fail on a little-endian host and is not meant to. pDsetatt took
+// its attribute argument as `ulong*` until 2026-08-23: eight bytes read from
+// the caller's four-byte d2 register. Little-endian put the byte it wanted
+// first and the test bit landed right by luck; big-endian LP64 read the
+// ADJACENT stack word instead. Measured on s390x in Docker before the fix,
+// this exact sequence left `adir` as a 0-byte regular file, while the same
+// source on macOS left it a directory. Keep it: it is one of the few checks
+// here whose value is entirely on the platforms that are not this one.
+noError("attr: a host-native directory survives having its attributes set",
+    "makdir /h5/t_adir", "attr /h5/t_adir -pr", "chd /h5/t_adir")
+noError("attr: directory cleanup", "deldir /h5/t_adir")
 check("ident: identifies mod",   contains: "echo",     "ident /h5/t_echo2")
 noError("del: file cleanup",     "del /h5/t_echo2")
 
