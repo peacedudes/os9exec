@@ -255,7 +255,7 @@ os9err pRdsize   ( ushort pid, syspath_typ*, uint32_t *size,    uint32_t *dtype 
 os9err pRsetsz   ( ushort pid, syspath_typ*, uint32_t *size );
 os9err pRsetatt  ( ushort pid, syspath_typ*, uint32_t *attr  );
 os9err pRsetFD   ( ushort pid, syspath_typ*,                  byte* buffer );
-os9err pRWTrk    ( ushort pid, syspath_typ*, uint32_t *trackNr );
+os9err pRWTrk    ( ushort pid, syspath_typ*, uint32_t *trackNr, byte* buffer );
 
 void init_RBF_devs();
 /* ------------------------------------------------------------------------- */
@@ -4410,8 +4410,13 @@ os9err pRnam( ushort pid, syspath_typ* spP, char* volname )
     return 0;
 } /* pRnam*/
 
-os9err pRWTrk( ushort pid, syspath_typ* spP, uint32_t* trackNr )
-/* get device name of RBF device */
+os9err pRWTrk( ushort pid, syspath_typ* spP, uint32_t* trackNr, byte* buffer )
+/* SS_WTrk: format one track of an RBF device.
+   <buffer> is the caller's a0. The dispatcher has always passed it and this
+   declaration has always omitted it, so every call went through a pointer of
+   the wrong type; the argument survived in a register nobody read. It is named
+   here to make the signature the truth, and stays unused because a track is
+   formatted from the fill pattern below, not from anything the caller supplies. */
 {
     os9err      err;
     rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr];
