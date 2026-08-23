@@ -769,9 +769,44 @@ static void adapt_init( mod_exec* mh )
 
 
 
+/* Does the byte range [off, off+len) lie inside this loaded module?
+ *
+ * The adapt_* routines below reach into a module at offsets they know by
+ * heart -- and, for inetdb, at offsets the MODULE ITSELF supplies. Neither
+ * was checked, and guest module data driving an unchecked pointer is the
+ * worst shape a bug can have here. It is not hypothetical: loading this
+ * disk's own /dd/CMDS/BOOTOBJS/SPF/inetdb (SPF, edition 9) reads a "hosts"
+ * offset of 16777229 out of a 2008-byte module, makes `size` the negative
+ * difference from an end offset of 116, and hands that to memcpy as an
+ * unsigned ~4.2 billion -- a bus error every time, on master as well.
+ *
+ * Written to be overflow-safe: `off+len` could wrap, so the length is
+ * compared against the room remaining instead of being added to the offset.
+ * os9_long names its argument four times (it is a macro), hence the temp. */
+static Boolean mod_range_ok( const mod_exec* mh, uint32_t off, uint32_t len )
+{
+    uint32_t raw    = mh->_mh._msize;
+    uint32_t modSize= (uint32_t)os9_long( raw );
+
+    return (Boolean)( off<=modSize && len<=modSize-off );
+} /* mod_range_ok */
+
+
 static void adapt_le0( mod_exec* mh, uint32_t inetAddr )
 {
     byte*  bp;
+
+    /* These are WRITES at hardcoded offsets, so a module shorter than 0x8e
+       bytes was corrupting whatever followed it in the arena. Check before
+       touching anything, and leave a module that is not the expected shape
+       alone -- adapting it is a convenience, not a precondition for loading
+       it. */
+    if (!mod_range_ok( mh, 0x7a, 4 ) ||
+        !mod_range_ok( mh, 0x8a, 4 )) {
+        debugprintf( dbgModules,dbgNorm,
+          ("# adapt_le0: module too short for the address fields, left alone\n") );
+        return;
+    }
 
     bp= (byte*) mh;
     SET_OS9L(bp, 0x7a, inetAddr);  /* broadcast address position */
@@ -823,26 +858,45 @@ static void go_thru_list( char* v0, char* b0, const char* bEnd, uint32_t inetAdd
      * instead; the byte pointer is still what the memcpy below wants as source. */
     byte      *ipa;
     uint32_t   ipaVal;
-    short      i, jump;
-    
-    short   n     = os9_word( *(short*)v0 );
+    /* Counts and byte lengths, so UNSIGNED 16-bit. These were plain `short`:
+       a block length of 0x8000 or more read back negative and `blk+=jump`
+       then walked backwards. The field is small in practice, which is why it
+       never showed, but there is no reading under which a length is signed. */
+    uint16_t   i, n, jump;
+
+    /* The module stores addresses in 68k (big-endian) order; <inetAddr>
+       arrives in HOST order -- adapt_le0 hands the same value to SET_OS9L,
+       which swaps it on the way in. Convert ONCE, here, and compare against
+       the converted copy everywhere below.
+       This is a fix, not a tidy-up: the first loop compared the raw module
+       bytes against the unconverted host value while the second compared
+       against os9_long() of it, so the two disagreed on a little-endian host
+       and agreed only on a big-endian one. The first test therefore never
+       matched on x86/ARM, and its "everything is perfect already" early-out
+       never fired -- the field was rewritten every time instead. Same result,
+       reached the long way, and wrong for the reason that is hardest to
+       notice. os9_long is a MACRO that names its argument four times, so it
+       gets a temporary rather than being used inline. */
+    const uint32_t wantAddr= (uint32_t)os9_long( inetAddr );
+
     Boolean lFound= false;
-    
-    *(short*)b0= *(short*)v0;
-    
-    v0+= sizeof(short); /* skip the number of entries entry */
-    b0+= sizeof(short);
+
+    n= GET_OS9W( v0, 0 );                    /* number of entries */
+    memcpy( b0, v0, sizeof(uint16_t) );      /* copied RAW: still 68k order */
+
+    v0+= sizeof(uint16_t); /* skip the number of entries entry */
+    b0+= sizeof(uint16_t);
     
     v= v0;
     for (i=0; i<n; i++) {
-        blk= v;             v+= sizeof(short);    jump= os9_word( *(short*)blk );
+        blk= v;             v+= sizeof(uint16_t); jump= GET_OS9W( blk, 0 );
         ipa= (byte*)v;      v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
         memcpy( &ipaVal, ipa, sizeof(ipaVal) );
 
         while (true) {
             if (ustrcmp( v,"localhost" )==0) {
                 lFound= true;
-                if (ipaVal==inetAddr) return; /* everything is perfect already */
+                if (ipaVal==wantAddr) return; /* everything is perfect already */
             }
 
             v= v+strlen(v)+1;
@@ -858,21 +912,21 @@ static void go_thru_list( char* v0, char* b0, const char* bEnd, uint32_t inetAdd
     v= v0;
     b= b0;
     for (i=0; i<n; i++) {
-        blk =             v;  v+= sizeof(short);    jump= os9_word( *(short*)blk );
+        blk =             v;  v+= sizeof(uint16_t); jump= GET_OS9W( blk, 0 );
         ipa = (byte*)v;       v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
         memcpy( &ipaVal, ipa, sizeof(ipaVal) );
 
-        bBlk=         b;       b+= sizeof(short);
+        bBlk=         b;       b+= sizeof(uint16_t);
         memcpy(b, ipa, sizeof(uint32_t)); b+= sizeof(uint32_t); /* copy 4-byte inetaddr */
 
     //  printf( "%3d %3d %08X '%s'\n", i, jump, os9_long( ipaVal ), v );
 
         fill_s( &b,bEnd, v );
-        if (ipaVal==os9_long( inetAddr )) fill_s( &b,bEnd, "localhost" );
+        if (ipaVal==wantAddr) fill_s( &b,bEnd, "localhost" );
         fill_s( &b,bEnd, ""         ); /* one additional NUL char */
         
         if ((ulong)b%2==1) b++; /* make address even */
-        *(short*)bBlk= os9_word( (short)(b-bBlk) );
+        SET_OS9W( bBlk, 0, (uint16_t)(b-bBlk) );
 
         blk+= jump;
         v   = blk; 
@@ -885,7 +939,8 @@ static void adapt_inetdb( mod_exec* mh, uint32_t inetAddr, uint32_t dns1, uint32
 /* the module "inetdb" (part of Internet Support Package ISP) will be adapted according */
 /* to the OS9exec's host machine settings: <inetAddr> <dns1> <dns2> and <domainName>    */
 {
-    short   *hp;
+    uint16_t hLen;   /* declared length of the resolv.conf area, module order */
+    uint32_t hostsOff, endOff, dnsOff;
     char    *bp, *b0, *bL, *v0;
     char    *bpEnd; /* one past the last writable byte of the resolv.conf field */
     uint32_t d, size;
@@ -893,12 +948,36 @@ static void adapt_inetdb( mod_exec* mh, uint32_t inetAddr, uint32_t dns1, uint32
     char    sv[ OS9NAMELEN ];
 
     
- /* ------- hosts field adaption --------- */    
-    b0= (char* ) mh + OFFS_HOSTS;
-    b0= (char* ) mh + os9_long( *(uint32_t*)b0 ); /* get start position of "hosts" field */
+ /* ------- hosts field adaption --------- */
+    /* Each of these was two statements: point a char* at the offset word, then
+       dereference it AS a uint32_t* and swap. One GET_OS9L does the whole job
+       -- byte-wise load plus swap, no pointer of the wrong type formed at all,
+       and no intermediate value that is a host pointer on one line and a
+       module-relative offset on the next. */
+    /* Both offsets come OUT OF THE MODULE, so nothing about them is trusted:
+       the pair has to be inside the module before it can be read, the field
+       they describe has to be inside it too, and the end has to follow the
+       start. Measured on this disk's own SPF inetdb, which fails all three.
+       Skipping leaves the module exactly as loaded, which is the right
+       outcome -- it simply is not the layout this adaption knows. */
+    if (!mod_range_ok( mh, OFFS_HOSTS, 2*sizeof(uint32_t) )) {
+        debugprintf( dbgModules,dbgNorm,
+          ("# adapt_inetdb: no room for the hosts offsets, field left alone\n") );
+        return;
+    }
+    hostsOff= GET_OS9L( (char*)mh, OFFS_HOSTS );
+    endOff  = GET_OS9L( (char*)mh, OFFS_HOSTS + sizeof(uint32_t) );
 
-    bL= (char* ) mh + OFFS_HOSTS + sizeof(uint32_t);
-    bL= (char* ) mh + os9_long( *(uint32_t*)bL ); /* get end   position of "hosts" field */
+    if (endOff<=hostsOff ||
+        !mod_range_ok( mh, hostsOff, endOff-hostsOff )) {
+        debugprintf( dbgModules,dbgNorm,
+          ("# adapt_inetdb: hosts field $%X..$%X not inside the module, left alone\n",
+              hostsOff, endOff) );
+        return;
+    }
+
+    b0= (char* ) mh + hostsOff;   /* start of "hosts" */
+    bL= (char* ) mh + endOff;     /* end   of "hosts" */
   
                       size= bL-b0;
     v0=      get_mem( size );
@@ -912,15 +991,46 @@ static void adapt_inetdb( mod_exec* mh, uint32_t inetAddr, uint32_t dns1, uint32
     
         
  /* ------- DNS field adaption --------- */    
-    bp = (char* ) mh + OFFS_DNS;
-    bp = (char* ) mh + os9_long( *(uint32_t*)bp ); /* get start position of "resolv.conf" field */
-    bp+= 2;       hp= (short*)bp;
+    if (!mod_range_ok( mh, OFFS_DNS, sizeof(uint32_t) )) {
+        debugprintf( dbgModules,dbgNorm,
+          ("# adapt_inetdb: no room for the DNS offset, field left alone\n") );
+        return;
+    }
+    dnsOff= GET_OS9L( (char*)mh, OFFS_DNS );
+
+    /* 4 bytes: the 2 skipped below plus the 2-byte declared length after them */
+    if (!mod_range_ok( mh, dnsOff, 4 )) {
+        debugprintf( dbgModules,dbgNorm,
+          ("# adapt_inetdb: resolv.conf field at $%X not inside the module, left alone\n",
+              dnsOff) );
+        return;
+    }
+
+    bp = (char* ) mh + dnsOff;   /* start of "resolv.conf" */
+    bp+= 2;
+    /* The area's own declared length, read once instead of aliasing a short*
+       at it and dereferencing that twice. */
+    hLen= GET_OS9W( bp, 0 );
     bp+= 2;
 
-    /* The writable area is what the memset below clears: os9_word(*hp)-2 bytes
-       starting at bp. Capture its end BEFORE anything advances bp -- every write
-       past this point is bounded by it. */
-    bpEnd= bp + (os9_word( *hp )-2 );
+    /* The writable area is what the memset below clears: hLen-2 bytes starting
+       at bp. Capture its end BEFORE anything advances bp -- every write past
+       this point is bounded by it.
+       hLen comes out of a GUEST module, so a declared length under 2 is
+       possible and used to be catastrophic rather than merely wrong: hLen-2
+       promotes to int, goes negative, and the memset below converts it to a
+       huge size_t. Treat anything under 2 as an empty area. */
+    if (hLen<2) hLen= 2;
+    bpEnd= bp + (hLen-2);
+
+    /* hLen is the module's OWN claim about its field, so clamp it to what
+       the module actually holds: a declared length longer than the module
+       would let the memset and every fill_s below write past the end. */
+    {   uint32_t raw= mh->_mh._msize;
+        char*    modEnd= (char*)mh + (uint32_t)os9_long( raw );
+        if (bpEnd>modEnd) bpEnd= modEnd;
+        if (bpEnd<bp)     bpEnd= bp;
+    }
 
     /* Bounded, because <bp> is the module's own field and its existing domain
        name is whatever the module file happened to contain: a strcpy of it into
@@ -928,7 +1038,7 @@ static void adapt_inetdb( mod_exec* mh, uint32_t inetAddr, uint32_t dns1, uint32
        carrying a longer name. */
     strncpy( sv, bp, sizeof(sv)-1 );    /* make a copy of the existing domain name */
     sv[sizeof(sv)-1]= NUL;
-    memset( bp, 0, os9_word( *hp )-2 );                 /* clear the original area */
+    memset( bp, 0, (size_t)(bpEnd-bp) );                 /* clear the original area */
 
     if  (strcmp( domainName,"" )==0) domainName= sv;
     fill_s( &bp,bpEnd, domainName );                 /* fill in the domain name */
@@ -961,6 +1071,14 @@ static void adapt_L2( mod_exec* mh )
 {
     mod_dev* dsc;
     
+    /* _mport lives at $030, so a module shorter than that plus its own four
+       bytes cannot hold it -- writing anyway would land past the module. */
+    if (!mod_range_ok( mh, 0x30, 4 )) {
+        debugprintf( dbgModules,dbgNorm,
+          ("# adapt_L2: module too short for M$Port, left alone\n") );
+        return;
+    }
+
     dsc= (mod_dev*)mh;
     dsc->_mport= os9_long( TO68K(&l2.hw_location) );
     
@@ -1342,7 +1460,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         os9modules[mid].isBuiltIn = isBuiltIn;
         debugprintf(dbgModules,dbgNorm,
           ("# load_module: (found) mid=%d, theModuleP=%p, ^theModuleP=%08X\n",
-              mid, (void*) theModuleP, (uint32_t)os9_long( *(uint32_t*)theModuleP )));
+              mid, (void*) theModuleP, GET_OS9L( (byte*)theModuleP, 0 )));
    
         os9modules[mid].linkcount= 1; /* module is loaded and linked */
         
