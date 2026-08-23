@@ -244,6 +244,7 @@ os9err pRnam     ( ushort pid, syspath_typ*,                  char* volname );
 os9err pRpos     ( ushort pid, syspath_typ*, uint32_t *posP  );
 os9err pReof     ( ushort pid, syspath_typ* );
 os9err pRlock    ( ushort pid, syspath_typ*, uint32_t *d0, uint32_t *d1, uint32_t *d2 );
+os9err pRsetopt  ( ushort pid, syspath_typ*,                  byte* buffer );
 os9err pRticks   ( ushort pid, syspath_typ*, uint32_t *d2 );
 os9err pRready   ( ushort pid, syspath_typ*, uint32_t *n     );
 os9err pRgetFD   ( ushort pid, syspath_typ*, uint32_t *maxbytP, byte* buffer );
@@ -290,7 +291,7 @@ void init_RBF( fmgr_typ* f )
 
     /* setstat */
     ss->_SS_Size = pRsetsz;
-    ss->_SS_Opt  = pNop_opt;      /* ignored */
+    ss->_SS_Opt  = pRsetopt;      /* PD_SAS is real; the other eight are drive geometry */
     ss->_SS_Attr = pRsetatt;
     ss->_SS_FD   = pRsetFD;
     ss->_SS_Lock = pRlock;
@@ -3106,7 +3107,9 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     uint32_t    remain= *lenP;
     uint32_t    reqLen= *lenP;  /* what was ASKED for; *lenP becomes what was got */
     uint32_t*   mw    = &spP->mustW;
-    ulong       ma    = Max( dev->sas,dev->clusterSize );
+    /* PD_SAS is a path option, not a device setting: <rbf->sas> starts as the
+       device descriptor's value and SS_Opt can change it for this path alone. */
+    ulong       ma    = Max( rbf->sas,dev->clusterSize );
     ulong       sect, slim, offs, size, totsize, maxc, pos, scs, *rs, pref, coff, sv, req;
     byte*       bb;
     byte        attr;
@@ -3505,6 +3508,7 @@ static os9err OpenDir( rbfdev_typ* dev, ulong dfd, ushort *sp )
     rbf->currPos= 0;              /* initialize position to 0 */
     rbf->wMode  = true;           /* by default it can be written */
     rbf->devnr  = dev->nr;
+    rbf->sas    = dev->sas;       /* PD_SAS starts as the device's (SS_Opt changes it) */
     rbf->fd_nr  = dfd;            /* the directory's sector */
 
         err=   ReadFD        ( spP );            /* IMPORTANT !! */
@@ -3749,6 +3753,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     debugprintf(dbgFiles,dbgNorm,("# RBF mount  adapt '%s' '%s' %d %d\n" , pathname,mnt_name, root,new_inst ));
     
     rbf->devnr = dev->nr;
+    rbf->sas   = dev->sas;        /* PD_SAS starts as the device's (SS_Opt changes it) */
     rbf->diskID= dev->last_diskID;
     rbf->wMode = IsWrite(*modeP);
     rbf->updMode= IsRW(*modeP); /* read+write: a read here locks what it read */
@@ -4208,6 +4213,39 @@ os9err pRlock( ushort pid, syspath_typ* spP, uint32_t* d0, uint32_t* d1, uint32_
     return 0;
 } /* pRlock */
 
+os9err pRsetopt( _pid_, syspath_typ* spP, byte* buffer )
+/* SS_Opt SetStat on an RBF path.
+ *
+ * The manual names nine option fields a program may change through SetStat --
+ * PD_STP, PD_TYP, PD_DNS, PD_CYL, PD_SID, PD_VFY, PD_SCT, PD_TOS and PD_SAS
+ * -- and says the rest are protected by the file manager. Eight of the nine
+ * describe a physical drive: step rate, cylinders, heads, sectors per track,
+ * write verification. os9exec has no drive for those to be about, and pRopt
+ * answers them from the emulated device rather than from stored path state,
+ * so accepting a change would only mean storing a number nothing reads back.
+ *
+ * PD_SAS is the exception and the reason this routine exists: it is the
+ * minimum number of sectors RBF allocates when a file grows, so a program
+ * that sets it is asking for something the allocator really does -- "if your
+ * system uses a small number of large files, this field should be set to a
+ * relatively high value, and vice versa" (v2.4 Technical Manual, Segment
+ * Allocation). It is stored per path, which is where the option section
+ * lives, and DoAccess reads it from there.
+ */
+{
+    ushort sas= GET_OS9W( buffer, PD_SAS );
+
+    /* Zero is what an all-zero option buffer looks like, and a segment
+       allocation of no sectors is not a thing to ask for: leave the path as
+       it was rather than let a caller that filled in only one field silently
+       clear this one. */
+    if (sas!=0) spP->u.rbf.sas= sas;
+
+    debugprintf( dbgFiles,dbgNorm,("# RBF SS_Opt: PD_SAS=%d (path '%s')\n",
+                                      spP->u.rbf.sas, spP->name ));
+    return 0;
+} /* pRsetopt */
+
 os9err pRticks( _pid_, syspath_typ* spP, uint32_t* d2 )
 /* SS_Ticks: how long this path is willing to wait for a record somebody else
  * is holding, before giving up with E_LOCK instead of waiting on. Zero -- the
@@ -4248,7 +4286,7 @@ os9err pRopt(ushort pid, syspath_typ* spP, byte *buffer)
     b= (byte*)&buffer[ PD_TYP    ]; *b= dev->pdtyp;
     b= (byte*)&buffer[ PD_CtrlrID]; *b= dev->scsi.ID;
     b= (byte*)&buffer[ PD_ATT    ]; *b= rbf->att;
-    SET_OS9W(buffer, PD_SAS,    dev->sas);       /* sector alloc size */
+    SET_OS9W(buffer, PD_SAS,    rbf->sas);       /* segment alloc size, this path's */
     SET_OS9W(buffer, PD_SSize,  sSct);           /* phys sect size    */
     SET_OS9L(buffer, PD_FD,     rbf->fd_nr*sSct); /* pos of file     */
     SET_OS9L(buffer, PD_DFD,    rbf->fddir*sSct); /* pos of its dir  */

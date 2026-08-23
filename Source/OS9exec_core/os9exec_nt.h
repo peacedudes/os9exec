@@ -811,6 +811,17 @@ typedef struct {
               FSSpec spec;              /* the HFS object's FSSpec */
             #endif
 
+            /* PD_SAS for a host-native path. There are no segments to
+               allocate here -- the host filesystem decides that -- but this
+               manager answers SS_Opt out of the same RBF option table RBF
+               does, PD_DTP and all, so a program cannot tell it is not
+               talking to a disk. Discarding a documented update to a field we
+               hand out would make the two devices os9exec presents disagree
+               about a promise the manual makes ("you can update the following
+               fields"); remembering it costs a word and keeps them the same.
+               What is NOT claimed is that anything acts on it. */
+            ushort sas;
+
             union {
                 file_typ file;          /* disk file */
                  dir_typ dir;           /* emulated directory file */                   
@@ -833,6 +844,14 @@ typedef struct {
             ushort    sameFile;     // ring of the paths open on this same file
             ushort    waitPid;      // process asleep on this path, 0 if none
             ushort    lockTicks;    // SS_Ticks: 0 = wait forever, else give up after n
+            ushort    sas;          // PD_SAS: this path's segment allocation
+                                    // size, copied from the device descriptor
+                                    // when the path is opened and changeable
+                                    // through SS_Opt. Per PATH, because that
+                                    // is where the manual puts it: the option
+                                    // section is the path descriptor's, and
+                                    // one program asking for large segments
+                                    // must not resize everyone else's.
             uint32_t  waitUntil;    // host tick that wait expires at (0 = not waiting)
             ushort    ownPid;       // process that opened this path
             Boolean   updMode;      // opened for update: reads lock what they read

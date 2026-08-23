@@ -213,6 +213,7 @@ os9err pFdelete  ( ushort pid, syspath_typ*, ushort   *modeP,  const char* pathn
 
 os9err pFsize    ( ushort pid, syspath_typ*, uint32_t *sizeP );
 os9err pFopt     ( ushort pid, syspath_typ*,                   byte* buffer );
+os9err pHsetopt  ( ushort pid, syspath_typ*,                   byte* buffer );
 os9err pHvolnam  ( ushort pid, syspath_typ*,                   char* volname );
 os9err pFpos     ( ushort pid, syspath_typ*, uint32_t  *posP );
 os9err pFeof     ( ushort pid, syspath_typ* );
@@ -271,7 +272,7 @@ void init_File( fmgr_typ* f )
 
     /* setstat */
     ss->_SS_Size  = pFsetsz;
-    ss->_SS_Opt   = pNop_opt;    /* ignored */
+    ss->_SS_Opt   = pHsetopt;    /* PD_SAS is remembered; see pHsetopt */
     ss->_SS_Attr  = pFsetatt;
     ss->_SS_FD    = pHsetFD;
     ss->_SS_WTrk  = pUnimp_buf; /* not used */
@@ -307,7 +308,7 @@ void init_Dir( fmgr_typ* f )
 
     /* setstat */
     ss->_SS_Size = pBadMode_num; /* not allowed */
-    ss->_SS_Opt  = pNop_opt;         /* ignored */
+    ss->_SS_Opt  = pHsetopt;        /* PD_SAS is remembered; see pHsetopt */
     ss->_SS_Attr = pDsetatt;
     ss->_SS_FD   = pHsetFD;
     ss->_SS_Lock = pNop_lock;         /* ignored */
@@ -683,9 +684,32 @@ os9err pFwriteln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
   } /* assign_fdsect */
 #endif
 
+os9err pHsetopt( _pid_, syspath_typ* spP, byte* buffer )
+/* SS_Opt SetStat on a host-native path.
+ *
+ * This manager answers SS_Opt out of pRBFopt's table, PD_DTP and all, so what
+ * a program sees is an RBF path -- and the manual lets a program update nine
+ * of those fields, PD_SAS among them. Eight describe drive geometry that
+ * nothing here can act on and that pRBFopt reports from the table rather than
+ * from path state, so a change to them would be stored and never read. PD_SAS
+ * is kept because it is handed back on the next SS_Opt: the promise the field
+ * carries is that an update survives to be read, and that much is true here.
+ *
+ * What is deliberately NOT implied is that segments get allocated this way.
+ * A host directory has no allocation map; the host filesystem places the
+ * bytes. RBF's own pRsetopt (file_rbf.c) is the one that reaches an
+ * allocator. */
+{
+    ushort sas= GET_OS9W( buffer, PD_SAS );
+
+    if (sas!=0) spP->u.disk.sas= sas; /* all-zero buffer: leave it as it was */
+    return 0;
+} /* pHsetopt */
+
 os9err pFopt( ushort pid, syspath_typ* spP, byte *buffer )
 {
   os9err err= pRBFopt( pid,spP, buffer );
+  SET_OS9W( buffer, PD_SAS, spP->u.disk.sas ); /* what SS_Opt last set */
   uint32_t fdID;
 
   #ifdef MACOS9
@@ -739,6 +763,7 @@ os9err pDopt( ushort pid, syspath_typ* spP, byte *buffer )
  */
 {
   os9err err= pRBFopt( pid,spP, buffer );
+  SET_OS9W( buffer, PD_SAS, spP->u.disk.sas ); /* what SS_Opt last set */
 
   #ifdef win_unix
     dirtable_entry* mP= NULL;
@@ -1191,6 +1216,8 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
     Boolean   cre   = IsCrea (*modeP);
     Boolean   newlyCreated= false; /* a file this call brought into existence */
     file_typ* f= &spP->u.disk.u.file;
+
+    spP->u.disk.sas= RBF_MINALLOC; /* PD_SAS as pRBFopt reports it, until SS_Opt changes it */
     char*     p;
     char*     pp;
     char*     vn;
@@ -2528,6 +2555,8 @@ os9err pDopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
     Boolean exedir= IsExec(*modeP);
     char*   p;
     char*   pp;
+
+    spP->u.disk.sas= RBF_MINALLOC; /* PD_SAS as pRBFopt reports it, until SS_Opt changes it */
     
     #if defined MACFILES
       CInfoPBRec cipb;
