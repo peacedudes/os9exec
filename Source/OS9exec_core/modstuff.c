@@ -1069,9 +1069,7 @@ static void adapt_inetdb( mod_exec* mh, uint32_t inetAddr, uint32_t dns1, uint32
 static void adapt_L2( mod_exec* mh )
 /* special treatment for the "L2" module: set port address */
 {
-    mod_dev* dsc;
-    
-    /* _mport lives at $030, so a module shorter than that plus its own four
+    /* M$Port lives at $030, so a module shorter than that plus its own four
        bytes cannot hold it -- writing anyway would land past the module. */
     if (!mod_range_ok( mh, 0x30, 4 )) {
         debugprintf( dbgModules,dbgNorm,
@@ -1079,9 +1077,12 @@ static void adapt_L2( mod_exec* mh )
         return;
     }
 
-    dsc= (mod_dev*)mh;
-    dsc->_mport= os9_long( TO68K(&l2.hw_location) );
-    
+    /* The write goes through the byte accessor, like adapt_le0's just above:
+       the offset this function already bounds-checked is the one it then
+       writes at, rather than a mod_dev overlay laid over a mod_exec* whose
+       field happens to sit there. SET_OS9L does the byte order itself. */
+    SET_OS9L( (byte*)mh, 0x30, TO68K(&l2.hw_location) );
+
     mod_crc( mh );
 } /* adapt_L2 */
 
@@ -1982,7 +1983,7 @@ os9err install_traphandler( ushort pid, ushort trapidx,
     if (err) return err;
     
     /* now prepare the trap handler data */
-    theModule=(mod_exec *) get_module_ptr(mid);
+    theModule= get_module_ptr(mid);
     tp->mid=mid; /* save mid */
     tp->trapmodule=(mod_trap *) theModule; /* host pointer, used by high-level code */
     tp->trapentry= TO68K(theModule)+os9_long(theModule->_mexec); /* 68k entry address */

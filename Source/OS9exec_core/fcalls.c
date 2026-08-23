@@ -279,7 +279,7 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
     /* --- really load module, anyway */
     err= load_module( cpid,mpath,&mid, exedir ); if (err) return err;
     
-    theModule=(mod_exec *)get_module_ptr(mid);
+    theModule= get_module_ptr(mid);
     retword(rp->d[0])=os9_word(theModule->_mh._mtylan);
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
 
@@ -343,7 +343,7 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
     /* --- really link (that is, load without path, and always from exe dir) */
     err= link_module( cpid,mname,&mid ); if (err) return err; /* link-style errors */
 
-    theModule=(mod_exec *)get_module_ptr(mid);
+    theModule= get_module_ptr(mid);
     retword(rp->d[0])=os9_word(theModule->_mh._mtylan);
     debugprintf(dbgModules,dbgNorm,("# F$Link: actual type/lang=$%04X\n",loword(rp->d[0])));
 
@@ -1602,7 +1602,7 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
     mod_crc( theModule );
     os9modules[mid].linkcount= 1;                 /* module is created and linked */
 
-    theModule= (mod_exec*)get_module_ptr( mid );
+    theModule= get_module_ptr( mid );
     retword(rp->d[0])=os9_word(theModule->_mh._mtylan);
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
 
