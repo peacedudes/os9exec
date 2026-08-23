@@ -427,6 +427,11 @@
 
 /* path option section size */
 #define OPTSECTSIZE     128
+/* OPTSECTSIZE is what every memcpy into syspath_typ.opt uses as its length,
+   and syspath_typ.opt is a struct _sgs -- so a mismatch would overrun. Fail
+   the build instead. Written the C89 way (a negative array size) because this
+   tree still compiles under toolchains predating _Static_assert. */
+typedef char optsect_matches_sgs[ (sizeof(struct _sgs)==OPTSECTSIZE) ? 1 : -1 ];
 
 /* constants for the process(es) that run the OS9 code */
 #define MYPRIORITY      128 /* priority for first process (defaults to IRQs enabled) */
@@ -929,7 +934,17 @@ typedef struct {
     ushort    linkcount;        /* the link count */
     char      name[OS9NAMELEN]; /* file name */
     mod_exec* mh;				        /* according module, if available */
-    byte      opt[OPTSECTSIZE]; /* path's option section */
+    /* The path's option section, declared as the STRUCT it is rather than as
+       a byte array with `(struct _sgs*)` casts at every use. Those casts read
+       a byte array through struct lvalues, which is a strict-aliasing
+       violation of exactly the kind fixed in modstuff.c -- and one that
+       -fno-strict-aliasing used to cover before it was removed. Declaring the
+       real type removes the whole class here instead of hiding it: the
+       memcpy()s that fill this from an option table still work unchanged
+       (they copy OPTSECTSIZE bytes into an object of exactly that size, see
+       the assert below), and the few places that index it by PD_ offset now
+       say so explicitly with a byte pointer, which IS legal. */
+    struct _sgs opt;            /* path's option section */
     ushort    signal_to_send;   /* send signal on data ready */
     ushort    signal_pid;       /* signal has to be sent to this process */
     uint32_t  set_evId;         /* set  event  on data ready */

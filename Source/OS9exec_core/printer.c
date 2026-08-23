@@ -352,7 +352,7 @@ os9err pPrClose( ushort pid, syspath_typ* spP )
 /* output to printer */
 os9err pPrOut  ( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
 {
-  struct _sgs* ot = (struct _sgs*)&spP->opt; /* path opt table */
+  struct _sgs* ot = &spP->opt; /* path opt table */
   char *p,*q;
 
   // search for lineends
@@ -392,7 +392,7 @@ os9err pPrOut  ( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
 /* output line to printer */
 os9err pPrOutLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer)
 {   
-  struct _sgs* ot = (struct _sgs*)&spP->opt; /* path opt table */
+  struct _sgs* ot = &spP->opt; /* path opt table */
   char *p;
 
   // find next line end in buffer

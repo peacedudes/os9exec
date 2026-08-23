@@ -528,7 +528,7 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
     char          c;
     ulong         inputticks= GetSystemTick();
     process_typ*  cp= &procs[pid];
-    struct _sgs*  ot= (struct _sgs*)&spP->opt; /* path opt table */
+    struct _sgs*  ot= &spP->opt; /* path opt table */
     Boolean       alf= ot->_sgs_alf;
     Boolean       dupMode= false;
     pipechan_typ* k;
@@ -819,7 +819,7 @@ os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, char* name )
     /* Not inside hostterm_open: that runs before pSCFopt above, so the option
        table -- and _sgs_bau with it -- is not populated yet there. */
     if (hostterm_bound( id )) {
-        struct _sgs* ot= (struct _sgs*)&spP->opt;
+        struct _sgs* ot= &spP->opt;
         hostterm_setspeed( id, baud_bps( ot->_sgs_bau ) );
     }
 
@@ -969,7 +969,7 @@ os9err pConsIn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
        * PD_EKO and PD_EOF on entry and deliberately LEAVE PD_EOR at $0D,
        * while tsmon zeroes PD_EOR and then reads a single byte.
        */
-      struct _sgs* ot= (struct _sgs*)&spP->opt; /* path opt table */
+      struct _sgs* ot= &spP->opt; /* path opt table */
 
       gConsoleID= spP->term_id;
       g_spP     = spP;
@@ -1007,7 +1007,7 @@ os9err pConsInLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer 
        * PD_EOF (ESC by default) and PD_QUT still end the read, so a path put
        * in that state is recoverable rather than wedged.
        */
-      struct _sgs* ot= (struct _sgs*)&spP->opt; /* path opt table */
+      struct _sgs* ot= &spP->opt; /* path opt table */
       Boolean      reserveTerm;
 
       /* SCF edits an input line in a buffer it allocates at I$Open, and that
@@ -1435,7 +1435,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
     char         c;
     ulong        outputticks= GetSystemTick();
     syspath_typ* spC=  spP;          /* default: no crossed path */
-    struct _sgs* ot = (struct _sgs*)&spC->opt; /* path opt table */
+    struct _sgs* ot = &spC->opt; /* path opt table */
     Boolean      do_lf= false;
     process_typ* cp= &procs[pid];
     Boolean      paced= false;
@@ -1726,7 +1726,7 @@ os9err pCsetopt( _pid_, syspath_typ* spP, byte* buffer )
 
   /* SS_Opt is how `tmode baud=` reaches us, so a live port retunes. */
   if (hostterm_bound( spP->term_id )) {
-      struct _sgs* ot= (struct _sgs*)&spP->opt;
+      struct _sgs* ot= &spP->opt;
       hostterm_setspeed( spP->term_id, baud_bps( ot->_sgs_bau ) );
   }
 

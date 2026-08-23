@@ -1031,10 +1031,10 @@ os9err pRBFopt( _pid_, _spP_, byte* buffer )
 /* fill <key> to buffer and make special key handling */
 Boolean KeyToBuffer( ttydev_typ* mco, char key )
 {
-    char pd_int = mco->spP->opt[ PD_INT  ]; /* get special chars from opt sct */
-    char pd_qut = mco->spP->opt[ PD_QUT  ];
-    char pd_xon = mco->spP->opt[ PD_XON  ];
-    char pd_xoff= mco->spP->opt[ PD_XOFF ];
+    char pd_int = ((byte*)&mco->spP->opt)[ PD_INT  ]; /* get special chars from opt sct */
+    char pd_qut = ((byte*)&mco->spP->opt)[ PD_QUT  ];
+    char pd_xon = ((byte*)&mco->spP->opt)[ PD_XON  ];
+    char pd_xoff= ((byte*)&mco->spP->opt)[ PD_XOFF ];
 
     int lwp= mco->spP->lastwritten_pid;        /* where to send the signal ? */
     if     ( mco->inBufUsed >= INBUFSIZE-1 ) {

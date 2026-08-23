@@ -491,7 +491,7 @@ static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
     debugprintf(dbgFiles,dbgDeep,("# pWriteSysTaskExe: buffer start=%p, writing now from %p\n",(void*)buffer,(void*)buf));
 
     if (spP->type==fTTY) {
-         ot   = (struct _sgs*)&spP->opt;
+         ot   = &spP->opt;
          eorch= ot->_sgs_eorch;
     }
     else eorch= CR;
