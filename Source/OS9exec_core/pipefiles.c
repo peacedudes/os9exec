@@ -112,6 +112,8 @@ os9err pPeof    ( ushort pid, syspath_typ* );
 os9err pPready  ( ushort pid, syspath_typ*, uint32_t *n     );
 os9err pPFDInf  ( ushort pid, syspath_typ*, uint32_t *maxbytP,
                                             uint32_t *fdinf,   byte* buffer   );
+os9err pPgetFD  ( ushort pid, syspath_typ*, uint32_t *maxbytP, byte* buffer   );
+os9err pPsetatt ( ushort pid, syspath_typ*, uint32_t *attr );
 os9err pPsetsz  ( ushort pid, syspath_typ*, uint32_t *sizeP );
 
 
@@ -159,12 +161,19 @@ void init_Pipe( fmgr_typ* f )
     gs->_SS_Pos  = (pathopfunc_typ)pUnimpOk;      /* ??? */
     gs->_SS_EOF  = (pathopfunc_typ)pPeof;
     gs->_SS_Ready= (pathopfunc_typ)pPready;
+    gs->_SS_FD   = (pathopfunc_typ)pPgetFD;   /* pipeman lists SS_FD */
     gs->_SS_FDInf= (pathopfunc_typ)pPFDInf;
 
     /* setstat */
     ss->_SS_Size = (pathopfunc_typ)pPsetsz;
-    ss->_SS_Opt  = (pathopfunc_typ)pNop;      /* ignored */
-    ss->_SS_Attr = (pathopfunc_typ)pNop;      /* ignored */
+    /* pipeman's own SetStat list: "SS_Opt Does nothing, but returns without
+       error" and "SS_FD Does nothing, but returns without error" -- so pNop
+       is right for both, and SS_FD needed a slot because inheriting pUnimp
+       answered E$UnkSvc for a code the manual says succeeds. SS_Attr does
+       NOT do nothing: it "Changes the pipe file's attributes". */
+    ss->_SS_Opt  = (pathopfunc_typ)pNop;      /* per pipeman: no-op, no error */
+    ss->_SS_FD   = (pathopfunc_typ)pNop;      /* per pipeman: no-op, no error */
+    ss->_SS_Attr = (pathopfunc_typ)pPsetatt;
 } /* init_Pipe */
 
 
@@ -898,12 +907,15 @@ os9err pPready( ushort pid, syspath_typ* spP, uint32_t *n )
 } /* pPready */
 
 
-os9err pPFDInf( _pid_, _spP_, uint32_t *maxbytP,
-                              uint32_t *fdinf,  byte* buffer )
+/* Build a pipe's pseudo-file-descriptor image. Split out of pPFDInf so that
+   SS_FD can answer with the same bytes: pipeman documents BOTH -- "SS_FD
+   Returns a pseudo-file descriptor image" in its GetStat list -- and they
+   differ only in WHICH path is described. SS_FDInf names another path in d3;
+   SS_FD describes this one. */
+static os9err pipeFDImage( syspath_typ* spK, uint32_t *maxbytP, byte* buffer )
 {
   #define       FDS 16
   byte          fdbeg[FDS];                  /* buffer for preparing FD */
-  syspath_typ*  spK= &syspaths[ *fdinf ];
   pipechan_typ* p;
   struct tm*    tim; 
 
@@ -935,7 +947,33 @@ os9err pPFDInf( _pid_, _spP_, uint32_t *maxbytP,
   
   memcpy( buffer, fdbeg, *maxbytP>FDS ? FDS : *maxbytP );
   return 0;
+} /* pipeFDImage */
+
+
+os9err pPFDInf( _pid_, _spP_, uint32_t *maxbytP,
+                              uint32_t *fdinf,  byte* buffer )
+/* SS_FDInf: the pseudo-FD of the path named in d3 */
+{ return pipeFDImage( &syspaths[ *fdinf ], maxbytP, buffer );
 } /* pPFDInf */
+
+
+os9err pPsetatt( _pid_, syspath_typ* spP, uint32_t *attr )
+/* SS_Attr SetStat: "Changes the pipe file's attributes" -- v2.4 Technical
+   Reference, pipeman SetStat codes. This was pNop, which is not the same
+   thing: the attributes are READ BACK by SS_FD and SS_FDInf (pipeFDImage
+   puts fileAtt in byte 0), so ignoring the write made a program see the old
+   value after setting a new one. Storing it is what makes the two agree. */
+{ spP->fileAtt= (ushort)*attr;
+  return 0;
+} /* pPsetatt */
+
+
+os9err pPgetFD( _pid_, syspath_typ* spP, uint32_t *maxbytP, byte* buffer )
+/* SS_FD: the same image, for THIS path. Pipeman lists SS_FD among the GetStat
+   codes it supports; os9exec had no slot for it, so `init_None`'s pUnimp
+   answered E$UnkSvc for a code the manual says works. */
+{ return pipeFDImage( spP, maxbytP, buffer );
+} /* pPgetFD */
 
 
 /* get pipe size */

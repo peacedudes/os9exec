@@ -89,6 +89,7 @@ os9err pUnimpOk          ( ushort pid, syspath_typ* );
 os9err pBadMode          ( ushort pid, syspath_typ* );
 os9err pNop              ( ushort pid, syspath_typ* );
 os9err pNoModule         ( ushort pid, syspath_typ* );
+os9err pNotReady         ( ushort pid, syspath_typ* );
 
 /* SCF-like */
 os9err pSCFnam           ( ushort pid, syspath_typ*, char* volname );

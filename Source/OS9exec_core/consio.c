@@ -175,7 +175,14 @@ void init_Cons( fmgr_typ* f )
     gs->_SS_Size = (pathopfunc_typ)pUnimp;   /* -- not used */
     gs->_SS_Opt  = (pathopfunc_typ)pCopt;
     gs->_SS_DevNm= (pathopfunc_typ)pSCFnam;
-    gs->_SS_Pos  = (pathopfunc_typ)pCpos;
+    /* SCF handles SS_Opt and passes "all other GetStat calls ... directly to
+       the driver" (v2.4 Technical I/O Manual, SCF I$GetStt); SS_Pos is scoped
+       "(RBF, PIPE)" and no terminal driver implements it, so the answer is
+       E$UnkSvc. This used to return 0 -- a position for a device that has
+       none, which a caller cannot tell from a real one. Removing it is a
+       deliberate behaviour REMOVAL: ported C calling ftell on a terminal now
+       gets the error it would get on real OS-9. Pinned by CONF68K t46. */
+    gs->_SS_Pos  = (pathopfunc_typ)pUnimp;
     gs->_SS_EOF  = (pathopfunc_typ)pNop;         /* ignored */
     gs->_SS_Ready= (pathopfunc_typ)pCready;
 
@@ -227,7 +234,7 @@ void init_NIL( fmgr_typ* f )
        Both are pinned by CONF68K t46. */
     gs->_SS_Pos  = (pathopfunc_typ)pUnimp;    /* E$UnkSvc, not E$BMode */
     gs->_SS_EOF  = (pathopfunc_typ)pNop;         /* ignored */
-    gs->_SS_Ready= (pathopfunc_typ)pUnimp;    /* E$UnkSvc, not E$BMode */
+    gs->_SS_Ready= (pathopfunc_typ)pNotReady; /* in SCF's scope: E$NotRdy */
 
     /* setstat */
     ss->_SS_Size = (pathopfunc_typ)pNop;         /* ignored */
@@ -279,7 +286,7 @@ void init_SCF( fmgr_typ* f )
        Both are pinned by CONF68K t46. */
     gs->_SS_Pos   = (pathopfunc_typ)pUnimp;   /* E$UnkSvc, not E$BMode */
     gs->_SS_EOF   = (pathopfunc_typ)pNop;         /* ignored */
-    gs->_SS_Ready = (pathopfunc_typ)pUnimp;   /* E$UnkSvc, not E$BMode */
+    gs->_SS_Ready = (pathopfunc_typ)pNotReady;/* in SCF's scope: E$NotRdy */
     gs->_SS_LBlink= (pathopfunc_typ)pGBlink;     /* specific */
     gs->_SS_Undef = (pathopfunc_typ)pVMod;
 

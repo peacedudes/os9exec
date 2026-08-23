@@ -1167,6 +1167,16 @@ os9err pNoModule( _pid_, _spP_ )
 {   return os9error(E_MNF);
 } /* pNoModule */
 
+os9err pNotReady( _pid_, _spP_ )
+/* SS_Ready on a device that can never have input. SS_Ready IS in SCF's scope
+   -- "Test for Data Ready (RBF, SCF, PIPE)" -- so E$UnkSvc would be wrong:
+   the code is implemented, there is simply nothing to report. The manual
+   names the answer in SS_Ready's own ERROR OUTPUT: "E$NotRdy if no data is
+   available". /nil reads EOF forever and /vmod refuses reads outright, so
+   neither can ever have a byte waiting. */
+{   return os9error(E_NOTRDY);
+} /* pNotReady */
+
 /* get SCF device name from file */
 os9err pSCFnam( _pid_, syspath_typ* spP, char* volname )
 {
