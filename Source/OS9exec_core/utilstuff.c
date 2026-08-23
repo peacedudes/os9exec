@@ -2162,6 +2162,15 @@ Boolean IsDesc( const char* dvn, mod_dev** mod, char** p )
 
     if (mid==MAXMODULES) return false; /* no such module found */
 
+    /* A module is a byte image in the emulated arena; mod_exec and mod_dev are
+       two READINGS of those bytes, not two kinds of object, and the module
+       directory happens to hand its pointers out as mod_exec*. The type check
+       on the next line is what licenses the mod_dev reading -- the bytes are
+       a device descriptor or this returns false. (A union of the module
+       structs was considered for this and rejected: the common-initial-
+       sequence rule it would invoke, C11 6.5.2.3p6, applies to a union OBJECT,
+       and there is no union object here -- only guest memory. See
+       DECISIONS-68k.md.) */
        *mod= (mod_dev*)os9mod( mid );
         mty= os9_word( (*mod)->_mh._mtylan )>>BpB;
     if (mty!=MT_DEVDESC) return false; /* not the right type */

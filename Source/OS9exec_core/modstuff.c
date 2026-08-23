@@ -1985,6 +1985,9 @@ os9err install_traphandler( ushort pid, ushort trapidx,
     /* now prepare the trap handler data */
     theModule= get_module_ptr(mid);
     tp->mid=mid; /* save mid */
+    /* mod_trap reads the same bytes as mod_exec plus the two trap-handler
+       entries that follow them; link_load has already established this module
+       is one. Same reading-not-conversion note as IsDesc in utilstuff.c. */
     tp->trapmodule=(mod_trap *) theModule; /* host pointer, used by high-level code */
     tp->trapentry= TO68K(theModule)+os9_long(theModule->_mexec); /* 68k entry address */
 
