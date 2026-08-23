@@ -4603,9 +4603,18 @@ if filter.isEmpty || pacedUsageName.localizedCaseInsensitiveContains(filter) {
 // ONE line with no CR between them, so only a build that terminates on $5F
 // can run them as two. Verified to fail against the pre-change binary: the
 // whole text ran as a single command, echoing "EORONE_echo EORTWO_".
+//
+// The trailing `tmode eor=0D_` is load-bearing, and its absence is a real
+// finding rather than a nuisance: once PD_EOF ends a read only on an empty
+// buffer, the harness's own ESC terminator no longer works while PD_EOR is
+// moved. The joiner's newline arrives first, is ordinary data under eor=5F,
+// and the ESC behind it is then data too -- so the session waits for a `_`
+// that never comes. Restoring PD_EOR before the terminator is what a real
+// user would have to do, and what real OS-9 would require.
 run("console: I$ReadLn ends the line at PD_EOR, not at CR",
     expectation: "one line ending in EORONE and another ending in EORTWO",
-    commands: ["tmode noecho eor=5F", "echo EORONE_echo EORTWO_"]) { out in
+    commands: ["tmode noecho eor=5F",
+               "echo EORONE_echo EORTWO_tmode eor=0D_"]) { out in
     let lines = out.split(whereSeparator: \.isNewline)
                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     return lines.contains { $0.hasSuffix("EORONE") }
@@ -4625,7 +4634,7 @@ run("console: I$ReadLn ends the line at PD_EOR, not at CR",
 // whether or not the LF is there.
 run("console: PD_ALF adds the LF after CR, not after PD_EOR",
     expectation: "an output line still ends CR LF when PD_EOR is not CR",
-    commands: ["tmode noecho eor=5F", "echo ALFMARK_"]) { out in
+    commands: ["tmode noecho eor=5F", "echo ALFMARK_tmode eor=0D_"]) { out in
     Data(out.utf8).range(of: Data("ALFMARK\r\n".utf8)) != nil
 }
 
@@ -4686,7 +4695,7 @@ let scfBufName = "console: SCF's 512-byte line buffer caps what I$ReadLn returns
 if !containerized {   // the instrument lives in the repo, not in the image
     let consoleTools = repoRoot.appendingPathComponent("test/68k-console").path
     run(scfBufName,
-        expectation: "a 600-character line returns 512 bytes, the excess belled away",
+        expectation: "a 600-character line returns 511 data bytes plus its terminator",
         commands: ["tmode noecho", "/h6/CMDS/rdlnecho", String(repeating: "X", count: 600)],
         env: ["OS9H6": consoleTools]) { out in
         var longest = 0, current = 0
@@ -4694,8 +4703,12 @@ if !containerized {   // the instrument lives in the repo, not in the image
             if ch == "X" { current += 1; if current > longest { longest = current } }
             else { current = 0 }
         }
-        // 88 = 600 typed - 512 kept, each ignored byte answered with PD_OVF.
-        return longest == 512 && out.filter { $0 == "\u{07}" }.count == 88
+        // 511, not 512: the buffer is 512 "including the [CR]", so data fills
+        // 511 slots and the terminator takes the last one -- the returned
+        // record is still 512 bytes. 89 = 600 typed - 511 kept, each ignored
+        // byte answered with PD_OVF. Measured across the boundary: 511 typed
+        // gives 511 data and no bell, 512 typed gives 511 data and exactly one.
+        return longest == 511 && out.filter { $0 == "\u{07}" }.count == 89
     }
 }
 

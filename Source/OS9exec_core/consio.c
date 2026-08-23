@@ -508,8 +508,20 @@ Boolean ConsGetc( char* c )
    presents a v2.4 system). Citation and the evidence for it: pConsInLn. */
 #define SCF_LINEBUF  512
 
-static os9err ConsRead( ushort pid, syspath_typ* spP,
-                        uint32_t *maxlenP, char* buffer, Boolean edit, char endchar )
+static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
+                        char* buffer, Boolean edit, char endchar,
+                        Boolean reserveTerm )
+/* reserveTerm says the LAST slot of *maxlenP belongs to the end-of-record
+   character rather than to data, so data fills only *maxlenP-1. It is set
+   when SCF's own line buffer is what bounds the read rather than the caller's
+   count, because the two are bounded differently:
+     - the CALLER's count binding: "SCF continues to input characters until
+       the end-of-record character is received, DISCARDING any characters
+       that exceed the number requested" -- the terminator exceeds it too, so
+       the count comes back full of data and no terminator. Microware's word.
+     - the BUFFER binding: 512 bytes is "the maximum length of a line typed
+       in, INCLUDING the [CR]" -- so 511 data and the terminator in the last
+       slot. The Guru's word, and the reason this flag exists. */
 {
     os9err        err= 0; /* no err so far */
     long          cnt= 0;
@@ -546,7 +558,10 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
      * unsigned int, and the cast makes both models agree instead of leaving
      * the signedness to the target. */
     while (true) {
-        Boolean full= ((uint32_t)cnt >= *maxlenP); /* requested count reached */
+        /* the point at which DATA stops fitting; the terminator may still have
+           a slot after it when reserveTerm is set */
+        uint32_t datacap= *maxlenP - (reserveTerm ? 1:0);
+        Boolean  full= ((uint32_t)cnt >= datacap);
 
         if (full && !edit) break; /* I$Read: done. I$ReadLn: keep going */
 
@@ -569,7 +584,22 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
 
         if (c!=NUL) { /* no check on NUL char for every sgs option */       
             /* check options */
-            if (c==ot->_sgs_eofch) { err= E_EOF;    break; }
+            /* PD_EOF ends the read only as the FIRST character, not wherever
+               it appears. v2.4 Technical I/O Manual, SCF: the read terminates
+               when "an end-of-file (PD_EOF) is detected as the first character
+               of the read". The Guru sharpens "first" to first IN THE BUFFER,
+               noting that other characters may be input "provided they are
+               deleted before the end-of-file character is entered" -- so a
+               line typed and then backspaced away is empty again and an EOF
+               there still counts. `cnt==0` is exactly that test and satisfies
+               both readings; they differ only for a line that was typed and
+               erased, which the Guru covers and Microware does not mention.
+               Typed anywhere else the character is ordinary data.
+               NOTE this is the escape from an I$ReadLn with PD_EOR of zero,
+               which the manual says never terminates: at cnt==0 it still
+               works, and once bytes are buffered PD_QUT and PD_INT are what
+               get you out -- neither is position-gated. */
+            if (cnt==0 && c==ot->_sgs_eofch) { err= E_EOF; break; }
         
           //#ifdef MPW /* for the terminal consoles it is supported now */
             if (c==ot->_sgs_kbich) { err= S_Intrpt; break; };
@@ -621,7 +651,15 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
                    this is not gated on PD_EKO -- the manual describes PD_OVF
                    as an alert for a byte being thrown away, not as an echo of
                    input, and a path with echo off still overflows. */
-                if (endchar!=0 && endchar==c) break;
+                if (endchar!=0 && endchar==c) {
+                    /* the reserved slot is what the terminator is for */
+                    if (reserveTerm && (uint32_t)cnt < *maxlenP) {
+                        *(buffer+cnt)= c;
+                        cnt++;
+                        if (ot->_sgs_echo) ConsPutcEdit( c, alf );
+                    }
+                    break;
+                }
                 if (ot->_sgs_ovfch)          ConsPutc( ot->_sgs_ovfch );
                 fflush(stdout);
                 continue;
@@ -640,13 +678,12 @@ static os9err ConsRead( ushort pid, syspath_typ* spP,
         
 
             if (edit) {
-                /* basic line editing  */
-                if (c!=NUL && c==ot->_sgs_eofch) {
-                    ConsPutcEdit( CR, alf );
-                    err= E_EOF;
-                    break;
-                }
-                else
+                /* basic line editing. There is no PD_EOF case here: it is
+                   handled once, above, and only at cnt==0. This branch used to
+                   repeat the test and was unreachable because the early one
+                   caught every EOF first; leaving it would have quietly undone
+                   the fix, firing for exactly the mid-line EOF that is now
+                   supposed to be data. */
                 if (c!=NUL && c==ot->_sgs_bspch) {
                     /* backspace */
                     if (cnt>0) {
@@ -936,7 +973,7 @@ os9err pConsIn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer )
 
       gConsoleID= spP->term_id;
       g_spP     = spP;
-      return ConsRead( pid,spP, maxlenP,buffer,false, ot->_sgs_eorch );
+      return ConsRead( pid,spP, maxlenP,buffer,false, ot->_sgs_eorch, false );
 
     #else
       return pUnimp  ( pid,spP );
@@ -971,6 +1008,7 @@ os9err pConsInLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer 
        * in that state is recoverable rather than wedged.
        */
       struct _sgs* ot= (struct _sgs*)&spP->opt; /* path opt table */
+      Boolean      reserveTerm;
 
       /* SCF edits an input line in a buffer it allocates at I$Open, and that
        * buffer is the hard ceiling on a line however much the caller asks
@@ -993,11 +1031,16 @@ os9err pConsInLn( ushort pid, syspath_typ* spP, uint32_t *maxlenP, char* buffer 
        * four major versions without the ceiling mattering, and why the only
        * thing able to exercise it is test/68k-console/rdlnecho.
        */
+      /* The buffer bounds the line only when the caller wanted more than it
+         can hold. Asking for SCF_LINEBUF or more means the terminator gets
+         the last slot; asking for less means the caller's own count binds
+         first and the terminator is discarded with the rest of the excess. */
+      reserveTerm= (*maxlenP >= SCF_LINEBUF);
       if (*maxlenP>SCF_LINEBUF) *maxlenP= SCF_LINEBUF;
 
       gConsoleID= spP->term_id;
       g_spP     = spP;
-      err= ConsRead( pid,spP,maxlenP,buffer,true, ot->_sgs_eorch );
+      err= ConsRead( pid,spP,maxlenP,buffer,true, ot->_sgs_eorch, reserveTerm );
     
     #else
       long cnt,i;
@@ -1487,7 +1530,9 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
 
           while (cnt<*maxlenP) {
               Boolean needsLF; /* does this char carry a trailing auto-LF? */
-              int     need;    /* FIFO slots this char needs (2 if CR+LF) */
+              int     nulls;   /* PD_NUL padding bytes that follow it */
+              int     need;    /* FIFO slots this char and its tail need */
+              int     q;
 
               if (held) {
                   cp->saved_cnt  = cnt;
@@ -1518,7 +1563,17 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                  ConsPutcEdit. Ending the RECORD is still PD_EOR's job, and
                  that test is the `wrln` break at the bottom of this loop. */
               needsLF= (wrln && c==CR && ot->_sgs_alf);
-              need   = needsLF ? 2 : 1;
+              /* PD_NUL: "the number of NULL padding bytes to be sent after a
+                 carriage return/line-feed character" (v2.4 Technical I/O
+                 Manual); the Guru says the same, "[NUL] characters to send
+                 after [CR] ... for slow devices that do not support flow
+                 control handshaking, such as teletypes". So it keys on CR
+                 exactly as PD_ALF does, and belongs to I$WritLn's line
+                 editing, which is what `wrln` gates. It was read into
+                 struct _sgs and never used. Defaults to zero, so a path that
+                 has not asked for padding is byte-for-byte as before. */
+              nulls  = (wrln && c==CR) ? ot->_sgs_nul : 0;
+              need   = 1 + (needsLF ? 1:0) + nulls;
 
               if (paced) {
                   /* An internal command is host C and cannot be parked and
@@ -1538,8 +1593,9 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                   }
                   /* Stamp the WRITER, not whoever will be running when these
                      bytes finally reach the screen -- that is the whole point. */
-                                fifo_push( dev, c,  pid );
-                  if (needsLF)  fifo_push( dev, LF, pid );
+                                fifo_push( dev, c,   pid );
+                  if (needsLF)  fifo_push( dev, LF,  pid );
+                  for (q=0; q<nulls; q++) fifo_push( dev, NUL, pid );
               }
               else if (hostterm_bound( gConsoleID )
                        && pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask) {
@@ -1556,12 +1612,17 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                      at all -- a lone CR leaves an unterminated line and the
                      next output lands on top of it (the 75a8ea8 bug). Build
                      the pair, then write it as one unit. */
-                  char pair[2];
+                  /* c, its optional LF, and up to 255 PD_NUL pad bytes --
+                     kept one unit for the same reason the CR and its LF are:
+                     a partially written tail is what leaves a line looking
+                     terminated when it is not. */
+                  char pair[2+255];
                   int  len= 0;
                   int  w;
 
                   pair[len++]= c;
                   if (needsLF) pair[len++]= LF;
+                  for (q=0; q<nulls; q++) pair[len++]= NUL;
 
                   w= hostterm_put( gConsoleID, pair,len );
 
@@ -1595,6 +1656,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                      gained backpressure. */
                                 ConsPutc( c  );
                   if (needsLF)  ConsPutc( LF );
+                  for (q=0; q<nulls; q++) ConsPutc( NUL );
               }
               cnt++;
 
