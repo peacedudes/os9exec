@@ -1933,6 +1933,7 @@ os9err prepData(ushort pid, mod_exec *theModule, uint32_t memplus, uint32_t *msi
    uint32_t memsz, offs, cnt;
    uint32_t modSize, idOff, irOff, dOff;
    byte    *p, *p2, *bp, *modEnd, *bpEnd;
+   os9err  why;
    int k;
    
    /* -- allocate memory for data */
@@ -1948,8 +1949,8 @@ os9err prepData(ushort pid, mod_exec *theModule, uint32_t memplus, uint32_t *msi
    memsz=(memsz+15) & 0xFFFFFFF0; /* round up to next 16-boundary */
    debugprintf(dbgModules+dbgProcess,dbgNorm,("# prepData: Adjusted total data size = %u\n",memsz));
 
-       bp=os9malloc( pid,memsz ); /* allocate OS-9 memory block */
-   if (bp==NULL) return os9error(E_NORAM);    /* not enough RAM */
+       bp=os9malloc( pid,memsz, &why ); /* allocate OS-9 memory block */
+   if (bp==NULL) return why; /* E$NoRAM, or E$MemFul at the block limit */
    
    /* _midata/_midref are module-chosen offsets that os9exec turns into raw HOST
       pointers, exactly like _mname (guarded in load_module_local): an

@@ -787,18 +787,32 @@ void* get_mem( ulong memsz )
 
 
 /* memory allocation for OS-9 */
-void* os9malloc( ushort pid, ulong memsz )
+void* os9malloc( ushort pid, ulong memsz, os9err* whyP )
+/* <whyP> receives the reason on failure, because the two ways this can fail are
+   different errors and the manual distinguishes them. E$NoRAM (237) is "no free
+   RAM, or not enough contiguous memory"; E$MemFul (207) is "MEMORY FULL ... This
+   can ALSO occur if a process has already been allocated the maximum number of
+   blocks permitted by the system" -- which is exactly what running out of
+   MAXMEMBLOCKS is. Both used to surface as E$NoRAM, telling a program the
+   machine was out of memory when what it had really hit was its own block
+   limit. */
 {
     void *pp;
     int   k;
 
+    if (whyP!=NULL) *whyP= 0;
+
         pp= get_mem( memsz );
-    if (pp==NULL) return NULL; /* no memory */
+    if (pp==NULL) {
+        if (whyP!=NULL) *whyP= os9error(E_NORAM);
+        return NULL; /* no memory */
+    } // if
      
         k= install_memblock( pid, pp, memsz );
     if (k>=MAXMEMBLOCKS) {
         /* memory block list is full */
         release_mem( pp ); pp= NULL;
+        if (whyP!=NULL) *whyP= os9error(E_MEMFUL);
         
       //#ifndef PLUGIN_DLL
         upe_printf( "No more memory (MAXMEMBLOCKS) !!!\n" );

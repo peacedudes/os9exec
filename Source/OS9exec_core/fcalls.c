@@ -425,6 +425,7 @@ os9err OS9_F_SRqMem( regs_type *rp, ushort cpid )
 {
     #define MxV 0xFFFFFFF0 
     void    *bp;
+    os9err  why;
     ulong   memsz= rp->d[0];
     
     if (memsz==0xFFFFFFFF) { /* get max mem */
@@ -438,10 +439,11 @@ os9err OS9_F_SRqMem( regs_type *rp, ushort cpid )
     }
             
     memsz= (memsz+15) & MxV; /* round up to next 16-byte boundary */
-    bp   = os9malloc(cpid,memsz);
-    
-    /* %%% E_MEMFUL is never returned, even if only pointer list is full */
-    if (bp==NULL) return os9error(E_NORAM); /* not enough RAM */
+    bp   = os9malloc(cpid,memsz, &why);
+
+    /* E$MemFul when the process is at its block limit, E$NoRAM when the machine
+       is genuinely out -- os9malloc says which, see there. */
+    if (bp==NULL) return why;
     rp->d[0]= memsz;     /* return actual block size */
     rp->a[2]= TO68K(bp); /* return block pointer */
     return 0;
