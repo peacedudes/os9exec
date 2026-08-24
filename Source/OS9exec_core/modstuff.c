@@ -348,7 +348,13 @@ void Update_MDir( void )
             set_hiword( b, (ushort)modK->linkcount );
 
             en->m1  = os9_long( TO68K(mod) );
-            en->m2  = en->m1;               /* %%% module groups not yet supported */
+            /* The group pointer. A "module group" is several modules sharing one
+               allocation, so that unlinking frees the block once -- see F$VModul,
+               which takes the group base in d0. os9exec gives every module its own
+               get_mem, including each module of a multi-module file (the load loop
+               below), so each one IS its own group and pointing m2 at itself is the
+               truthful answer rather than a placeholder. */
+            en->m2  = en->m1;
             en->size= mod->_mh._msize; /* big/little endian is already correct !!! */
             en->lnk = os9_long( b );
         }
@@ -1573,6 +1579,14 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
          * in the memory search or loaded into memory, only the module with the
          * highest revision level is kept. This enables easy substitution of
          * modules for update or correction." (v2.4 Technical Manual.)
+         *
+         * F$VModul states the same rule as an algorithm, and is the sharper
+         * citation of the two: "The module directory is first searched for
+         * another module with the same name. If a module with the same name and
+         * type exists, the one with the highest revision level is retained in
+         * the module directory. Ties are broken in favor of the established
+         * module." That last sentence is why an equal revision leaves the
+         * resident one in place below.
          *
          * Until 2026-08-24 the resident module always won and the one just
          * loaded was discarded unread -- revision never consulted, type never

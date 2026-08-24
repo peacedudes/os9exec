@@ -2098,7 +2098,12 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
     // conventional ifdef haystack :-)
 
     /* fill in constants */
-    *att= 0x3F; /* default: peprpwerw (exe always set for now, %%% later: check file type!) */         
+    /* Starting value only, and dead on every platform still built: the win_unix
+       arm below assigns *att outright before using it. The `%%%` that stood here
+       -- "exe always set for now, later: check file type!" -- was answered long
+       ago in that arm, which reads the real S_IXUSR on POSIX and deliberately
+       forces the bit on Windows, where there is no execute bit to read. */
+    *att= 0x3F; /* peprpwerw */
 
     #if defined MACOS9
       /* now get info from CInfoPBRec */
@@ -2143,11 +2148,13 @@ static void getFD( void* fdl, ushort maxbyt, byte *buffer )
                            realIROTH=0000004, realIWOTH=0000002;
               if (v & realIRUSR) *att|= poRead;
               if (v & realIWUSR) *att|= poWrite;
-              *att|= poExec; /* always — if (v & S_IXUSR) was here */
+              *att|= poExec; /* forced: Windows has no execute bit -- see the
+                                windows32 note further down, which states that
+                                as a platform limit rather than a workaround */
 
               if (v & realIROTH) *att|= 0x08;
               if (v & realIWOTH) *att|= 0x10;
-              *att|= 0x20;     /* always — if (v & S_IXOTH) was here */
+              *att|= 0x20;     /* forced, same reason */
             }
           #else
             /* A real host mode: read every bit back, execute included, so an
