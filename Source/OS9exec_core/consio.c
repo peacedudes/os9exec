@@ -542,7 +542,10 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
         cnt=                cp->saved_cnt;
     }
 
-    /* I$Read stops when the requested count is reached; I$ReadLn does NOT.
+    /* I$Read stops when the requested count is reached; I$ReadLn does not
+     * END there -- the count still LIMITS what it returns, which is what
+     * keeps it inside the caller's buffer; it just does not leave the
+     * remainder for a second read.
      * v2.4 Technical I/O Manual, SCF chapter: "If I$ReadLn has satisfied its
      * input byte count, SCF ignores any further input characters until an
      * end-of-record character (PD_EOR) is received. It echoes the PD_OVF
