@@ -78,6 +78,8 @@ Boolean RangeInAnyModule( void* p, ulong cnt ); // does [p,p+cnt) lie in a loade
 int        get_mid       ( void *modptr );
 
 int       find_mod_id             ( const char* name );
+ushort    Mod_Revision           ( const mod_exec* mod );
+ushort    Mod_Type               ( const mod_exec* mod );
 int       link_mod_id                   ( char* name );
 os9err    load_module ( ushort pid,       char* name, ushort *midP, Boolean exedir );
 os9err    link_module ( ushort pid, const char* name, ushort *midP );

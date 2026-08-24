@@ -655,23 +655,52 @@ int get_mid( void *modptr )
 } /* get_mid */
 
 
+ushort Mod_Revision( const mod_exec* mod )
+/* The module's revision level: the LOW byte of M$RevsAttr, whose high byte is
+   the attribute flags. */
+{   return (ushort)( os9_word( mod->_mh._mattrev ) & 0xFF );
+} /* Mod_Revision */
+
+
+ushort Mod_Type( const mod_exec* mod )
+/* The module's type: the HIGH byte of M$TyLan, whose low byte is the language. */
+{   return (ushort)( os9_word( mod->_mh._mtylan ) >> BpB );
+} /* Mod_Type */
+
+
 int find_mod_id( const char* name )
-/* find module by name, return mid or MAXMODULES if not found */
+/* find module by name, return mid or MAXMODULES if not found.
+ *
+ * Where several modules share a name, this returns the one with the HIGHEST
+ * REVISION -- the "memory search" half of the rule M$Revs states: "If two
+ * modules with the same name and type are found in the memory search or
+ * loaded into memory, only the module with the highest revision level is
+ * kept. This enables easy substitution of modules for update or correction."
+ *
+ * It used to return the first entry it came across, which is the same answer
+ * only while no two modules share a name -- and load_module_local made sure
+ * of that by throwing away every module it loaded whose name was already
+ * taken, newer or not. Both halves had to change together; see the load path.
+ */
 {
-    char     *p;
     mod_exec *mod;
-    
-    int  k;
+    int       best= MAXMODULES;
+    ushort    bestRev= 0;
+    int       k;
+
     for (k=0; k<MAXMODULES; k++) {
-        /* compare name */
             mod= get_module_ptr(k);
         if (mod==NULL) continue; /* no module here, check next */
-        
-        p= Mod_Name( mod );
-        if (ustrcmp(p,name)==0) return k; /* module found */
+
+        if (ustrcmp( Mod_Name(mod),name )!=0) continue;   /* a different module */
+
+        if (best==MAXMODULES || Mod_Revision(mod)>bestRev) {
+            best   = k;
+            bestRev= Mod_Revision( mod );
+        } /* if */
     } /* for */
-    
-    return MAXMODULES;
+
+    return best;
 } /* find_mod_id */     
     
 
@@ -1536,18 +1565,51 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         debugprintf(dbgModules,dbgNorm,
           ("# load_module: Name of module loaded='%s'\n",realmodname));
 
-        /* %%% replacement with higher revision number is not yet implemented */
+        /* A module of this name may already be resident. M$Revs decides which
+         * one survives: "If two modules with the same name and type are found
+         * in the memory search or loaded into memory, only the module with the
+         * highest revision level is kept. This enables easy substitution of
+         * modules for update or correction." (v2.4 Technical Manual.)
+         *
+         * Until 2026-08-24 the resident module always won and the one just
+         * loaded was discarded unread -- revision never consulted, type never
+         * compared. That is why rebuilding a module and loading it appeared to
+         * do nothing: the old one kept answering, and there was no way to
+         * displace it short of unlinking it to zero.
+         *
+         * The newcomer does NOT evict the old entry. A process already running
+         * holds a link to the old module and must keep working, so both stay in
+         * the directory and the old one goes when its own link count reaches
+         * zero, exactly as it would have without this. What changes is only
+         * which of them a search finds -- find_mod_id returns the highest
+         * revision, so the new module answers from here on. */
         os9modules[mid].modulebase=0; /* temporarily disable entry */
         
             oldmid= find_mod_id( realmodname );
         if (oldmid<MAXMODULES) {
-            /* there is already another module with the same name */
-            os9modules[oldmid].linkcount++; /* link the old one */
-            os9modules[mid].modulebase=theModuleP; /* re-enable entry */
-            release_module(mid, false); /* forget it again */
-            *midP= oldmid;
-            return 0; /* ... and throw away just loaded module */
-        }
+            mod_exec* oldMod= get_module_ptr( oldmid );
+
+            /* "same name AND type" -- a different type is a different module
+               and does not participate in the comparison at all. */
+            Boolean sameKind= Mod_Type( oldMod )==Mod_Type( theModuleP );
+            Boolean isNewer = Mod_Revision( theModuleP )>Mod_Revision( oldMod );
+
+            if (sameKind && !isNewer) {
+                /* the resident one is as good or better: keep it, as before */
+                os9modules[oldmid].linkcount++; /* link the old one */
+                os9modules[mid].modulebase=theModuleP; /* re-enable entry */
+                release_module(mid, false); /* forget it again */
+                *midP= oldmid;
+                debugprintf( dbgModules,dbgNorm,
+                  ("# load_module: '%s' rev %d not kept, rev %d is resident\n",
+                     realmodname, Mod_Revision(theModuleP), Mod_Revision(oldMod) ));
+                return 0; /* ... and throw away just loaded module */
+            } /* if */
+
+            debugprintf( dbgModules,dbgNorm,
+              ("# load_module: '%s' rev %d supersedes the resident rev %d\n",
+                 realmodname, Mod_Revision(theModuleP), Mod_Revision(oldMod) ));
+        } /* if */
           
         os9modules[mid].modulebase= theModuleP; /* re-enable entry */
 
