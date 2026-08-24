@@ -1192,6 +1192,19 @@ try? FileManager.default.removeItem(atPath: awayHostPath)
 // absolute device name -- a bare "ram9" fails classification entirely
 // (unrelated to this feature; see the plan's Global Constraints note).
 noError("ramdisk: mount -r creates disk", "mount -r=200 /ram9", "dir /ram9", "unmount ram9")
+
+// A sector size this RBF cannot use is refused as E$SectSize (000:176) -- the
+// code the manual defines for exactly this ("must be a binary multiple of 256
+// ... maximum 32768"). 2048 is our ceiling because GetBuffers sizes a path's
+// sector buffers to it; 4096 is legal per the manual and still not usable here.
+// Until 2026-08-24 the RAM-disk path took the value unchecked and it surfaced
+// as E$NotRdy -- "device not ready", which is not why it failed -- and the SCSI
+// path returned SUCCESS for a size it had just refused.
+check("ramdisk: an unusable sector size reports E$SectSize, not E$NotRdy",
+    contains: "176", "mount -r=400 -n=4096 /ram9")
+check("ramdisk: a sector size that is not 256<<n is refused too",
+    contains: "176", "mount -r=400 -n=3000 /ram9")
+noError("ramdisk: 2048 is still accepted", "mount -r=400 -n=2048 /ram9", "unmount ram9")
 check  ("ramdisk: dsave -ive populates+verifies", contains: "f1",
     "echo ramdisk test content >/h5/t_ramsrc",
     "makdir /h5/t_ramdir",
