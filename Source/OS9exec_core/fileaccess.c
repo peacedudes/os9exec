@@ -2406,8 +2406,14 @@ os9err pHgetFD( _pid_, syspath_typ* spP, uint32_t *maxbytP, byte *buffer )
     return 0;
 } /* pHgetFD */
 
-/* set file descriptor for object */
-/* %%% currently only the file date will be set */
+/* set file descriptor for object.
+ *
+ * Only the date is taken from the caller's FD image, and that is a platform
+ * limit rather than an omission: a host directory has no FD sector to write.
+ * The other fields an FD carries either have no host equivalent (segment list,
+ * link count) or are already reachable by the call that owns them -- SS_Attr
+ * for the attribute byte, which goes to the host mode bits. Writing them from
+ * here would mean inventing a second, disagreeing route to the same state. */
 os9err pHsetFD( _pid_, syspath_typ* spP, byte *buffer )
 {
     os9err err= 0;
