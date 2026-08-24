@@ -937,7 +937,11 @@ os9err OS9_F_Icpt( regs_type *rp, ushort cpid )
  * Output:  none
  * Error:   none        
  *             
- * Restrictions: does not work, as signal handling is not yet implemented (%%%)  
+ * Restrictions: none. Signals ARE delivered to the routine set here --
+ *               funcdispatch.c dispatches to <pd._sigvec> and os9exec_nt.c
+ *               returns through <rteregs>. The line that stood here until
+ *               2026-08-24, "does not work, as signal handling is not yet
+ *               implemented", long predated both and was simply false.
  */
 {
     process_typ* cp= &procs[cpid];
