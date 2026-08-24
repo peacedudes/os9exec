@@ -2364,6 +2364,76 @@ do {
     }
 }
 
+// ── F$SRqMem at the block limit reports E$MemFul, not E$NoRAM ────────────────
+// E$MemFul (207), v2.4 Technical Manual: "MEMORY FULL - The process will not
+// execute because there is not enough contiguous RAM free. This can ALSO occur
+// if a process has already been allocated the maximum number of blocks
+// permitted by the system." E$NoRAM (237) is the other one: "no free RAM, or
+// not enough contiguous memory".
+//
+// os9malloc has always known which of the two it hit -- get_mem failing is one,
+// install_memblock running past MAXMEMBLOCKS is the other -- but it returned
+// NULL for both, so F$SRqMem answered E$NoRAM either way and told a program the
+// machine was out of memory when it had really hit its own block limit.
+//
+// The module asks for 16-byte blocks in a loop, so it exhausts MAXMEMBLOCKS
+// (512) long before it exhausts the arena; whichever error comes back is the
+// block-limit one by construction.
+do {
+    let memAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$SRqMem equ  $28",
+        "I$WritLn equ  $8C",
+        "E_MEMFUL equ  207",
+        "",
+        "  psect memful,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "",
+        "start:",
+        "grab:",
+        "  moveq   #16,d0",
+        "  OS9     F$SRqMem",
+        "  bcc     grab",              // got one, keep going
+        "  cmpi.w  #E_MEMFUL,d1",
+        "  beq     ismemful",
+        "  lea     wrongmsg(pc),a0",
+        "  moveq   #wrongmsgl,d1",
+        "  bra     say",
+        "ismemful:",
+        "  lea     okmsg(pc),a0",
+        "  moveq   #okmsgl,d1",
+        "say:",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "",
+        "okmsg:     dc.b  \"BLOCK-LIMIT-IS-MEMFUL\",$0D",
+        "okmsgl     equ   *-okmsg",
+        "wrongmsg:  dc.b  \"BLOCK-LIMIT-WRONG-ERROR\",$0D",
+        "wrongmsgl  equ   *-wrongmsg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    try? memAsm.write(toFile: scratchDisk + "/memful.a", atomically: true, encoding: .utf8)
+
+    run("f$srqmem: a process at its block limit reports E$MemFul, not E$NoRAM",
+        expectation: "contains: BLOCK-LIMIT-IS-MEMFUL",
+        commands: [
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/memful.a -o=/h5/memful.r",
+            "l68 /h5/memful.r -o=/h5/memful",
+            "/h5/memful"
+        ], timeout: 30) { $0.contains("BLOCK-LIMIT-IS-MEMFUL") }
+
+    for leftover in ["memful.a", "memful.r", "memful"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── module revision: a higher revision supersedes the resident module ─────────
 // M$Revs, v2.4 Technical Manual: "If two modules with the same name and type
 // are found in the memory search or loaded into memory, only the module with
