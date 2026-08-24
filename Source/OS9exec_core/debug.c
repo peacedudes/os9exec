@@ -1150,6 +1150,7 @@ void get_error_strings(os9err err, char **nameP, char **descP)
         case E_PTHLOST  : name="E_PTHLOST"; desc="Path Lost (net node was down)"; break;
         case E_BADPART  : name="E_BADPART"; desc="Bad partition data or no active"; break;
         case E_HARDWARE : name="E_HARDWARE";desc="Hardware is damaged"; break;
+        case E_SECTSIZE : name="E_SECTSIZE";desc="Invalid sector size"; break;
         
         case E_PTHFUL   : name="E_PTHFUL";  desc="Path Table full"; break;
         case E_BPNUM    : name="E_BPNUM";   desc="Bad Path Number"; break;

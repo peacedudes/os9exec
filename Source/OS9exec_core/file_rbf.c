@@ -560,6 +560,33 @@ static os9err CutOS9Path( char** p, char* cmp_entry )
     return err;
 } /* CutOS9Path */
 
+static os9err CheckSectorSize( uint32_t sctSize )
+/* Is this a sector size an RBF device can have here?
+ *
+ * The manual's rule, from E$SectSize's own entry (v2.4 Technical Manual,
+ * 000:176): "The sector size of a RBF device must be a binary multiple of 256
+ * (256, 512, 1024, etc.). The maximum sector size is 32768."
+ *
+ * os9exec stops lower, at MIN_TMP_SCT_SIZE, because GetBuffers below sizes a
+ * path's FD and data sector buffers to it. That is a real ceiling and not a
+ * gap worth closing: DD_TOT is three bytes, so a device holds at most
+ * 16777215 sectors, and 2048-byte sectors already address 32 GiB -- past any
+ * media OS-9/68k ever ran on. See DECISIONS-68k.md.
+ *
+ * Either way the fault is the sector size, so E$SectSize is what says so.
+ * Both callers used to answer something else: the RAM disk path let the value
+ * through unchecked and it surfaced later as E$NotRdy ("device not ready",
+ * which is not why it failed), and the SCSI path returned <err> at a point
+ * where <err> is zero -- reporting SUCCESS for a sector size it had just
+ * decided it could not read. */
+{
+    if (sctSize < STD_SECTSIZE)     return os9error(E_SECTSIZE); /* below 256 */
+    if (sctSize & (sctSize-1))      return os9error(E_SECTSIZE); /* not 256<<n */
+    if (sctSize > MIN_TMP_SCT_SIZE) return os9error(E_SECTSIZE); /* past our buffers */
+    return 0;
+} /* CheckSectorSize */
+
+
 static void GetBuffers( _rbf_, syspath_typ* spP )
 {
 //Boolean pp= spP->fd_sct==NULL || spP->rw_sct==NULL;
@@ -1054,7 +1081,7 @@ static os9err DevSize( rbfdev_typ* dev )
             // - get sector size of SCSI device
             err= Get_SSize( &dev->scsi, &ssize );
             if (err) return err; 
-            if (ssize>MIN_TMP_SCT_SIZE) return err; // cannot read sector 0 that big
+            err= CheckSectorSize( ssize ); if (err) return err; // can't read sector 0 that big
             // - use sector size of SCSI device for now
             dev->sctSize=ssize;
         }
@@ -1623,7 +1650,8 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
       return 1;
     } // if
 
-    if (mnt_sctSize>0) { dev->sctSize    = mnt_sctSize; }
+    if (mnt_sctSize>0) { err= CheckSectorSize( mnt_sctSize ); if (err) return err;
+                         dev->sctSize    = mnt_sctSize; }
                          dev->clusterSize= clu;
                          dev->sas        = DD__MINALLOC;
 
