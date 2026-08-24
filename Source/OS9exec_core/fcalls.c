@@ -270,7 +270,14 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
     Boolean  exedir= IsExec(mode) || (mode==0) || (mode==0x80);
                                                        /* mode=0 is a strange default, */
                             /* but seems to be correct as default for exedir in 'load' */
-                               /* Attention !!! Colored memory (bit 7) is %%% ignored. */ 
+                    /* Colored memory (bit 7) is deliberately ignored. os9exec has one
+                       homogeneous arena, and that is the case the manual says needs no
+                       colour: "Colored memory lists are not essential on systems with RAM
+                       consisting of one homogeneous type ... The default memory allocation
+                       requests are still appropriate for most homogeneous systems and for
+                       applications which do not require one memory type over another"
+                       (v2.4 Technical Manual, Colored Memory). Honouring the bit would mean
+                       inventing regions to prefer between. See DECISIONS-68k.md. */
                                     
            
     p= nullterm(mpath,(char*)FROM68K(rp->a[0]),OS9PATHLEN);

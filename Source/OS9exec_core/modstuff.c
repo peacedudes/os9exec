@@ -603,7 +603,10 @@ void release_module(ushort mid, Boolean modOK)
     }
 
 
-// %%% simply forget the memory of the resources !! 
+// The commented-out block below is MacOS-classic resource-fork handling
+// (ReleaseResource/DisposeHandle), dead since the handle indirection went
+// away. It is NOT an outstanding leak: the live path a few lines down does
+// release_mem(mod) for every module that is not built in.
 //  #ifdef macintosh
 //    if (os9modules[mid].isBuiltIn) {
 //        UnlockMemRange(mod,(unsigned long) GetHandleSize(os9modules[mid].modulehandle));
