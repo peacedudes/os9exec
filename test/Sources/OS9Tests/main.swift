@@ -2364,6 +2364,100 @@ do {
     }
 }
 
+// ── module revision: a higher revision supersedes the resident module ─────────
+// M$Revs, v2.4 Technical Manual: "If two modules with the same name and type
+// are found in the memory search or loaded into memory, only the module with
+// the highest revision level is kept. This enables easy substitution of modules
+// for update or correction."
+//
+// Until 2026-08-24 os9exec kept whatever was already resident and discarded the
+// module it had just loaded, revision unread -- so rebuilding a module and
+// loading it did nothing, with no way to displace the old one. Both revisions
+// stay in memory on purpose: a process already running holds a link to the old
+// one and has to keep working. Only which one a SEARCH finds changes.
+//
+// The two modules must differ in revision and be otherwise interchangeable, so
+// they are the same source assembled twice, and each prints its own revision --
+// the assertion is which one RUNS, not what mdir lists. They are linked into
+// separate directories because the module name comes from l68's -o=, not from
+// the psect, so linking both as "revmod" is the only way to make the names
+// collide.
+do {
+    func revSource(_ rev: Int, _ tag: String) -> String {
+        [ "  use /dd/DEFS/oskdefs.d",
+          "",
+          "F$Exit   equ  $06",
+          "I$WritLn equ  $8C",
+          "",
+          "  psect revmod,(Prgrm<<8)+Objct,(ReEnt<<8)+\(rev),1,512,start",
+          "",
+          "start:",
+          "  lea     msg(pc),a0",
+          "  moveq   #msgl,d1",
+          "  moveq   #1,d0",
+          "  OS9     I$WritLn",
+          "  moveq   #0,d1",
+          "  OS9     F$Exit",
+          "",
+          "msg:  dc.b  \"\(tag)\",$0D",
+          "msgl  equ   *-msg",
+          "",
+          "  ends",
+          "" ].joined(separator: "\r")
+    }
+    try? FileManager.default.createDirectory(atPath: scratchDisk + "/reva",
+                                             withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(atPath: scratchDisk + "/revb",
+                                             withIntermediateDirectories: true)
+    try? revSource(1, "THIS-IS-REV1").write(toFile: scratchDisk + "/rev1.a",
+                                            atomically: true, encoding: .utf8)
+    try? revSource(2, "THIS-IS-REV2").write(toFile: scratchDisk + "/rev2.a",
+                                            atomically: true, encoding: .utf8)
+
+    let build = [
+        "load /dd/CMDS/r68 /dd/CMDS/l68",
+        "r68 /h5/rev1.a -o=/h5/rev1.r",
+        "r68 /h5/rev2.a -o=/h5/rev2.r",
+        "l68 /h5/rev1.r -o=/h5/reva/revmod",
+        "l68 /h5/rev2.r -o=/h5/revb/revmod",
+    ]
+
+    run("module: a higher revision supersedes the resident module",
+        expectation: "contains: THIS-IS-REV2",
+        commands: build + ["load /h5/reva/revmod", "load /h5/revb/revmod", "revmod"],
+        timeout: 30) { $0.contains("THIS-IS-REV2") }
+
+    // The companion, and it has to assert what the DISCARD branch controls, not
+    // what the search does. Asserting "revmod still prints REV2" would be
+    // vacuous: find_mod_id returns the highest revision either way, so that
+    // passes even if the loader keeps every module it is handed -- verified by
+    // sabotage. What the discard actually decides is whether a second copy
+    // stays in memory, so count the entries: two after a higher revision is
+    // loaded, still one after a lower one is refused.
+    // Count only inside mdir's listing: the shell echoes every command, and the
+    // build lines carry "revmod" in their -o= paths, so counting the whole
+    // transcript counts those too.
+    func mdirEntries(_ out: String) -> Int {
+        guard let listing = out.range(of: "Module Directory", options: .backwards)
+        else { return -1 }
+        return out[listing.upperBound...].components(separatedBy: "revmod").count - 1
+    }
+
+    run("module: a superseding revision leaves both in memory",
+        expectation: "mdir lists revmod twice",
+        commands: build + ["load /h5/reva/revmod", "load /h5/revb/revmod", "mdir"],
+        timeout: 30) { mdirEntries($0) == 2 }
+
+    run("module: a lower revision is not kept at all",
+        expectation: "mdir lists revmod once",
+        commands: build + ["load /h5/revb/revmod", "load /h5/reva/revmod", "mdir"],
+        timeout: 30) { mdirEntries($0) == 1 }
+
+    for leftover in ["rev1.a", "rev2.a", "rev1.r", "rev2.r", "reva", "revb"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── F$Alarm: a fired alarm kills an active process (no F$Icpt handler) ─────────
 // 68k/syscall-reference.md flags this explicitly: A$Set's register contract and
 // A$Delete were Live-verified, but "actual signal delivery on firing not
