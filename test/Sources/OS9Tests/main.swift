@@ -2364,6 +2364,38 @@ do {
     }
 }
 
+// ── icopy must not report success for bytes it did not deliver ───────────────
+// An internal command is host C run to completion: it never returns to the
+// scheduler. When a pipe fills, the pipe manager queues a system task to finish
+// the write later and returns 0 -- correct for a 68k program, which gets
+// resumed, but for an internal command that task never runs. `icopy` was told
+// "all bytes written" and believed it: a 10000-byte file copied into a pipe
+// delivered 4096 and reported success.
+//
+// Two halves: the pipe manager now reports the count it actually wrote when the
+// caller cannot park, and icopy checks the count instead of assuming it got
+// what it asked for. The copy still cannot complete -- that would need icopy to
+// be parkable -- but it fails loudly instead of losing data quietly.
+//
+// file-to-file and file-to-SCF are unaffected and were measured so: a full disk
+// already reported E$FULL, and /term took all 10000 bytes.
+do {
+    let big = String(repeating: "X", count: 10000)
+    try? big.write(toFile: scratchDisk + "/icbig", atomically: true, encoding: .utf8)
+
+    check("icopy: a destination that cannot take it all reports an error",
+        contains: "245",
+        "icopy /h5/icbig /pipe/icp")
+
+    check("icopy: file to file still copies whole",
+        contains: "10000",
+        "icopy /h5/icbig /h5/iccopy", "dir -e /h5")
+
+    for leftover in ["icbig", "iccopy"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── F$SRqMem at the block limit reports E$MemFul, not E$NoRAM ────────────────
 // E$MemFul (207), v2.4 Technical Manual: "MEMORY FULL - The process will not
 // execute because there is not enough contiguous RAM free. This can ALSO occur
