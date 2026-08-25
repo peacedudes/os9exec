@@ -97,6 +97,7 @@ echo "-- build and static checks"
 stage "native build (warning-free)"      make -B
 stage "build the self-contained disk"     tools/selfhost68k/build-image.sh
 stage "warning sweep, 4 toolchains, -O2" tools/verify-warnings.sh
+stage "embedded 68k modules intact"      tools/check-embedded-modules.py
 
 echo "-- the emulator, on this machine"
 stage "integration suite (tick on)"      make test

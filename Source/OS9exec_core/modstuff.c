@@ -197,6 +197,11 @@ const byte OS9exec_mod[] MODALIGN = {
 };
 mod_exec* OS9exec_ptr= (mod_exec*)OS9exec_mod;   /* ptr to OS9exec module */
 #define sizeof_OS9exec_mod 162
+/* The size constant is hand-written and the array beside it is 100+ lines of
+   hex; nothing tied the two together. A constant left behind by an edit
+   would hand F$Link a length that does not match the module. */
+_Static_assert( sizeof(OS9exec_mod)==sizeof_OS9exec_mod,
+                "sizeof_OS9exec_mod does not match the array" );
     
 
 
@@ -228,6 +233,11 @@ const byte Init_mod[] MODALIGN = {
 };
 mod_exec* Init_ptr= (mod_exec*)Init_mod;   /* ptr to Init module */
 #define sizeof_Init_mod 366
+/* The size constant is hand-written and the array beside it is 100+ lines of
+   hex; nothing tied the two together. A constant left behind by an edit
+   would hand F$Link a length that does not match the module. */
+_Static_assert( sizeof(Init_mod)==sizeof_Init_mod,
+                "sizeof_Init_mod does not match the array" );
 
 
 /* "socket" builtin module, defined as constant array */
@@ -253,6 +263,11 @@ const byte Socket_mod[] MODALIGN = {
 };
 mod_exec* Socket_ptr= (mod_exec*)Socket_mod;   /* ptr to socket module */
 #define sizeof_Socket_mod 280
+/* The size constant is hand-written and the array beside it is 100+ lines of
+   hex; nothing tied the two together. A constant left behind by an edit
+   would hand F$Link a length that does not match the module. */
+_Static_assert( sizeof(Socket_mod)==sizeof_Socket_mod,
+                "sizeof_Socket_mod does not match the array" );
 
 
 /* "le0" builtin module, defined as constant array */
@@ -272,6 +287,11 @@ const byte Le0_mod[] MODALIGN = {
 };
 mod_exec* Le0_ptr= (mod_exec*)Le0_mod;   /* ptr to le0 module */
 #define sizeof_Le0_mod 188
+/* The size constant is hand-written and the array beside it is 100+ lines of
+   hex; nothing tied the two together. A constant left behind by an edit
+   would hand F$Link a length that does not match the module. */
+_Static_assert( sizeof(Le0_mod)==sizeof_Le0_mod,
+                "sizeof_Le0_mod does not match the array" );
 
 
 
