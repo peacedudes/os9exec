@@ -581,6 +581,15 @@ static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
             cp->systask= wr_func;
             cp->systaskdataP= (void *) spP;
             /* leave it as systask */
+
+            /* An internal command is host C run to completion: it never returns
+               to the scheduler, so the system task queued just above will not
+               run for it and the remainder will never reach the pipe. Leaving
+               <lenP> at the requested count would report those bytes written
+               when they were dropped -- `icopy` of a 10000-byte file into a
+               pipe delivered 4096 and reported success. A short count is the
+               honest answer, and the caller can act on it. */
+            if (cp->isIntUtil) *lenP= p->bwritten;
         }
     }
     else {

@@ -1575,7 +1575,7 @@ os9err int_icopy( ushort pid, int argc, char** argv )
     Boolean   inOpen= false, outOpen= false;
     ptype_typ tIn, tOut;
     char      src[OS9PATHLEN], dst[OS9PATHLEN];
-    uint32_t  size= 0, done, len;
+    uint32_t  size= 0, done, len, wrote;
     ushort    svAtt;
     byte      buffer[ICOPY_CHUNK];
     int       h, nargc= 0;
@@ -1641,7 +1641,16 @@ os9err int_icopy( ushort pid, int argc, char** argv )
 
                 err= usrpath_read ( pid, inP,  &len, buffer, false ); if (err) break;
             if (len==0) { err= E_EOF; break; } /* fewer bytes than SS_Size promised */
-                err= usrpath_write( pid, outP, &len, buffer, false ); if (err) break;
+
+            /* A write can legitimately place fewer bytes than it was offered,
+               and the count comes back in <wrote>. Ignoring it silently loses
+               the difference: the read has already advanced the source past
+               those bytes, so the next pass starts after them and the copy is
+               short with nothing reported. Copying into a pipe did exactly
+               that. E$Write says the destination would not take it all. */
+                wrote= len;
+                err= usrpath_write( pid, outP, &wrote, buffer, false ); if (err) break;
+            if (wrote<len) { err= os9error(E_WRITE); break; }
         } /* for */
     } while (false);
 
