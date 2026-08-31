@@ -721,6 +721,17 @@ Boolean mnt_imgMode  = false;
 /* ======== */
 
 
+/* True if <entry> is an MPW-style "@NAME\0VALUE" environment entry, whose value
+   lives past the name's terminator, rather than the "@NAME=VALUE" single string
+   every hosted C runtime supplies. Only prepParams() needs this, and it needs
+   the two loops that walk envp[] to agree about it: one sizes the block, the
+   other fills it, and a disagreement writes past the end. */
+static Boolean hasEnvValueAfterNUL( const char* entry )
+{
+    return strchr( entry,'=' )==NULL;
+} /* hasEnvValueAfterNUL */
+
+
 /* prepare parameter area from argv/argc envp
  * Note: If routine exits w/o error, it has malloc()-ed a block at pap
  *       containing the parameter structure which must be freed afterwards.
@@ -749,10 +760,23 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    /* -- calculate environment string size */
    for (envsiz=0,k=0,os9envc=0;envp[k]!=NULL && *envp[k]!=0;k++) {
       if (*envp[k]=='@') {
-         /* -- OS-9 environment variables must start with a '@' */			
-         h=strlen(envp[k]); /* env variable name */
-   		debugprintf(dbgStartup,dbgDeep,("# prepParams: counting envp[%d]='%s', len=%d, reserved=%lu\n",k,envp[k],h,(unsigned long)(h+strlen(envp[k]+h+1)+1)));
-         envsiz+=h+strlen(envp[k]+h+1)+1; /* env variable contents plus one for the '=' */
+         /* -- OS-9 environment variables must start with a '@' */
+         /* Two envp[] shapes reach this code. Every hosted C runtime -- POSIX
+          * and Windows alike -- passes one NUL-terminated string per variable,
+          * "@NAME=VALUE". MPW, which this routine was written for, passed
+          * "@NAME\0VALUE": name, NUL, then value, so the value had to be
+          * fetched from past the name's terminator and joined back on with an
+          * '='. The '=' is what tells the two apart. Applying the MPW
+          * arithmetic to a POSIX entry reads envp[k]+strlen(envp[k])+1, which
+          * is the NEXT environment string, and the guest then sees its
+          * variable's value with that string glued on -- PORT arriving as
+          * "/term=@TERM=vt100", and the host's own OS9DISK path leaking into
+          * guest-visible data. Both branches must reserve exactly what the
+          * copy loop below writes, separator included. */
+         h=strlen(envp[k]); /* whole entry, '@' included */
+         envsiz+= hasEnvValueAfterNUL(envp[k]) ? h+strlen(envp[k]+h+1)+1 /* MPW: name + '=' + value + separator */
+                                               : h;                     /* POSIX: "NAME=VALUE" + separator */
+   		debugprintf(dbgStartup,dbgDeep,("# prepParams: counting envp[%d]='%s', len=%d, reserved so far=%lu\n",k,envp[k],h,(unsigned long)envsiz));
          os9envc++; /* count OS-9 environment variables */
       }
    }
@@ -799,25 +823,33 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    SET_OS9L( p,0, (uint32_t)(p+4-pp) ); /* set argv[0] offset */
    p-=2; SET_OS9W( p,0, 0xFC01 ); /* special sync code */
    /* --- environment variable strings */
-   if ((envsiz & 1)==0) *(--p)=0; /* align needed if even envsize */
    p-=1; *p=0; /* environment variables terminator */
    p-=envsiz; /* reserve space for environment strings */
-   hp=p;
+   hp=p; /* the strings themselves start here */
+   /* Pad an even-length environment so the FC01 word above it stays 2-aligned.
+      The pad belongs BELOW the strings: put it above them, between the
+      terminating NUL and FC01, and the Microware shell cannot parse the area it
+      is handed -- given a procedure file to run it prints a garbled name and
+      refuses it. A C program's cstart reads either shape, so this is visible
+      only through the shell, and only when the shell has a path argument. */
+   if ((envsiz & 1)==0) *(--p)=0;
    debugprintf(dbgStartup,dbgDeep,("# prepParams: Starting to write envs at %p, memstart=%p\n",hp,pp));
    k=0;
    while (os9envc) {
       if (*envp[k]=='@') {
          /* --- it is an OS-9 environment variable */
+         byte* entry= hp; /* where this variable's text starts, for the trace below */
          SET_OS9L( elp,0, (uint32_t)((ulong)hp-(ulong)pp) ); elp+=4; /* set offset */
-         strcpy( (char*)hp, envp[k]+1 ); /* copy the environment variable name, but without the '@' */
-         h=strlen(envp[k])-1; /* size of variable name without '@' */
-   		debugprintf(dbgStartup,dbgDeep,("# prepParams: envp[%d] name='%s', len=%d",k,envp[k]+1,h));
+         strcpy( (char*)hp, envp[k]+1 ); /* copy the entry without the '@' -- on a hosted
+                                            runtime that is the whole "NAME=VALUE" already */
+         h=strlen(envp[k])-1; /* size of what was just copied */
          hp+=h; /* advance pointer */
-         *hp++='='; /* insert '=' between name and value */
-         strcpy( (char*)hp, envp[k]+h+2 ); /* copy contents of the variable */
-         h=strlen(envp[k]+h+2); /* size of contents */
-   		debugprintf(dbgStartup,dbgDeep,(", contents='%s', len=%d\n",hp,h));
-         hp+=h; /* advance pointer */
+         if (hasEnvValueAfterNUL(envp[k])) { /* MPW: the value sits past the name's NUL */
+            *hp++='='; /* insert '=' between name and value */
+            strcpy( (char*)hp, envp[k]+h+2 ); /* copy contents of the variable */
+            hp+=strlen(envp[k]+h+2); /* advance pointer */
+         } /* if */
+   		debugprintf(dbgStartup,dbgDeep,("# prepParams: envp[%d] -> '%s'\n",k,(char*)entry));
          os9envc--;
          if (os9envc==0) break;
          *(hp++)=' '; /* add space, if more vars follow */
@@ -840,7 +872,7 @@ static os9err prepParams(mod_exec *theModule, char **argv,int argc, char**envp, 
    }
    *psiz=paramsiz; /* return parameter size */
    *pap=pp; /* return pointer to prepared parameter area */
-   return 0; 
+   return 0;
 } /* prepParams */
 
 

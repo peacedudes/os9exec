@@ -180,9 +180,14 @@ func killContainer(_ name: String) {
 // `flags` adds emulator flags for ONE call, which OS9_FLAGS (whole-run, read
 // from the parent's environment) cannot express. Applied to both the local and
 // the containerized argument lists, so a test using it still runs in a container.
+//
+// `bootArgs` are arguments to the BOOT PROGRAM, appended after the shell's own
+// name. The shell's parameter area is shaped differently when it has arguments
+// than when it has none, and a defect can live in one shape and not the other --
+// which is why this exists rather than the tests all running argument-less.
 func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bool = false,
          disk: String = diskPath, env: [String: String] = [:],
-         flags: [String] = [], holdOpen: TimeInterval = 0) -> String {
+         flags: [String] = [], bootArgs: [String] = [], holdOpen: TimeInterval = 0) -> String {
     let setup  = "chx \(sdkCmds)\nload math cio\n"
     // ESC then Ctrl-D: EOF is a per-path setting, not a constant. A site whose
     // `.login` runs `tmode eof=04` (a normal thing to do -- it matches Unix)
@@ -286,16 +291,16 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
         // Run via Docker: mount local dd directory and pipe stdin/stdout
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["docker", "run"] + containerRunArgs + callerEnvArgs
-                          + [image] + speedFlag + ["shell"]
+                          + [image] + speedFlag + ["shell"] + bootArgs
     } else if let image = containerImage {
         // Run via Apple Container: mount local dd directory and pipe stdin/stdout
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["container", "run"] + containerRunArgs + callerEnvArgs
-                          + [image] + speedFlag + ["shell"]
+                          + [image] + speedFlag + ["shell"] + bootArgs
     } else {
         // Run locally: OS9DISK points straight at the operator's system disk.
         process.executableURL = execURL
-        process.arguments    = speedFlag + [shellArg]
+        process.arguments    = speedFlag + [shellArg] + bootArgs
         // OS9H5 gets the PHYSICALLY RESOLVED scratch path, not scratchDisk's own
         // spelling. On macOS NSTemporaryDirectory() is /var/folders/... while the
         // emulator computes its startPath (and thus every `mount -k` device root)
@@ -829,6 +834,57 @@ if dockerImage == nil, containerImage == nil {
 // setenv must persist for subsequent commands in the same shell session
 check("setenv: visible in printenv",    contains: "TESTVAR=hello",
     "setenv TESTVAR hello", "printenv")
+
+// A host variable named with a leading '@' becomes an OS-9 environment variable
+// for the first process. prepParams() built that block the way MPW passed
+// envp[] -- "@NAME\0VALUE", name then NUL then value -- so on a POSIX or
+// Windows host, where the entry is the single string "@NAME=VALUE", it read
+// past the entry's own NUL and appended the NEXT environment string as the
+// value: PORT reached the guest as "/term=@TERM=vt100", and with two such
+// variables the parameter area came out malformed enough that the boot program
+// could not run at all. Both halves of the check earn their place -- the
+// `contains` fails if the variable stops arriving, the `absent` fails if the
+// following string is glued back on.
+run("startup: a host @VAR reaches the guest unmangled",
+    expectation: "OS9TESTV=probe0000, with nothing appended to the value",
+    commands: ["printenv"],
+    env: ["@OS9TESTV": "probe0000", "@OS9TESTZ": "tail"]) {
+    $0.contains("OS9TESTV=probe0000") && !$0.contains("probe0000=")
+}
+
+// The parameter area carries a pad byte when the environment text has even
+// length, so that the FC01 marker above it stays word-aligned. That pad used to
+// sit between the environment's terminating NUL and FC01, and the Microware
+// shell's own parser could not read the result: given a procedure file to run,
+// it printed a garbled name and refused it ("<garbage>: can't execute"). A C
+// program's cstart parsed the same block happily, which is why this hid -- it is
+// visible only through the shell, and only when the shell has a path argument.
+// The pad now sits below the strings, keeping the [strings][NUL][FC01] adjacency
+// the shell needs.
+//
+// Both parities run: the odd one takes no pad at all and so proves the case is
+// not simply broken everywhere, the even one is the regression. Verified to fail
+// against a binary carrying the fix above but not this one.
+let padName = "startup: the parameter area's alignment pad does not break the shell"
+if filter.isEmpty || padName.localizedCaseInsensitiveContains(filter) {
+    let proc = scratchDisk + "/envpad"
+    try? "printenv\r".write(toFile: proc, atomically: true, encoding: .utf8)
+    let padded   = os9([], env: ["@OS9PAD": "x"],  bootArgs: ["/\(scratchDev)/envpad"])
+    let unpadded = os9([], env: ["@OS9PAD": "xx"], bootArgs: ["/\(scratchDev)/envpad"])
+
+    let evenOK = padded.contains("OS9PAD=x")   && !padded.contains("OS9PAD=x=")
+    let oddOK  = unpadded.contains("OS9PAD=xx") && !unpadded.contains("OS9PAD=xx=")
+
+    if evenOK && oddOK {
+        print("PASS: \(padName)")
+        passed += 1
+    } else {
+        print("FAIL: \(padName)")
+        if !oddOK  { print("      the UNPADDED shape failed too -- this is not the pad, the geometry is broken") }
+        if !evenOK { print("      the padded shape lost the environment or the shell would not run") }
+        failed += 1
+    }
+}
 
 // three-stage pipe: exercises the pipe scheduler end-to-end
 check("pipe: three-stage chain",        contains: "1",
