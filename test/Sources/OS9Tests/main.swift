@@ -2522,6 +2522,85 @@ do {
     }
 }
 
+// ── a failed allocation is reported once in the emulator's voice, not forever ──
+// os9exec's diagnostics go out on the CURRENT PROCESS's stderr. This one used to
+// go out bare, so it was indistinguishable from something the program had
+// printed -- an ABI mismatch in a guest library was read as an emulator fault
+// for three days across two sessions on that account -- and it went out once per
+// failure, so one runaway guest allocator buried the program's own output under
+// 439,689 copies of it.
+//
+// The module asks for a gigabyte forty times, which cannot be satisfied in a
+// 32 MB arena and does not depend on how much of the arena anything else has
+// taken. Three assertions, because each covers a different way to get this
+// wrong: the "# " proves the line is marked as os9exec speaking; the cap proves
+// the flood is bounded; the tally proves the suppressed ones are still counted
+// rather than quietly dropped. Verified to fail against the pre-fix binary,
+// which printed forty unmarked lines and no tally.
+do {
+    let floodAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$SRqMem equ  $28",
+        "",
+        "  psect memflood,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "",
+        "start:",
+        "  moveq   #40,d2",
+        "askagain:",
+        "  move.l  #$40000000,d0",     // 1 GB: never satisfiable in a 32 MB arena
+        "  OS9     F$SRqMem",          // ignore the error on purpose
+        "  subq.l  #1,d2",
+        "  bne     askagain",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    try? floodAsm.write(toFile: scratchDisk + "/memflood.a", atomically: true, encoding: .utf8)
+
+    let floodName = "memory: a failed allocation is announced a few times, then tallied"
+    if filter.isEmpty || floodName.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/memflood.a -o=/h5/memflood.r",
+            "l68 /h5/memflood.r -o=/h5/memflood",
+            "/h5/memflood"
+        ], timeout: 30)
+
+        // Split on CR as well as LF: OS-9 ends a line with CR, so a run's guest
+        // output is one \n-delimited chunk and a naive split counts the whole
+        // flood as a single line -- which made this test pass against a binary
+        // that printed forty of them.
+        let lines   = out.replacingOccurrences(of: "\r", with: "\n")
+                         .split(separator: "\n").filter { $0.contains("No more memory") }
+        let marked  = lines.allSatisfy { $0.contains("#") }
+        let bounded = lines.count <= 6
+        let tallied = out.contains("40 allocation failures in total")
+
+        if marked && bounded && tallied {
+            print("PASS: \(floodName)")
+            passed += 1
+        } else {
+            print("FAIL: \(floodName)")
+            print("      saw \(lines.count) 'No more memory' line(s)")
+            for l in lines.prefix(3) { print("      | \(l.trimmingCharacters(in: .whitespacesAndNewlines))") }
+            if lines.isEmpty { print("      nothing was reported at all -- the request was satisfied, so this proves nothing") }
+            if !marked  { print("      a line went out unmarked, readable as the program's own output") }
+            if !bounded { print("      \(lines.count) lines: the flood is not bounded") }
+            if !tallied { print("      the suppressed failures were dropped, not counted") }
+            failed += 1
+        }
+    }
+
+    for leftover in ["memflood.a", "memflood.r", "memflood"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── module revision: a higher revision supersedes the resident module ─────────
 // M$Revs, v2.4 Technical Manual: "If two modules with the same name and type
 // are found in the memory search or loaded into memory, only the module with

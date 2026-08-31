@@ -1066,6 +1066,11 @@ void os9_main( int argc, char **argv, char **envp )
   // always one new line              
   upo_printf( "\n" );
     
+  // A run whose allocation failures were suppressed still says how many there
+  // were; silent otherwise. Before the end message, so it reads as part of the
+  // run rather than after it.
+  report_mem_failures();
+
   // end message, if <withTitle> = calling shell/sh
   if (withTitle) upho_printf( "OS-9 emulation ends here.\n" );
   

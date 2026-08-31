@@ -681,6 +681,45 @@ void free_mem(ushort pid)
 
 
 
+/* Allocation failures: announce a few, then count. os9exec's diagnostics go out
+   on the CURRENT PROCESS's stderr, so an unbounded stream of them does not
+   merely fill a log -- it interleaves the emulator's voice with the program's
+   own output, and the program's real output is what the user came for. One
+   runaway guest allocator produced 439,689 copies of this single line.
+
+   The line is emitted through uphe_printf, not upe_printf, so it carries the
+   "# " that marks everything os9exec says in its own voice: the bare form was
+   indistinguishable from something the program had printed, and was read as a
+   program fault for three days. It says only what os9exec knows -- the size
+   asked for and the state of the arena -- and diagnoses nothing: an ordinary
+   program that has genuinely run out of room reaches this same line. */
+#define MEMFAIL_ANNOUNCE 3          /* announce this many, then keep the tally */
+static uint32_t memFailures= 0;
+
+static void alloc_failed( ulong memsz, const char* why )
+{
+    memFailures++;
+    if (memFailures> MEMFAIL_ANNOUNCE) return;
+
+    uphe_printf( "No more memory: %lu-byte request refused%s, %lu bytes free in a %lu-byte arena\n",
+                 (unsigned long)memsz, why,
+                 (unsigned long)emul_arena_free(), (unsigned long)emul_arena_size );
+    if (memFailures==MEMFAIL_ANNOUNCE)
+        uphe_printf( "No more memory: further failures are counted, not printed\n" );
+} /* alloc_failed */
+
+
+void report_mem_failures( void )
+/* Called once as the emulator shuts down, so a run whose failures were
+   suppressed still says how many there were. Silent when nothing failed, and
+   silent when everything that failed was already printed. */
+{
+    if (memFailures> MEMFAIL_ANNOUNCE)
+        upho_printf( "No more memory: %lu allocation failures in total\n",
+                     (unsigned long)memFailures );
+} /* report_mem_failures */
+
+
 void* get_mem( ulong memsz )
 /* process independent part of memory allocation */
 {
@@ -778,10 +817,7 @@ void* get_mem( ulong memsz )
         } /* for */
     } /* if */
     
-  //#ifndef PLUGIN_DLL
-    upe_printf( "No more memory !!!\n" );
-  //#endif
-    
+    alloc_failed( memsz, "" );
     return NULL;
 } /* get_mem */
 
@@ -814,9 +850,7 @@ void* os9malloc( ushort pid, ulong memsz, os9err* whyP )
         release_mem( pp ); pp= NULL;
         if (whyP!=NULL) *whyP= os9error(E_MEMFUL);
         
-      //#ifndef PLUGIN_DLL
-        upe_printf( "No more memory (MAXMEMBLOCKS) !!!\n" );
-      //#endif
+        alloc_failed( memsz, " at the per-process block limit" );
     } // if
    
     debugprintf(dbgMemory,dbgNorm,("# os9malloc:  allocate block #%-2d at %p (size=%5u) %8u pid=%d\n",
