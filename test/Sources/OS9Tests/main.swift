@@ -2577,11 +2577,15 @@ do {
         // that printed forty of them.
         let lines   = out.replacingOccurrences(of: "\r", with: "\n")
                          .split(separator: "\n").filter { $0.contains("No more memory") }
-        let marked  = lines.allSatisfy { $0.contains("#") }
-        let bounded = lines.count <= 6
-        let tallied = out.contains("40 allocation failures in total")
+        let marked   = lines.allSatisfy { $0.contains("#") }
+        let bounded  = lines.count <= 8
+        let tallied  = out.contains("40 allocation failures in total")
+        // The escalating line is what a program stuck in a failing loop shows:
+        // it never shuts the emulator down, so the total above never prints and
+        // silence would read as a hang rather than a fault.
+        let escalates = out.contains("10 allocation failures so far")
 
-        if marked && bounded && tallied {
+        if marked && bounded && tallied && escalates {
             print("PASS: \(floodName)")
             passed += 1
         } else {
@@ -2592,6 +2596,7 @@ do {
             if !marked  { print("      a line went out unmarked, readable as the program's own output") }
             if !bounded { print("      \(lines.count) lines: the flood is not bounded") }
             if !tallied { print("      the suppressed failures were dropped, not counted") }
+            if !escalates { print("      no escalating line: a storming program that never exits stays silent") }
             failed += 1
         }
     }

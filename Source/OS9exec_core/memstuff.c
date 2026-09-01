@@ -693,26 +693,43 @@ void free_mem(ushort pid)
    program fault for three days. It says only what os9exec knows -- the size
    asked for and the state of the arena -- and diagnoses nothing: an ordinary
    program that has genuinely run out of room reaches this same line. */
-#define MEMFAIL_ANNOUNCE 3          /* announce this many, then keep the tally */
+#define MEMFAIL_ANNOUNCE 3          /* announce each of the first few in full */
 static uint32_t memFailures= 0;
+static uint32_t memFailNext= 10;    /* next count worth saying something at */
 
 static void alloc_failed( ulong memsz, const char* why )
+/* Announce the first few in full, then once per power of ten.
+   Neither extreme is usable. Printing every failure interleaved 439,689 lines
+   with one program's output. But printing only the first few, with the tally
+   held back until the emulator shuts down, is worse in the case that matters
+   most: a program stuck in a failing allocation loop NEVER shuts the emulator
+   down, so it went completely silent -- five minutes of nothing, which reads as
+   a hang rather than as a fault. Escalating keeps the evidence coming while the
+   volume stays logarithmic: that same storm now says something eight times
+   instead of 439,689, and says it while the program is still running. */
 {
     memFailures++;
-    if (memFailures> MEMFAIL_ANNOUNCE) return;
 
-    uphe_printf( "No more memory: %lu-byte request refused%s, %lu bytes free in a %lu-byte arena\n",
-                 (unsigned long)memsz, why,
-                 (unsigned long)emul_arena_free(), (unsigned long)emul_arena_size );
-    if (memFailures==MEMFAIL_ANNOUNCE)
-        uphe_printf( "No more memory: further failures are counted, not printed\n" );
+    if (memFailures<=MEMFAIL_ANNOUNCE) {
+        uphe_printf( "No more memory: %lu-byte request refused%s, %lu bytes free in a %lu-byte arena\n",
+                     (unsigned long)memsz, why,
+                     (unsigned long)emul_arena_free(), (unsigned long)emul_arena_size );
+        return;
+    } /* if */
+
+    if (memFailures==memFailNext) {
+        uphe_printf( "No more memory: %lu allocation failures so far, still failing (latest %lu bytes)\n",
+                     (unsigned long)memFailures, (unsigned long)memsz );
+        memFailNext*= 10;
+    } /* if */
 } /* alloc_failed */
 
 
 void report_mem_failures( void )
-/* Called once as the emulator shuts down, so a run whose failures were
-   suppressed still says how many there were. Silent when nothing failed, and
-   silent when everything that failed was already printed. */
+/* Called once as the emulator shuts down, so a run that ends normally states
+   its total. Silent when nothing failed, and silent when every failure was
+   already announced in full -- the escalating line above is what covers a run
+   that never reaches this point. */
 {
     if (memFailures> MEMFAIL_ANNOUNCE)
         upho_printf( "No more memory: %lu allocation failures in total\n",
