@@ -1233,7 +1233,36 @@ static os9err RootLSN( _pid_, rbfdev_typ* dev, syspath_typ* spP, Boolean ignore 
     dev->mapSize    = GET_OS9W(dev->tmp_sct, MAP_POS);
     dev->clusterSize= GET_OS9W(dev->tmp_sct, BIT_POS);
     dev->root_fd_nr = GET_OS9L(dev->tmp_sct, DIR_POS) >> BpB;
-    
+
+    /* LSN 0 is data the IMAGE chose, and two of these fields are used as
+       DIVISORS while a third sizes a scan -- so a corrupt or hostile image
+       reaches host arithmetic before any OS-9 level check ever runs.
+       clusterSize==0 divides by zero in AllocBit()/DevSize(): silently 0 on
+       arm64, but SIGFPE on x86, which is what the Linux and Windows builds
+       are. An oversized mapSize makes the allocator count clusters the media
+       does not have -- measured with DD_MAP=$FFFF on a 504K image, `free`
+       reported "128 Mb of 504 Kb free on media (26003%)" and the map scan read
+       directory and file sectors as allocation bits.
+       Refuse the structurally impossible here, once, rather than defending
+       every divide downstream. The bound is deliberately slack -- rounded up
+       to a whole sector, because a real formatter may pad the map, and
+       refusing a legitimate disk would be a far worse bug than this one.
+       Found by tools/fuzz-rbf-image.sh's targeted probes. */
+    {   uint32_t totClu, needBytes, maxMap;
+        if (dev->clusterSize==0 ||
+            (dev->clusterSize & (dev->clusterSize-1))!=0) return E_BTYP;
+        if (dev->mapSize==0)                              return E_BTYP;
+        totClu   = (dev->totScts + dev->clusterSize-1)/dev->clusterSize;
+        needBytes= (totClu       + BpB-1)             /BpB;
+        maxMap   = ((needBytes + dev->sctSize-1)/dev->sctSize)*dev->sctSize;
+        if (dev->mapSize>maxMap) {
+            debugprintf(dbgFiles,dbgNorm,
+              ("# RootLSN: map size %d exceeds the %d this media can need, E_BTYP\n",
+                  dev->mapSize, maxMap ));
+            return E_BTYP;
+        }
+    }
+
     spP->u.rbf.fd_nr=  dev->root_fd_nr;
     err= ChkIntegrity( dev,spP, dev->tmp_sct, ignore );
     return err;
