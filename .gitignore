@@ -74,3 +74,23 @@ dd
 .claude/
 docs/superpowers/
 tools/audit-patterns.py
+
+# test/68k-utils/ ships SOURCES only. Its compiled modules cannot be committed:
+# they are built with cc -I against the shared `cio` trap handler, which keeps them
+# small (load is ~4K rather than 16848), but the vendor's cstart and C library are
+# linked in regardless -- not ours to redistribute, whoever's disk they came from.
+# (A build against $OS9SDK is at least free of the licensee watermark; see
+# test/68k-utils/readme.) cio itself is borrowed from a system disk for a test run
+# and removed again, never kept here. Build them on demand with
+# tools/68k-utils/build.sh. This is the same rule the rest of the tree follows:
+# test/68k-live-verification ships .a and .c only, and CONF68K's CMDS can ship
+# precisely because every byte of those modules is hand-written assembly of ours.
+/test/68k-utils/CMDS/*
+!/test/68k-utils/CMDS/readme
+/test/68k-utils/SCRATCH/*
+!/test/68k-utils/SCRATCH/readme
+# ...and the copy tools/conformance.sh installs into the suite so t49 has a
+# `load` to fork. Every leg removes it on the way out; this is the belt for the
+# run that was interrupted before it could.
+/test/68k-conformance/CMDS/load
+/test/68k-conformance/CMDS/cio
