@@ -107,6 +107,15 @@ rc=0
 # compilers interleave mid-line, a split "warning:" stops matching, and the
 # count silently under-reports -- the check could then no longer fail. If make
 # is too old to sync, build serially instead.
+# sparc64's emulated IDE is this fleet's weak point: a build's sustained write
+# traffic has twice broken it -- once tripping ext4's errors=remount-ro so the
+# guest went READ-ONLY mid-leg, once hanging the guest outright for hours. So
+# build in RAM when there is room for it. Fewer disk writes, and faster.
+BUILDROOT=/tmp
+shm_free=$(df -Pm /dev/shm 2>/dev/null | awk 'NR==2{print $4}')
+[ "${shm_free:-0}" -ge 1024 ] 2>/dev/null && BUILDROOT=/dev/shm
+echo "  building in $BUILDROOT (${shm_free:-0}MB free in /dev/shm)"
+
 J=$(nproc 2>/dev/null || echo 1)
 PAR="-j$J -O"
 make --help 2>/dev/null | grep -q -- --output-sync \
@@ -114,19 +123,19 @@ make --help 2>/dev/null | grep -q -- --output-sync \
 
 for CC in gcc clang; do
     command -v $CC >/dev/null 2>&1 || { echo "  $CC: not installed, skipped"; continue; }
-    rm -rf /tmp/b-$CC; mkdir -p /tmp/b-$CC
+    rm -rf $BUILDROOT/b-$CC; mkdir -p $BUILDROOT/b-$CC
     # grep -c EXITS 1 WHEN IT COUNTS ZERO, so `|| true` -- without it the check
     # could only fail when the build was clean.
-    n=$(make $PAR -B CC=$CC OBJDIR=/tmp/b-$CC EXE=/tmp/b-$CC/os9exec prod 2>&1 | grep -cE "warning:" || true)
+    n=$(make $PAR -B CC=$CC OBJDIR=$BUILDROOT/b-$CC EXE=$BUILDROOT/b-$CC/os9exec prod 2>&1 | grep -cE "warning:" || true)
     echo "  $CC -O2: $n warnings"
     [ "$n" = 0 ] || rc=1
 done
 
 # The gcc leg above already built `prod` with these very flags, just into
-# /tmp/b-gcc. Rebuilding it from scratch costs a ONE-CORE sparc64 guest
+# $BUILDROOT/b-gcc. Rebuilding it from scratch costs a ONE-CORE sparc64 guest
 # another hour for a byte-identical binary, so reuse it when it is there.
-if [ -x /tmp/b-gcc/os9exec ]; then
-    cp /tmp/b-gcc/os9exec ./os9exec || { echo "  could not place the gcc binary"; exit 1; }
+if [ -x $BUILDROOT/b-gcc/os9exec ]; then
+    cp $BUILDROOT/b-gcc/os9exec ./os9exec || { echo "  could not place the gcc binary"; exit 1; }
 else
     make $PAR -B CC=gcc prod >/dev/null 2>&1 || { echo "  build FAILED"; exit 1; }
 fi
