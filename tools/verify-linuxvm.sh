@@ -63,9 +63,23 @@ for CC in gcc clang; do
 done
 
 # Then prove the thing RUNS here, on both device types.
-make -B CC=gcc prod >/dev/null 2>&1
-./tools/conformance.sh 68k              | tail -2 | sed "s/^/  /" || rc=1
-./tools/conformance.sh 68k --noshell --rbf | tail -2 | sed "s/^/  /" || rc=1
+#
+# NOT `conformance.sh | tail -2 | sed || rc=1`. THE STATUS OF A PIPELINE IS THE
+# STATUS OF ITS LAST COMMAND, so that tested `sed`, which always succeeds: a
+# divergence printed
+# "CONFORMANCE: divergence reported above" and the leg still exited 0. This
+# check could not fail. Same defect was fixed in verify-sshvm.sh. `tail -2`
+# also cut off the CONF68K totals, leaving the verdict with no evidence.
+make -B CC=gcc prod >/dev/null 2>&1 || { echo "  build FAILED"; exit 1; }
+run_conf() {
+    ./tools/conformance.sh 68k "$@" > /tmp/conf.$$ 2>&1
+    st=$?
+    grep -E "CONF68K totals|CONFORMANCE|no OS9DISK" /tmp/conf.$$ | sed "s/^/  /"
+    rm -f /tmp/conf.$$
+    return $st
+}
+run_conf                 || rc=1
+run_conf --noshell --rbf || rc=1
 exit $rc
 ' || exit 1
 
