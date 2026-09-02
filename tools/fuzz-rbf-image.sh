@@ -70,6 +70,61 @@ PY
     fi
 done
 
+# ---------------------------------------------------------------------------
+# Targeted structural probes, with a PROPERTY oracle rather than a crash one.
+#
+# The random phase above watches for the emulator dying. That oracle is weak
+# here for the same reason tools/fuzz-module.sh documents: os9exec installs its
+# own SIGSEGV/SIGBUS handler that turns an unmapped read into a guest bus error
+# and exits 0, so rc never reaches 128. Worse, some corruption is not a crash
+# at all -- it is arithmetic on numbers the media cannot support.
+#
+# So these cases assert a PROPERTY: an identification sector that is
+# structurally impossible must be REFUSED, and a refused image cannot list a
+# directory. Offsets are the OS-9 Technical Manual's ("Disk File
+# Organization"): DD_TOT $00, DD_MAP $04, DD_BIT $06, DD_DIR $08, DD_LSNSize
+# $68.
+#
+# This phase found a real bug on 2026-09-02: DD_MAP was unvalidated, so a map
+# size of $FFFF on a 504K disk had `free` report "128 Mb of 504 Kb (26003%)"
+# and scanned directory and file sectors as allocation bits, while DD_BIT=0
+# reached a host divide -- silently 0 on arm64, SIGFPE on x86.
+echo "targeted structural probes:"
+
+probe() {   # $1=label  $2=offset  $3=size  $4=value  $5=must-list (yes/no)
+    python3 - "$seed" "$repo/hf" "$2" "$3" "$4" <<'PYEOF'
+import sys
+d = bytearray(open(sys.argv[1],'rb').read())
+off, size, val = int(sys.argv[3],0), int(sys.argv[4]), int(sys.argv[5],0)
+if size: d[off:off+size] = val.to_bytes(size,'big')
+open(sys.argv[2],'wb').write(d)
+PYEOF
+    out=$(printf 'mount /hf\ndir /hf\nfree /hf\n\033\n' \
+          | OS9DISK="${OS9DISK:-}" ./os9exec -r shell 2>&1)
+    rc=$?
+    listed=no
+    printf '%s' "$out" | grep -q "Directory of" && listed=yes
+    if [ "$listed" != "$5" ]; then
+        found=$((found+1))
+        printf '%s\n' "$out" > "$crashes/probe-$1.log"
+        echo "  FINDING $1: listed=$listed, expected $5 -- log in $crashes/probe-$1.log"
+    else
+        echo "  ok  $1 (listed=$listed)"
+    fi
+    [ "$rc" -ge 128 ] && echo "  FINDING $1: died rc=$rc"
+}
+
+# The CONTROL comes first and must LIST. It proves the oracle can tell the
+# two outcomes apart -- without it every probe below "passes" on a build that
+# refuses everything, or one whose shell is broken, and this whole phase
+# becomes unable to fail.
+probe control      0x00 0 0          yes
+probe dd_dir_wild  0x08 3 0xFFFFFF   no
+probe dd_map_wild  0x04 2 0xFFFF     no
+probe dd_bit_zero  0x06 2 0x0000     no
+probe dd_tot_wild  0x00 3 0xFFFFFF   no
+probe dd_lsnsz_bad 0x68 2 0xFFFF     no
+
 rm -f "$repo/hf"
 echo "done: $iters images, $found findings"
 [ "$found" -eq 0 ] || echo "reproduce with: cp $crashes/crash-N.img $repo/hf && printf 'mount /hf\\ndir /hf\\n\\033\\n' | ./os9exec -r shell"
