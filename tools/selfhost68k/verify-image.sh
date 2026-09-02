@@ -7,7 +7,7 @@
 #      OFF the image and compared with its source. A directory listing would
 #      only prove a NAME is present; this proves the bytes are.
 #   2. Does the suite RUN from the image and report the expected verdicts?
-#      All 48, checked against DOCS/expected-rbf -- an image is an RBF device,
+#      All 49, checked against DOCS/expected-rbf -- an image is an RBF device,
 #      so the record-locking tests must give real verdicts here rather than
 #      the SKIPs a host directory produces.
 #
@@ -51,7 +51,7 @@ echo "== 2. the suite runs from the image =="
 # program relative to the host working directory (a real defect, recorded in
 # ROADMAP-68k.md). tools/conformance.sh works around it the same way.
 printf 'RUN prebuilt\r' > "$SUITE/RESULTS/report"
-mods=$(ls "$SUITE/CMDS" | grep -vE '^(tally|mark)$' | sort)
+mods=$(ls "$SUITE/CMDS" | grep -vE '^(tally|mark|load|cio)$' | sort)
 for m in $mods; do
     line=$( cd "$OUT" && $TIMEOUT 60 env OS9DISK="$IMG" "$EXE" -r "/dd/CMDS/$m" \
             </dev/null 2>&1 | tr '\r' '\n' | grep -a '^RESULT ' )
@@ -64,10 +64,24 @@ skip=$(tr '\r' '\n' < "$SUITE/RESULTS/report" | grep -c ' SKIP ')
 erro=$(tr '\r' '\n' < "$SUITE/RESULTS/report" | grep -c ' ERROR ')
 echo "  PASS=$pass FAIL=$fail SKIP=$skip ERROR=$erro"
 
+# What the image is expected to do is whatever DOCS/expected-rbf records, not
+# "everything passes".  That stopped being the same thing when t49 arrived: it
+# measures the `load` utility, which is built from C and therefore carries the
+# vendor's runtime, so it is deliberately kept OFF a disk that gets handed to
+# somebody -- and t49 correctly reports SKIP there.  Three conditions, each
+# catching something a plain count would miss:
+#
+#   no FAIL, no ERROR            the obvious one
+#   pass + skip == every line    every test reported; silence is not a pass
+#   pass >= the recorded passes  a PASS that became a SKIP is a regression,
+#                                even though the reverse is not
 exp=$(tr '\r' '\n' < "$SUITE/DOCS/expected-rbf" | grep -c '^RESULT ')
-if [ "$pass" -ne "$exp" ] || [ "$fail" -ne 0 ] || [ "$erro" -ne 0 ]; then
-    echo "  expected $exp PASS and nothing else -- see $SUITE/RESULTS/report"
+exp_pass=$(tr '\r' '\n' < "$SUITE/DOCS/expected-rbf" | grep -c ' PASS ')
+if [ "$fail" -ne 0 ] || [ "$erro" -ne 0 ] \
+   || [ $((pass + skip)) -ne "$exp" ] || [ "$pass" -lt "$exp_pass" ]; then
+    echo "  expected $exp results, at least $exp_pass of them PASS, no FAIL or ERROR"
+    echo "  -- see $SUITE/RESULTS/report"
     exit 1
 fi
 echo
-echo "SELF-CONTAINED DISK OK -- $n files, $pass/$exp tests pass from the image"
+echo "SELF-CONTAINED DISK OK -- $n files, $pass PASS + $skip SKIP of $exp tests from the image"

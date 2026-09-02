@@ -75,7 +75,20 @@ copy_in() {   # copy_in <host-relative-path-under-suite> <path-on-image>
     printf '%s %s\n' "$dst" "$(wc -c < "$src" | tr -d ' ')" >> "$MANIFEST"
 }
 
-for m in "$SUITE"/CMDS/*; do copy_in "CMDS/$(basename "$m")" "/h7/CMDS/$(basename "$m")"; done
+# NEVER `load`, and never the `cio` trap handler it is built against.  tools/conformance.sh installs a built `load` into CMDS for the
+# duration of a run so t49 has something to fork, and removes it afterwards -- but
+# a run interrupted between those two leaves it sitting there, and this loop would
+# then copy it onto a disk that gets handed to somebody.  It must not: `load` is
+# built by OS-9's C compiler, so about 14K of the module is the vendor's cstart and
+# clib, watermarked with the licensee's name.  Every other module in CMDS is
+# hand-written assembly of ours, which is the whole reason this image can be
+# shipped at all.  t49 reports SKIP on the image, exactly as DOCS/expected-rbf
+# records, and that is the correct outcome rather than a gap.
+for m in "$SUITE"/CMDS/*; do
+    b=$(basename "$m")
+    case "$b" in load|cio) continue ;; esac
+    copy_in "CMDS/$b" "/h7/CMDS/$b"
+done
 copy_in "runall" "/h7/runall"
 copy_in "readme" "/h7/readme"
 for d in "$SUITE"/DOCS/*; do

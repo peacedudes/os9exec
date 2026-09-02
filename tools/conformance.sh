@@ -54,7 +54,63 @@ MODULES=(t01open t02eof t03bmode t04mode0 t05mode0rd t06short t07extend
          t27shar t28exts t29self t30delo t31zrdr
          t32ticks t33ctrl t34julian t35cent t36crchi t37crclo t38wild t39host
          t40evpuls t41evwake t42evsigw t43evbusy t44evunlk t45seek t46pos t47break t48sas
+         t49load
          tally mark)
+
+# ------------------------------------------------------------- the `load` utility
+#
+# t49 is the one test in CONF68K that measures a UTILITY, and the utility is not
+# part of the suite.  `load` is built from C in test/68k-utils and its compiled
+# form cannot be committed the way every module in CMDS/ is: linking it drags in
+# roughly 14K of the vendor's cstart and C library around roughly 2K of our own
+# code, watermark and all.  So it is installed into a run when somebody has built
+# it and is simply absent otherwise -- which is exactly why DOCS/expected records
+# t49 as SKIP rather than PASS.  Build it with tools/68k-utils/build.sh.
+#
+# It goes into the suite's own CMDS because that is what every leg reads from:
+# the host-native leg runs out of that directory directly, and both image legs
+# copy into the image from it.  Installing in one place therefore covers all
+# four combinations instead of four separate special cases.
+#
+# The tree is left as it was found.  remove_load runs on the way out of each
+# leg, so a repository never acquires an untracked binary from having run the
+# suite -- and the .gitignore entry is a belt for the interrupted run, not the
+# mechanism.
+# `load` is built with cc -I, so stdio lives in the shared `cio` TRAP HANDLER
+# rather than being copied into the module -- 4216 bytes instead of 16848, which
+# is how OS-9's own utilities are built and the reason trap handlers exist.  The
+# module therefore needs cio reachable from the EXECUTION directory at run time,
+# and t49 points chx at the suite's own CMDS, so cio has to be installed beside
+# it.  cio is the vendor's and lives on the system disk; it is borrowed for the
+# run and removed again, never committed and never put on a shipped image.
+#
+# Both or neither.  Installing `load` without cio does not degrade to a SKIP --
+# it guarantees a FAIL, because the module dies on "Can't install trap handler"
+# before it can even look for the file it was asked to load, and t49 would then
+# be reporting a missing trap handler as a defect in the module directory.
+LOADUTIL="$REPO/test/68k-utils/CMDS/load"
+LOADTRAP="${OS9DISK:-}/CMDS/cio"
+
+load_installable() {
+    [ -f "$LOADUTIL" ] && [ -f "$LOADTRAP" ]
+}
+
+install_load() {
+    load_installable || return 0
+    cp "$LOADUTIL" "$1/CMDS/load"  && chmod 755 "$1/CMDS/load"
+    cp "$LOADTRAP" "$1/CMDS/cio"   && chmod 755 "$1/CMDS/cio"
+}
+
+remove_load() {
+    rm -f "$1/CMDS/load" "$1/CMDS/cio"
+}
+
+# Extra CMDS names to put in an RBF image on top of the test modules.  Echoes
+# nothing when `load` cannot be installed, so a copy loop can splice it in
+# unconditionally rather than branching around it.
+extra_cmds() {
+    load_installable && echo load cio
+}
 
 # ---------------------------------------------------------------- comparison
 
@@ -107,6 +163,24 @@ compare() {
         if [ -z "$verdict" ]; then
             printf '  MISSING %s  no RESULT line -- the test died or never ran\n' "$id"
             rc=1
+        elif [ "$want" = SKIP ] && [ "$verdict" = PASS ]; then
+            # The one asymmetry in this comparison, and it is deliberate.
+            #
+            # Everywhere else a changed verdict is news whatever the two
+            # verdicts are -- including FAIL becoming PASS, which is how a fixed
+            # divergence gets noticed rather than quietly closing a gap nobody
+            # is watching.  SKIP is different in kind: it is not a claim about
+            # the system, it is a record that this environment could not put the
+            # question.  A run that CAN put it and gets the documented answer has
+            # not diverged from anything; it has done strictly more than the
+            # recorded run did.
+            #
+            # t49 is why this exists.  Its `load` cannot be committed, so a fresh
+            # clone and CI have nothing to fork and SKIP, while a tree that built
+            # it checks the claim for real.  One expected file cannot hold both,
+            # and recording the weaker of the two costs nothing: FAIL is still
+            # news, so the direction that matters is still caught.
+            printf '  CHECKED %s  recorded SKIP, and this run could check it: PASS\n' "$id"
         elif [ "$verdict" != "$want" ]; then
             if grep -qx "$id" "$n_kd" 2>/dev/null; then
                 printf '  CHANGED %s  recorded %s, now %s\n' "$id" "$want" "$verdict"
@@ -223,7 +297,7 @@ build_rbf_image_noshell() {
     for m in CMDS SCRATCH RESULTS; do
         $TIMEOUT 60 env OS9H7="$img" "$REPO/os9exec" -r imakdir "/h7/$m" >/dev/null 2>&1
     done
-    for m in "${MODULES[@]}"; do
+    for m in "${MODULES[@]}" $(extra_cmds); do
         $TIMEOUT 60 env OS9H7="$img" OS9H8="$dir" "$REPO/os9exec" \
             -r icopy "/h8/CMDS/$m" "/h7/CMDS/$m" >/dev/null 2>&1
     done
@@ -251,6 +325,8 @@ build_rbf_image_noshell() {
 run_68k_noshell() {
     local use_rbf="${1:-no}" dir="$REPO/test/68k-conformance" rc=0 m out
     local disk="$dir" work="" img=""
+
+    install_load "$dir"
 
     if [ "$use_rbf" = yes ]; then
         work=$(mktemp -d)
@@ -293,6 +369,7 @@ run_68k_noshell() {
     compare "$dir" "$dir/RESULTS/report" \
         "$([ "$use_rbf" = yes ] && echo expected-rbf || echo expected)" || rc=1
     [ -n "$work" ] && rm -rf "$work"
+    remove_load "$dir"
     return $rc
 }
 
@@ -301,6 +378,8 @@ run_68k() {
     echo "== CONF68K on os9exec ($([ "$use_rbf" = yes ] && echo 'RBF image' || echo 'host-native directory')) =="
     rm -f "$dir/RESULTS/report"
 
+    install_load "$dir"
+
     if [ "$use_rbf" = yes ]; then
         # Build a blank RBF image inside the guest and copy the suite onto
         # it, so the tests run against real RBF mechanics rather than the
@@ -308,7 +387,7 @@ run_68k() {
         local work n; work=$(mktemp -d)
         { echo "mount -k=500k h7"
           echo "makdir /h7/CMDS"; echo "makdir /h7/SCRATCH"; echo "makdir /h7/RESULTS"
-          for n in "${MODULES[@]}"; do echo "copy -n /h8/CMDS/$n /h7/CMDS/$n"; done
+          for n in "${MODULES[@]}" $(extra_cmds); do echo "copy -n /h8/CMDS/$n /h7/CMDS/$n"; done
           echo "copy -n /h8/runall /h7/runall"
           echo "chd /h7"; echo "chx /h7/CMDS"; echo "runall"
           # copy by ABSOLUTE path: chx now points at the suite's own CMDS,
@@ -327,10 +406,12 @@ run_68k() {
     grep -a 'CONF68K totals' /tmp/conf68k-run.log | sed 's/^/  /'
     if [ ! -s "$dir/RESULTS/report" ]; then
         echo "  no RESULTS/report was produced -- see /tmp/conf68k-run.log" >&2
+        remove_load "$dir"
         return 1
     fi
     compare "$dir" "$dir/RESULTS/report" \
         "$([ "$use_rbf" = yes ] && echo expected-rbf || echo expected)" || rc=1
+    remove_load "$dir"
     return $rc
 }
 
