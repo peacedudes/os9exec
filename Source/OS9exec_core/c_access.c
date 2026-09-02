@@ -110,10 +110,15 @@ void getversion( unsigned short *ver,
   #else
     // simply hardwired for all other platforms
     *ver=    4;
-    *rev= 0x00; /* V4.00 - first release of this continuation, tagged v4.0.0.
-                   Reported by `os9exec -ih`, returned to guests by lVersion(),
-                   and stamped into the OS9exec module header (modstuff.c), so
-                   a bug report names the version it was actually run on. */
+    *rev= 0x10; /* V4.10 - the work since v4.0.0, which is NOT what this is any
+                   more. Reported by `os9exec -ih`, returned to guests by
+                   lVersion(), and stamped into the OS9exec module header
+                   (modstuff.c), so a bug report names the version it was
+                   actually run on rather than the release it merely resembles.
+                   HEX, not decimal: utilstuff.c formats it "V%x.%02x", so 0x10
+                   reads V4.10 and a decimal 10 would read V4.0a.
+                   This is os9exec's own version. The OS-9 system it presents
+                   to guests is v2.4 and is unaffected -- see consio.c. */
   #endif
 } // getversion
 
