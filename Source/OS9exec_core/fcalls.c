@@ -1159,7 +1159,16 @@ void BuildPrcDsc( ushort id, ushort cpid, ulong32 usp, procid* pd )
   if (id==cpid) pd->_queueid = '*';
 
   pd->_scall =            os9_byte( cp->lastsyscall );
-  pd->_pmodul= os9_long( TO68K(os9mod(cp->mid)) );
+  /* P$PModul must be a 68k address a guest can dereference.  A built-in
+     module (the synthetic "OS9exec" kernel process, mid 0) is a host C
+     struct OUTSIDE the arena, so TO68K of it is a wild offset -- and a
+     process monitor that follows P$PModul to read the module header takes a
+     bus error on it (devprc -a, top, sysmon, aprocs all did).  Such a
+     process has no real 68k module, so report 0: FROM68K(0) is the reserved
+     low page, which reads as zero, so a header probe fails cleanly instead
+     of faulting. */
+  { mod_exec* m= os9mod(cp->mid);
+    pd->_pmodul= os9_long( (m!=NULL && !os9modules[cp->mid].isBuiltIn) ? TO68K(m) : 0 ); }
 
   /* P$SigLvl ($370): real OS-9 tracks the F$SigMask nesting level here as an
    * unsigned byte (sig_mask() -- see procstuff.c -- implements the same
