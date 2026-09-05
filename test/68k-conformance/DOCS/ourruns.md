@@ -322,3 +322,18 @@ area; its first F$Mem expansion is refused with E$MemFul, exactly as the manual
 warns. `subber` is one: it stops with 207 on os9exec unless `cio` was loaded
 before it ran, and substitutes correctly when it was. On a real system the
 trap handler is normally resident already, which is the same condition.
+
+## os9exec, 2026-09-04: t54, F$SysID in its pre-3.0 form
+
+Written with the implementation, and run against the old dispatch first:
+FAIL with obs=000208. With the call in place, both legs report
+
+```
+RESULT t54 PASS  obs=000000 exp=000000  F$SysID fills three terminated strings and names a processor
+```
+
+os9exec answers 68020 for both processor numbers, 1 and 1 for licensee and
+serial, and its own version and copyright strings; the freeware disk's `sysid`
+utility (hc_utils) prints them. This is the only test in the suite whose claim
+comes from neither Microware nor Motorola -- the v2.4 manual does not have the
+call -- and claims.md says so. On a v3.0-or-later kernel it is not a verdict.
