@@ -86,6 +86,8 @@
 
 #if defined(linux) || defined(MACOSX)
 #include <sys/ioctl.h>
+#include <sys/select.h>
+#include <unistd.h>
 #endif
 
 #ifdef MINGW
@@ -390,6 +392,29 @@ void HandleEvent( void )
               if (read(STDIN_FILENO, &c,1)!=1) break;
               KeyToBuffer( &main_mco, c );
           } // while
+      } // if
+
+      /* End-of-file on a REDIRECTED stdin. A program that reads stdin to EOF
+       * (any filter: tee, a Markov chain, a word-frequency counter) used to
+       * hang here forever, the console read parking for input that can never
+       * arrive -- the FIONREAD drain above cannot tell "pipe exhausted" from
+       * "nothing typed yet", and does not run at all on a device like
+       * /dev/null where the ioctl is unsupported. So, only for a stdin that is
+       * NOT a terminal (an interactive session is excluded outright and cannot
+       * trip this) and only when nothing is already buffered, ask select()
+       * whether the descriptor is readable and, if so, read one byte: 0 back is
+       * a true EOF, and a byte is fed in order rather than lost. Sticky -- once
+       * a redirected stdin is spent it stays spent. This runs at most once more
+       * per HandleEvent than the drain above, and never on a real keyboard. */
+      if (!host_stdin_eof && main_mco.inBufUsed==0 && !isatty(STDIN_FILENO)) {
+          fd_set  rd; struct timeval z= { 0,0 };
+          FD_ZERO( &rd ); FD_SET( STDIN_FILENO, &rd );
+          if (select( STDIN_FILENO+1, &rd,NULL,NULL, &z )>0 &&
+              FD_ISSET( STDIN_FILENO, &rd )) {
+              ssize_t r= read( STDIN_FILENO, &c,1 );
+              if      (r==0) host_stdin_eof= true;   /* readable + 0 bytes = EOF */
+              else if (r==1) KeyToBuffer( &main_mco, c );
+          } // if
       } // if
     #endif
 } /* HandleEvent */

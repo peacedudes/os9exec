@@ -1595,6 +1595,7 @@ extern dir_type mdir;                  /* current module dir */
 
 /* flag which allows empty read functionality for multiple terminal support */
 extern Boolean devIsReady;       /* it is true by default or if char has been read */
+extern Boolean host_stdin_eof;   /* sticky EOF on a redirected (non-tty) host stdin */
 
 /* break the recursion loops variable */
 extern Boolean in_recursion;

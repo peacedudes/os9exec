@@ -576,7 +576,13 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
                             k!=NULL && k->broken) {
                     err= E_EOF; break; /* pipe is broken */
                 }
-                    
+                /* A redirected host stdin that has reached EOF (HandleEvent set
+                   this): return E$EOF instead of parking forever waiting for
+                   input that cannot come. cnt>0 means a final unterminated line
+                   was already gathered -- hand it back first, EOF next read,
+                   the way a partial last line behaves everywhere else. */
+                if (host_stdin_eof) { err= (cnt>0) ? 0 : E_EOF; break; }
+
                 cp->saved_cnt  = cnt;
                 cp->saved_state= cp->state;
                 set_os9_state  ( pid, pWaitRead, "ConsRead" );

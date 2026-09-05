@@ -609,6 +609,9 @@ ushort  currentpid    = MAXPROCESSES; // id of current process
 
 /* flag which allows empty read functionality for multiple terminal support */
 Boolean devIsReady    = true; /* true if char has been read (multiple terminal) */
+Boolean host_stdin_eof= false;/* sticky: a REDIRECTED host stdin has reached EOF.
+                                Set only for non-tty stdin (HandleEvent), so an
+                                interactive terminal can never trip it. */
 
 /* this avoids recursion problems */
 Boolean in_recursion  = false;
