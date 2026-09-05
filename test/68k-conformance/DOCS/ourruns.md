@@ -292,3 +292,33 @@ inside their run-time (`creadoc`, `biory`) run to completion; `biory` writes
 its chart. The open question t50 carries -- whether Microware's own 68010-and-
 later kernels emulate the instruction the way Motorola advised -- is still
 open: nothing we can reach is a Microware kernel on a 68010 or later.
+
+## os9exec, 2026-09-04: t51 to t53, F$Mem
+
+F$Mem was not implemented -- the call came back E$UnkSvc, and Carl Kreider's
+`subber` on the freeware disk stopped on it -- so the three tests were written
+with the implementation and run against the old dispatch first: all three
+reported FAIL with obs=000208.
+
+With F$Mem in place, both legs report
+
+```
+RESULT t51 PASS  obs=000000 exp=000000  F$Mem with d0=0 reports the size and top the fork handed over
+RESULT t52 PASS  obs=000223 exp=000223  F$Mem contracting under the stack pointer reports E$DelSP
+RESULT t53 PASS  obs=004096 exp=004096  F$Mem gives back the top of the data area and regains it
+```
+
+t53 did not start out that way. Its first version only expanded, by 4096
+bytes, and measured the manual's caveat rather than the kernel: PASS when run
+by hand from a shell, SKIP with 207 (E$MemFul) every time from runall on a
+host-native directory, PASS from an RBF image -- whether the block above a
+process's data area is free depends on what the system allocated before it.
+The test now gives 4096 bytes back first and asks for them again, which makes
+the space above the area free by construction and the verdict deterministic.
+
+The same accident is real for programs. A C program built with `cc -I` links
+`cio` right after entry, and that module then sits directly above its data
+area; its first F$Mem expansion is refused with E$MemFul, exactly as the manual
+warns. `subber` is one: it stops with 207 on os9exec unless `cio` was loaded
+before it ran, and substitutes correctly when it was. On a real system the
+trap handler is normally resident already, which is the same condition.
