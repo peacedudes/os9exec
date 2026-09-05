@@ -335,7 +335,8 @@ const funcdispatch_entry fcalltable[NUMFCALLS] =
                                            d_w(1)+d_w(2)+
                                            d_w(3)+a_l(0),        d_l(0)+a_l(0) }, /* Create/Link to named event */
     { /* 0x54 */ OS9_F_Gregor, "F$Gregor", d_l(0)+d_l(1),        d_l(0)+d_l(1) }, /* Convert julian date to gregorian date */
-    { /* 0x55 */ OS9_F_UnImp,  "F$SysID",  d_w(0),               d_w(1) }, /* return system identification */
+    { /* 0x55 */ OS9_F_SysID,  "F$SysID",  a_l(0)+a_l(1)+a_l(2), d_l(0)+d_l(1)+
+                                                                 d_l(2)+d_l(3) }, /* return system identification (pre-3.0 form) */
     { /* 0x56 */ OS9_F_Alarm,  "F$Alarm",  d_l(0)+d_w(1)+
                                            d_l(2)+d_l(3)+d_l(4), d_l(0) }, /* send alarm signal */
     { /* 0x57 */ OS9_F_Sigmask,"F$Sigmask",d_l(0)+d_l(1),        0      }, /* set signal mask */

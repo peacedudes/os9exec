@@ -523,6 +523,68 @@ os9err OS9_F_Mem( regs_type *rp, ushort cpid )
   return 0;
 } /* OS9_F_Mem */
 
+/* What F$SysID says this system is.  The strings are the kernel's, so they name
+   the emulator and the OS-9 it presents (v2.4, see consio.c); each must stay
+   under the 80-byte buffer the caller is told to provide. */
+#define SYSID_MPU       68020   /* the 68k core is a 68020 (+68881), os9_uae.c */
+#define SYSID_LICENSEE  1       /* "one by default" (OS-9 Guru): no licensee, no serial */
+#define SYSID_SERIAL    1
+#define SYSID_STRMAX    80      /* the documented buffer size, NUL included */
+
+static os9err sysid_string( ushort cpid, os9addr_t addr, const char* str )
+/* Copy one F$SysID string into a caller's buffer; address 0 means "not
+   wanted".  The caller's buffer is written like any other user-supplied
+   destination (F$CpyMem's rule): it must be memory the process may write. */
+{
+  ulong len= strlen(str)+1;
+  byte* dst;
+  if (addr==0) return 0;
+  dst= (byte*)FROM68K(addr);
+  if (!RANGE_IN_ARENA(dst,len) ||
+      (!RangeInProcMem(cpid,dst,len) && !RangeInAnyModule(dst,len))) return os9error(E_BPADDR);
+  MoveBlk( dst,(void*)str, len );
+  return 0;
+} /* sysid_string */
+
+os9err OS9_F_SysID( regs_type *rp, ushort cpid )
+/* F$SysID: Get System Identification -- the form that existed before OS-9 v3.0
+ * Input:   (a0) = buffer for the version string, or 0
+ *          (a1) = buffer for the copyright string, or 0
+ *          (a2) = buffer for the author names string, or 0
+ *          Each buffer is at least 80 bytes; the strings are NUL-terminated
+ *          and never longer than that, NUL included.
+ * Output:  d0.l = licensee number
+ *          d1.l = serial number of this copy of OS-9
+ *          d2.l = processor type in use, as a Motorola part number
+ *          d3.l = processor type the kernel was built for
+ *          d4.l-d7.l = zero
+ * Error:   E$BPAddr  a buffer the caller may not write
+ *
+ * Microware's v2.4 manual does not document this call: it was "implemented
+ * but not documented" before 3.0 (OS-9 Insights, ed. 3, Appendix A), and the
+ * register contract above is the OS-9 Guru's description (11.5.16), which is
+ * what the programs of that era use -- hc_utils' `sysid` passes exactly these
+ * registers.  At v3.0 the call was redefined around a parameter block, after
+ * OS-9000's _os_SysID(); that form is not documented anywhere available here
+ * and is not attempted.
+ */
+{
+  os9err err;
+  char   version[SYSID_STRMAX];
+
+  snprintf( version,sizeof(version), "%s, emulating OS-9/68000 V2.4", OS9exec_Name() );
+  err= sysid_string( cpid, rp->a[0], version );                                          if (err) return err;
+  err= sysid_string( cpid, rp->a[1], "Copyright (C) 2002-2007 Lukas Zeller / Beat Forster, GNU GPL v2" ); if (err) return err;
+  err= sysid_string( cpid, rp->a[2], "Lukas Zeller, Beat Forster" );                     if (err) return err;
+
+  rp->d[0]= SYSID_LICENSEE;
+  rp->d[1]= SYSID_SERIAL;
+  rp->d[2]= SYSID_MPU;
+  rp->d[3]= SYSID_MPU;
+  rp->d[4]= rp->d[5]= rp->d[6]= rp->d[7]= 0;
+  return 0;
+} /* OS9_F_SysID */
+
 os9err OS9_F_STrap( regs_type *rp, ushort cpid )
 /* F$STrap:
  * Input:   (A0)=stack to use for exception handler (or 0 to use current)

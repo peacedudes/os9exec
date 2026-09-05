@@ -98,6 +98,7 @@ os9err OS9_F_SetSys (regs_type *rp, ushort cpid);
 os9err OS9_F_SRqMem (regs_type *rp, ushort cpid);
 os9err OS9_F_SRtMem (regs_type *rp, ushort cpid);
 os9err OS9_F_Mem    (regs_type *rp, ushort cpid);
+os9err OS9_F_SysID  (regs_type *rp, ushort cpid);
 os9err OS9_F_SSvc   (regs_type *rp, ushort cpid);
 os9err OS9_F_Permit (regs_type *rp, ushort cpid);
 os9err OS9_F_SysDbg (regs_type *rp, ushort cpid);
