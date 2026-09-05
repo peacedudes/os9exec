@@ -921,6 +921,108 @@ os9err os9free( ushort pid, void* membase, ulong memsz )
 } /* os9free */
 
 
+/* Resize one of a process's blocks IN PLACE, for F$Mem.
+ *
+ * A process's data area is one block (prepData allocates it with os9malloc),
+ * and F$Mem's contract is that it grows "contiguously upward" and shrinks
+ * "downward from the old highest address" -- its base never moves, because
+ * everything the program owns is addressed from A6.  So this is not a
+ * realloc: the block stays where it is, and the question is only whether the
+ * arena directly above it can be claimed.
+ *
+ * Two places that memory can come from, and both are checked: the REUSE_MEM
+ * free list, when a released block happens to start exactly at our end, and
+ * the arena's bump pointer, when this block was the last one carved.  Anything
+ * else is E$MemFul ("not enough contiguous RAM free"), which the manual
+ * explicitly permits for an expansion even when plenty of memory is free:
+ * "the data area must always be contiguous".  E$NoRAM is kept for the arena
+ * itself being exhausted.
+ *
+ * Sizes.  The guest's size (<newsz>, what F$Mem reports) lives in the
+ * per-process table; the arena's size, rounded to get_mem's MBlk granularity,
+ * lives in memtable -- the same split os9malloc already leaves behind, since
+ * F$SRqMem rounds to 16 and get_mem to 64.  A shrink returns only whole
+ * arena-granularity units above the new top, and a growth that still fits in
+ * that slack allocates nothing.
+ */
+os9err os9resize( ushort pid, void* membase, ulong newsz )
+{
+  pmem_typ*     cm= &pmem[ pid ];
+  memblock_typ* m = NULL;
+  memblock_typ* t = NULL;
+  byte*         end;
+  ulong         old64, new64, need;
+  int           k;
+
+  for (k=0; k<MAXMEMBLOCKS; k++) if (cm->m[k].base==membase) { m= &cm->m[k]; break; }
+  for (k=0; k<MAX_MEMALLOC; k++) if (memtable[k].base==membase) { t= &memtable[k]; break; }
+  if (m==NULL || t==NULL) return os9error(E_BPADDR); /* not a block of this process */
+
+  old64= t->size;
+  new64= (newsz+MBlk-1) & ~(ulong)(MBlk-1);
+  end  = (byte*)membase + old64;
+
+  if (new64 < old64) {           /* shrink: give the tail back, whole units only */
+    #ifdef REUSE_MEM
+      #ifdef win_linux
+        totalMem-= old64-new64;  /* the same dance release_mem does before release_ok */
+      #endif
+      UnlockMemRange( (byte*)membase+new64, old64-new64 );
+      if (!release_ok( (byte*)membase+new64, old64-new64 )) {
+        #ifdef win_linux
+          totalMem+= old64-new64;
+        #endif
+        new64= old64;            /* free list full: keep the tail, nothing is lost */
+      } /* if */
+    #else
+      new64= old64;              /* without a free list the tail cannot be recycled */
+    #endif
+  } /* if */
+  else if (new64 > old64) {      /* grow: only if the arena right above us is free */
+    need= new64-old64;
+    if (end==emul_next) {        /* we were the last block carved: carve on, if the arena has it */
+      if (end+need>emul_end) { alloc_failed( need, " above the data area" ); return os9error(E_NORAM); }
+      emul_next= end+need;
+    } /* if */
+    else {
+      /* Somebody else's block is above us unless the free list says otherwise.
+         That is the manual's E$MemFul -- "not enough contiguous RAM free" --
+         rather than E$NoRAM, which is the arena being exhausted outright. */
+      #ifdef REUSE_MEM
+        memblock_typ* f= NULL;
+        ulong         fsz;
+        for (k=0; k<MAX_MEMALLOC; k++) {
+          if (freeinfo.f[k].base==NULL) break;
+          if (freeinfo.f[k].base==end && freeinfo.f[k].size>=need) { f= &freeinfo.f[k]; break; }
+        } /* for */
+        if (f==NULL) { alloc_failed( need, ": the block above the data area is in use" ); return os9error(E_MEMFUL); }
+        fsz= f->size;
+        MoveBlk( f,&freeinfo.f[k+1], (freeinfo.freeN-k)*sizeof(memblock_typ) );
+        freeinfo.freeN--;
+        freeinfo.freeMem-= fsz;
+        #ifdef win_linux
+          totalMem-= fsz;
+        #endif
+        if (fsz>need) release_ok( end+need, fsz-need );
+      #else
+        alloc_failed( need, ": the block above the data area is in use" ); return os9error(E_MEMFUL);
+      #endif
+    } /* else */
+    memset( end, 0, need );      /* a fresh piece of data area is clean, as at fork */
+    LockMemRange( end, need );
+    #ifdef win_linux
+      totalMem+= need;
+    #endif
+  } /* else if */
+
+  t->size= new64;
+  m->size= newsz;
+  debugprintf(dbgMemory,dbgNorm,("# os9resize:  block at %p now size=%u (arena %u) pid=%d\n",
+                                    membase, (uint32_t)newsz, (uint32_t)new64, pid ));
+  return 0;
+} /* os9resize */
+
+
 
 /* eof */
 

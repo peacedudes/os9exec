@@ -251,7 +251,7 @@ const funcdispatch_entry fcalltable[NUMFCALLS] =
                                            d_w(3)+d_w(4)+
                                            a_p(0)+a_l(1),        0      }, /* Chain Process to New Module */
     { /* 0x06 */ OS9_F_Exit,   "F$Exit",   d_w(1),               0      }, /* Terminate Process */
-    { /* 0x07 */ OS9_F_UnImp,  "F$Mem",    d_l(0),               d_l(0)+a_l(1) }, /* Set Memory Size */
+    { /* 0x07 */ OS9_F_Mem,    "F$Mem",    d_l(0),               d_l(0)+a_l(1) }, /* Resize Data Memory Area */
     { /* 0x08 */ OS9_F_Send,   "F$Send",   d_w(0)+d_w(1),        0      }, /* Send Signal to Process */
     { /* 0x09 */ OS9_F_Icpt,   "F$Icpt",   a_l(0)+a_l(6),        0      }, /* Set Signal Intercept */
     { /* 0x0A */ OS9_F_Sleep,  "F$Sleep",  d_l(0),               d_l(0) }, /* Suspend Process */

@@ -110,6 +110,7 @@ void      free_mem( ushort pid     ); // release all memory of process
 
 void*   os9malloc ( ushort pid,                ulong memsz, os9err* whyP );
 os9err  os9free   ( ushort pid, void* membase, ulong memsz );
+os9err  os9resize ( ushort pid, void* membase, ulong newsz );
 
 Boolean RangeInProcMem( ushort pid, void* p, ulong cnt ); // may pid write [p,p+cnt)?
 

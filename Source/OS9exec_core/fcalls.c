@@ -476,6 +476,53 @@ os9err OS9_F_SRtMem( regs_type *rp, ushort cpid )
    return os9free(cpid,bp,memsz);
 } /* OS9_F_SRtMem */
 
+os9err OS9_F_Mem( regs_type *rp, ushort cpid )
+/* F$Mem: Resize Data Memory Area
+ * Input:   d0.l=desired new size in bytes; 0 = information request
+ * Output:  d0.l=actual size of the data area
+ *          (a1)=pointer to its new end (+1)
+ * Error:   E$DelSP  the contraction would take the memory the stack is in
+ *          E$MemFul the block above the data area is in use, so there is no
+ *                   contiguous room (the manual allows this even when memory
+ *                   is plentiful: the area must stay contiguous)
+ *          E$NoRAM  the arena itself is exhausted
+ *
+ * The data area is the one block prepData allocated: [memstart, memtop).
+ * Its base is fixed for the life of the process -- A6 points into it -- so a
+ * resize happens in place, and memtop is the only thing that moves.  The
+ * manual rounds the request "up to an even memory allocation block (16 bytes
+ * in version 2.0)"; 16 is also what F$SRqMem rounds to here.
+ *
+ * Contraction guards the stack pointer, as the manual says it must: the new
+ * top must stay strictly above a7, or the memory AT the stack pointer would
+ * go with it.  What lies above a7 -- the parameter area the shell wrote at the
+ * top of the data area -- is the process's to give back, and giving it back is
+ * exactly what the manual's "de-allocated downward from the old highest
+ * address" describes.
+ */
+{
+  process_typ* cp= &procs[ cpid ];
+  ulong        cur= cp->memtop - cp->memstart;
+  ulong        want= rp->d[0];
+  ulong        newsz;
+  os9err       err;
+
+  if (want!=0) {
+    newsz= (want+15) & 0xFFFFFFF0;
+    if (newsz<want) return os9error(E_NORAM);         /* rounded past 32 bits */
+    if (newsz<cur && cp->memstart+newsz<=rp->a[7]) return os9error(E_DELSP);
+    if (newsz!=cur) {
+      err= os9resize( cpid, (void*)FROM68K(cp->memstart), newsz );
+      if (err) return err;
+      cp->memtop= cp->memstart+newsz;
+    } /* if */
+  } /* if */
+
+  rp->d[0]= cp->memtop - cp->memstart;
+  rp->a[1]= cp->memtop;
+  return 0;
+} /* OS9_F_Mem */
+
 os9err OS9_F_STrap( regs_type *rp, ushort cpid )
 /* F$STrap:
  * Input:   (A0)=stack to use for exception handler (or 0 to use current)
