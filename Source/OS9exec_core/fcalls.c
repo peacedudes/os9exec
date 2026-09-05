@@ -1378,6 +1378,8 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 	#define D_ID       0x0000   /* set to modsync code after coldboot has finished */
 	#define D_Init     0x0020   /* pointer to 'init' module */
 	#define D_TckSec   0x0028   /* ticks per second */
+	#define D_Julian   0x0030   /* today's Julian day number */
+	#define D_Second   0x0034   /* seconds since midnight    */
 	#define D_68881    0x002F
 	#define D_ModDir   0x003C
 	#define D_ModDir_L 0x0040
@@ -1391,6 +1393,7 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 	#define D_BlkSiz   0x007C   /* system  minimum allocatable block size   */
 	#define D_DevTbl   0x0080   /* I/O device table ptr                     */
 	#define D_MPUTyp   0x03C8   /* MPU type, also supported for PowerPC     */
+	#define D_SPUMem   0x03D8   /* static storage of the System Security Module (SSM) */
 	#define D_IPID     0x040C   /* os9exec/nt identification!               */
 
 	#define D_ScreenW  0x1000   /* Width in pixels of this system's screen  */
@@ -1409,8 +1412,23 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 
     switch (offs) {
       case D_ID      : v=                   MODSYNC; break;
+      /* Every C program's start-up code reads D_SPUMem to learn whether a
+         System Security Module is installed; os9exec has none, and 0 is
+         the answer a real system without one gives.  It used to fall
+         through to the "unimplemented" diagnostic four times per program. */
+      case D_SPUMem  : v=                         0; break;
       case D_Init    : v=       (ulong) init_module; break;
       case D_TckSec  : v=             TICKS_PER_SEC; break;
+      /* The current date and time as two raw globals, the way a process
+         monitor reads them (aprocs) to age other processes.  Sourced from
+         the same Get_Time the F$Time/F$Julian calls use, so the globals and
+         the syscalls always agree.  D_Second is seconds SINCE midnight
+         (v2.4 TRM, F$Time/F$STime -- the Guru's "until midnight" wording is
+         a transcription slip). */
+      case D_Julian  :
+      case D_Second  : { uint32_t jTime,jDate; int dw,tk;
+                         Get_Time( &jTime,&jDate, &dw,&tk, false,false );
+                         v= (offs==D_Julian) ? jDate : jTime; } break;
     
       case D_68881   : 
         #if defined powerc && !defined MACOSX
