@@ -12167,6 +12167,14 @@ unsigned long REGPARAM2 op_40b9_0(uae_u32 opcode) /* NEGX */
 }}}}}m68k_incpc(6);
 return 14;
 }
+/* MOVE from SR: no privilege check on purpose.  The instruction is user-legal on
+ * the MC68000/MC68008 and privileged only from the MC68010 on, so programs built
+ * for the 68000 read SR in user state (the RTF Fortran run-time fetches its
+ * condition codes this way).  Motorola's advice to a 68010+ operating system was
+ * to emulate the instruction in its privilege-violation handler so those binaries
+ * keep running; os9exec is the operating system as well as the CPU, so the
+ * emulation collapses to not trapping.  The word delivered is exactly what a
+ * 68000 would show: S is clear in user state.  MOVE to SR stays privileged. */
 unsigned long REGPARAM2 op_40c0_0(uae_u32 opcode) /* MVSR2 */
 {
 #ifdef HAVE_GET_WORD_UNSWAPPED
@@ -12174,13 +12182,12 @@ unsigned long REGPARAM2 op_40c0_0(uae_u32 opcode) /* MVSR2 */
 #else
 	uae_u32 srcreg = (opcode & 7);
 #endif
-{if (!regs.s) { Exception(8,0); goto endlabel645; }
 {{	MakeSR();
 	m68k_dreg(regs, srcreg) = (m68k_dreg(regs, srcreg) & ~0xffff) | ((regs.sr) & 0xffff);
-}}}m68k_incpc(2);
-endlabel645: ;
+}}m68k_incpc(2);
 return 2;
 }
+/* MOVE from SR: user-legal, see op_40c0_0 */
 unsigned long REGPARAM2 op_40d0_0(uae_u32 opcode) /* MVSR2 */
 {
 #ifdef HAVE_GET_WORD_UNSWAPPED
@@ -12188,14 +12195,13 @@ unsigned long REGPARAM2 op_40d0_0(uae_u32 opcode) /* MVSR2 */
 #else
 	uae_u32 srcreg = (opcode & 7);
 #endif
-{if (!regs.s) { Exception(8,0); goto endlabel646; }
 {{	uaecptr srca = m68k_areg(regs, srcreg);
 	MakeSR();
 	put_word(srca,regs.sr);
-}}}m68k_incpc(2);
-endlabel646: ;
+}}m68k_incpc(2);
 return 4;
 }
+/* MOVE from SR: user-legal, see op_40c0_0 */
 unsigned long REGPARAM2 op_40d8_0(uae_u32 opcode) /* MVSR2 */
 {
 #ifdef HAVE_GET_WORD_UNSWAPPED
@@ -12203,15 +12209,14 @@ unsigned long REGPARAM2 op_40d8_0(uae_u32 opcode) /* MVSR2 */
 #else
 	uae_u32 srcreg = (opcode & 7);
 #endif
-{if (!regs.s) { Exception(8,0); goto endlabel647; }
 {{	uaecptr srca = m68k_areg(regs, srcreg);
 	m68k_areg(regs, srcreg) += 2;
 	MakeSR();
 	put_word(srca,regs.sr);
-}}}m68k_incpc(2);
-endlabel647: ;
+}}m68k_incpc(2);
 return 4;
 }
+/* MOVE from SR: user-legal, see op_40c0_0 */
 unsigned long REGPARAM2 op_40e0_0(uae_u32 opcode) /* MVSR2 */
 {
 #ifdef HAVE_GET_WORD_UNSWAPPED
@@ -12219,15 +12224,14 @@ unsigned long REGPARAM2 op_40e0_0(uae_u32 opcode) /* MVSR2 */
 #else
 	uae_u32 srcreg = (opcode & 7);
 #endif
-{if (!regs.s) { Exception(8,0); goto endlabel648; }
 {{	uaecptr srca = m68k_areg(regs, srcreg) - 2;
 	m68k_areg (regs, srcreg) = srca;
 	MakeSR();
 	put_word(srca,regs.sr);
-}}}m68k_incpc(2);
-endlabel648: ;
+}}m68k_incpc(2);
 return 4;
 }
+/* MOVE from SR: user-legal, see op_40c0_0 */
 unsigned long REGPARAM2 op_40e8_0(uae_u32 opcode) /* MVSR2 */
 {
 #ifdef HAVE_GET_WORD_UNSWAPPED
@@ -12235,14 +12239,13 @@ unsigned long REGPARAM2 op_40e8_0(uae_u32 opcode) /* MVSR2 */
 #else
 	uae_u32 srcreg = (opcode & 7);
 #endif
-{if (!regs.s) { Exception(8,0); goto endlabel649; }
 {{	uaecptr srca = m68k_areg(regs, srcreg) + (uae_s32)(uae_s16)get_iword(2);
 	MakeSR();
 	put_word(srca,regs.sr);
-}}}m68k_incpc(4);
-endlabel649: ;
+}}m68k_incpc(4);
 return 6;
 }
+/* MOVE from SR: user-legal, see op_40c0_0 */
 unsigned long REGPARAM2 op_40f0_0(uae_u32 opcode) /* MVSR2 */
 {
 #ifdef HAVE_GET_WORD_UNSWAPPED
@@ -12250,32 +12253,29 @@ unsigned long REGPARAM2 op_40f0_0(uae_u32 opcode) /* MVSR2 */
 #else
 	uae_u32 srcreg = (opcode & 7);
 #endif
-{if (!regs.s) { Exception(8,0); goto endlabel650; }
 {{m68k_incpc(2);
 {	uaecptr srca = get_disp_ea_020(m68k_areg(regs, srcreg), next_iword());
 	MakeSR();
 	put_word(srca,regs.sr);
-}}}}endlabel650: ;
+}}}
 return 4;
 }
+/* MOVE from SR: user-legal, see op_40c0_0 */
 unsigned long REGPARAM2 op_40f8_0(uae_u32 opcode) /* MVSR2 */
 {
-{if (!regs.s) { Exception(8,0); goto endlabel651; }
 {{	uaecptr srca = (uae_s32)(uae_s16)get_iword(2);
 	MakeSR();
 	put_word(srca,regs.sr);
-}}}m68k_incpc(4);
-endlabel651: ;
+}}m68k_incpc(4);
 return 6;
 }
+/* MOVE from SR: user-legal, see op_40c0_0 */
 unsigned long REGPARAM2 op_40f9_0(uae_u32 opcode) /* MVSR2 */
 {
-{if (!regs.s) { Exception(8,0); goto endlabel652; }
 {{	uaecptr srca = get_ilong(2);
 	MakeSR();
 	put_word(srca,regs.sr);
-}}}m68k_incpc(6);
-endlabel652: ;
+}}m68k_incpc(6);
 return 8;
 }
 unsigned long REGPARAM2 op_4100_0(uae_u32 opcode) /* CHK */
@@ -37465,6 +37465,7 @@ unsigned long REGPARAM2 op_40b0_2(uae_u32 opcode) /* NEGX */
 }}}}}m68k_incpc(4);
 return 12;
 }
+/* MOVE from SR: user-legal, see op_40c0_0 */
 unsigned long REGPARAM2 op_40f0_2(uae_u32 opcode) /* MVSR2 */
 {
 #ifdef HAVE_GET_WORD_UNSWAPPED
@@ -37472,12 +37473,10 @@ unsigned long REGPARAM2 op_40f0_2(uae_u32 opcode) /* MVSR2 */
 #else
 	uae_u32 srcreg = (opcode & 7);
 #endif
-{if (!regs.s) { Exception(8,0); goto endlabel1962; }
 {{	uaecptr srca = get_disp_ea_000(m68k_areg(regs, srcreg), get_iword(2));
 	MakeSR();
 	put_word(srca,regs.sr);
-}}}m68k_incpc(4);
-endlabel1962: ;
+}}m68k_incpc(4);
 return 6;
 }
 unsigned long REGPARAM2 op_4130_2(uae_u32 opcode) /* CHK */
