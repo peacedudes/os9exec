@@ -1125,7 +1125,7 @@ void get_error_strings(os9err err, char **nameP, char **descP)
         case E_ZERDIV   : name="E_ZERDIV";  desc="zero divide TRAP 5 occurred"; break;
         case E_CHK      : name="E_CHK";     desc="CHK instruction TRAP 6 occurred"; break;
         case E_TRAPV    : name="E_TRAPV";   desc="TrapV instruction TRAP 7 occurred"; break;
-        case E_VIOLAT   : name="E_VIOLAT";  desc="privelage violation TRAP 8 occurred"; break;
+        case E_VIOLAT   : name="E_VIOLAT";  desc="privilege violation TRAP 8 occurred"; break;
         case E_TRACE    : name="E_TRACE";   desc="Uninitialized Trace TRAP 9 occurred"; break;
         case E_1010     : name="E_1010";    desc="Uninitialized 1010 TRAP 10 occurred"; break;
         case E_1111     : name="E_1111";    desc="Uninitialized 1111 TRAP 11 occurred"; break;
