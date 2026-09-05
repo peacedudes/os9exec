@@ -266,3 +266,29 @@ instruction rather than per machine, runs the whole suite cleanly and repeatedly
 
 An earlier riscv64 run reported 44/44 and this file should not have carried that
 single sample as evidence.
+
+## os9exec, 2026-09-04: t50, MOVE from SR in user state
+
+t50 was added with the fix it measures, and it failed once first. On the
+os9exec of the day before, running it from a shell ended the process at its
+first instruction:
+
+```
+ Executing: -->00062014: 40c6 ccbc 0000 2000 0c86 MVSR2.W D6
+# Exception: pid=3 vector=$08 err=#000:108 -- process will be killed
+```
+
+so the suite would have reported t50 as MISSING, which is the shape of this
+divergence everywhere: a system that traps the instruction never gets to print.
+With the nine MOVE-from-SR handlers in the 68020 core no longer raising the
+privilege violation in user state, both legs report
+
+```
+RESULT t50 PASS  obs=000000 exp=000000  MOVE from SR completes in user state with S clear
+```
+
+and the two RTF Fortran programs that had been dying on this instruction
+inside their run-time (`creadoc`, `biory`) run to completion; `biory` writes
+its chart. The open question t50 carries -- whether Microware's own 68010-and-
+later kernels emulate the instruction the way Motorola advised -- is still
+open: nothing we can reach is a Microware kernel on a 68010 or later.
