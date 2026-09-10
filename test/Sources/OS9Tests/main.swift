@@ -921,20 +921,23 @@ run("rbf: mount -k image is dir/free/dcheck clean",
 // does not), and `mount -k` would otherwise be handed a file that already exists.
 try? FileManager.default.removeItem(atPath: scratchHostPath)
 
-// A RAW device open ("/dd@") of a host-DIRECTORY device is refused -- a host
-// directory has no disk sectors, decided in 063f8d1 and unchanged. What is
-// asserted here is WHICH refusal: E$Unit (240, "illegal unit"), not E$MNF
-// (221, "module not found"), which claims the device does not exist at all.
-// `free`/`dcheck` are the visible face; the C library's stat() probes the same
-// "<device>@" path, which is why a ported bash reported every file on /dd as
-// missing. Asserting the absence of 221 is the point of the test: the guard
-// that produces 240 sat unreachable for years because path classification
-// rejected "/dd@" before the file manager ever saw it, so a test that only
-// checked "some error" passed throughout and proved nothing.
-run("fs: raw open of a host-directory device is E$Unit, not E$MNF",
-    expectation: "free /dd refuses with 240 (illegal unit), never 221 (module not found)",
+// A RAW device open ("/dd@") of a host-DIRECTORY device ANSWERS, with one
+// synthesized identification sector, and nothing past it (2026-09-10; it was
+// refused with E$Unit from 063f8d1 until then). The reason is stat(): Microware's
+// C library will not describe a file until it has opened "<device>@" and read
+// 256 bytes of it, and bash finds commands, and answers `[ -f ]', through
+// stat() -- so while the open was refused, no command on a host-directory
+// device could be run by name (`tmode` was "command not found" with
+// /h1/CMDS/tmode running fine). `free` is the visible face of the other half:
+// it reads the sector, then asks for the allocation map, which the device has
+// not got, and must stop there honestly -- neither E$MNF (221, "no such
+// device") nor, as an off-by-one in the raw read once made it, a silent loop
+// on zero-byte reads that never ended. So: the volume line, the bitmap
+// refusal, no 221, and the command comes back.
+run("fs: raw open of a host-directory device answers one sector, then stops",
+    expectation: "free /dd names the volume, then can't read bitmap; never 221; never hangs",
     commands: ["free /dd"]) {
-        $0.contains("240") && !$0.contains("221")
+        $0.contains("created on") && $0.contains("bitmap") && !$0.contains("221")
     }
 
 // `mount -k` names its image "<startPath>/<dev>" and prints that name, which is

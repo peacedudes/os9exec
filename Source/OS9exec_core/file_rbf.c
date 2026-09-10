@@ -158,6 +158,11 @@
 #include "os9exec_incl.h"
 #include <ctype.h>
 #include <sys/stat.h>
+#ifdef MINGW
+  #include <windows.h>      /* GetDiskFreeSpaceExA, for HostDirLSN0 */
+#else
+  #include <sys/statvfs.h>  /* statvfs, for HostDirLSN0 */
+#endif
 #include "filescsi.h"
 #include <ctype.h>
 
@@ -1536,6 +1541,58 @@ static void StampVolume( byte* base, uint32_t sctSize, const char* volName )
     memcpy( &base[NAM_POS], volName, len );
     base[ NAM_POS+len-1 ] |= 0x80; /* OS-9 strings are high-bit terminated */
 } /* StampVolume */
+
+void HostDirLSN0( const char* hostpath, byte* sct )
+/* The identification sector of a device that is a host DIRECTORY, which has
+ * none.  Microware's C library stat() will not describe a file until it has
+ * read one: it opens the file, asks SS_FD and SS_DevNm, then opens "/<dev>@"
+ * and reads 256 bytes -- and bash's PATH search, `[ -f ]` and `[ -x ]` all go
+ * through stat().  While that raw open answered E$Unit (063f8d1), no command
+ * on a host-directory device could be found by name: `tmode` said "command
+ * not found" with /h1/CMDS/tmode running fine.  Measured 2026-09-10 by
+ * tracing both an RBF /h1 and a host-directory /h1 through the same test.
+ *
+ * The sector is the RAM-disk template (DD_SYNC "Cruz", DD_MapLSN, DD_LSNSize,
+ * DD_VersID -- what Open_Image itself requires), with today's date, the host
+ * filesystem's size in DD_TOT and the directory's own name in DD_NAM.  It is
+ * the only sector such a device has: pFread answers E$EOF past it, so `free`
+ * and `dcheck` stop at the allocation map instead of reading a directory as
+ * a disk. */
+{
+    const char* nm;
+    const char* p;
+    char        volName[NAM_LEN+1];
+    size_t      len;
+    uint32_t    tot= 0;
+
+    memcpy( sct, RAM_zero, STD_SECTSIZE<sizeof(RAM_zero) ? STD_SECTSIZE : sizeof(RAM_zero) );
+
+    /* the last path component names the volume */
+    nm= hostpath;
+    for (p= hostpath; *p!=NUL; p++) if (*p==PSEP && p[1]!=NUL) nm= p+1;
+          len= strlen( nm );
+    if   (len>NAM_LEN) len= NAM_LEN;
+    memcpy( volName, nm, len ); volName[len]= NUL;
+    StampVolume( sct, STD_SECTSIZE, volName );
+
+    /* DD_TOT: the host filesystem in 256-byte sectors, as pHdsize reports it,
+       capped at the three bytes the field has */
+    #ifdef MINGW
+    {
+      ULARGE_INTEGER totalBytes;
+      if (GetDiskFreeSpaceExA( hostpath, NULL, &totalBytes, NULL ))
+          tot= (uint32_t)(totalBytes.QuadPart / STD_SECTSIZE);
+    }
+    #else
+    {
+      struct statvfs st;
+      if (statvfs( hostpath, &st )==0)
+          tot= (uint32_t)((unsigned long long)st.f_blocks * st.f_frsize / STD_SECTSIZE);
+    }
+    #endif
+    if (tot>0xFFFFFF) tot= 0xFFFFFF;
+    sct[0]= (byte)(tot>>16); sct[1]= (byte)(tot>>8); sct[2]= (byte)tot;
+} /* HostDirLSN0 */
 
 static Boolean BuildBlankImage( uint32_t totScts, uint32_t totBits, uint32_t sctSize, int clu,
                                  byte** bufOut, uint32_t* headSctsOut, Boolean headOnly,

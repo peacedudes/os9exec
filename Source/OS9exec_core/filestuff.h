@@ -222,3 +222,5 @@ os9err             pNask( ushort pid, syspath_typ* );
 
 /* eof */
 
+/* file_rbf.c: the identification sector a host-directory device answers a raw read with */
+void HostDirLSN0( const char* hostpath, byte* sct );

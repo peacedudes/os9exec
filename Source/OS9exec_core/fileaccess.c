@@ -337,7 +337,10 @@ os9err pFread( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
     assert( buffer!=NULL );
 
     if     (spP->rawMode) {
-        if (spP->rawPos    > STD_SECTSIZE) return E_EOF; /* finished */
+        /* >= : at rawPos==STD_SECTSIZE the sector is used up.  With `>' a
+         * read there returned 0 bytes AND no error, and Microware's `free',
+         * which reads the allocation map raw, looped on that for ever. */
+        if (spP->rawPos   >= STD_SECTSIZE) return os9error(E_EOF); /* finished */
         if (spP->rawPos+*n > STD_SECTSIZE) *n= STD_SECTSIZE-spP->rawPos;
         
         memcpy( buffer, spP->rw_sct+spP->rawPos, *n );
@@ -1266,9 +1269,18 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
     pp      = hostpath;
 
     if (spP->rawMode) {        /* rawmode allows only reading of 1st sector */
-        if (PathFound(pp)) return os9error(E_UNIT); /* host directories have no disk sectors */
         spP->rw_sct = get_mem( STD_SECTSIZE );       /* for some info procs */
         spP->rawPos = 0;
+        if (PathFound(pp)) {
+            /* A host DIRECTORY: it has no disk sectors, but the C library's
+             * stat() reads the identification sector before it will describe
+             * any file on the device, and bash finds commands through stat().
+             * Refusing this open (063f8d1) left every command on such a
+             * device unreachable by name.  Answer with a synthesized sector;
+             * anything past it is still E$EOF.  See HostDirLSN0. */
+            HostDirLSN0( pp, spP->rw_sct );
+            return 0;
+        }
                      vn= (char*)&spP->rw_sct[31];
         VolInfo( pp, vn );    /* this is the correct position */      
         
