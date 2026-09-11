@@ -97,7 +97,7 @@ try? FileManager.default.createSymbolicLink(atPath: scratchDisk + "/h0",
 // trick (see the "fs: confine" tests). Declared and planted up here, not down
 // beside those tests, because container mode has to MOUNT it -- every os9()
 // invocation builds its mount list, so the path must exist before the first one.
-let canaryName   = "FSCANARY_\(UUID().uuidString.prefix(8))"
+let canaryName   = "FSCANARY_\(ProcessInfo.processInfo.processIdentifier)_\(UUID().uuidString.prefix(8))"
 let canaryDir    = URL(fileURLWithPath: diskPath).deletingLastPathComponent().path
 let canaryHost   = URL(fileURLWithPath: canaryDir)
                       .appendingPathComponent(canaryName).path
@@ -108,8 +108,19 @@ let canarySecret = "CANARYLEAK_\(UUID().uuidString.prefix(8))"
 // forever. Sweep them, the same way the scratch disk is cleared first. Three
 // empty ones were found in the system disk itself, left there in July 2026
 // by the runs that predate the canary moving to the device root's parent.
+//
+// But ONLY a dead run's. The directory is shared, and two suites can run at
+// once: sweeping every FSCANARY_ file deleted a LIVE run's canary, which then
+// failed "fs: setup -- canary file not planted" (2026-09-11, a tick-off run
+// overlapped by an s390x run). The owner's PID is in the name; a canary whose
+// process still exists is left alone. A name with no PID predates this.
 for stale in (try? FileManager.default.contentsOfDirectory(atPath: canaryDir)) ?? []
 where stale.hasPrefix("FSCANARY_") {
+    let fields = stale.dropFirst("FSCANARY_".count).split(separator: "_")
+    if fields.count == 2, let owner = Int32(fields[0]),
+       kill(owner, 0) == 0 || errno == EPERM {
+        continue
+    }
     try? FileManager.default.removeItem(atPath: canaryDir + "/" + stale)
 }
 
