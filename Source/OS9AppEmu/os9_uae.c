@@ -147,7 +147,18 @@ void handle_os9exec_exception(int nr, uaecptr oldpc)
         // Must be error trap
         uae_u32 callers_stack=m68k_areg(regs, 7);
         short i;
-        
+        errortrap_typ* et= (nr>=FIRSTEXCEPTION && nr<FIRSTEXCEPTION+NUMEXCEPTIONS)
+                         ? &procs[currentpid].ErrorTraps[nr-FIRSTEXCEPTION] : NULL;
+
+        // The register block goes on the stack the process gave F$STrap, when it
+        // gave one ("stack to use if exception occurs"; zero means the current
+        // stack). Built just below the caller's A7 instead, it sits where a
+        // handler that switches back to the program's stack -- MOVEA.L A1,SP, as
+        // GNU Oleo's run-time does -- pushes its next call, and the image it
+        // later restores from (a5) has been overwritten.
+        if (et!=NULL && et->handleraddr!=0 && et->handlerstack!=0)
+            m68k_areg(regs, 7) = et->handlerstack;
+
         // prep os9_go result code
         m68_os9go_result=0xFAFA0000 + (nr * 4); // error tag and vector OFFSET
         // Build stack frame for user trap handler
