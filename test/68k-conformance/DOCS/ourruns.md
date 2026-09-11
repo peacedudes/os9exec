@@ -337,3 +337,20 @@ serial, and its own version and copyright strings; the freeware disk's `sysid`
 utility (hc_utils) prints them. This is the only test in the suite whose claim
 comes from neither Microware nor Motorola -- the v2.4 manual does not have the
 call -- and claims.md says so. On a v3.0-or-later kernel it is not a verdict.
+
+## os9exec, 2026-09-11: t55, what an F$STrap handler is given
+
+Found by tracing GNU Oleo on the freeware disk, which died on an illegal
+instruction after its TRAPV handler ran. The handler resumes by returning
+through the program counter the manual says arrives in a0, and os9exec had
+never set a0. Run against the unfixed emulator first: FAIL with obs=000001,
+a0 wrong while a1 and d7 were already right. With a0 set, both legs report
+
+```
+RESULT t55 PASS  obs=000000 exp=000000  an F$STrap handler gets the PC in a0, SP in a1, vector in d7
+```
+
+The exception table sits before the handler on purpose. os9exec reads a
+table entry's handler offset as unsigned, so a table after its routine
+installs the handler 64K too high; whether that is right is a separate open
+question, and this test is about the registers.
