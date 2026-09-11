@@ -177,8 +177,12 @@ void handle_os9exec_exception(int nr, uaecptr oldpc)
             m68k_areg(regs, 7) -= 4;
             put_long(m68k_areg(regs, 7), m68k_dreg(regs, i)); // save D7..D0 
         }
-        // now modify registers according to requirements of error trap handler
+        // now modify registers according to requirements of error trap handler:
+        // the v2.4 Technical Manual (F$STrap) passes d7.w, a0, a1, a5 and a6.
+        // A0 was missing, so a handler that resumes through it -- GNU Oleo's
+        // run-time does -- jumped to whatever the faulting code left in A0.
         m68k_areg(regs,5) = m68k_areg(regs,7); // A5 is pointer to register block
+        m68k_areg(regs,0) = oldpc;             // A0 is the PC, same as R$pc(a5)
         m68k_areg(regs,1) = callers_stack;     // A1 is caller's stack
         m68k_dreg(regs,7) = nr * 4;            // D7 is vector OFFSET
         // os9exec_nt does the rest: set A6, point A7 at the register block, jump to handler
