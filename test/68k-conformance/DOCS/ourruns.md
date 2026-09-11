@@ -354,3 +354,24 @@ The exception table sits before the handler on purpose. os9exec reads a
 table entry's handler offset as unsigned, so a table after its routine
 installs the handler 64K too high; whether that is right is a separate open
 question, and this test is about the registers.
+
+## os9exec, 2026-09-11: t56, the stack an F$STrap handler runs on
+
+The same trace, one step further. With a0 fixed, Oleo resumed at the right
+place and then took a bus error: its handler switches back to the program's
+stack and calls ordinary routines there before restoring the register image,
+and os9exec had built that image just below the program's stack pointer,
+where those calls land. F$STrap's own a0, the stack to use when an exception
+occurs, was recorded and ignored. Run against the a0-only emulator first:
+FAIL with obs=000001. With the image built on the given stack, both legs
+report
+
+```
+RESULT t56 PASS  obs=000000 exp=000000  an F$STrap handler runs on the stack F$STrap was given
+```
+
+and Oleo draws its title screen. The other program seen dying at the same
+address, GSHELL's `editor`, is not this: it fills a 100-entry array from a
+directory of any size and its own qsort then overwrites a function pointer.
+The shared address was only where each wild jump came to rest in memory the
+emulator keeps zeroed.

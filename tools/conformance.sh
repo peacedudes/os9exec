@@ -54,7 +54,7 @@ MODULES=(t01open t02eof t03bmode t04mode0 t05mode0rd t06short t07extend
          t27shar t28exts t29self t30delo t31zrdr
          t32ticks t33ctrl t34julian t35cent t36crchi t37crclo t38wild t39host
          t40evpuls t41evwake t42evsigw t43evbusy t44evunlk t45seek t46pos t47break t48sas
-         t49load t50movesr t51mem t52memsp t53memgr t54sysid t55strap
+         t49load t50movesr t51mem t52memsp t53memgr t54sysid t55strap t56stack
          tally mark)
 
 # ------------------------------------------------------------- the `load` utility
