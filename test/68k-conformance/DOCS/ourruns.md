@@ -403,3 +403,20 @@ seven longs each. F$STrap still refuses them, and nothing in the CPU core
 raises them, so accepting the install would buy a program silence rather than
 a handler. GNU Oleo asks for all seven, is refused, and runs anyway.
 
+## os9exec, 2026-09-12: t58, the signed table offset
+
+A table entry's routine offset is a word relative to the entry, reaching plus
+or minus 32K (The OS-9 Guru, 11.2), so a table placed after the routines it
+names carries a negative one. os9exec read it as an unsigned word and installed
+the handler 64K above the routine; the process then died at the very exception
+it had asked to catch. Before the fix the test dies with a bus error and no
+result line; every other test in this suite puts its table first, which is why
+nothing had caught it.
+
+```
+RESULT t58 PASS  obs=000000 exp=000000  an F$STrap table may sit after the handler it names
+```
+
+With t55 and t56 from the day before, the four F$STrap tests now cover what the
+manual states: the registers a handler is entered with, the stack it runs on,
+the vectors that may be caught, and the sign of the offset that finds it.
