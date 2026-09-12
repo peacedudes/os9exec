@@ -1904,7 +1904,7 @@ static Boolean TCALL_or_Exception( process_typ* cp, regs_type* crp, ushort cpid 
 		if (!hasHandler && debugcheck(dbgAnomaly,dbgNorm)) debug_procdump(cp, cpid);
 
 		if ((vect>=FIRSTEXCEPTION) && (vect<FIRSTEXCEPTION+NUMEXCEPTIONS)) {
-			if (cp->ErrorTraps[vect-2].handleraddr!=0) {
+			if (cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr!=0) {
 				/* there is an installed handler */
 				crp->pc  = cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr; /* set handler routine address */
 				crp->a[6]= cp->memstart+0x8000; /* set A6 base */

@@ -497,8 +497,21 @@ typedef struct {
 /* maximum number of open paths per "process" */
 #define MAXUSRPATHS   32
 
-/* number of exceptions for which a handler can be installed */
-#define NUMEXCEPTIONS  7
+/* Number of exceptions for which a handler can be installed: vectors 2..11,
+ * which is bus error, address error, illegal instruction, zero divide, CHK,
+ * TRAPV, privilege violation, trace, line-1010 and line-1111.
+ *
+ * Ten, not seven, because that is the size of the table OS-9 itself keeps:
+ * P$Except is 10 longs at $03C and P$ExStk 10 longs at $064 (procid_from_book.h,
+ * and the offsets prove it -- $064-$03C = $28 = 10 longs). The v2.4 manual's
+ * F$STrap page lists line-1010 and line-1111 among the catchable exceptions,
+ * and a run-time that offers software floating point on a machine with no FPU
+ * catches line-1111 to do it. Refusing 9..11 killed such a program at the very
+ * instruction it had asked to be told about (GNU Oleo asks; measured 2026-09-11).
+ *
+ * The FPU exceptions (vectors 48..54) are NOT here: OS-9 keeps those in
+ * separate tables, P$FPExcpt/P$FPExStk at $338/$354, 7 longs each. */
+#define NUMEXCEPTIONS  10
 
 /* number of the first exception (bus error) */
 #define FIRSTEXCEPTION 2
