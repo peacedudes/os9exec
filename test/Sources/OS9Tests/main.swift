@@ -153,6 +153,33 @@ let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/dd/CMDS"
 /// against the locally built binary.
 let containerized = dockerImage != nil || containerImage != nil
 
+/// Remove a scratch fixture in the namespace that will READ it next.
+///
+/// A host-side delete of a bind-mounted path is not visible to the next
+/// container on macOS Docker Desktop. Measured 2026-09-11: create `/h5/hb` in
+/// one container, delete it from the host (the host then lists the scratch
+/// directory as empty), and the NEXT container still refuses `mount -k=0 hb`
+/// with "already exists -- remove it first", because `FileFound`/`PathFound`
+/// are answered from a stale directory entry. Deleting from INSIDE a container
+/// is visible to the next one; that is the whole difference. It cost two
+/// failures per container run ("fs: attr -- host-native execute bit ...") that
+/// looked like an emulator regression and were not: os9exec refused correctly
+/// on what its filesystem told it.
+func removeScratchItem(_ name: String) {
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + name)
+    guard containerized, let image = dockerImage ?? containerImage else { return }
+    let runtime = dockerImage != nil ? "docker" : "container"
+    let rm = Process()
+    rm.executableURL  = URL(fileURLWithPath: "/usr/bin/env")
+    rm.arguments      = [runtime, "run", "--rm", "-v", scratchDisk + ":" + scratch,
+                         "--entrypoint", "/bin/sh", image,
+                         "-c", "rm -rf '" + scratch + "/" + name + "'"]
+    rm.standardOutput = FileHandle.nullDevice
+    rm.standardError  = FileHandle.nullDevice
+    try? rm.run()
+    rm.waitUntilExit()
+}
+
 /// How the emulator itself spells `scratchDisk`. A container bind-mounts that
 /// directory at `/h5` and runs there, so a host path handed to the emulator in
 /// an env var has to be written in whichever namespace the emulator lives in --
@@ -1462,8 +1489,8 @@ do {
         commands: ["mount -k=0 he", "chd /he",
                    "dir .."]) { !$0.contains(nestFile) }
 
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/" + nestFile)
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/he")
+    removeScratchItem(nestFile)
+    removeScratchItem("he")
 
     // ---- host-native devices: attr round-trip only, NOT permission enforcement ----
     // A host directory cannot carry OS-9 ownership and attributes faithfully --
@@ -1485,7 +1512,7 @@ do {
         contains: "--------",
         "mount -k=0 hb", "chd /hb", "echo abc >f",
         "attr f -nr -nw -ne -npr -npw -npe", "attr f")
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
+    removeScratchItem("hb")
 
     // The execute bit specifically: a freshly created data file must NOT claim
     // to be executable, and an `e` granted afterwards must survive being read
@@ -1495,18 +1522,18 @@ do {
     check("fs: attr — host-native execute bit is real, not forced on",
         contains: "------wr",
         "mount -k=0 hb", "chd /hb", "echo abc >f", "attr f")
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
+    removeScratchItem("hb")
 
     check("fs: attr — host-native execute bit survives a set/read round-trip",
         contains: "-----ewr",
         "mount -k=0 hb", "chd /hb", "echo abc >f", "attr f -e", "attr f")
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
+    removeScratchItem("hb")
 
     check("fs: attr — host-native: attr still reaches a file whose bits it cleared",
         contains: "6162 63",
         "mount -k=0 hb", "chd /hb", "echo abc >f",
         "attr f -nr -nw -ne -npr -npw -npe", "attr f -r -pr", "dump f")
-    try? FileManager.default.removeItem(atPath: scratchDisk + "/hb")
+    removeScratchItem("hb")
 }
 
 // ── permissions on RBF images: os9exec's OWN enforcement, host-independent ───
