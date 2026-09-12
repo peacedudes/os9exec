@@ -645,7 +645,14 @@ os9err OS9_F_STrap( regs_type *rp, ushort cpid )
                    the one shared handler.  Using itab (entry start) landed 4 bytes early,
                    on the tail of the previous routine, so the handler RTS'd through a
                    register-block slot into garbage. */
-                cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr=hoff+TO68K(itab+2); /* install routine pointer (68k addr) */
+                /* The offset is SIGNED. The manual describes it as a word value
+                   relative to the table entry, reaching +/-32K, so a table placed
+                   AFTER the routines it names carries a negative one. Read as an
+                   unsigned word it installed the handler 64K high, and the process
+                   died on the first exception it had asked to be told about.
+                   int16_t, not a mask: sign-extension is the whole point. */
+                cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr=
+                    (os9addr_t)( (int32_t)TO68K(itab+2) + (int32_t)(int16_t)hoff ); /* install routine pointer (68k addr) */
                 cp->ErrorTraps[vect-FIRSTEXCEPTION].handlerstack=rp->a[0]; /* stack */
                 debugprintf(dbgTrapHandler,dbgNorm,
                   ("Installed handler at $%08X for vector number $%02X\n",
