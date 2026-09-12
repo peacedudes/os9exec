@@ -692,11 +692,12 @@ static os9err int_devs( _pid_, int argc, char** argv )
         } /* for */
 
         /* Host-backed /tN terminals, with the HOST endpoint they are bound to.
-         * That endpoint is the whole point of listing them: it is announced
-         * once, when the device is opened ("/t1 is /dev/ttys010   (attach
-         * with: screen /dev/ttys010)"), and on a busy screen that line scrolls
-         * away -- after which there was no way to find out where the output
-         * had gone. Listed whenever the device is BOUND, not merely while a
+         * That endpoint is the whole point of listing them, and since the
+         * open-time announcement was removed this is now the ONLY way to find
+         * it: attach with `screen <endpoint>`. The announcement went because
+         * it printed to the current process's stderr PATH, putting emulator
+         * narration inside the output of whatever guest program was running.
+         * Listed whenever the device is BOUND, not merely while a
          * path is open on it: the endpoint is never closed once bound, so a
          * device with no current path is the normal state between one
          * `tsmon /t1` exiting and the next login. */

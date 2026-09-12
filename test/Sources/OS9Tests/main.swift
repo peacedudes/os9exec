@@ -4074,13 +4074,13 @@ if runHostBackpressure && !containerized {
     }
 }
 
-// -- OS9Tn=pty: self-allocated pty, self-reported slave name ----------------
+// -- OS9Tn=pty: self-allocated pty, name discoverable via idevs -------------
 // A named endpoint (OS9T1=/dev/ttysNNN) requires the pty to already exist,
 // which is fine for a test that creates the pair itself, but useless for the
 // interactive case this endpoint exists for: you cannot name a pty that has
-// not been allocated yet. `pty` makes hostterm allocate one itself and report
-// the slave name to attach to.
-let hostPtyNameName  = "hostterm: OS9T1=pty reports a slave device to attach to"
+// not been allocated yet. `pty` makes hostterm allocate one itself, and
+// `idevs` reports which host device it landed on.
+let hostPtyNameName  = "hostterm: idevs reports a bound /tN and its host endpoint"
 let hostPtyCarryName = "hostterm: OS9T1=pty carries output off the console"
 let runHostPtyName   = filter.isEmpty || hostPtyNameName.localizedCaseInsensitiveContains(filter)
 let runHostPtyCarry  = filter.isEmpty || hostPtyCarryName.localizedCaseInsensitiveContains(filter)
@@ -4091,19 +4091,41 @@ if runHostPtyName || runHostPtyCarry {
     // anything allocated them, so a stat() check would pass unconditionally --
     // vacuous. Liveness is proved by assertion 2 and by interactive
     // verification (screen + tsmon), not by stat().
-    let ptyOut = os9(["dir /dd >/t1"], env: ["OS9T1": "pty"])
+    //
+    // `idevs` is a SECOND command, not an addition to the first: the redirect
+    // in `dir /dd >/t1` is what assertion 2 measures, so it must stay exactly
+    // as it is. idevs' own output goes to the console, which is where
+    // assertion 1 reads it from.
+    let ptyOut = os9(["dir /dd >/t1", "idevs"], env: ["OS9T1": "pty"])
 
     if runHostPtyName {
+        // The emulator no longer announces the slave name at allocation (it
+        // used to, on the guest's own stderr path, which put emulator
+        // narration inside guest program output). `idevs` is now the only
+        // source of the name, so this asserts on the LISTING ROW rather than
+        // on stray output: "t1  hostterm  scf ... /dev/ttysNNN".
+        //
+        // Matching the row and the device together is what keeps this honest.
+        // A bare search for "/dev/..." anywhere in the output would be far
+        // weaker now that idevs prints a whole device table -- and it would
+        // still pass if the t1 row reported no endpoint at all.
+        //
         // Both spellings of a pty slave: /dev/ttysNNN (Darwin) and /dev/pts/N
-        // (Linux). The old pattern required the letters "tty" and so could
+        // (Linux). An earlier pattern required the letters "tty" and so could
         // only ever pass on macOS -- it failed every containerised run against
-        // an emulator that was reporting "/t1 is /dev/pts/0" perfectly well.
-        if ptyOut.range(of: "/dev/(pts/[0-9]+|[a-z]*tty[a-zA-Z0-9/]+)",
-                        options: .regularExpression) != nil {
+        // an emulator that was handling /dev/pts/0 perfectly well.
+        let t1Row = ptyOut.replacingOccurrences(of: "\r", with: "\n")
+                          .split(separator: "\n")
+                          .first { $0.hasPrefix("t1 ") && $0.contains("hostterm") }
+        let hasDev = t1Row?.range(of: "/dev/(pts/[0-9]+|[a-z]*tty[a-zA-Z0-9/]+)",
+                                  options: .regularExpression) != nil
+
+        if hasDev {
             print("PASS: \(hostPtyNameName)"); passed += 1
         } else {
             print("FAIL: \(hostPtyNameName)")
-            print("      [no /dev/ttysNNN or /dev/pts/N name in emulator output]")
+            print("      [expected an idevs row \"t1 hostterm scf ... /dev/ttysNNN\"]")
+            print("      row: \(t1Row.map(String.init) ?? "none")")
             print("      got: \(ptyOut.debugDescription.prefix(200))")
             failed += 1
         }
@@ -4127,54 +4149,45 @@ if runHostPtyName || runHostPtyCarry {
     }
 }
 
-// `idevs` must report a bound /tN AND the host endpoint behind it. The endpoint
-// is announced once, at allocation; on a busy screen that line scrolls away,
-// and there was then no way to discover where the terminal's output had gone.
-//
-// The assertion ties the two together: it pulls the path out of the
-// ANNOUNCEMENT and then demands a "t1  hostterm  scf ... <that same path>" row.
-// Checking only for "/dev/..." somewhere in the output would be vacuous -- the
-// announcement itself contains one. Checking only for a "t1" row would pass on
-// a row that reported the wrong device.
-let hostDevsName = "hostterm: idevs reports a bound /tN and its host endpoint"
-if filter.isEmpty || hostDevsName.localizedCaseInsensitiveContains(filter) {
-    let out = os9(["dir /dd >/t1", "idevs"], env: ["OS9T1": "pty"])
-    let announced = out.range(of: "/dev/(pts/[0-9]+|[a-z]*tty[a-zA-Z0-9/]+)",
-                              options: .regularExpression).map { String(out[$0]) }
-    let row = out.replacingOccurrences(of: "\r", with: "\n")
-                 .split(separator: "\n")
-                 .first { $0.hasPrefix("t1 ") && $0.contains("hostterm") }
+// NOTE: there was a separate "idevs reports a bound /tN" test here. It pulled
+// the device path out of the allocation ANNOUNCEMENT and demanded a matching
+// idevs row. With the announcement removed it had no left-hand side left, and
+// what remained of it was word-for-word the assertion above -- two tests that
+// looked independent and were not. Folded into the OS9T1=pty block, which
+// already runs the same emulator invocation.
 
-    if let announced, let row, row.contains(announced) {
-        print("PASS: \(hostDevsName)"); passed += 1
-    } else {
-        print("FAIL: \(hostDevsName)")
-        print("      [an idevs row \"t1 hostterm scf ... \(announced ?? "/dev/...")\"]")
-        print("      announced: \(announced ?? "none")  row: \(row.map(String.init) ?? "none")")
-        failed += 1
-    }
-}
-
-// Two commands, each opening and closing /t1. With OS9T1=pty the emulator
-// announces the slave name once per ALLOCATION. If the binding is torn down
-// when the first command's path closes, the second command allocates again and
-// the announcement appears TWICE -- and any `screen` attached to the first is
-// already dead, even though the recycled pty happens to carry the same name.
+// Two commands, each opening and closing /t1, with `idevs` after each. If the
+// binding is torn down when the first command's path closes, hostterm_endpoint()
+// goes empty and the listing SKIPS the device entirely -- so the first idevs
+// shows no "t1 hostterm" row at all. Asking twice therefore measures survival
+// directly. The old form inferred it by counting allocation announcements,
+// which no longer exist: they printed to the guest's own stderr path, putting
+// emulator narration inside guest program output.
 // (Do not assert on distinct name strings: posix_openpt/ptsname deterministically
 // hand back the same lowest-free slot, so a torn-down-and-reallocated pty
-// reappears under the IDENTICAL name -- proven live, so that check is vacuous.)
+// reappears under the IDENTICAL name -- proven live, so that check is vacuous.
+// Requiring the two endpoints to be EQUAL is safe for exactly that reason, and
+// is not what distinguishes the two outcomes: the row's presence is.)
 let hostSurvivesCloseName = "hostterm: a pty binding survives the path that opened it"
 let runHostSurvivesClose  = filter.isEmpty || hostSurvivesCloseName.localizedCaseInsensitiveContains(filter)
 
 if runHostSurvivesClose {
-    let twiceOut = os9(["echo one >/t1", "echo two >/t1"], env: ["OS9T1": "pty"])
-    let allocations = twiceOut.components(separatedBy: "attach with: screen").count - 1
+    let twiceOut = os9(["echo one >/t1", "idevs", "echo two >/t1", "idevs"],
+                       env: ["OS9T1": "pty"])
+    let endpoints = twiceOut.replacingOccurrences(of: "\r", with: "\n")
+                            .split(separator: "\n")
+                            .filter { $0.hasPrefix("t1 ") && $0.contains("hostterm") }
+                            .compactMap { row in
+        row.range(of: "/dev/(pts/[0-9]+|[a-z]*tty[a-zA-Z0-9/]+)",
+                  options: .regularExpression).map { String(row[$0]) }
+    }
 
-    if allocations == 1 {
+    if endpoints.count == 2 && endpoints[0] == endpoints[1] {
         print("PASS: \(hostSurvivesCloseName)"); passed += 1
     } else {
         print("FAIL: \(hostSurvivesCloseName)")
-        print("      [expected exactly 1 pty allocation across two commands, saw \(allocations)]")
+        print("      [expected a t1 hostterm row in BOTH idevs listings, same endpoint]")
+        print("      endpoints: \(endpoints)")
         failed += 1
     }
 }
@@ -4251,13 +4264,23 @@ let runHostWildcard        = filter.isEmpty || hostWildcardName.localizedCaseIns
 let runHostWildcardStrict  = filter.isEmpty || hostWildcardStrictName.localizedCaseInsensitiveContains(filter)
 
 if runHostWildcard {
-    let wild = os9(["echo x >/t5"], env: ["OS9T": "pty"])
+    // `idevs` rather than an allocation announcement: the announcement was
+    // removed (it printed onto the guest's stderr path). E_UNIT is #000:240 --
+    // the wildcard failing to serve /t5 shows up as that error, so both halves
+    // still have to hold: a real endpoint row AND no refusal.
+    let wild = os9(["echo x >/t5", "idevs"], env: ["OS9T": "pty"])
+    let row  = wild.replacingOccurrences(of: "\r", with: "\n")
+                   .split(separator: "\n")
+                   .first { $0.hasPrefix("t5 ") && $0.contains("hostterm") }
+    let hasDev = row?.range(of: "/dev/(pts/[0-9]+|[a-z]*tty[a-zA-Z0-9/]+)",
+                            options: .regularExpression) != nil
 
-    if wild.contains("attach with: screen") && !wild.contains("Error #000:240") {
+    if hasDev && !wild.contains("Error #000:240") {
         print("PASS: \(hostWildcardName)"); passed += 1
     } else {
         print("FAIL: \(hostWildcardName)")
-        print("      [expected an allocation announcement (attach with: screen ...)]")
+        print("      [expected an idevs row \"t5 hostterm scf ... /dev/...\"]")
+        print("      row: \(row.map(String.init) ?? "none")")
         print("      got: \(wild.debugDescription.prefix(200))")
         failed += 1
     }

@@ -246,11 +246,18 @@ os9err hostterm_open( int term_id, syspath_typ* spP )
         }
         h->spareFd= spareFd;
 
-        /* The name is the whole point -- without it there is no way to
-           attach. stderr via uphe_printf, so it survives stdout redirection
-           and matches the emulator's other "# ..." startup messages. */
-        uphe_printf( "/t%d is %s   (attach with: screen %s)\n",
-                     term_id, slave, slave );
+        /* The slave name is NOT announced here, deliberately. It used to be,
+           via uphe_printf -- but that writes to the CURRENT PROCESS'S stderr
+           path, so the line landed in the middle of whatever guest program
+           happened to be running, and any capture of that program's output
+           contained bytes the program never wrote. Measured cost: four
+           freeware programs (uucico, tsmon2, infoxpress, dld) were unusable
+           under capture because of this one line.
+           `idevs` reports the binding and its host endpoint on demand, which
+           is where the name belongs: it answers the same question without
+           writing to a stream that belongs to the guest, and it still works
+           after the announcement would have scrolled off a busy screen --
+           which is why that column was added in the first place. */
 
         /* We hold the MASTER. O_NONBLOCK is set here rather than at
            posix_openpt because the grant/unlock dance wants the plain fd. */
