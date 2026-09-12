@@ -652,9 +652,21 @@ noError("date: runs",            "date")
 noError("mdir: runs",            "mdir")
 check("mdir: shell listed",      contains: "shell",   "mdir")
 noError("procs: runs",           "procs")
-// devs lists the device table; the binary has a known post-list crash (bus error),
-// so we verify the table header appears rather than asserting no error.
-check("devs: shows device table",    contains: "devices max", "devs")
+// `devs` is OS9exec's own now, not Microware's. This used to run the disk
+// binary and assert on "devices max" -- a string from that binary's header --
+// because it has a known post-list crash (bus error) and could not be checked
+// for success. What it printed under that header was an EMPTY table: it reads
+// the device table through F$SetSys offset $08A4, which os9exec does not
+// implement, so it got zero devices and faithfully listed none. The test was
+// therefore measuring that a crashing binary reached its header.
+//
+// The internal one lists the devices os9exec actually has. "hostterm" is not
+// in Microware's vocabulary at all, so this cannot pass against the old
+// binary -- which is what makes it a real check on the rename. Microware's is
+// still reachable as /dd/CMDS/devs, and `idevs` still forces this one.
+check("devs: shows device table",    contains: "FileMgr", "devs")
+// The bound-terminal half of this lives with the hostterm tests below: it
+// needs OS9T1=pty, and check() has no way to pass an environment.
 noError("printenv: runs",        "printenv")
 
 // module ops
@@ -4146,6 +4158,33 @@ if runHostPtyName || runHostPtyCarry {
             print("      [listing reached the console, so /t1 was not the pty]")
             failed += 1
         }
+    }
+}
+
+// The endpoint alone says WHERE the terminal went, not WHAT TO TYPE. The
+// removed open-time announcement carried both; `devs` now prints the attach
+// command as a footer under the table. Asserting on it here because the
+// instruction is the half you need when you have done this once and come back
+// to it months later -- exactly the value rdoggett flagged when he noticed it
+// had gone missing.
+let hostAttachHintName = "devs: prints how to attach to a bound /tN"
+if filter.isEmpty || hostAttachHintName.localizedCaseInsensitiveContains(filter) {
+    let out = os9(["echo x >/t1", "devs"], env: ["OS9T1": "pty"])
+    // The hint must name the device AND carry a real host path -- "attach /t1
+    // with:" alone would pass on a footer that printed an empty endpoint.
+    let hint = out.replacingOccurrences(of: "\r", with: "\n")
+                  .split(separator: "\n")
+                  .first { $0.contains("attach /t1 with:") }
+    let hasDev = hint?.range(of: "screen +/dev/(pts/[0-9]+|[a-z]*tty[a-zA-Z0-9/]+)",
+                             options: .regularExpression) != nil
+
+    if hasDev {
+        print("PASS: \(hostAttachHintName)"); passed += 1
+    } else {
+        print("FAIL: \(hostAttachHintName)")
+        print("      [expected a footer line \"attach /t1 with:  screen /dev/...\"]")
+        print("      hint: \(hint.map(String.init) ?? "none")")
+        failed += 1
     }
 }
 

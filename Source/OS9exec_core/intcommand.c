@@ -612,18 +612,21 @@ static void devs_printf( syspath_typ* spP, char* driv, char* fmgr )
 } /* devs_printf */
 
 static os9err int_devs( _pid_, int argc, char** argv )
-/* idevs": OS9exec internal devices */
+/* `devs` / `idevs`: OS9exec's devices. Holds the BARE name because
+   Microware's devs reads a device table os9exec does not have and prints an
+   empty one; `idevs` forces this one, a pathlist gets Microware's. */
 {
     #define IDEVS_MAXARGS 0
     int     nargc=0, h;
     char*   p;
     Boolean rbf_devs = false;
     Boolean statistic= false;
-    
+
     int           ii;
     ttydev_typ*   tdev;
     pipechan_typ* pch;
     syspath_typ*  spP;
+    Boolean       anyHostTerm;
 
     for (h=1; h<argc; h++) {
         p=      argv[ h ];
@@ -701,6 +704,8 @@ static os9err int_devs( _pid_, int argc, char** argv )
          * path is open on it: the endpoint is never closed once bound, so a
          * device with no current path is the normal state between one
          * `tsmon /t1` exiting and the next login. */
+        anyHostTerm= false;
+
         for (ii=1; ii<=HOSTTERM_MAX; ii++) {
             const char* endp= hostterm_endpoint( ii );
             char        tnam[OS9NAMELEN];
@@ -716,7 +721,28 @@ static os9err int_devs( _pid_, int argc, char** argv )
 
             upo_printf( "%-10s %-8s %-7s %2s %4s %-4s %s\n",
                         tnam, "hostterm","scf", tnr, "","", endp );
+            anyHostTerm= true;
         } /* for */
+
+        /* The endpoint alone is the answer to "where did it go", not to "what
+           do I type". The removed open-time announcement carried both, and
+           dropping the instruction with it lost the half you need when you
+           have done this once and come back to it months later. Safe here in
+           a way it was not there: this prints because the user ASKED, on
+           stdout, rather than being injected into some running program's
+           stderr path. Footer rather than a column, so the table stays one
+           line per device -- and no line here begins with a device name, so
+           anything parsing rows by their leading "tN " is unaffected. */
+        if (anyHostTerm) {
+            upo_printf( "\n" );
+
+            for (ii=1; ii<=HOSTTERM_MAX; ii++) {
+                const char* endp= hostterm_endpoint( ii );
+                if (*endp==NUL) continue;
+
+                upo_printf( "  attach /t%d with:  screen %s\n", ii, endp );
+            } /* for */
+        } /* if */
     } /* if */
     
     return 0;
@@ -1531,13 +1557,23 @@ static os9err int_ignored( _pid_, _argc_, _argv_ )
    and the CI leg that ran the record-locking claims on a real image had never
    passed once since the day it was added.
 
-   BOTH NAMES CARRY THE `i` PREFIX DELIBERATELY, like iprocs/imdir/idevs, and
-   it is not decoration. IntCmdIndex() matches this table by exact strcmp
-   BEFORE anything is looked up on disk, so a plain `copy` here would quietly
-   shadow Microware's copy for every lowercase invocation on a system that has
-   one -- changing what an existing command means, which is precisely the class
-   of surprise the F$Link/F$Fork intcmd hijack already cost this project once.
-   Nothing a user types changes meaning because these two exist. */
+   BOTH NAMES CARRY THE `i` PREFIX DELIBERATELY -- but NOT as a defence
+   against shadowing, which is what an earlier version of this comment
+   claimed. The `i` spelling FORCES the internal one; getting the external one
+   is already guaranteed twice over. A pathlist bypasses this table entirely
+   (IntCmdIndex strcmps the whole name, so "/dd/CMDS/copy" never matches
+   "copy"), and a genuine resident module wins anyway -- both call sites pair
+   isintcommand() with `find_mod_id(name)>=MAXMODULES`, after a packed BASIC09
+   procedure named "move" could not be run because F$Link was hijacked.
+
+   So the three intents each have a spelling, and the prefix is kept HERE for
+   a reason about behaviour, not naming: Microware's `copy` and `makdir` are
+   BETTER than these. icopy deliberately writes fixed permissions where the
+   real copy preserves what the source carried. Taking the bare names would
+   silently degrade attribute handling. Compare `rename` and `move`, which
+   hold their bare names because ours are proper replacements, and `devs`,
+   which took its bare name because Microware's reads a device table we do not
+   have and prints an empty one. */
 
 static void icopy_usage( char* pname )
 {
@@ -1759,7 +1795,7 @@ cmdtable_typ commandtable[] =
   { "iunused",       int_unused,     "shows OS9exec's unused block list" },
   #endif
     
-  { "idevs",         int_devs,       "shows OS9exec's devices" },
+  { "devs/idevs",    int_devs,       "shows OS9exec's devices" },
   { "idbg/debughalt",int_debughalt,  "sets debug options/enters OS9exec's debug menu" },
   { "icrash",        int_crash,      "accesses an invalid address: 0xCE00BEFO" },
   { "iquit",         int_quit,       "sets flag to quit directly" },

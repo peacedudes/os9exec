@@ -98,8 +98,9 @@ Parts of OS-9 that were missing or approximated, and are now implemented:
   far as the host allows, but ownership is not recorded, so every file reads as
   owned `0.0`. Previously the checks were skipped everywhere.
 - `F$Event` - waiters are queued and woken as the manual describes.
-- Host terminals: `OS9T1=pty` allocates one and prints where to attach. With
-  `tsmon /t1`, that is a second login session.
+- Host terminals: `OS9T1=pty` allocates one; `devs` reports which host device
+  it landed on and the `screen` command to attach. With `tsmon /t1`, that is a
+  second login session.
 - OS-9's own `debug`: registers, single-step, breakpoints. See
   [OS-9 `debug` now works](#os-9-debug-now-works).
 
@@ -155,7 +156,7 @@ You can also attach extra host directories as `/h1`, `/h2`, etc. (see [Devices](
 |--------|------------|-----------------|
 | `/dd`  | `OS9DISK=…` env var, or a `dd` file/dir next to the binary | Default drive - RBF image or host directory |
 | `/h0`–`/h9`, `/ha`–`/hz` | `OS9H0=…` through `OS9HZ=…`, or files/dirs named `h0`–`hz` next to the binary | RBF disk images or host directories |
-| `/t1`–`/t49` | `OS9T1=…` through `OS9T49=…`, or the wildcard `OS9T=…` for any `/tN` not named individually | Terminals. `pty` allocates one and prints the device to attach to; a `/dev/…` path opens that terminal or serial port. Unset (and no wildcard) means the device does not exist. |
+| `/t1`–`/t49` | `OS9T1=…` through `OS9T49=…`, or the wildcard `OS9T=…` for any `/tN` not named individually | Terminals. `pty` allocates one on first open, and `devs` reports the host device plus how to attach; a `/dev/…` path opens that terminal or serial port. Unset (and no wildcard) means the device does not exist. |
 
 Files placed in a host directory appear immediately inside the emulator as OS-9 files, with no conversion needed for binary modules. Text files need OS-9 line endings (CR, `0x0D`) rather than Unix LF - the emulator handles this transparently for `I$ReadLn`/`I$WritLn`, but raw byte copies preserve whatever endings are in the file.
 
@@ -221,7 +222,7 @@ dsave -ive /h7
 
 **Device-resolution order, if you're layering these:** for any `/hX` path, `os9exec` checks, in order: (1) the `OS9Hx` environment variable, if set; (2) a file/dir named `hX` next to the binary - what `mount -k` writes; (3) one directory level up from the binary (a legacy fallback). An explicit `mount <file> <name>` (or `mount -r=`) call takes priority over all three for as long as the process keeps running.
 
-**Terminals resolve directly, with no search.** Unlike `/hX` - which falls back through `OS9Hx`, then a file next to the binary, then one directory up - a terminal is bound only by its `OS9Tn` variable. Set means bound; unset means the device does not exist, and opening it returns `E_UNIT`. `OS9T1=pty` makes `os9exec` allocate a terminal; run `idevs` to see the host device it landed on and attach with `screen /dev/ttys004`. `OS9T1=/dev/cu.usbserial-1420` opens a real serial port. With `tsmon /t1` running inside OS-9, that terminal gets its own login prompt - one emulator, several independent sessions.
+**Terminals resolve directly, with no search.** Unlike `/hX` - which falls back through `OS9Hx`, then a file next to the binary, then one directory up - a terminal is bound only by its `OS9Tn` variable. Set means bound; unset means the device does not exist, and opening it returns `E_UNIT`. `OS9T1=pty` makes `os9exec` allocate a terminal; run `devs` to see the host device it landed on -- it prints the `screen` command to attach with. `OS9T1=/dev/cu.usbserial-1420` opens a real serial port. With `tsmon /t1` running inside OS-9, that terminal gets its own login prompt - one emulator, several independent sessions.
 
 The port also runs at the speed OS-9 thinks it does: a bound terminal takes its rate from the path's own baud setting, and `tmode baud=2400` retunes a live one. That is invisible on a pty, which stores a speed without honouring it, but it is what makes a real serial cable work at the rate both ends agreed on.
 
@@ -275,7 +276,7 @@ Some real OS-9 binaries assume an RBF file system and use low-level disk calls w
 | `imdir` | Show loaded OS-9 modules |
 | `ipaths` | Show open paths |
 | `imem` | Show memory blocks |
-| `idevs` | Show mounted devices |
+| `devs` / `idevs` | Show devices, and for a bound `/tN` the `screen` command to attach to it. Takes the bare name because Microware's `devs` reads a device table os9exec does not have; `/dd/CMDS/devs` still reaches theirs. |
 | `ihit` | Show directory hash hit rate (cache efficiency) |
 | `idbg` / `debughalt` | Enter the emulator's interactive debugger |
 | `dhelp` | List all debug/stop mask bit values (same as `idbg` → `dh`) |
