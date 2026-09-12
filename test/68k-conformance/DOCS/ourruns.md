@@ -375,3 +375,31 @@ address, GSHELL's `editor`, is not this: it fills a 100-entry array from a
 directory of any size and its own qsort then overwrites a function pointer.
 The shared address was only where each wild jump came to rest in memory the
 emulator keeps zeroed.
+
+## os9exec, 2026-09-12: t57, the vectors F$STrap would not accept
+
+os9exec accepted handlers for vectors 2-8 only. The v2.4 manual's F$STrap page
+also lists line-1010 and line-1111, and OS-9's own process descriptor has ten
+slots for them -- P$Except at $03C and P$ExStk at $064, ten longs each, which
+the offsets themselves prove ($064-$03C = $28). So the table was three entries
+short rather than deliberately narrow. Run against a binary built from the
+previous commit: `Cannot install handler for vector number $0A`, then the
+process killed with vector $0A, error 110 (E$1010), and no result line at all.
+
+```
+RESULT t57 PASS  obs=000000 exp=000000  an F$STrap handler catches a line-A exception
+```
+
+The test asks for line-1010 rather than line-1111 on purpose. os9exec emulates
+a 68020 with a 68881, so `$F2xx` is a legal coprocessor-1 instruction: the CPU
+executed it, took the following word as its extension, and ran the PC into the
+test's own table -- which is what the first version of this test actually
+measured. A line-F test on this target would assert something about the FPU
+model, not about F$STrap.
+
+Still not implemented, and honestly so: the FPU exceptions (vectors 48-54)
+live in their own descriptor tables, P$FPExcpt and P$FPExStk at $338/$354,
+seven longs each. F$STrap still refuses them, and nothing in the CPU core
+raises them, so accepting the install would buy a program silence rather than
+a handler. GNU Oleo asks for all seven, is refused, and runs anyway.
+
