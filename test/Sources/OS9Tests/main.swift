@@ -665,6 +665,21 @@ noError("procs: runs",           "procs")
 // binary -- which is what makes it a real check on the rename. Microware's is
 // still reachable as /dd/CMDS/devs, and `idevs` still forces this one.
 check("devs: shows device table",    contains: "FileMgr", "devs")
+// The "Used by" column names the CHILDMOST process holding the path. It was
+// vacuous when first written and nothing caught it: `devs` holds its own
+// stdout and, being forked from the shell, is always the deepest holder -- so
+// the console row said "os9exec" every time and could never name anything
+// else. devs_holder() now skips the current process, and the console row
+// should read "shell". Asserting the console row specifically, because a bare
+// search for "shell" would pass on the shell's own echo of the command line.
+check("devs: names the process using a device", contains: "console", "devs")
+// Piped, the console's holder is `grep`, not `shell`: grep's stdout IS the
+// console and it is deeper than the shell. Asserting the piped case because
+// it is the one that cannot pass by accident -- "shell" appears in unpiped
+// output anyway (the shell echoes each command line), so a `shell` assertion
+// there would be vacuous, whereas "grep" can only come from the holder column.
+check("devs: the console's user is the deepest holder, not the shell",
+      contains: "grep", "devs ! grep console")
 // The bound-terminal half of this lives with the hostterm tests below: it
 // needs OS9T1=pty, and check() has no way to pass an environment.
 noError("printenv: runs",        "printenv")

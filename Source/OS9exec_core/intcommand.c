@@ -600,15 +600,87 @@ static void idevs_usage( char* name )
   upe_printf( "    -s    show statistic values\n" );
 } /* idevs_usage */
 
+/* Which process is ON this system path -- the CHILDMOST holder.
+ *
+ * Real OS-9's devs answers "how many hold this" (its Links column, a use
+ * count). "Who" is the question people actually have, and os9exec can answer
+ * it because every process descriptor already carries usrpaths[]: "system
+ * path number of user paths". No new bookkeeping.
+ *
+ * Childmost, because paths are INHERITED: tsmon -> login -> shell -> your
+ * program all hold /t1, and only the deepest is meaningfully running on it.
+ * Depth is walked through pd._pid, the same parent link `procs` prints.
+ *
+ * Ties are possible -- a shell with two background jobs on one terminal sits
+ * at equal depth -- and are broken by the higher pid, i.e. the more recently
+ * forked. Terminals have a better tiebreak available (hostterm tracks
+ * lastwritten_pid so an abort char has a target), but it is hostterm-only and
+ * write-only, so it is not used here: one rule for every device class beats a
+ * sharper rule that applies to some.
+ *
+ * Empty when nobody holds it, which is the normal state for a bound-but-idle
+ * terminal and matches the blank pn column beside it. */
+static const char* devs_holder( ushort sp )
+{
+    static char   name[OS9NAMELEN];
+    process_typ*  cp;
+    mod_exec*     mod;
+    int           k, u, d, bestDepth= -1, best= -1;
+
+    if (sp==0) return "";
+
+    for (k=0; k<MAXPROCESSES; k++) {
+        cp= &procs[k];
+        if (cp->state==pUnused) continue;
+
+        /* Skip OURSELVES. `devs` holds its own stdout, and being forked from
+           the shell it is always the deepest holder of it -- so without this
+           the column reported "os9exec" for the console every single time and
+           could never name anyone else. Measured with `ipaths`: path 1 shows
+           both `shell` (pid 2) and the internal command (pid 3, deeper). */
+        if (k==currentpid) continue;
+
+        for (u=0; u<MAXUSRPATHS; u++) {
+            if (cp->usrpaths[u]!=sp) continue;
+
+            /* Depth = how many parents up to pid 0. Bounded by MAXPROCESSES so
+               a corrupt parent link cannot spin here. */
+            { int at= k;
+              for (d=0; d<MAXPROCESSES; d++) {
+                  int up= os9_word( procs[at].pd._pid );
+                  if (up==0 || up>=MAXPROCESSES || up==at) break;
+                  at= up;
+              } }
+
+            if (d>bestDepth || (d==bestDepth && k>best)) { bestDepth= d; best= k; }
+            break; /* one match per process is enough */
+        } /* for u */
+    } /* for k */
+
+    if (best<0) return "";
+
+    cp= &procs[best];
+    if (cp->isIntUtil) return "os9exec";
+
+    mod= get_module_ptr( cp->mid );
+    if (mod==NULL)     return "";
+
+    strncpy( name, Mod_Name( mod ), sizeof(name)-1 );
+            name[     sizeof(name)-1 ]= NUL;
+    return  name;
+} /* devs_holder */
+
+
 static void devs_printf( syspath_typ* spP, char* driv, char* fmgr )
 {
   char    s[OS9NAMELEN];
   char    d[OS9NAMELEN];
   strcpy( s,spP->name );
   strcpy( d,driv );
-    
-  upo_printf( "%-10s %-8s %-7s %2d\n", 
-               StrBlk_Pt( s,Mx ), StrBlk_Pt( d,8 ), fmgr, spP->nr );
+
+  upo_printf( "%-10s %-8s %-7s %2d %4s %-4s %-10s\n",
+               StrBlk_Pt( s,Mx ), StrBlk_Pt( d,8 ), fmgr, spP->nr,
+               "","", devs_holder( spP->nr ) );
 } /* devs_printf */
 
 static os9err int_devs( _pid_, int argc, char** argv )
@@ -661,8 +733,8 @@ static os9err int_devs( _pid_, int argc, char** argv )
         upo_printf( "---------- ----------------------  -----------------------\n" );
     }
     else {
-        upo_printf( "Device     Driver   FileMgr nr sect wPrt Image\n" );
-        upo_printf( "---------- -------- ------- -- ---- ---- --------------------------------------\n" );
+        upo_printf( "Device     Driver   FileMgr pn sect wPrt Used by    Image\n" );
+        upo_printf( "---------- -------- ------- -- ---- ---- ---------- ---------------------------\n" );
     }
     
     #ifdef RBF_SUPPORT 
@@ -670,29 +742,20 @@ static os9err int_devs( _pid_, int argc, char** argv )
     #endif
     
     if (!statistic && !rbf_devs) {
+        /* ORDER IS DELIBERATE, and is not the order the loops happen to run in:
+         * disks (above), then the terminals, then the pseudo-devices last.
+         * Terminals stay together so /t1 and /t3 are adjacent instead of
+         * separated by nil and vmod, and the things nobody came to look at
+         * sink to the bottom. Stable across runs, unlike attach order. Real
+         * OS-9 lists its device table in attach order, but that is a table we
+         * do not have, so nothing here is owed compatibility. */
+
         /* main_mco is the live console on ALL platforms (installed unconditionally
          * under win_unix in filestuff.c), not just legacy windows32 -- the gate
          * meant `idevs` never listed the console device anywhere. */
               tdev= &main_mco;
           if (tdev->installed && tdev->spP!=NULL)
               devs_printf( tdev->spP, "console","scf" );
-
-                     spP= &syspaths[sysStdnil];
-        devs_printf( spP, "null",    "scf" );
-                     spP= &syspaths[sysVMod];
-        devs_printf( spP, "vmod_drv","scf" );
-    
-        for (ii=0; ii<MAXTTYDEV; ii++) {
-                tdev= &ttydev[ii]; 
-            if (tdev->installed && tdev->spP!=NULL) {
-                devs_printf      ( tdev->spP, "tty","scf" );
-            
-                    pch= tdev->spP->u.pipe.pchP;
-                if (pch!=NULL)   { spP= &syspaths[pch->sp_lock];
-                    devs_printf( spP, "pty","scf" );
-                }
-            }
-        } /* for */
 
         /* Host-backed /tN terminals, with the HOST endpoint they are bound to.
          * That endpoint is the whole point of listing them, and since the
@@ -719,10 +782,30 @@ static os9err int_devs( _pid_, int argc, char** argv )
             if (nr<0) *tnr= NUL; /* bound, but nothing has it open right now */
             else      snprintf( tnr,sizeof(tnr), "%d", nr );
 
-            upo_printf( "%-10s %-8s %-7s %2s %4s %-4s %s\n",
-                        tnam, "hostterm","scf", tnr, "","", endp );
+            upo_printf( "%-10s %-8s %-7s %2s %4s %-4s %-10s %s\n",
+                        tnam, "hostterm","scf", tnr, "","",
+                        nr<0 ? "" : devs_holder( (ushort)nr ), endp );
             anyHostTerm= true;
         } /* for */
+
+        /* tty/pty pairs, then the pseudo-devices last -- see the ordering
+           note above. */
+        for (ii=0; ii<MAXTTYDEV; ii++) {
+                tdev= &ttydev[ii];
+            if (tdev->installed && tdev->spP!=NULL) {
+                devs_printf      ( tdev->spP, "tty","scf" );
+
+                    pch= tdev->spP->u.pipe.pchP;
+                if (pch!=NULL)   { spP= &syspaths[pch->sp_lock];
+                    devs_printf( spP, "pty","scf" );
+                }
+            }
+        } /* for */
+
+                     spP= &syspaths[sysStdnil];
+        devs_printf( spP, "null",    "scf" );
+                     spP= &syspaths[sysVMod];
+        devs_printf( spP, "vmod_drv","scf" );
 
         /* The endpoint alone is the answer to "where did it go", not to "what
            do I type". The removed open-time announcement carried both, and
