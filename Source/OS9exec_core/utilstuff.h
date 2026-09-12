@@ -151,6 +151,10 @@ ulong Max( ulong a, ulong b );
 
 char* StrBlk_Pt( char* s, int n );
 
+/* Fit <s> into <n> chars keeping the END, not the start: a host path's head is
+   what every row shares and its tail is what identifies it. Edits in place. */
+char* StrEnd_Pt( char* s, int n );
+
 Boolean IsRead ( ushort  mode );
 Boolean IsWrite( ushort  mode );
 Boolean IsRW   ( ushort  mode );

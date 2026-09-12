@@ -203,6 +203,16 @@ os9err  MountDev        ( ushort pid, char* name, char* mnt_dev, char* devCopy,
 os9err  int_mount       ( ushort pid, int argc, char **argv );
 os9err  int_unmount     ( ushort pid, int argc, char **argv );
 void    Disp_RBF_Devs   ( Boolean statistic );
+
+/* True when Disp_RBF_Devs already printed a row for /<name> -- i.e. the device
+   is mounted and has an rbfdev[] entry. `devs` uses it to avoid listing a
+   configured OS9DISK/OS9Hx a second time under its own name or a synonym. */
+Boolean devs_rbf_listed ( const char* name );
+
+/* Name of the process using system path <sp> -- its last writer while that
+   still stands, else the childmost holder. Empty when nobody holds it.
+   Lives in intcommand.c; RBF's device rows need it for their "Used by". */
+const char* devs_holder ( ushort sp );
 os9err  ReadFD          ( syspath_typ* spP );
 
 

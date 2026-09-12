@@ -2674,13 +2674,15 @@ static char* Kb( char* v, size_t vSize, long long size )
 {
   float r;
   char* unit;
-                       unit= "kB";
-  if (Mega( size,&r )) unit= "MB";
-    
-  if (r>=1000) { snprintf( v,vSize, "%.0f%s", r,unit ); return v; }
-  if (r>= 100) { snprintf( v,vSize, "%.1f%s", r,unit ); return v; }
-  if (r>=  10) { snprintf( v,vSize, "%.2f%s", r,unit ); return v; }
-                 snprintf( v,vSize, "%.3f%s", r,unit ); return v;
+                       unit= "K";
+  if (Mega( size,&r )) unit= "M";
+
+  /* Whole units once there are at least ten of them: "274M" not "274.0MB".
+     A disk size is read at a glance for its order of magnitude, and three
+     decimals of a megabyte is spurious precision in a column. Small values
+     keep a decimal, where the fraction is the whole of the information. */
+  if (r>=  10) { snprintf( v,vSize, "%.0f%s", r,unit ); return v; }
+                 snprintf( v,vSize, "%.1f%s", r,unit ); return v;
 } // Kb
 
 static void Disp_RBF_DevsLine( rbfdev_typ* rb, char* name, Boolean statistic )
@@ -2713,8 +2715,10 @@ static void Disp_RBF_DevsLine( rbfdev_typ* rb, char* name, Boolean statistic )
     }
     
     Kb   ( vT,sizeof(vT), sizeT );
-    if (sizeI==sizeT) snprintf( v,sizeof(v),    "(%s)",                 vT );
-    else              snprintf( v,sizeof(v), "(%s/%s)", Kb( vI,sizeof(vI), sizeI ),vT );
+    /* No parentheses: the column header says what it is, and the brackets cost
+       two of the 79 characters the whole line has to fit in. */
+    if (sizeI==sizeT) snprintf( v,sizeof(v),    "%s",                 vT );
+    else              snprintf( v,sizeof(v), "%s/%s", Kb( vI,sizeof(vI), sizeI ),vT );
     
     upo_printf( "%-10s ", StrBlk_Pt( s,10 ) );
             
@@ -2722,16 +2726,51 @@ static void Disp_RBF_DevsLine( rbfdev_typ* rb, char* name, Boolean statistic )
         upo_printf( "%10d /%10d   %10d /%10d\n",
                      (uint32_t)rb->rMiss, (uint32_t)rb->rTot,
                      (uint32_t)rb->wMiss, (uint32_t)rb->wTot );
-    else 
-        upo_printf( "%-8s %-7s %2d %4d %-3s %-21s %17s\n", 
+    else
+        /* Matches the header and devs_printf's SCF rows. Without the "Used by"
+           column here the image path landed under it and every RBF row was a
+           column out. The path is truncated from the LEFT: "/Users/rdoggett/
+           Dev.." identifies nothing, while the tail carries the volume and
+           file name that do. Size stays last -- it is the one field an image
+           has that a host directory does not. */
+        upo_printf( "%-8s %-5s %2d %-10s %-30s %s\n",
                      StrBlk_Pt( w,7 ),
-                     "rbf", 
+                     "rbf",
                      rb->nr,
-                     rb->sctSize,
-                     rb->wProtected ? "yes":"no",
-                     StrBlk_Pt( u,21 ),
+                     devs_holder( rb->nr ),
+                     StrEnd_Pt( u,30 ),
                      v );
 } /* Disp_RBF_DevsLine */
+
+Boolean devs_rbf_listed( const char* name )
+/* Did Disp_RBF_Devs already print a row for /<name>?
+ *
+ * `devs` lists configured host devices (OS9DISK, OS9Hx) so that a host
+ * directory appears at all -- it has no struct anywhere, being resolved fresh
+ * on every path lookup. An RBF image DOES get a struct, but only once
+ * something mounts it, and that row carries the size and path number this one
+ * cannot. So the rule is: if it is mounted, the rbfdev[] row wins and the
+ * configured-device loop stays quiet.
+ *
+ * All THREE name slots: a device can be mounted under synonyms (name2/name3),
+ * and matching only the first would print a second row for the same image
+ * under its alternate name. Names are stored bare here ("h0", no slash). */
+{
+    rbfdev_typ* r;
+    int         ii;
+
+    for (ii=0; ii<MAXRBFDEV; ii++) {
+        r= &rbfdev[ii];
+        if (!r->installed) continue;
+
+        if (ustrcmp( r->name, (char*)name )==0 ||
+            ustrcmp( r->name2,(char*)name )==0 ||
+            ustrcmp( r->name3,(char*)name )==0) return true;
+    } /* for */
+
+    return false;
+} /* devs_rbf_listed */
+
 
 void Disp_RBF_Devs( Boolean statistic )
 {

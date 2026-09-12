@@ -611,23 +611,46 @@ static void idevs_usage( char* name )
  * program all hold /t1, and only the deepest is meaningfully running on it.
  * Depth is walked through pd._pid, the same parent link `procs` prints.
  *
- * Ties are possible -- a shell with two background jobs on one terminal sits
- * at equal depth -- and are broken by the higher pid, i.e. the more recently
- * forked. Terminals have a better tiebreak available (hostterm tracks
- * lastwritten_pid so an abort char has a target), but it is hostterm-only and
- * write-only, so it is not used here: one rule for every device class beats a
- * sharper rule that applies to some.
+ * LAST WRITER FIRST, though, because childmost alone gets the common case
+ * wrong: start `tsmon /t1` and tsmon inherits the console's paths from the
+ * shell and never closes them, so it becomes the deepest holder of `term` and
+ * the column reported tsmon for a terminal tsmon is not using. The shell is
+ * the honest answer, and lastwritten_pid already knows it -- it is a field on
+ * syspath_typ, not a hostterm thing (KeyToBuffer uses it to aim an abort
+ * character), so it is available for every device class. Used only when that
+ * process is still alive AND still holds this path, since it is a stale
+ * record otherwise.
+ *
+ * Ties in the childmost fallback -- a shell with two background jobs on one
+ * terminal sits at equal depth -- break on the higher pid, the more recently
+ * forked.
  *
  * Empty when nobody holds it, which is the normal state for a bound-but-idle
  * terminal and matches the blank pn column beside it. */
-static const char* devs_holder( ushort sp )
+static const char* devs_name_of( int pid );
+
+static Boolean devs_holds( int pid, ushort sp )
 {
-    static char   name[OS9NAMELEN];
+    int u;
+    if (pid<=0 || pid>=MAXPROCESSES)  return false;
+    if (procs[pid].state==pUnused)    return false;
+
+    for (u=0; u<MAXUSRPATHS; u++)
+        if (procs[pid].usrpaths[u]==sp) return true;
+
+    return false;
+} /* devs_holds */
+
+const char* devs_holder( ushort sp )
+{
     process_typ*  cp;
-    mod_exec*     mod;
-    int           k, u, d, bestDepth= -1, best= -1;
+    int           k, u, d, bestDepth= -1, best= -1, lw;
 
     if (sp==0) return "";
+
+    /* The device's own record of who last wrote to it, when it still stands. */
+        lw= syspaths[sp].lastwritten_pid;
+    if (lw!=0 && lw!=currentpid && devs_holds( lw,sp )) return devs_name_of( lw );
 
     for (k=0; k<MAXPROCESSES; k++) {
         cp= &procs[k];
@@ -658,17 +681,24 @@ static const char* devs_holder( ushort sp )
     } /* for k */
 
     if (best<0) return "";
+    return devs_name_of( best );
+} /* devs_holder */
 
-    cp= &procs[best];
-    if (cp->isIntUtil) return "os9exec";
 
-    mod= get_module_ptr( cp->mid );
-    if (mod==NULL)     return "";
+static const char* devs_name_of( int pid )
+{
+    static char name[OS9NAMELEN];
+    mod_exec*   mod;
+
+    if (procs[pid].isIntUtil) return "os9exec";
+
+    mod= get_module_ptr( procs[pid].mid );
+    if (mod==NULL)            return "";
 
     strncpy( name, Mod_Name( mod ), sizeof(name)-1 );
             name[     sizeof(name)-1 ]= NUL;
     return  name;
-} /* devs_holder */
+} /* devs_name_of */
 
 
 static void devs_printf( syspath_typ* spP, char* driv, char* fmgr )
@@ -678,9 +708,9 @@ static void devs_printf( syspath_typ* spP, char* driv, char* fmgr )
   strcpy( s,spP->name );
   strcpy( d,driv );
 
-  upo_printf( "%-10s %-8s %-7s %2d %4s %-4s %-10s\n",
+  upo_printf( "%-10s %-8s %-5s %2d %-10s\n",
                StrBlk_Pt( s,Mx ), StrBlk_Pt( d,8 ), fmgr, spP->nr,
-               "","", devs_holder( spP->nr ) );
+               devs_holder( spP->nr ) );
 } /* devs_printf */
 
 static os9err int_devs( _pid_, int argc, char** argv )
@@ -733,8 +763,12 @@ static os9err int_devs( _pid_, int argc, char** argv )
         upo_printf( "---------- ----------------------  -----------------------\n" );
     }
     else {
-        upo_printf( "Device     Driver   FileMgr pn sect wPrt Used by    Image\n" );
-        upo_printf( "---------- -------- ------- -- ---- ---- ---------- ---------------------------\n" );
+        /* 79 columns. `sect` and `wPrt` were dropped to make room: both are
+           RBF-only, both were blank on every SCF row, and neither answers a
+           question anyone brings to this command. FileMgr -> Mgr for the same
+           reason -- the values are 3 characters ("scf", "rbf"). */
+        upo_printf( "Device     Driver   Mgr   pn Used by    Image\n" );
+        upo_printf( "---------- -------- ----- -- ---------- -------------------------------------\n" );
     }
     
     #ifdef RBF_SUPPORT 
@@ -800,6 +834,66 @@ static os9err int_devs( _pid_, int argc, char** argv )
                     devs_printf( spP, "pty","scf" );
                 }
             }
+        } /* for */
+
+        /* Host directories: /dd and /h0../hz when they resolve to a directory
+         * rather than an RBF image.
+         *
+         * These are devices to everyone except the code: a host directory is
+         * resolved fresh on every path lookup (env var, joinPath, done) and is
+         * never registered anywhere, so there is no struct for a listing to
+         * walk -- which is exactly why `devs` used to show nothing for /h1
+         * while `dir /h1` worked perfectly. Answering "what can I reach"
+         * rather than "what happens to have a struct" means asking the
+         * resolver the same question a path lookup asks.
+         *
+         * Only directories are listed here: an image already has an rbfdev[]
+         * entry and was printed above, so IO_Type's fRBF answer is what keeps
+         * it from appearing twice. "Used by" is blank by nature -- a host
+         * directory holds no syspath, the files opened on it do. */
+        for (ii=0; ii<=('z'-'a')+11; ii++) {
+            char  dname[ 4];
+            char  envnam[8];
+            char* hp;
+            char  shown[OS9PATHLEN];
+
+            if      (ii==0)   strcpy ( dname,"dd" );
+            else if (ii<=10)  snprintf( dname,sizeof(dname), "h%d",  ii-1      );
+            else              snprintf( dname,sizeof(dname), "h%c", 'a'+ii-11  );
+
+            if (ii==0) hp= egetenv( "OS9DISK" );
+            else {
+                snprintf( envnam,sizeof(envnam), "OS9H%c", dname[1] );
+                hp= egetenv( envnam );
+            }
+
+            if (hp==NULL || *hp==NUL) continue;
+
+            /* Already shown by Disp_RBF_Devs? Then it is mounted and that row
+               carries its size and path number; skip the duplicate. */
+            if (devs_rbf_listed( dname )) continue;
+
+            strncpy( shown,hp, sizeof(shown)-1 );
+                     shown[ sizeof(shown)-1 ]= NUL;
+
+            /* PathFound() opens it as a directory, so it answers exactly the
+             * question: directory, or regular file (an image).
+             *
+             * NOT IO_Type() -- that classifies an OS-9 path by its device
+             * prefix and the calling process's current directories, and never
+             * looks at the host file at all. Handed a host path it returned
+             * something confident and meaningless, which is how an RBF image
+             * came to be listed as a host directory.
+             *
+             * A file here is an image nothing has mounted yet: it has no
+             * rbfdev[] entry, so there is no size or path number to show, and
+             * `devs` must not open it to find out. Name, kind and path is the
+             * honest row; the size appears once something mounts it. */
+            if (PathFound( shown ))
+                 upo_printf( "%-10s %-8s %-5s %2s %-10s %s\n",
+                             dname, "host", "", "", "", StrEnd_Pt( shown,37 ) );
+            else upo_printf( "%-10s %-8s %-5s %2s %-10s %s\n",
+                             dname, "image","rbf", "", "", StrEnd_Pt( shown,37 ) );
         } /* for */
 
                      spP= &syspaths[sysStdnil];

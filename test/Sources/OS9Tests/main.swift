@@ -664,7 +664,13 @@ noError("procs: runs",           "procs")
 // in Microware's vocabulary at all, so this cannot pass against the old
 // binary -- which is what makes it a real check on the rename. Microware's is
 // still reachable as /dd/CMDS/devs, and `idevs` still forces this one.
-check("devs: shows device table",    contains: "FileMgr", "devs")
+check("devs: shows device table",    contains: "Used by", "devs")
+// A host directory is not a device in any table -- it is resolved fresh on
+// every path lookup and registered nowhere -- so `devs` used to show nothing
+// for it while `dir` on it worked perfectly. It is listed from the configured
+// OS9DISK/OS9Hx values instead. /h5 is the suite's own scratch device, so it
+// is always set here and this cannot pass by accident on a bare checkout.
+check("devs: lists a host directory device", contains: "h5", "devs")
 // The "Used by" column names the CHILDMOST process holding the path. It was
 // vacuous when first written and nothing caught it: `devs` holds its own
 // stdout and, being forked from the shell, is always the deepest holder -- so

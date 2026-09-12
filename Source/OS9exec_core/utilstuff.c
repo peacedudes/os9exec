@@ -905,6 +905,24 @@ char* StrBlk_Pt( char* s, int n )
     return s;
 } /* StrBlk_Pt */
 
+
+char* StrEnd_Pt( char* s, int n )
+/* Same fit, but keeps the END: "..os9/play/oskBoot" rather than
+   "/Users/rdoggett/Dev..". For a host path the head is the part every row
+   shares and the tail is the part that identifies it, so cutting the head is
+   what leaves something worth reading. Edits <s> in place, like StrBlk_Pt. */
+{
+    size_t len= strlen( s );
+    if    (len <= (size_t)n) return s;
+
+    /* Two dots plus the last n-2 characters. memmove, not strcpy: the regions
+       overlap. */
+    memmove( s+2, s + (len - (n-2)), (size_t)(n-2) + 1 );
+    s[0]= '.';
+    s[1]= '.';
+    return s;
+} /* StrEnd_Pt */
+
 Boolean IsRead( ushort mode )
 /* returns true, if <mode> has read bit set */
 {   return (mode & poRead)!=0;
