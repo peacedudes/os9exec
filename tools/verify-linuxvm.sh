@@ -60,6 +60,10 @@ for CC in gcc clang; do
     n=$(make -B CC=$CC OBJDIR=/tmp/b-$CC EXE=/tmp/b-$CC/os9exec prod 2>&1 | grep -cE "warning:" || true)
     echo "  $CC -O2: $n warnings"
     [ "$n" = 0 ] || rc=1
+    # A build that dies on ERRORS prints no "warning:" lines, so the count alone
+    # scores it 0. gcc was rescued by the conformance build below; clang had no
+    # rescue at all. The binary is the proof.
+    [ -x /tmp/b-$CC/os9exec ] || { echo "  $CC: NOT BUILT -- the count above means nothing"; rc=1; }
 done
 
 # Then prove the thing RUNS here, on both device types.

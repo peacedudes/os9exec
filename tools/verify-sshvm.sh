@@ -129,6 +129,10 @@ for CC in gcc clang; do
     n=$(make $PAR -B CC=$CC OBJDIR=$BUILDROOT/b-$CC EXE=$BUILDROOT/b-$CC/os9exec prod 2>&1 | grep -cE "warning:" || true)
     echo "  $CC -O2: $n warnings"
     [ "$n" = 0 ] || rc=1
+    # A build that dies on ERRORS prints no "warning:" lines, so the count alone
+    # scores it 0. gcc was rescued by the conformance build below; clang had no
+    # rescue at all. The binary is the proof.
+    [ -x $BUILDROOT/b-$CC/os9exec ] || { echo "  $CC: NOT BUILT -- the count above means nothing"; rc=1; }
 done
 
 # The gcc leg above already built `prod` with these very flags, just into
@@ -169,10 +173,16 @@ scp -q -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/n
 if [ "$MODE" = detach ]; then
     # -f backgrounds the client; setsid detaches the remote job from the ssh
     # session, so neither a killed client nor a closed session takes it down.
+    #
+    # The LOCAL redirect matters as much as the remote one. The backgrounded
+    # client lives on for the whole leg holding this script's stdout, so
+    # `--detach | tail` waited hours for an end-of-file and silently stalled
+    # everything chained after it (2026-09-13). The exit status still reports
+    # a client that could not start.
     ssh -n -f $SSH_OPTS root@localhost \
         "setsid sh -c 'echo \$\$ > /root/leg.pid; sh /root/leg.sh > $GUEST_LOG 2>&1; \
                        echo LEG_EXIT=\$? >> $GUEST_LOG; rm -f /root/leg.pid' \
-         < /dev/null > /dev/null 2>&1" \
+         < /dev/null > /dev/null 2>&1" > /dev/null 2>&1 \
       || { echo "  could not start the detached leg"; exit 1; }
     echo "  detached -- collect with: tools/verify-sshvm.sh $PORT --collect"
     exit 0
