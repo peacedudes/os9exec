@@ -1303,6 +1303,21 @@ do {
     climbs("names then ../../..", from: "/h9", "dump A/B/C/../../../SYS/f")
     climbs("absolute mixed runs", from: "/h9/A", "dump /h9/A/B/C/.../../SYS/f")
     climbs("chd ../..", from: "/h9/A/B/C", "chd ../..", "dump ../SYS/f")
+
+    // Every run length in one pathlist, from deep enough that a miscount cannot
+    // hide behind the root clamp: `./../.../..../.` is 0+1+2+3+0 = 6 levels, so
+    // from depth 7 it lands on /h9/A. Its SYS/g must open, and /h9/SYS/f -- one
+    // level too far -- must NOT be what answers the second dump. rdoggett,
+    // 2026-09-13: "./../.../...././file" should work.
+    let sixUp = "7369 7875 700d"   // dump of "sixup\r"
+    try? FileManager.default.removeItem(atPath: scratchHostPath)
+    run("rbf: dots every run length from depth 7",
+        expectation: "./../.../...././SYS/g reads /h9/A/SYS/g, and the same climb does not reach /h9/SYS/f",
+        commands: tree + ["makdir /h9/A/B/C/D", "makdir /h9/A/B/C/D/E", "makdir /h9/A/B/C/D/E/F",
+                          "makdir /h9/A/B/C/D/E/F/G", "makdir /h9/A/SYS", "echo sixup >/h9/A/SYS/g",
+                          "chd /h9/A/B/C/D/E/F/G", "dump ./../.../...././SYS/g", "dump ./../.../...././SYS/f"]) {
+        $0.contains(sixUp) && !$0.contains(dotMark)
+    }
     try? FileManager.default.removeItem(atPath: scratchHostPath)
 }
 
