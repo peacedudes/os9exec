@@ -1273,6 +1273,39 @@ check  ("rbf: dsave -ive populates+verifies", contains: "6473 6176",
 
 try? FileManager.default.removeItem(atPath: scratchHostPath)
 
+// A pathlist climbs with runs of dots: a run of n dots is n-1 levels up, clamped
+// at the device root, and a climb may be spelled as any mix of runs -- `...`,
+// `../..` and `../......./.././` are all legal (Using Professional OS-9 v2.4,
+// p. 4-9, and rdoggett from real OS-9). On an RBF image every RELATIVE path with
+// a run following another component used to resolve wrongly: EatBack/CutUp
+// treated the start of a relative path as the device root, so `../..` collapsed
+// to `..` and `A/..` to `A`, and the open answered E$PNNF. A host-directory
+// device resolved the same spellings on the host and got them right. Asserted
+// on DUMPED BYTES ("dotmark\r"), because the shell echoes every command line and
+// a spelled-out marker would match its own echo.
+do {
+    let dotMark = "646f 746d 6172 6b0d"
+    let tree    = ["mount -k=500K \(scratchDevice)", "makdir /h9/A", "makdir /h9/A/B",
+                   "makdir /h9/A/B/C", "makdir /h9/SYS", "echo dotmark >/h9/SYS/f"]
+
+    func climbs(_ label: String, from dir: String, _ commands: String...) {
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        run("rbf: dots \(label)", expectation: "from \(dir): \(commands.joined(separator: "; ")) reads /h9/SYS/f",
+            commands: tree + ["chd \(dir)"] + commands) { $0.contains(dotMark) }
+    }
+    climbs("... (control)", from: "/h9/A/B", "dump .../SYS/f")
+    climbs("../..", from: "/h9/A/B", "dump ../../SYS/f")
+    climbs("../...", from: "/h9/A/B/C", "dump ../.../SYS/f")
+    climbs(".../..", from: "/h9/A/B/C", "dump .../../SYS/f")
+    climbs("mixed runs clamp at root", from: "/h9/A/B/C", "dump ../......./.././SYS/f")
+    climbs("name/..", from: "/h9", "dump A/../SYS/f")
+    climbs("name/name/...", from: "/h9", "dump A/B/.../SYS/f")
+    climbs("names then ../../..", from: "/h9", "dump A/B/C/../../../SYS/f")
+    climbs("absolute mixed runs", from: "/h9/A", "dump /h9/A/B/C/.../../SYS/f")
+    climbs("chd ../..", from: "/h9/A/B/C", "chd ../..", "dump ../SYS/f")
+    try? FileManager.default.removeItem(atPath: scratchHostPath)
+}
+
 // An RBF image is a device wherever it lives. It used to be one only at
 // "<startPath>/hN": DeviceInit named the device after the IMAGE FILE'S BASENAME
 // and then rebuilt the image's host path by feeding "/" + that basename back
@@ -1466,6 +1499,8 @@ do {
     resolves("double slash",          "/dd//USR/CLAUDE/fsselftest\(fsRun)/SUB/deep")
     resolves("embedded /./",          "/dd/./USR/CLAUDE/fsselftest\(fsRun)/SUB/deep")
     resolves("parent round-trip",     "../SUB/deep")
+    resolves("stacked ../..", "../../fsselftest\(fsRun)/SUB/deep") // same climb as ...
+    resolves("mixed runs ../...", "../.../CLAUDE/fsselftest\(fsRun)/SUB/deep") // 1 + 2 levels
     resolves("through SYS and back",  "/dd/SYS/../USR/CLAUDE/fsselftest\(fsRun)/SUB/deep")
     resolves("case-insensitive",      "/dd/usr/claude/FSSELFTEST\(fsRun)/sub/DEEP")
     resolves("multi-dot to root",     "...../USR/CLAUDE/fsselftest\(fsRun)/SUB/deep")       // up-4 == /dd, then descend

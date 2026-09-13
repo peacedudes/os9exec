@@ -1332,6 +1332,14 @@ Boolean FileFound( const char* pathname )
   } /* include_2e */
 #endif
 
+static Boolean IsDotRun( const char* from, const char* to )
+/* true if [<from>,<to>) is a non-empty run of nothing but dots */
+{
+    if (from>=to) return false;
+    for (; from<to; from++) if (*from!='.') return false;
+    return true;
+} /* IsDotRun */
+
 void CutUp( char* pathname, const char* prev )
 /* cut out /xxxx/../ sequences */
 {
@@ -1339,7 +1347,6 @@ void CutUp( char* pathname, const char* prev )
     #ifdef linux
     Boolean inc;
     #endif
-//  int i;  /* dot-counter — only used in commented-out //if (i>0) q++; */
 
     v= pathname;
     while (true) {
@@ -1359,8 +1366,7 @@ void CutUp( char* pathname, const char* prev )
             case PSEP     : memmove( q, qs, strlen(qs)+1 ); break; /* cut "/./" anywhere */
 
             case '.'      : v= qs;
-                         // i= 0;
-                            while  (*(++v)=='.') /* i++ */;
+                            while  (*(++v)=='.');
                             switch (*v) {
                                 case NUL:
 
@@ -1368,36 +1374,45 @@ void CutUp( char* pathname, const char* prev )
                                 #ifndef UNIX
                                 case PATHDELIM:
                                 #endif
-                                case PSEP     : while  (q>pathname) {
-                                                        q--;
-                                                  if  (*q==PATHDELIM ||
-                                                       *q==PSEP) {
-                                                    if (q==pathname) { q= qs-1; break; }
-                                                        q++;
-                                                  //if (i>0) q++;
-                                                    break;
-                                                  } // if
-                                                } // while
+                                case PSEP     : { /* <q> is the delimiter before a run of n dots, which
+                                                   * climbs n-1 levels out of the component before it */
+                                                char* comp= q;
+                                                while (comp>pathname && comp[-1]!=PATHDELIM
+                                                                     && comp[-1]!=PSEP) comp--;
+
+                                                if      (comp==pathname+1 && (*pathname==PATHDELIM ||
+                                                                              *pathname==PSEP))
+                                                    q= qs-1; /* "/h0/..": the device itself, clamp by dropping a dot */
 
                                                 /* A Windows drive-letter host path ("C:/...") has no
                                                  * delimiter AT position 0 -- unlike "/..." on Unix, where
-                                                 * pathname[0] IS the root delimiter and the q==pathname
-                                                 * check just above always catches "collapsed all the way
-                                                 * back to root". Here the backward walk instead exhausts
-                                                 * via the outer q>pathname condition, leaving q on the
-                                                 * drive letter itself. Give it the identical "nothing
-                                                 * left to collapse into, we're at the root" treatment, or
-                                                 * the memmove below overwrites the drive letter with the
-                                                 * remaining path and silently drops it -- confirmed live:
-                                                 * "C:/../../../USR/..." collapsed to "./../../USR/...",
-                                                 * losing "C:" entirely and corrupting every subsequent
-                                                 * AdjustPath step for a path with more ".."-equivalents
-                                                 * than there are real directory levels. */
-                                                if (q==pathname && *q!=PATHDELIM && *q!=PSEP) q= qs-1;
+                                                 * pathname[0] IS the root delimiter and the check just
+                                                 * above catches "collapsed all the way back to root".
+                                                 * Give it the identical "nothing left to collapse into,
+                                                 * we're at the root" treatment, or the memmove below
+                                                 * overwrites the drive letter with the remaining path and
+                                                 * silently drops it -- confirmed live: "C:/../../../USR/..."
+                                                 * collapsed to "./../../USR/...", losing "C:" entirely and
+                                                 * corrupting every subsequent AdjustPath step for a path
+                                                 * with more ".."-equivalents than there are real directory
+                                                 * levels. Only a DRIVE gets it: this used to fire for any
+                                                 * first component without a delimiter before it, which is
+                                                 * every RELATIVE path, so "A/../x" became "A/x" and
+                                                 * "../../x" became "../x". */
+                                                else if (comp==pathname && q-comp==2 && comp[1]==':')
+                                                    q= qs-1;
+
+                                                /* "../..": the component is itself a climb, and two climbs
+                                                 * compose rather than cancel -- merge the runs ("..." is
+                                                 * the same climb), by removing only the "/." */
+                                                else if (IsDotRun( comp,q )) ;
+
+                                                else q= comp; /* "name/..": cancel the name */
 
                                                 memmove( q, qs, strlen(qs)+1 ); /* concatenate at the new position */
-                                                q--;
+                                                if (q>pathname) q--;
                                                 break;
+                                              }
 
                                 default:        q++;
                                                 #ifdef linux
@@ -1431,9 +1446,20 @@ void EatBack( char* pathname )
     int     eat0= 0;
     Boolean searchP= true;
     
+    /* The backward pass counts dots across components, which composes correctly
+     * only when the walk can stop at a device root. A RELATIVE path has none: the
+     * walk ran off its front with levels still owed, so "../.." came out as ".."
+     * and "x/../.." as "x". CutUp() below resolves a relative path, trailing runs
+     * included, so a relative path only loses its trailing delimiter here. */
+    Boolean relative= *pathname!=PSEP && *pathname!=PATHDELIM
+                                      && !(*pathname!=NUL && pathname[1]==':');
+
     p= pathname+strlen(pathname)-1; /* start at end of string */
 
-    while (p>pathname) {
+    if (relative) {
+        if (p>pathname && (*p==PSEP || *p==PATHDELIM)) *p= NUL;
+    }
+    else while (p>pathname) {
         switch (*p) {
             case '.'      : if (searchP)    eat++;                      break;
             
