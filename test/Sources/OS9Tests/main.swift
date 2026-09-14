@@ -2005,6 +2005,179 @@ check("fs: permission ramdisk — non-owner (dog) blocked from a file with no pu
     "login dog", "chd /ram7", "dump f", "logout", "unmount ram7")
 
 
+// ── CPU: NEG and NBCD leave X equal to C, as SUB does ─────────────────────────
+// Regression for a flag the core never set. On the 68000, NEG, SUB/SUBI/SUBQ
+// and NBCD leave X equal to C. Every NEG and NBCD handler, and the SUB family
+// in the 68000 and 68010 tables, set C and left X at whatever the previous
+// instruction had made it. Microware's software doubles negate a 64-bit
+// mantissa as NEG.L low then NEGX.L high, so a stale X borrowed from the high
+// word: 1.0-1.0 came out -2^-20, exp(1) was right to six places, and perl's
+// <=> never answered 0 for equal numbers. Each case sets X to the opposite of
+// what the instruction must leave, and reads it back with ADDX of two zeros.
+do {
+    let xflagAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect xflgtst,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "* Each case sets X to the opposite of what the instruction must leave,",
+        "* runs the instruction, then reads X back with ADDX of two zeros.",
+        "start:",
+        "  moveq   #0,d7",
+        "  subq.l  #8,a7",
+        "  movea.l a7,a2",
+        "",
+        "* Microware's software double add: a 64-bit negate of a zero low word",
+        "* must leave no borrow for the high word",
+        "  ori.b   #$10,ccr",
+        "  moveq   #0,d1",
+        "  move.l  #$00100000,d0",
+        "  neg.l   d1",
+        "  negx.l  d0",
+        "  cmpi.l  #$FFF00000,d0",
+        "  beq     c1",
+        "  addq.l  #1,d7",
+        "  lea     f0(pc),a0",
+        "  moveq   #f0l,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "c1:",
+        "  ori.b   #$10,ccr",
+        "  moveq   #0,d1",
+        "  neg.l   d1",
+        "  moveq   #0,d0",
+        "  addx.l  d0,d0",
+        "  moveq   #0,d2",
+        "  lea     f1(pc),a0",
+        "  moveq   #f1l,d1",
+        "  bsr     chk",
+        "",
+        "  andi.b  #$EF,ccr",
+        "  moveq   #5,d1",
+        "  neg.b   d1",
+        "  moveq   #0,d0",
+        "  addx.l  d0,d0",
+        "  moveq   #1,d2",
+        "  lea     f2(pc),a0",
+        "  moveq   #f2l,d1",
+        "  bsr     chk",
+        "",
+        "  andi.b  #$EF,ccr",
+        "  clr.l   (a2)",
+        "  moveq   #1,d3",
+        "  sub.l   d3,(a2)",
+        "  moveq   #0,d0",
+        "  addx.l  d0,d0",
+        "  moveq   #1,d2",
+        "  lea     f3(pc),a0",
+        "  moveq   #f3l,d1",
+        "  bsr     chk",
+        "",
+        "  andi.b  #$EF,ccr",
+        "  clr.l   (a2)",
+        "  subi.l  #1,(a2)+",
+        "  moveq   #0,d0",
+        "  addx.l  d0,d0",
+        "  subq.l  #4,a2",
+        "  moveq   #1,d2",
+        "  lea     f4(pc),a0",
+        "  moveq   #f4l,d1",
+        "  bsr     chk",
+        "",
+        "  ori.b   #$10,ccr",
+        "  move.l  #9,(a2)",
+        "  subq.l  #1,(a2)",
+        "  moveq   #0,d0",
+        "  addx.l  d0,d0",
+        "  moveq   #0,d2",
+        "  lea     f5(pc),a0",
+        "  moveq   #f5l,d1",
+        "  bsr     chk",
+        "",
+        "  andi.b  #$EF,ccr",
+        "  moveq   #1,d1",
+        "  nbcd    d1",
+        "  moveq   #0,d0",
+        "  addx.l  d0,d0",
+        "  moveq   #1,d2",
+        "  lea     f6(pc),a0",
+        "  moveq   #f6l,d1",
+        "  bsr     chk",
+        "",
+        "  tst.l   d7",
+        "  bne     done",
+        "  lea     mall(pc),a0",
+        "  moveq   #malll,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "",
+        "* d0 = X as read, d2 = X required, a0/d1 = the failure line",
+        "chk:",
+        "  cmp.l   d2,d0",
+        "  beq     chkok",
+        "  addq.l  #1,d7",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "chkok:",
+        "  rts",
+        "",
+        "f0:   dc.b  \"FAIL: NEG.L 0 then NEGX.L borrowed from a stale X\",$0D",
+        "f0l   equ   *-f0",
+        "f1:   dc.b  \"FAIL: NEG.L of zero left X set\",$0D",
+        "f1l   equ   *-f1",
+        "f2:   dc.b  \"FAIL: NEG.B of nonzero left X clear\",$0D",
+        "f2l   equ   *-f2",
+        "f3:   dc.b  \"FAIL: SUB.L Dn,(An) with a borrow left X clear\",$0D",
+        "f3l   equ   *-f3",
+        "f4:   dc.b  \"FAIL: SUBI.L #1,(An)+ with a borrow left X clear\",$0D",
+        "f4l   equ   *-f4",
+        "f5:   dc.b  \"FAIL: SUBQ.L #1,(An) with no borrow left X set\",$0D",
+        "f5l   equ   *-f5",
+        "f6:   dc.b  \"FAIL: NBCD of 1 with a borrow left X clear\",$0D",
+        "f6l   equ   *-f6",
+        "mall: dc.b  \"ALL SEVEN X-FLAG CASES HOLD\",$0D",
+        "malll equ   *-mall",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let asmPath = scratchDisk + "/xflgtst.a"
+    try? xflagAsm.write(toFile: asmPath, atomically: true, encoding: .utf8)
+
+    let name = "cpu: NEG, SUB and NBCD leave X equal to C"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/xflgtst.a -o=/h5/xflgtst.r",
+            "l68 /h5/xflgtst.r -o=/h5/xflgtst",
+            "/h5/xflgtst"
+        ], timeout: 30)
+        if out.contains("ALL SEVEN X-FLAG CASES HOLD") && !out.contains("FAIL:") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [every case must leave X equal to the carry it produced]")
+            let preview = out.split(separator: "\n")
+                .filter { $0.hasPrefix("FAIL:") || $0.contains("Error") }
+                .prefix(8).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+    }
+
+    for leftover in ["xflgtst.a", "xflgtst.r", "xflgtst"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── F$STrap: exception-handler dispatch across a run of vectors ───────────────
 // Regression for the BASIC09 REAL/0 crash family.  Installs ONE F$STrap handler
 // over vectors 4/5/6/7 and fires illegal / zero-divide / CHK / TRAPV in turn,
