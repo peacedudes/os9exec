@@ -110,7 +110,7 @@ UAE_SUPPRESS = -Wno-unused-variable -Wno-unused-but-set-variable \
 
 VPATH = $(CORE):$(PLAT):Source/OS9execMPW:$(APPEMU):$(UAE)
 
-.PHONY: all prod clean test test-notick test-linux warnings hammer hammer-soak hammer-6809 conformance verify verify-vms verify-quick selfhost68k selfhost68k-verify
+.PHONY: all prod clean test test-notick test-linux warnings hammer hammer-soak hammer-6809 hammer-linux conformance verify verify-vms verify-quick selfhost68k selfhost68k-verify
 
 all: $(OBJDIR) $(EXE)
 
@@ -225,6 +225,13 @@ hammer-soak: $(EXE)
 
 hammer-6809:
 	swift run --package-path test RBFHammer --target 6809 --iterations 5 --jobs 2
+
+# The gate again, with the emulator the Linux build in Docker (the image
+# test-linux builds): same scenarios, results verified host-side. Linux is where
+# host locking, directory order and the :2e respelling differ from macOS.
+hammer-linux:
+	docker build -f docker/Dockerfile -t os9exec:linux .
+	DOCKER_IMAGE=os9exec:linux swift run --package-path test RBFHammer --target 68k --gate
 
 # Self-hosted OS-9/6809 conformance suite: builds a small RBF image
 # (build/selfhost6809/conf6809.dsk) that anyone with real 6809 hardware can

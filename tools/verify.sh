@@ -112,11 +112,14 @@ if [ "$want_docker" = yes ]; then
     echo "-- other operating systems"
     if docker info >/dev/null 2>&1; then
         stage "integration suite on Linux (docker)" make test-linux
+        stage "RBF integrity hammer on Linux (docker)" make hammer-linux
     else
         skip "integration suite on Linux (docker)" "docker not running"
+        skip "RBF integrity hammer on Linux (docker)" "docker not running"
     fi
 else
     skip "integration suite on Linux (docker)" "--quick"
+    skip "RBF integrity hammer on Linux (docker)" "--quick"
 fi
 
 if [ "$want_vms" = yes ]; then

@@ -48,11 +48,31 @@ public struct Adapter68k: Adapter {
     /// path: two disks exist (licensed and freeware), each stands alone, and
     /// nothing may assume which one is mounted.
     static var systemDisk: String {
-        guard let d = ProcessInfo.processInfo.environment["OS9DISK"], !d.isEmpty else {
+        guard let disk = ProcessInfo.processInfo.environment["OS9DISK"], !disk.isEmpty else {
             FileHandle.standardError.write(Data("OS9DISK is not set\n".utf8))
             exit(2)
         }
-        return d
+        return disk
+    }
+
+    /// The Docker image to run the emulator in, from `DOCKER_IMAGE` -- the
+    /// variable the integration suite already reads (`make hammer-linux`).
+    /// Unset or empty: the locally built `os9exec`.
+    static var dockerImage: String? {
+        guard let image = ProcessInfo.processInfo.environment["DOCKER_IMAGE"],
+              !image.isEmpty else { return nil }
+        return image
+    }
+
+    /// Stops a container by name, waiting for `docker kill` to finish.
+    private static func killContainer(_ name: String) {
+        let kill = Process()
+        kill.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        kill.arguments = ["docker", "kill", name]
+        kill.standardOutput = FileHandle.nullDevice
+        kill.standardError = FileHandle.nullDevice
+        try? kill.run()
+        kill.waitUntilExit()
     }
 
     /// Repository root, containing `os9exec`.
@@ -166,13 +186,29 @@ public struct Adapter68k: Adapter {
     private func launch(_ scenario: Scenario,
                         scratch: URL) throws -> (transcript: String, timedOut: Bool) {
         let process = Process()
-        process.executableURL = repoRoot.appendingPathComponent("os9exec")
-        process.currentDirectoryURL = scratch
-        process.arguments = (scenario.tick == .disabled ? ["-q"] : []) + ["-r", "shell"]
-        process.environment = [
-            "OS9DISK": Adapter68k.systemDisk,
-            "OS9H5": scratch.path
-        ]
+        let emulatorArguments = (scenario.tick == .disabled ? ["-q"] : []) + ["-r", "shell"]
+        // Named so a timeout can stop it: terminating the `docker run` client
+        // leaves the container running (see killContainer in OS9Tests).
+        let containerName = "rbfhammer-\(UUID().uuidString.prefix(8))"
+        if let image = Adapter68k.dockerImage {
+            // The same run inside the container: the scratch device bind-mounted
+            // at /h5 and used as the working directory, the system disk read-only.
+            // Both paths are spelled as the emulator sees them.
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["docker", "run", "--rm", "-i", "--name", containerName,
+                                 "-v", "\(scratch.path):/h5",
+                                 "-v", "\(Adapter68k.systemDisk):/disk:ro",
+                                 "-w", "/h5", "-e", "OS9DISK=/disk", "-e", "OS9H5=/h5",
+                                 "--entrypoint", "os9exec", image] + emulatorArguments
+        } else {
+            process.executableURL = repoRoot.appendingPathComponent("os9exec")
+            process.currentDirectoryURL = scratch
+            process.arguments = emulatorArguments
+            process.environment = [
+                "OS9DISK": Adapter68k.systemDisk,
+                "OS9H5": scratch.path
+            ]
+        }
 
         let input = Pipe(), output = Pipe()
         process.standardInput = input
@@ -194,7 +230,10 @@ public struct Adapter68k: Adapter {
             Thread.sleep(forTimeInterval: 0.05)
         }
         let timedOut = process.isRunning
-        if timedOut { process.terminate() }
+        if timedOut {
+            process.terminate()
+            if Adapter68k.dockerImage != nil { Adapter68k.killContainer(containerName) }
+        }
         process.waitUntilExit()
         collected.sync { }
         // ISO Latin-1 maps every byte 1:1 and never fails, so an emulator
