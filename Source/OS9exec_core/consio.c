@@ -355,8 +355,12 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
      filestuff.h, unconditionally (no TERMINAL_CONSOLE guard), not in
      consio.h -- so there is no matching spot to add ConsPutcTo to. Both of
      ConsPutcTo's only callers (ConsPutc and baud_drain_due) are in this
-     file, so file-static is correct as well as consistent with that. */
-  static void ConsPutcTo( int term_id, char c, ushort owner )
+     file, so file-static is correct as well as consistent with that.
+     Returns false ONLY when a bound /tN answered "would block": the byte was
+     not taken, and the caller must keep it rather than move on. Every other
+     outcome, a hard write error included, counts as taken -- a device that is
+     gone must not wedge the drain that is waiting to hand it bytes. */
+  static Boolean ConsPutcTo( int term_id, char c, ushort owner )
   {
       /* save this info in terminal interface system.
          0 = "nobody": emulator banner output is written while currentpid is the
@@ -371,13 +375,13 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
           #ifdef PIP_SUPPORT
             WriteCharsToPTY( &c,1, term_id, false );
           #endif
-          return;
+          return true;
       }
 
       if (hostterm_bound( term_id )) {
-          hostterm_put       ( term_id, &c,1 );
+          if (hostterm_put( term_id, &c,1 )==0) return false; /* would block: not taken */
           hostterm_note_writer( term_id ); /* give this terminal's abort key a target */
-          return;
+          return true;
       }
 
       /* Retried, not ignored. glibc marks write() warn_unused_result and is
@@ -397,6 +401,7 @@ static long stdwrite(ushort pid, byte *p, long cnt, FILE* stream, Boolean wrln)
       #ifdef win_unix
         lw_pid( &main_mco ); /* assign for later use */
       #endif
+      return true;
   } /* ConsPutcTo */
 
   /* put char to console and perform CR/LF expansion etc. */
@@ -1216,6 +1221,9 @@ static Boolean fifo_pop( baud_device_t* d, byte* c, ushort* owner )
     return true;
 } /* fifo_pop */
 
+/* How long a paced device waits before offering a refused byte again. */
+#define BAUD_REFUSED_RETRY_US 10000UL
+
 /* pop+display everything currently due, across all devices. Unpaced
    devices (us_per_char==0) always drain in full immediately -- they
    shouldn't normally accumulate a backlog, but drain fully if they ever do. */
@@ -1239,7 +1247,9 @@ void baud_drain_due( void )
                devices are ever paced (ConsoleOut routes TTY_Base ids away from
                the FIFO entirely), so WriteCharsToPTY's own g_spP dependence
                cannot be reached from here. */
-            while (fifo_pop(d,&c,&owner)) ConsPutcTo( d->term_id, c, owner );
+            while (d->count>0 &&
+                   ConsPutcTo( d->term_id, d->buf[d->head], d->owner[d->head] ))
+                fifo_pop( d,&c,&owner );
         }
     }
 
@@ -1253,8 +1263,18 @@ void baud_drain_due( void )
         if (console_held( d->term_id )) continue; /* XOFF: nothing leaves this device */
 
         while (d->count>0 && d->next_due_us<=now) {
+            /* Pop only what the endpoint TOOK. A bound /tN whose reader has
+               stalled answers "would block", and popping first threw that byte
+               away: a paced listing to a pty nobody was reading arrived as
+               exactly one pty buffer (1024 bytes) and the rest was gone, every
+               run. Leave it queued and offer it again shortly. The FIFO then
+               fills, and ConsoleOut parks the writer, exactly as it already did
+               for an unpaced write to the same full endpoint. */
+            if (!ConsPutcTo( d->term_id, d->buf[d->head], d->owner[d->head] )) {
+                d->next_due_us= now + BAUD_REFUSED_RETRY_US;
+                break;
+            }
             fifo_pop( d,&c,&owner );
-            ConsPutcTo( d->term_id, c, owner );
             d->next_due_us += d->us_per_char;
         }
     }
@@ -1319,6 +1339,8 @@ void baud_drain_all_pending( void )
     int     i;
     Boolean anyPending;
     ulong   delay;
+    ulong   queued, lastQueued= ULONG_MAX;
+    int     stalled= 0;
 
     g_final_drain= true;
     recompute_next_wake(); /* devices excluded while held rejoin the schedule */
@@ -1326,9 +1348,36 @@ void baud_drain_all_pending( void )
     do {
         baud_drain_due();
         anyPending= false;
+        queued    = 0;
         for (i=0; i<MAXBAUDDEV; i++) {
-            if (baud_devices[i].inUse && baud_devices[i].count>0) { anyPending= true; break; }
+            if (baud_devices[i].inUse && baud_devices[i].count>0) {
+                anyPending= true;
+                queued   += baud_devices[i].count;
+            }
         }
+
+        /* A refused byte now stays queued rather than being thrown away (see
+           baud_drain_due), so a /tN whose reader never comes back would hold
+           the emulator open forever. Bounded by LACK OF PROGRESS, like
+           baud_make_room: a slow reader that is still taking bytes is waited
+           for however long it takes, and only ~5s of nothing at all discards
+           what is left -- the fate every refused byte used to meet at once. */
+        if (anyPending && queued==lastQueued) {
+            struct timespec ts;
+            if (++stalled > 500) {
+                for (i=0; i<MAXBAUDDEV; i++) baud_devices[i].head= baud_devices[i].tail=
+                                              baud_devices[i].count= 0;
+                recompute_next_wake();
+                break;
+            }
+            ts.tv_sec = 0;
+            ts.tv_nsec= 10L*1000L*1000L; /* 10ms: an unpaced refusal sets no deadline to nap on */
+            nanosleep( &ts, NULL );
+            continue;
+        }
+        stalled   = 0;
+        lastQueued= queued;
+
         if (anyPending) {
             delay= baud_next_wake_delay_us();
             if (delay>0 && delay!=ULONG_MAX) {
@@ -1607,17 +1656,25 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                       baud_make_room( dev, need );
 
                   if (BAUD_FIFO_SIZE - dev->count < need) {
-                      cp->saved_cnt  = cnt;
-                      cp->saved_state= cp->state;
-                      set_os9_state( pid, pWaitWrite, "ConsoleOut" );
-                      arbitrate= true;
-                      break;
+                      /* Narration still without room after baud_make_room gave
+                         up -- a /tN nobody has read for seconds -- is DROPPED.
+                         Parking it is the re-dispatch loop narration exists to
+                         avoid; guest output parks and loses nothing. */
+                      if (!narration) {
+                          cp->saved_cnt  = cnt;
+                          cp->saved_state= cp->state;
+                          set_os9_state( pid, pWaitWrite, "ConsoleOut" );
+                          arbitrate= true;
+                          break;
+                      }
                   }
+                  else {
                   /* Stamp the WRITER, not whoever will be running when these
                      bytes finally reach the screen -- that is the whole point. */
                                 fifo_push( dev, c,   pid );
                   if (needsLF)  fifo_push( dev, LF,  pid );
                   for (q=0; q<nulls; q++) fifo_push( dev, NUL, pid );
+                  }
               }
               else if (hostterm_bound( gConsoleID ) && !narration
                        && pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask) {

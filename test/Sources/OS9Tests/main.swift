@@ -4197,6 +4197,59 @@ if runHostBackpressure && !containerized {
     }
 }
 
+// The same stalled reader with PACING ON, the configuration a user actually runs.
+// The test above uses -r, which writes straight to the endpoint and parks on a
+// full one; paced output instead queues in the baud FIFO and reaches /t1 from the
+// scheduler's drain -- which popped each byte and handed it to hostterm_put
+// without looking at the answer. "Would block" discarded it. Measured on the
+// build before this test existed: exactly 1024 bytes arrived (one pty buffer) and
+// the rest of the ~3.2KB listing was gone, every run, with nothing reporting it.
+let hostPacedBackpressureName = "hostterm: a full endpoint blocks a PACED writer, losing nothing"
+let runHostPacedBackpressure  = filter.isEmpty || hostPacedBackpressureName.localizedCaseInsensitiveContains(filter)
+
+if runHostPacedBackpressure && !containerized {
+    if let (controller, device, deviceName) = makePTY() {
+        let collector    = BackpressureCollector()
+        let drainStopped = DispatchSemaphore(value: 0)
+
+        let drainThread = Thread {
+            usleep(2_000_000) // deliberately undrained, exactly as above
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while true {
+                let shouldStop = collector.shouldStop()
+                let bytesRead  = read(controller, &buffer, buffer.count)
+                if bytesRead > 0 {
+                    collector.append(buffer[0..<bytesRead])
+                } else if shouldStop {
+                    break
+                } else {
+                    usleep(20_000)
+                }
+            }
+            drainStopped.signal()
+        }
+        drainThread.start()
+
+        _ = os9(["dir /dd/CMDS >/t1"], timeout: 90, paced: true, env: ["OS9T1": deviceName])
+
+        collector.requestStop()
+        drainStopped.wait()
+        close(controller); close(device)
+
+        let total = collector.total()
+        if total > 3220 {
+            print("PASS: \(hostPacedBackpressureName)"); passed += 1
+        } else {
+            print("FAIL: \(hostPacedBackpressureName)")
+            print("      [expected the full listing to survive pacing; only \(total) bytes did]")
+            failed += 1
+        }
+    } else {
+        print("FAIL: hostterm: could not create a pty pair for the paced backpressure test")
+        failed += 1
+    }
+}
+
 // -- OS9Tn=pty: self-allocated pty, name discoverable via idevs -------------
 // A named endpoint (OS9T1=/dev/ttysNNN) requires the pty to already exist,
 // which is fine for a test that creates the pair itself, but useless for the
