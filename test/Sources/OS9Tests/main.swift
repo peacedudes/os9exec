@@ -1352,6 +1352,96 @@ do {
     try? FileManager.default.removeItem(atPath: scratchHostPath)
 }
 
+// Two update paths on one file in one process must not deadlock each other at
+// its end. An update-mode open walks the directory through the path it is
+// opening, reads the directory to its end, and so takes the DIRECTORY's EOF
+// lock -- which RingJoin carried onto the file along with the path (it dropped
+// the walk's record locks and forgot the end one). Each path then held the other's
+// end, and the first read at EOF on either was E$DEADLK (254), "the writer is us".
+// dbz opens history.pag twice for update and failed "store failed" on every RBF
+// image; a host directory has no locking and never showed it. The module creates
+// an empty file in a fresh directory, opens it for update twice, and reads on the
+// second path: the only right answer is E$EOF (211). Anything else exits with
+// that error, so the shell prints it.
+do {
+    let eofName = "rbf: two update paths on one file do not deadlock each other at its end"
+    if filter.isEmpty || eofName.localizedCaseInsensitiveContains(filter) {
+        let asm = [
+            "  use /dd/DEFS/oskdefs.d",
+            "",
+            "F$Exit   equ  $06",
+            "I$Open   equ  $84",
+            "I$Create equ  $83",
+            "I$Read   equ  $89",
+            "I$Close  equ  $8F",
+            "",
+            "  psect eofdl,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+            "",
+            "start:",
+            "  lea     fname(pc),a0",
+            "  moveq   #3,d0",
+            "  moveq   #3,d1",
+            "  OS9     I$Create",
+            "  bcs     fail",
+            "  OS9     I$Close",
+            "  lea     fname(pc),a0",
+            "  moveq   #3,d0",
+            "  OS9     I$Open",
+            "  bcs     fail",
+            "  lea     fname(pc),a0",
+            "  moveq   #3,d0",
+            "  OS9     I$Open",
+            "  bcs     fail",
+            "  lea     (a6),a0",
+            "  moveq   #16,d1",
+            "  OS9     I$Read",
+            "  bcc     wrong",
+            "  cmpi.w  #211,d1",
+            "  bne     fail",
+            "  moveq   #0,d1",
+            "  OS9     F$Exit",
+            "wrong:",
+            "  moveq   #1,d1",
+            "fail:",
+            "  OS9     F$Exit",
+            "fname:",
+            "  dc.b    \"/h9/DL/f\",0",
+            "",
+            "  ends",
+            ""
+        ].joined(separator: "\r")
+        try? asm.write(toFile: scratchDisk + "/eofdl.a", atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+
+        let out = os9([
+            "mount -k=500K \(scratchDevice)",
+            "makdir /h9/DL",
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/eofdl.a -o=/h5/eofdl.r",
+            "l68 /h5/eofdl.r -o=/h5/eofdl",
+            "/h5/eofdl",
+            "echo EOFDL-END"
+        ], timeout: 60)
+        let built = FileManager.default.fileExists(atPath: scratchDisk + "/eofdl")
+        let clean = out.contains("EOFDL-END") && !out.contains("Error #")
+        if built && clean {
+            print("PASS: \(eofName)")
+            passed += 1
+        } else {
+            print("FAIL: \(eofName)")
+            if !built { print("      the module was never built, so this proves nothing") }
+            let errors = out.replacingOccurrences(of: "\r", with: "\n")
+                .split(separator: "\n").filter { $0.contains("Error #") }
+            for line in errors.prefix(3) { print("      | \(line.trimmingCharacters(in: .whitespaces))") }
+            failed += 1
+        }
+        for leftover in ["eofdl.a", "eofdl.r", "eofdl"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+    }
+}
+
 // An RBF image is a device wherever it lives. It used to be one only at
 // "<startPath>/hN": DeviceInit named the device after the IMAGE FILE'S BASENAME
 // and then rebuilt the image's host path by feeding "/" + that basename back

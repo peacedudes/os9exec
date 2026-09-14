@@ -612,6 +612,7 @@ static void GetBuffers( _rbf_, syspath_typ* spP )
 } /* GetBuffers */
 
 static void Set_FDSize( syspath_typ* spP, ulong size ); /* defined with the other FD accessors */
+static void WakeOnFile( syspath_typ* spP );            /* defined with the other ring walkers */
 
 /* Paths open on the same file are linked into a ring, so each one can reach
  * the others' buffers. Every path keeps its own <fd_sct>/<rw_sct> -- they are
@@ -649,6 +650,17 @@ static void RingJoin( syspath_typ* spP )
     rbf_typ*     rbf= &spP->u.rbf;
     syspath_typ* spK;
     ushort       k;
+
+    /* The END of the file it is leaving is not its to keep either. An
+     * update-mode open walks the directory through this very path, reads the
+     * directory to its end, and so takes the directory's EOF lock -- which used
+     * to ride along onto the file the path opened. Two update paths on one file
+     * in one process then each held the other's end, and the first read at EOF
+     * on either was E$DEADLK, "the writer is us": dbz opens history.pag twice
+     * for update and failed "store failed" on every RBF image. Dropped here,
+     * while the path is still in the old ring, waking anyone asleep on that
+     * end exactly as pRclose does. */
+    if (rbf->eofLock) { rbf->eofLock= false; WakeOnFile( spP ); }
 
     RingLeave( spP );                          /* out of the previous one first */
 
