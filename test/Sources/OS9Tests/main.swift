@@ -2740,7 +2740,16 @@ do {
         // silence would read as a hang rather than a fault.
         let escalates = out.contains("10 allocation failures so far")
 
-        if marked && bounded && tallied && escalates {
+        // Under pacing -- the default a user runs with, and the one condition the
+        // run above (-r) cannot see -- the same forty requests must still count
+        // forty. Before a15a81c each warning line PARKED the process, and a parked
+        // process is resumed by re-running its whole call, so failing requests
+        // were executed and counted again: 47 at the default 19200 baud, with one
+        // of the five lines lost.
+        let pacedOut     = os9(["/h5/memflood"], timeout: 60, paced: true)
+        let pacedTallied = pacedOut.contains("40 allocation failures in total")
+
+        if marked && bounded && tallied && escalates && pacedTallied {
             print("PASS: \(floodName)")
             passed += 1
         } else {
