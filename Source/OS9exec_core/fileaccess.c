@@ -1574,6 +1574,10 @@ os9err pFseek( _pid_, syspath_typ* spP, uint32_t *posP )
       return host2os9err(oserr,E_SEEK);
 
     #else
+      /* A metadata-only open (mode 0, see pFopen) has no stream to position;
+         fseek(NULL) faulted the host. Reads and writes on such a path are
+         already E$BMode, so there is nothing a position could affect. */
+      if (spP->stream==NULL) return 0;
       if (fseek( spP->stream, (long)*posP, SEEK_SET )==0) return 0;
 
       debugprintf(dbgFiles,dbgDetail,("# pFseek: tried to seek to $%08X, got errno=%d\n",*posP,errno));
@@ -1687,6 +1691,10 @@ os9err pFpos( _pid_, syspath_typ* spP, uint32_t *posP )
     if (!err) *posP = (uint32_t)pos;
     return err;
   #else
+    /* A metadata-only open (mode 0, see pFopen) has no stream, and ftell(NULL)
+       faults the HOST, which the guest then sees as a bus error. There is no
+       position to report beyond where every open starts. */
+    if (spP->stream==NULL) { *posP= 0; return 0; }
     *posP= (uint32_t) ftell( spP->stream );
   //fgetpos( spP->stream,  posP );   /* save current position */
     return 0;
@@ -1697,6 +1705,20 @@ os9err pFpos( _pid_, syspath_typ* spP, uint32_t *posP )
 os9err pFsize( _pid_, syspath_typ* spP, uint32_t* sizeP )
 {
   os9err err= 0;
+
+  #if !defined MACFILES
+    /* A metadata-only open (mode 0, see pFopen) has no stream, and SS_Size is
+       exactly the kind of question such an open exists to ask. fileno(NULL)
+       faulted the host, which reached the guest as E$BusErr: zipinfo opens its
+       archive with mode 0 and died on every host-directory device, while the
+       same call answered on an RBF image. Ask the file system by name. */
+    if (spP->stream==NULL) {
+        struct stat info;
+        if (stat( spP->fullName,&info )!=0) return E_SEEK;
+        *sizeP= (uint32_t)info.st_size;
+        return 0;
+    }
+  #endif
 
   #if defined MACFILES
     file_typ* f= &spP->u.disk.u.file;
@@ -1759,6 +1781,7 @@ os9err pFsetsz( ushort pid, syspath_typ* spP, uint32_t *sizeP )
         HANDLE hFile;
         DWORD  pos;
  
+        if (spP->stream==NULL) return os9error(E_BMODE); /* mode-0 open: see UNIX branch */
         fgetpos( spP->stream, &tmp_pos );  // save current position
         fflush ( spP->stream );
         
@@ -1776,6 +1799,10 @@ os9err pFsetsz( ushort pid, syspath_typ* spP, uint32_t *sizeP )
         #define      BUFFSIZE 1024
         byte buffer[ BUFFSIZE ];
         
+        /* Setting the size writes the file; a metadata-only open (mode 0, see
+           pFopen) has no write access and no stream -- E$BMode, as a write on
+           the same path already is, rather than a host fault on ftell(NULL). */
+        if (spP->stream==NULL) return os9error(E_BMODE);
         tmp_pos= (uint32_t)ftell( spP->stream );       /* make it compatible for gcc >= 3.2 */
         err= fseek    ( spP->stream,0,SEEK_END ); if (err) return err;         /* go to EOF */
 
@@ -1958,6 +1985,13 @@ os9err pFeof( _pid_, syspath_typ* spP )
     if (curpos>=curend)    return os9error(E_EOF);
 
   #else   
+    /* No stream after a metadata-only open (mode 0, see pFopen): nothing has
+       been read, so the only EOF there is an empty file. feof(NULL) faulted
+       the host. */
+    if (spP->stream==NULL) {
+        struct stat info;
+        return (stat( spP->fullName,&info )==0 && info.st_size==0) ? os9error(E_EOF) : 0;
+    }
     if (feof(spP->stream)) return os9error(E_EOF);
   #endif
 

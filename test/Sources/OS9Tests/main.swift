@@ -2677,6 +2677,96 @@ do {
     }
 }
 
+// ── a mode-0 open on a host directory answers getstats instead of faulting ──
+// OS-9 lets a path be opened with access mode 0 -- neither read nor write -- to
+// ask about a file rather than read it. On a host-directory device pFopen opens
+// no host stream for that (so attr can reach a file whose content permissions are
+// cleared), and every handler that touched the stream afterwards faulted the HOST:
+// fileno(NULL) inside SS_Size, which segv_handler hands to the guest as E$BusErr.
+// zip, zipinfo, unzip, mv and texidx all died that way on a host-directory /dd
+// while passing on an RBF image. The module opens a 1234-byte file with mode 0,
+// asks SS_Size (must be 1234), SS_Pos and SS_EOF, seeks, and closes; any failure
+// exits with its error, so the shell prints "Error #" -- #000:102 before the fix.
+do {
+    let modeZeroName = "file: a mode-0 open on a host directory answers SS_Size, SS_Pos, SS_EOF and seek"
+    if filter.isEmpty || modeZeroName.localizedCaseInsensitiveContains(filter) {
+        let asm = [
+            "  use /dd/DEFS/oskdefs.d",
+            "",
+            "F$Exit   equ  $06",
+            "I$Open   equ  $84",
+            "I$Seek   equ  $88",
+            "I$GetStt equ  $8D",
+            "I$Close  equ  $8F",
+            "",
+            "  psect modezero,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+            "",
+            "start:",
+            "  lea     fname(pc),a0",
+            "  moveq   #0,d0",
+            "  OS9     I$Open",
+            "  bcs     fail",
+            "  move.w  d0,d7",
+            "  moveq   #2,d1",
+            "  OS9     I$GetStt",
+            "  bcs     fail",
+            "  cmpi.l  #1234,d2",
+            "  bne     wrong",
+            "  move.w  d7,d0",
+            "  moveq   #5,d1",
+            "  OS9     I$GetStt",
+            "  bcs     fail",
+            "  move.w  d7,d0",
+            "  moveq   #6,d1",
+            "  OS9     I$GetStt",
+            "  bcs     fail",
+            "  move.w  d7,d0",
+            "  moveq   #10,d1",
+            "  OS9     I$Seek",
+            "  bcs     fail",
+            "  move.w  d7,d0",
+            "  OS9     I$Close",
+            "  moveq   #0,d1",
+            "  OS9     F$Exit",
+            "wrong:",
+            "  moveq   #1,d1",
+            "fail:",
+            "  OS9     F$Exit",
+            "fname:",
+            "  dc.b    \"/h5/modezero.dat\",0",
+            "",
+            "  ends",
+            ""
+        ].joined(separator: "\r")
+        try? asm.write(toFile: scratchDisk + "/modezero.a", atomically: true, encoding: .utf8)
+        try? Data(repeating: 0x41, count: 1234).write(to: URL(fileURLWithPath: scratchDisk + "/modezero.dat"))
+
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/modezero.a -o=/h5/modezero.r",
+            "l68 /h5/modezero.r -o=/h5/modezero",
+            "/h5/modezero",
+            "echo MODEZERO-END"
+        ], timeout: 30)
+        let built = FileManager.default.fileExists(atPath: scratchDisk + "/modezero")
+        let clean = out.contains("MODEZERO-END") && !out.contains("Error #")
+        if built && clean {
+            print("PASS: \(modeZeroName)")
+            passed += 1
+        } else {
+            print("FAIL: \(modeZeroName)")
+            if !built { print("      the module was never built, so this proves nothing") }
+            let errors = out.replacingOccurrences(of: "\r", with: "\n")
+                .split(separator: "\n").filter { $0.contains("Error #") }
+            for line in errors.prefix(3) { print("      | \(line.trimmingCharacters(in: .whitespaces))") }
+            failed += 1
+        }
+        for leftover in ["modezero.a", "modezero.r", "modezero", "modezero.dat"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── a failed allocation is reported once in the emulator's voice, not forever ──
 // os9exec's diagnostics go out on the CURRENT PROCESS's stderr. This one used to
 // go out bare, so it was indistinguishable from something the program had
