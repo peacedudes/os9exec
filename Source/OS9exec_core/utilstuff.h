@@ -188,8 +188,9 @@ Boolean HostPathDeviceName( const char* hostpath, char* nameOut );
 Boolean IsHostDeviceRoot( const char* hostpath );
 Boolean FindConfiguredDeviceRoot( const char* hostpath, char* rootOut );
 
-void    CutUp              ( char* pathname, const char* prev );
+void    CutUp              ( char* pathname, const char* prev, Boolean hostName );
 void    EatBack            ( char* pathname );
+void    EatBackOS9         ( char* pathname );
 
 os9err  FD_ID        ( const char* pathname, dirent_typ* dEnt,
                        uint32_t   *fdID,     dirtable_entry** mH );

@@ -3875,7 +3875,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     strncpy ( tmp,name, OS9PATHLEN-1 );
               tmp[      OS9PATHLEN-1 ]= NUL;
     pathname= tmp;
-    EatBack ( tmp );  /* normalize /dev/. and /dev/./ to /dev before root check */
+    EatBackOS9( tmp );  /* normalize /dev/. and /dev/./ to /dev before root check */
     debugprintf(dbgFiles,dbgNorm,("# RBF %s: '%s' (%s)\n" , co, pathname, fo ));
 
     rbf->currPos= 0; /* initialize position to 0 */
@@ -4221,7 +4221,7 @@ os9err pRchd( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname 
         strcat( curpath,dev->name );
         strcat( curpath,&tmp[n]   );
     } // if
-    EatBack( curpath );
+    EatBackOS9( curpath );
     
     err= usrpath_close( pid, path ); if (err) return err;
 

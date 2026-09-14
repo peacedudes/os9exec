@@ -685,7 +685,7 @@ void TwoCharDev( char* p, char** p3, char* tmp )
         }
         #endif
 
-        CutUp( tmp,"/." );
+        CutUp( tmp,"/.", true ); /* a device root is a host path */
         *p3= tmp;
     }
 

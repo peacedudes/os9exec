@@ -1442,6 +1442,42 @@ do {
     }
 }
 
+// A dot-name on an RBF image is stored as a dot-name. The Linux build ran every
+// OS-9 pathname through the host-file rule that spells a leading "." as ":2e"
+// (netatalk's convention, from the 2002 sources), so on an IMAGE it wrote
+// `:2edotroot` into the directory and looked `/dd/.newsrc` up as `:2enewsrc`.
+// An image made anywhere else then had names Linux could not open by absolute
+// path -- ELM's /dd/.ELM/aliases.text, /dd/.newsrc -- and an image made on Linux
+// carried `:2e` names everywhere else. Only the Linux build compiles that rule,
+// so this can fail only there (make test-linux). The listing is written to a
+// host file and read from Swift, because the shell echoes every command line
+// and `.dotroot` appears in the one that creates it.
+do {
+    let dotName = "rbf: a dot-name is stored as a dot-name, not netatalk's :2e"
+    if filter.isEmpty || dotName.localizedCaseInsensitiveContains(filter) {
+        let listing = scratchDisk + "/dotlist"
+        try? FileManager.default.removeItem(atPath: listing)
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        _ = os9([
+            "mount -k=500K \(scratchDevice)",
+            "echo dotmark >/h9/.dotroot",
+            "dir -a /h9 >\(scratch)/dotlist"
+        ], timeout: 60)
+        let text = (try? String(contentsOfFile: listing, encoding: .isoLatin1)) ?? ""
+        if text.contains(".dotroot") && !text.contains(":2e") {
+            print("PASS: \(dotName)")
+            passed += 1
+        } else {
+            print("FAIL: \(dotName)")
+            let shown = text.replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
+            print("      [dir -a /h9 should list .dotroot and no :2e name] listing: \(shown.prefix(160))")
+            failed += 1
+        }
+        try? FileManager.default.removeItem(atPath: listing)
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+    }
+}
+
 // An RBF image is a device wherever it lives. It used to be one only at
 // "<startPath>/hN": DeviceInit named the device after the IMAGE FILE'S BASENAME
 // and then rebuilt the image's host path by feeding "/" + that basename back

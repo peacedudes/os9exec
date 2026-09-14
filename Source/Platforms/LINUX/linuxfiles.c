@@ -181,7 +181,7 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
     } /* loop */    
 
     /* cut out /xxxx/../ sequences */
-    CutUp( adname, Prev );
+    CutUp( adname, Prev, true );
 
     /* CutUp() above is a purely textual "/xxx/../" collapse -- it has no
      * idea a component might be a configured device root's own name

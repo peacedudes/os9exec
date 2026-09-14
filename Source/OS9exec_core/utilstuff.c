@@ -1340,8 +1340,9 @@ static Boolean IsDotRun( const char* from, const char* to )
     return true;
 } /* IsDotRun */
 
-void CutUp( char* pathname, const char* prev )
-/* cut out /xxxx/../ sequences */
+void CutUp( char* pathname, const char* prev, Boolean hostName )
+/* cut out /xxxx/../ sequences. <hostName> says whether <pathname> names a HOST
+ * file: only then does the Linux build respell a leading "." as ":2e". */
 {
     char *v, *q, *qs;
     #ifdef linux
@@ -1428,7 +1429,11 @@ void CutUp( char* pathname, const char* prev )
         } /* switch */
       
         #ifdef linux
-          if (inc) include_2e( pathname, q );
+          /* netatalk's ":2e" is a host-filesystem spelling. Applied to an OS-9
+             pathname it wrote `:2ename` into RBF images and looked `/dd/.name`
+             up under that spelling, so a dot-name made anywhere else could not
+             be opened by absolute path on Linux. */
+          if (inc && hostName) include_2e( pathname, q );
         #endif
         
         debugprintf( dbgFiles,dbgNorm,("# AdjustPath REDU '%s'\n", pathname ));
@@ -1436,7 +1441,7 @@ void CutUp( char* pathname, const char* prev )
     } /* while */
 } /* CutUp */
 
-void EatBack( char* pathname )
+static void EatBackPath( char* pathname, Boolean hostName )
 {
     #define Prev  "/."
     #define PrevW "\\." /* Windows32 version */
@@ -1484,12 +1489,23 @@ void EatBack( char* pathname )
       if (*p==':') { *++p= PATHDELIM; *++p= NUL; }
     #endif
           
-    CutUp( pathname, Prev ); /* support also for RBF OS-9 paths */
-    
+    CutUp( pathname, Prev, hostName ); /* support also for RBF OS-9 paths */
+
     #ifdef windows32
-      CutUp( pathname, PrevW );
+      CutUp( pathname, PrevW, hostName );
     #endif
+} /* EatBackPath */
+
+void EatBack( char* pathname )
+/* collapse a HOST pathname */
+{   EatBackPath( pathname, true );
 } /* EatBack */
+
+void EatBackOS9( char* pathname )
+/* collapse an OS-9 pathname: the same dot rules, but no host respelling of a
+ * leading "." -- the name is looked up in an RBF directory, not on the host */
+{   EatBackPath( pathname, false );
+} /* EatBackOS9 */
 
 // Take the CRC algorithm as hash function
 //static int HashF( char* name, char* fName )
