@@ -2076,9 +2076,10 @@ do {
         "  moveq   #f3l,d1",
         "  bsr     chk",
         "",
+        "* not #1..#8: r68 assembles those as SUBQ, which never lacked X",
         "  andi.b  #$EF,ccr",
         "  clr.l   (a2)",
-        "  subi.l  #1,(a2)+",
+        "  subi.l  #$100,(a2)+",
         "  moveq   #0,d0",
         "  addx.l  d0,d0",
         "  subq.l  #4,a2",
@@ -2135,7 +2136,7 @@ do {
         "f2l   equ   *-f2",
         "f3:   dc.b  \"FAIL: SUB.L Dn,(An) with a borrow left X clear\",$0D",
         "f3l   equ   *-f3",
-        "f4:   dc.b  \"FAIL: SUBI.L #1,(An)+ with a borrow left X clear\",$0D",
+        "f4:   dc.b  \"FAIL: SUBI.L #$100,(An)+ with a borrow left X clear\",$0D",
         "f4l   equ   *-f4",
         "f5:   dc.b  \"FAIL: SUBQ.L #1,(An) with no borrow left X set\",$0D",
         "f5l   equ   *-f5",
@@ -2165,8 +2166,10 @@ do {
         } else {
             print("FAIL: \(name)")
             print("      [every case must leave X equal to the carry it produced]")
-            let preview = out.split(separator: "\n")
-                .filter { $0.hasPrefix("FAIL:") || $0.contains("Error") }
+            // OS-9 ends lines with CR, and the shell's prompt can lead the first
+            // one, so a prefix match on LF-split lines found nothing to show.
+            let preview = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("FAIL:") || $0.contains("Error") }
                 .prefix(8).joined(separator: " | ")
             print("      output: \(preview)")
             failed += 1
