@@ -612,6 +612,37 @@ do {
     }
 }
 
+// Syscall tracing (-d 2) must survive pacing. Each trace line is host C printed
+// into the traced process's OWN stderr path, so under pacing a full FIFO parked
+// the process mid-trace-line; the dispatcher then re-ran the whole call, which
+// printed the line again and filled the FIFO again. The session never got past
+// shell start-up -- lines cut part-way and restarted ~1,500 times, no command
+// ever ran -- while the same run with -r traced cleanly. First reported under a
+// pty; it was never the pty. The UNPACED run is the control: it proves the
+// marker can appear at all, since the command line only ever says `setenv`.
+do {
+    let name = "trace: -d 2 completes a session under pacing, without restarted lines"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let traced   = ["tmode baud=115200", "setenv DTRACEMARK 1", "printenv"]
+        let unpaced  = os9(traced, flags: ["-d", "2"])
+        let paced    = os9(traced, timeout: containerized ? 180 : 90, paced: true, flags: ["-d", "2"])
+        // A trace line that begins part-way through another line: the livelock's signature.
+        // A run the livelock never lets finish comes back as "(timeout)" and has no lines to
+        // inspect, so it is the MARKER that fails it; this catches a run that completes garbled.
+        let restarts = paced.range(of: "[^\\r\\n ]# >>> ", options: .regularExpression) != nil
+        let timedOut = paced == "(timeout)"
+        if unpaced.contains("DTRACEMARK=1") && paced.contains("DTRACEMARK=1") && !restarts {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      control (-r) marker=\(unpaced.contains("DTRACEMARK=1")), "
+                + "paced marker=\(paced.contains("DTRACEMARK=1")), timed out=\(timedOut), restarted lines=\(restarts)")
+            failed += 1
+        }
+    }
+}
+
 // touch
 check("touch: creates file",     contains: "t_touch",
     "touch /h5/t_touch", "dir /dd")

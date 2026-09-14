@@ -571,7 +571,9 @@ void debug_comein( regs_type* rp, ushort pid )
   Boolean                   msk = cp->masklevel>0;
 
   if (!Dbg_SysCall( rp, pid )) return;
-  if (cp->state==pWaitRead)    return; /* avoid dbg display in pWaitRead mode */
+  /* A parked read or write is resumed by re-dispatching the same call, which
+     comes back through here -- it announced itself the first time. */
+  if (cp->state==pWaitRead || cp->state==pWaitWrite) return;
 
   /* Remember which call this line announced. debug_return must name THIS call,
      and cp->func will not still hold it by then. */

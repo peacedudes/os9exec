@@ -1383,8 +1383,8 @@ static void baud_make_room( baud_device_t* d, int need )
            This is not the `while (held) CheckInputBuffers()` spin warned about
            in ConsoleOut: that one stalled a whole cooperative system inside a
            GUEST process's write syscall. Here the caller is an internal
-           command, which is unparkable host C and is already spinning in this
-           loop -- pumping input only makes the spin productive. */
+           command or emulator narration, both unparkable host C and already
+           spinning in this loop -- pumping input only makes the spin productive. */
         CheckInputBuffers();
 
         baud_drain_due();
@@ -1449,6 +1449,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
     process_typ* cp= &procs[pid];
     Boolean      paced= false;
     Boolean      held = false;       /* XOFF on this terminal: park, don't write */
+    Boolean      narration= false;   /* emulator narration: host C, never parked */
     baud_device_t* dev= NULL;
 
     gConsoleID=  spP->term_id;
@@ -1491,8 +1492,20 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
               }
           }
 
+          /* Emulator NARRATION -- a `-d` trace line, an allocator warning, any
+             u*_printf -- is host C running inside some process's syscall. It
+             arrives through usrpath_puts, which raises in_recursion for exactly
+             that span, and a genuine guest write never does. Like an internal
+             command it cannot be parked: the dispatcher resumes a parked
+             process by re-running its whole call, which printed the narration
+             again, filled the FIFO again and parked again, forever. `-d 2` never
+             got past shell start-up under pacing, and each retry re-ran the
+             call itself too. So narration waits for room instead, and never
+             takes over the resume state of a write that genuinely is parked. */
+          narration= in_recursion;
+
           cnt= 0;
-          if (pid>0 && pid<MAXPROCESSES && cp->state==pWaitWrite) {
+          if (pid>0 && pid<MAXPROCESSES && cp->state==pWaitWrite && !narration) {
               set_os9_state( pid, cp->saved_state, "ConsoleOut" );
               cnt=                cp->saved_cnt;
           }
@@ -1522,7 +1535,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
              so nothing else is running during it either way. Bounded so a hold
              whose owner has gone cannot wedge the emulator; at shutdown
              console_held() answers false anyway (g_final_drain). */
-          if (cp->isIntUtil && console_held( (short)gConsoleID )) {
+          if ((cp->isIntUtil || narration) && console_held( (short)gConsoleID )) {
               int spins= 0;
               while (console_held( (short)gConsoleID ) && ++spins <= 12000) {
                   struct timespec ts;
@@ -1535,7 +1548,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
 
           held= console_held( (short)gConsoleID ) &&
                 pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask &&
-                !cp->isIntUtil; /* handled above; parking it would drop output */
+                !cp->isIntUtil && !narration; /* handled above; parking either would drop or livelock */
 
           while (cnt<*maxlenP) {
               Boolean needsLF; /* does this char carry a trailing auto-LF? */
@@ -1589,8 +1602,8 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                      resumed -- parking it drops the rest of its output. Wait
                      for room instead. `paced` already excludes the other
                      unparkable writers (pid 0, the MAXPROCESSES sentinel,
-                     pSysTask), so isIntUtil is the only case left here. */
-                  if (cp->isIntUtil && BAUD_FIFO_SIZE - dev->count < need)
+                     pSysTask), so isIntUtil and narration are the cases left. */
+                  if ((cp->isIntUtil || narration) && BAUD_FIFO_SIZE - dev->count < need)
                       baud_make_room( dev, need );
 
                   if (BAUD_FIFO_SIZE - dev->count < need) {
@@ -1606,7 +1619,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                   if (needsLF)  fifo_push( dev, LF,  pid );
                   for (q=0; q<nulls; q++) fifo_push( dev, NUL, pid );
               }
-              else if (hostterm_bound( gConsoleID )
+              else if (hostterm_bound( gConsoleID ) && !narration
                        && pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask) {
                   /* Same protection `paced` above relies on: pid==0 is the
                      system process and pid==MAXPROCESSES is the "no process
