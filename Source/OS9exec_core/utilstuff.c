@@ -2773,7 +2773,7 @@ Boolean RBF_ImgSize( long size )
    * alone. Host-native "pd" fell back to the ".."-walking algorithm
    * purely because this GetStat was returning noise -- see the
    * os9exec-host-confinement project memory for the full chain. */
-  Boolean HostPathDeviceName( const char* hostpath, char* nameOut )
+  static Boolean HostPathDeviceNameScan( const char* hostpath, char* nameOut, Boolean cached )
   {
       char  real[PATH_MAX];
       char  rootreal[PATH_MAX];
@@ -2797,7 +2797,8 @@ Boolean RBF_ImgSize( long size )
 
       #define DEV_MATCHES( d0,d1 ) \
           ( devbuf[0]=(d0), devbuf[1]=(d1), devbuf[2]=NUL, \
-            root=NULL, TwoCharDev( devbuf,&root,tmp ), \
+            root=NULL, \
+            cached ? TwoCharDevCached( devbuf,&root,tmp ) : TwoCharDev( devbuf,&root,tmp ), \
             root!=NULL && *root!=NUL && \
             realpath( root,rootreal )!=NULL && \
             ( rl= strlen(rootreal), ustrncmp( real,rootreal,rl )==0 && \
@@ -2811,6 +2812,17 @@ Boolean RBF_ImgSize( long size )
 
       #undef DEV_MATCHES
       return false;
+  } /* HostPathDeviceNameScan */
+
+  Boolean HostPathDeviceName( const char* hostpath, char* nameOut )
+  {
+      /* From what was last found beside the emulator first (see DevRootsBegin,
+         filestuff.c). A stale answer there may cost a second look, never a
+         wrong "outside every device": that is only said after a real one. */
+      DevRootsBegin();
+      if (HostPathDeviceNameScan( hostpath, nameOut, true )) return true;
+      if (!DevRootsMayContain( hostpath ))                   return false;
+      return HostPathDeviceNameScan( hostpath, nameOut, false );
   } /* HostPathDeviceName */
 
   /* True iff <hostpath> resolves to EXACTLY a configured device root
@@ -2861,9 +2873,13 @@ Boolean RBF_ImgSize( long size )
       if (hostpath==NULL || *hostpath==NUL)   return false;
       if (realpath( hostpath, real )==NULL)    return false;
 
+      /* No second, uncached look on "no" here: nearly every directory is not
+         a device root, so that would put the cost straight back. */
+      DevRootsBegin();
+
       #define ROOT_IS( d0,d1 ) \
           ( devbuf[0]=(d0), devbuf[1]=(d1), devbuf[2]=NUL, \
-            root=NULL, TwoCharDev( devbuf,&root,tmp ), \
+            root=NULL, TwoCharDevCached( devbuf,&root,tmp ), \
             root!=NULL && *root!=NUL && \
             realpath( root,rootreal )!=NULL && \
             SamePathIgnoringTrailingDelim( real,rootreal ) )
@@ -2897,7 +2913,7 @@ Boolean RBF_ImgSize( long size )
    * "never referenced a configured device to begin with, e.g. a literal
    * /etc" (reject) -- see the confinement check at the end of
    * AdjustPath, and the os9exec-host-confinement project memory. */
-  Boolean FindConfiguredDeviceRoot( const char* pathname, char* rootOut )
+  static Boolean FindConfiguredDeviceRootScan( const char* pathname, char* rootOut, Boolean cached )
   {
       char  devbuf[3];
       char  tmp[OS9PATHLEN];
@@ -2919,7 +2935,8 @@ Boolean RBF_ImgSize( long size )
        * outright rejection instead) until fixed. */
       #define DEV_MATCHES( d0,d1 ) \
           ( devbuf[0]=(d0), devbuf[1]=(d1), devbuf[2]=NUL, \
-            root=NULL, TwoCharDev( devbuf,&root,tmp ), \
+            root=NULL, \
+            cached ? TwoCharDevCached( devbuf,&root,tmp ) : TwoCharDev( devbuf,&root,tmp ), \
             root!=NULL && *root!=NUL && \
             ( rl= strlen(root), ustrncmp( pathname,root,rl )==0 && \
               (pathname[rl]==NUL || pathname[rl]==PATHDELIM) ) )
@@ -2953,6 +2970,16 @@ Boolean RBF_ImgSize( long size )
       if (bestLen==0) return false;
       strcpy( rootOut,best );
       return true;
+  } /* FindConfiguredDeviceRootScan */
+
+  Boolean FindConfiguredDeviceRoot( const char* pathname, char* rootOut )
+  {
+      /* Cached first, then a real look before answering "in no device" -- the
+         same rule as HostPathDeviceName. */
+      DevRootsBegin();
+      if (FindConfiguredDeviceRootScan( pathname, rootOut, true )) return true;
+      if (!DevRootsMayContain( pathname ))                         return false;
+      return FindConfiguredDeviceRootScan( pathname, rootOut, false );
   } /* FindConfiguredDeviceRoot */
 
   /* Resolves an OS-9-style path to its would-be host path (same

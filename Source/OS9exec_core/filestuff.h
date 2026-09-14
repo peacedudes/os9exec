@@ -82,6 +82,9 @@ void   show_files        ( ushort pid );
 os9err parsepathext      ( ushort pid, char** inp, char* out, Boolean exedir, Boolean *ispath );
 os9err parsepath         ( ushort pid, char** inp, char* out, Boolean exedir );
 void   TwoCharDev        ( char* p, char** p3, char* tmp );
+void   TwoCharDevCached  ( char* p, char** p3, char* tmp );
+void   DevRootsBegin     ( void );
+Boolean DevRootsMayContain( const char* hostpath );
 
 /* Generic -- the stock answer for a slot a file manager does not implement,
    one per slot shape it is installed in. See the definitions in filestuff.c

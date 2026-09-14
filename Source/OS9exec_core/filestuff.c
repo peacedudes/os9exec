@@ -542,6 +542,128 @@ static void CheckH0( char* name, char* p, char** p3 )
     #endif
 } /* CheckH0 */
 
+#ifdef win_unix
+/* ---- devices found beside the emulator, remembered between lookups --------
+ *
+ * Every OS-9 path that turns into a host path is checked against every device
+ * root, dd and h0-hz, several times over (FindConfiguredDeviceRoot,
+ * HostPathDeviceName, IsHostDeviceRoot). For a letter with no OS9Hx set,
+ * TwoCharDev looks for "<startPath>/hx" and "<parent>/hx" -- an fopen and an
+ * opendir each, then CheckH0 repeats the pair -- and for 35 letters that is
+ * about 280 failed lookups per scan. Measured with an interposer on macOS: one
+ * `list /dd/SYS/motd` cost ~1,200 failed fopen/opendir calls, and startup alone
+ * ~4,800, whether or not OS9DISK/OS9H0/OS9H1 were set. On local disk that is
+ * microseconds; with the working directory on a Docker Desktop share every one
+ * crosses into the VM, and the same script took 407 s instead of 11 s.
+ *
+ * What is found (or not) there changes only when an entry is added, removed or
+ * renamed in <startPath> or its parent, and that moves the directory's
+ * modification time. So each scan stats those two directories once, and while
+ * both times are unchanged the per-letter answers stand. A change inside one
+ * clock tick can be missed; that is accepted, and it cannot turn a success into
+ * a failure: TwoCharDev itself always looks for real and refreshes its letter,
+ * so a device named in a path is always seen, and the scans that could answer
+ * "no device" for a path where such a device could be retry without the cache
+ * before they do (DevRootsMayContain). Same measurement afterwards: startup
+ * ~450 calls, 148 of them failed; each `list` ~80, none failed. */
+typedef struct {
+    Boolean known;
+    Boolean found;
+    char    root[OS9PATHLEN];
+} ambient_dev_typ;
+
+static ambient_dev_typ ambientDev[ 256 ];   /* by the device's second character */
+static Boolean         ambientStampOK= false;
+static time_t          ambientStamp[ 2 ];   /* <startPath>, then its parent */
+
+static void AmbientParent( char* parent )
+/* the parent of <startPath> that TwoCharDev also searches, with its trailing
+   delimiter -- the same guarded walk as there */
+{
+    char* q;
+
+    strcpy( parent,startPath );
+            q= parent+strlen(parent)-1;
+    if    (*q==PATHDELIM && q>parent) q--;
+    while (*q!=PATHDELIM && q>parent) q--;
+    *(++q)= NUL;
+} /* AmbientParent */
+
+static Boolean AmbientDirTimes( time_t* t )
+/* modification times of <startPath> and its parent; false if either is unreadable */
+{
+    char        parent[OS9PATHLEN];
+    struct stat info;
+
+    if (stat( startPath,&info )!=0) return false;
+    t[ 0 ]= info.st_mtime;
+
+    AmbientParent( parent );
+    if (stat( parent,&info )!=0) return false;
+    t[ 1 ]= info.st_mtime;
+    return true;
+} /* AmbientDirTimes */
+
+static Boolean UnderAmbientDir( const char* path, const char* dir )
+/* does <path> name something "<dir>/h..." -- where a device beside the emulator
+   would be? Loose on purpose (any case, either slash): a false "maybe" costs
+   only a look. */
+{
+    #define IS_DELIM( c ) ((c)=='/' || (c)=='\\')
+
+    if (*dir==NUL) return false;
+    for (; *dir!=NUL; dir++, path++) {
+        if (IS_DELIM( *dir ) && IS_DELIM( *path )) continue;
+        if (tolower((unsigned char)*dir)!=tolower((unsigned char)*path)) return false;
+    }
+    if (!IS_DELIM( dir[ -1 ] )) {
+        if (!IS_DELIM( *path )) return false;
+        path++;
+    }
+    #undef IS_DELIM
+    return tolower((unsigned char)*path)=='h';
+} /* UnderAmbientDir */
+
+Boolean DevRootsMayContain( const char* hostpath )
+/* Could a device beside the emulator that the cache has not seen hold
+   <hostpath>? Only if the path is under "<startPath>/h" or "<parent>/h", the
+   only two places TwoCharDev looks, or is CheckH0's /h0. The scans ask this
+   before looking again without the cache, because at startup the module
+   directory and GetRBFName's walk up through its parents are all outside every
+   device -- each "no" was answered twice, and that was ~1,600 of the ~1,750
+   failed lookups startup still made with the cache alone. */
+{
+    char parent[OS9PATHLEN];
+
+    if (hostpath==NULL) return false;
+
+    /* CheckH0's root for a "dd" disk beside the emulator, mounted as /h0 */
+    if (ustrncmp( hostpath,"/h0",3 )==0 &&
+        (hostpath[ 3 ]==NUL || hostpath[ 3 ]==PATHDELIM)) return true;
+
+    AmbientParent( parent );
+    return UnderAmbientDir( hostpath,startPath ) || UnderAmbientDir( hostpath,parent );
+} /* DevRootsMayContain */
+
+void DevRootsBegin( void )
+/* Called at the top of every scan over all the device letters: forget what was
+   found beside the emulator if either directory has changed since. */
+{
+    time_t  now[ 2 ];
+    Boolean ok= AmbientDirTimes( now );
+
+    if (ok && ambientStampOK && now[ 0 ]==ambientStamp[ 0 ]
+                             && now[ 1 ]==ambientStamp[ 1 ]) return;
+
+    debugprintf(dbgFiles,dbgNorm,("# DevRootsBegin: device cache cleared (%s)\n",
+                                     !ok ? "directory unreadable" :
+                                     !ambientStampOK ? "first use" : "directory changed"));
+    memset( ambientDev,0,sizeof(ambientDev) );
+    ambientStampOK= ok; /* unreadable: never trust the cache, look every time */
+    if (ok) { ambientStamp[ 0 ]= now[ 0 ]; ambientStamp[ 1 ]= now[ 1 ]; }
+} /* DevRootsBegin */
+#endif
+
 static void AnnounceOverride( const char* dev, const char* chosen )
 /* Say once which of two live candidates for /<dev> won.
  * OS9Hx beats a device of the same name sitting next to the emulator --
@@ -554,11 +676,14 @@ static void AnnounceOverride( const char* dev, const char* chosen )
     /* TwoCharDev runs on every path resolution -- hundreds of times per
      * command -- so this is emitted once per device character. */
     static Boolean announced[ 256 ];
+    static Boolean checked  [ 256 ]; /* looked once: a notice is not worth two
+                                        failed lookups on every path resolution */
     unsigned char  key= (unsigned char)dev[ 1 ];
     char           ambient[OS9PATHLEN];
     size_t         len= strlen( startPath );
 
-    if (announced[ key ]) return;
+    if (announced[ key ] || checked[ key ]) return;
+    checked[ key ]= true;
     if (len+3>=sizeof(ambient)) return; /* no room for "<startPath>/hx" */
 
     strcpy ( ambient,startPath );
@@ -582,6 +707,7 @@ void TwoCharDev( char* p, char** p3, char* tmp )
     char    sv2[OS9PATHLEN];
     Boolean isDD= ustrncmp( p,"dd",2 )==0;
     Boolean isXX= ustrncmp( p,"xx",2 )==0; /* /xx = system device, same as /dd */
+    Boolean ambientScan= false;            /* no OS9Hx: searched beside the emulator */
 
     if (isDD || isXX) *p3= egetenv("OS9DISK"); /* default/system device */
     else if (tolower((unsigned char)*p)=='h' &&
@@ -594,6 +720,7 @@ void TwoCharDev( char* p, char** p3, char* tmp )
         if (*p3!=NULL) AnnounceOverride( p,*p3 ); /* explicit beats ambient */
 
         if (*p3==NULL) {
+            ambientScan= true;
             strcpy   ( tmp,startPath );
                  q=    tmp+strlen(tmp)-1;
             if (*q!=PATHDELIM) strcat( tmp,PATHDELIM_STR );
@@ -689,8 +816,47 @@ void TwoCharDev( char* p, char** p3, char* tmp )
         *p3= tmp;
     }
 
+    #ifdef win_unix
+    if (ambientScan) { /* a real look beside the emulator: remember what it found */
+        ambient_dev_typ* a= &ambientDev[ (unsigned char)p[ 1 ] ];
+        a->known= true;
+        a->found= (*p3!=NULL);
+        if (a->found) {
+            strncpy( a->root,*p3, OS9PATHLEN-1 );
+                     a->root[     OS9PATHLEN-1 ]= NUL;
+        }
+    }
+    #endif
+
     debugprintf(dbgFiles,dbgNorm,( "# TwoCharDev: path='%s'\n", *p3 ));
 } /* TwoCharDev */
+
+void TwoCharDevCached( char* p, char** p3, char* tmp )
+/* TwoCharDev for the scans over every device letter: answers from what was last
+   found beside the emulator, when DevRootsBegin has found nothing changed there.
+   A letter with OS9Hx set, or not yet looked at, goes to TwoCharDev as before. */
+{
+    #ifdef win_unix
+    if (ambientStampOK &&
+        tolower((unsigned char)*p)=='h' && (*(p+2)==PATHDELIM || *(p+2)==NUL)) {
+        char             envnam[15];
+        const char*      e;
+        ambient_dev_typ* a= &ambientDev[ (unsigned char)p[ 1 ] ];
+
+        strcpy ( envnam,"OS9H" );
+        strncat( envnam,(p+1),1 );
+            e= getenv( envnam );
+        if ((e==NULL || *e==NUL) && a->known) {
+            if (!a->found) { *p3= NULL; return; }
+            strcpy( tmp,a->root );
+            *p3= tmp;
+            return;
+        }
+    }
+    #endif
+
+    TwoCharDev( p,p3,tmp );
+} /* TwoCharDevCached */
 
 os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean *ispath )
 /* macintosh:
