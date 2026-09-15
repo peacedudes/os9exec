@@ -1762,6 +1762,22 @@ do {
         $0.contains("Error #000:216") && !$0.contains(symRootMark)
     }
 
+    // deldir through such a link is the destructive case, not only a wrong
+    // listing: before the fix `chd` landed in the device root, and deldir then
+    // deleted the root's own files by their relative names before failing on
+    // the link (measured on 4468753: one of two root files gone). Every root
+    // file must survive, and the directory the link points at too.
+    let deldirKeep = "DELDIRKEEP\(UUID().uuidString.prefix(8))"
+    try? "k\r".write(toFile: scratchDisk + "/" + symEscDir + "/" + deldirKeep,
+                     atomically: true, encoding: .utf8)
+    run("fs: confine deldir through a directory symlink out of every device deletes nothing",
+        expectation: "deldir -q through out -> ../.. is refused; /h5's files and the link's own directory survive",
+        commands: ["chd \(scratch)/\(symEscDir)", "deldir -q out"]) { _ in
+        let fileManager = FileManager.default
+        return fileManager.fileExists(atPath: scratchDisk + "/" + symRootMark)
+            && fileManager.fileExists(atPath: scratchDisk + "/" + symEscDir + "/" + deldirKeep)
+    }
+
     removeScratchItem(symEscDir)
     removeScratchItem(symRootMark)
 

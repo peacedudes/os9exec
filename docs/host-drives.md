@@ -259,7 +259,10 @@ Host links are followed.
   `dir` and `chd` are `E$PNNF`. Opening a file link, or creating a file through
   a directory link, reports `E$MNF` (a misleading error, but still a refusal).
   Builds before 2026-09-15 resolved a directory link pointing out to the
-  device root itself, so `dir /h5/out` listed `/h5`.
+  device root itself, so `dir /h5/out` listed `/h5`. **On those builds such a
+  link destroys data:** `deldir /h5/out` changes into the device root and
+  deletes the root's own files by name before it fails. Remove outward links
+  on the host before running `deldir` or any tool that walks directories.
 - `del` of a symlink inside the device removes the link, not the target. A
   link pointing outside every device cannot be deleted from OS-9 (`E$BPNam`);
   remove it on the host.
