@@ -1969,8 +1969,8 @@ check("fs: permission — ...while an ordinary non-owner (dog) is still refused 
 
 // The other half of the same fix: making group 0 privileged means a non-super
 // process must not be able to PUT itself in group 0. chown writes the file
-// descriptor's owner word, and a plain owner is allowed to hand a file to
-// another group -- but not to group zero, which would mint a privileged
+// descriptor's owner word, which "Only the super user can change" (I$SetStt
+// SS_FD, p.2-24) -- to group zero above all, which would mint a privileged
 // identity out of a file they merely own. Concretely here: claude is 1.7 and
 // admin is 0.7, so `chown 0.7` is claude reaching for the super-user identity
 // one group digit away from its own.
@@ -1978,16 +1978,23 @@ check("fs: permission — ...while an ordinary non-owner (dog) is still refused 
 // On its OWN file `g`, not the shared `f`: f still has owner-read cleared from
 // the lockout test above, so chown could not even open it and the refusal came
 // back E_FNA -- which "contains Error #" would have accepted, passing this test
-// without ever reaching the check it exists for. Hence E_PERMIT by name, and a
-// 2.7 control proving an ordinary give-away still works.
+// without ever reaching the check it exists for. Hence E_PERMIT by name.
 check("fs: permission — owner cannot give a file away to group 0",
     contains: "E_PERMIT",
     "chd \(permDevPath)", "login claude", "chd \(permDevPath)",
     "echo abc >g", "chown 0.7 g", "logout")
 
-run("fs: permission — the same owner CAN give it to an ordinary group",
-    expectation: "control: chown to 2.7 succeeds, so the group-0 refusal is specific",
-    commands: ["chd \(permDevPath)", "login claude", "chd \(permDevPath)",
+// An owner used to be allowed to move the GROUP half (1.7 -> 2.7), a partial
+// give-away kept on purpose; rdoggett 2026-09-15: follow the manual. The super
+// user (admin, 0.7) still can, which is the control that the refusal is about
+// who asks.
+check("fs: permission — the owner cannot give its file to another ordinary group either",
+    contains: "E_PERMIT",
+    "chd \(permDevPath)", "login claude", "chd \(permDevPath)", "chown 2.7 g", "logout")
+
+run("fs: permission — the super user can give that file to another group",
+    expectation: "control: admin (0.7) chowns claude's file to 2.7 without an error",
+    commands: ["chd \(permDevPath)", "login admin", "chd \(permDevPath)",
                "chown 2.7 g", "logout"]) { !$0.contains("Error #") }
 
 try? FileManager.default.removeItem(atPath: scratchDisk + "/" + permDev)

@@ -4630,23 +4630,13 @@ os9err pRsetFD( _pid_, syspath_typ* spP, byte *buffer )
      * untouched. */
     if (!is_super(pid) && !IsOwner(pid, FDOwn(spP))) return E_FNA;
 
-    /* Beyond that, changing WHO owns the file needs the super-user, while an
-     * owner may still change the group half. Note this is NOT the Unix
-     * chown/chgrp split it resembles: OS-9's attribute byte has only owner
-     * and public triplets and no group permission class, so the group byte is
-     * simply the high half of the owner identity. Letting an owner move it is
-     * therefore still a partial give-away (1.3 can hand a file to 2.3) -- but
-     * a deliberate one. */
-    if (!is_super(pid) &&
-        (GET_OS9W( buffer,1 ) & 0x00FF) != (FDOwn(spP) & 0x00FF)) return E_PERMIT;
-
-    /* ...and that give-away must not reach group ZERO, which IS the super
-     * user (see is_super). Without this a plain owner could hand its own file
-     * to 0.<its user number> and then, being the new owner, keep writing it --
-     * an ordinary user minting a privileged identity out of a file it happens
-     * to own. Guarded separately from the user-half check above because that
-     * one only pins the low byte; nothing there constrains the group. */
-    if (!is_super(pid) && (GET_OS9W( buffer,1 ) & 0xFF00)==0) return E_PERMIT;
+    /* "Only the super user can change the file's owner ID" (I$SetStt SS_FD,
+     * page 2-24). The owner word is group.user, and an owner used to be let
+     * change the group half -- a partial give-away, 1.3 handing its file to
+     * 2.3, allowed on purpose and guarded only against group zero, which IS
+     * the super user. rdoggett, 2026-09-15: follow the manual. Any change to
+     * the owner word from a caller outside the super group is E$Permit. */
+    if (!is_super(pid) && GET_OS9W( buffer,1 )!=FDOwn(spP)) return E_PERMIT;
 
     /* "The path must be open for write. NOTE: You can only change FD_OWN,
        FD_DAT, and FD_Creat. These are the only fields written back to disk."
