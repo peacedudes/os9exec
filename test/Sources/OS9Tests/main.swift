@@ -5373,6 +5373,30 @@ do {
         out.contains("#000:214") && FileManager.default.fileExists(atPath: scratchDisk + "/" + plainDir)
     }
     removeScratchItem(plainDir)
+
+    // A directory link inside the device: deldir empties the directory the link
+    // names, then clears the link's directory bit through SS_Attr, which removes
+    // the link. On macOS that removal was rmdir(), which refuses a symlink
+    // (ENOTDIR, E$PNNF): deldir failed and the link stayed. Linux's remove()
+    // already took the link away. The directory it named stays, empty.
+    let linkTarget = "t_dellinktarget"
+    let dirLink = "t_dellink"
+    removeScratchItem(dirLink)
+    removeScratchItem(linkTarget)
+    try? FileManager.default.createDirectory(atPath: scratchDisk + "/" + linkTarget,
+                                             withIntermediateDirectories: false)
+    try? "x\r".write(toFile: scratchDisk + "/" + linkTarget + "/f1", atomically: true, encoding: .utf8)
+    try? FileManager.default.createSymbolicLink(atPath: scratchDisk + "/" + dirLink,
+                                                withDestinationPath: linkTarget)
+    run("fs: deldir -q of a directory link on a host directory removes the link and empties its directory",
+        expectation: "the link is gone; the directory it named is still there, and empty",
+        commands: ["deldir -q \(scratch)/\(dirLink)"]) { _ in
+        let fileManager = FileManager.default
+        let linkGone = (try? fileManager.destinationOfSymbolicLink(atPath: scratchDisk + "/" + dirLink)) == nil
+        return linkGone && (try? fileManager.contentsOfDirectory(atPath: scratchDisk + "/" + linkTarget)) == []
+    }
+    removeScratchItem(dirLink)
+    removeScratchItem(linkTarget)
 }
 
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────

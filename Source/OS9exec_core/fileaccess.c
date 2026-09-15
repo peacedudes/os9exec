@@ -3784,8 +3784,11 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, uint32_t *attr )
        * space in it into two arguments: `attr -nd` on a directory under
        * "/tmp/has space" asked the shell to remove "/tmp/has" and
        * "space/victim", which could delete an unrelated empty directory, and
-       * never the one meant. */
-      oserr= rmdir( pp ); if (oserr) err= host2os9err( oserr,E_DNE );
+       * never the one meant. remove(), not rmdir(): a directory is removed
+       * the same, and a link to one is removed as the link, as on Linux.
+       * rmdir() refused the link (ENOTDIR), so deldir through a directory
+       * link emptied the directory and then failed with E$PNNF. */
+      oserr= remove( pp ); if (oserr) err= host2os9err( oserr,E_DNE );
 
     #elif defined MINGW
       /* mingw matched NONE of the branches above (it is not windows32, not
