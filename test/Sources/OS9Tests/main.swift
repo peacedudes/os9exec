@@ -3979,6 +3979,100 @@ do {
     }
 }
 
+// ── F$Alarm: an interval with the high bit set is 256ths of a second ──────────
+// Technical Manual, F$Alarm (User-state System Calls 1-1): "If the high order
+// bit is set, the low 31 bits are interpreted as 256ths of a second. NOTE: All
+// times are rounded up to the nearest clock tick." A_Make stored d3 as raw
+// ticks, so $80000100 (one second) was due about 2^31 ticks away and never
+// fired. Every C program's alarm() takes this path: unix.l shifts the seconds
+// left 8 and sets bit 31 (osk-freeware's atc froze on it). Same shape as the
+// finite-sleep test above: no F$Icpt handler, so the alarm firing kills the
+// process before the 10-second sleep ends and the message never prints.
+do {
+    for (funcCode, label) in [(1, "A$Set"), (2, "A$Cycle")] {
+        let module = "al256\(funcCode)"
+        let alAsm = [
+            "  use /dd/DEFS/oskdefs.d",
+            "",
+            "F$Exit   equ  $06",
+            "F$Alarm  equ  $56",
+            "F$Sleep  equ  $0A",
+            "I$WritLn equ  $8C",
+            "",
+            "  psect \(module),(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+            "",
+            "start:",
+            "  clr.l   d0",
+            "  move.w  #\(funcCode),d1",
+            "  move.w  #7,d2",
+            "  move.l  #$80000100,d3",   // one second, in 256ths
+            "  OS9     F$Alarm",
+            "  bcs     setfail",
+            "  lea     armedmsg(pc),a0",
+            "  moveq   #armedmsgl,d1",
+            "  moveq   #1,d0",
+            "  OS9     I$WritLn",
+            "  move.l  #1000,d0",        // F$Sleep(1000) -- ~10 real seconds
+            "  OS9     F$Sleep",
+            "  lea     nofiremsg(pc),a0",
+            "  moveq   #nofiremsgl,d1",
+            "  moveq   #1,d0",
+            "  OS9     I$WritLn",
+            "  bra     done",
+            "setfail:",
+            "  lea     setfailmsg(pc),a0",
+            "  moveq   #setfailmsgl,d1",
+            "  moveq   #1,d0",
+            "  OS9     I$WritLn",
+            "done:",
+            "  moveq   #0,d1",
+            "  OS9     F$Exit",
+            "armedmsg:    dc.b  \"256THS ALARM ARMED\",$0D",
+            "armedmsgl    equ   *-armedmsg",
+            "nofiremsg:   dc.b  \"256THS ALARM DID NOT FIRE\",$0D",
+            "nofiremsgl   equ   *-nofiremsg",
+            "setfailmsg:  dc.b  \"ALARM SET FAILED\",$0D",
+            "setfailmsgl  equ   *-setfailmsg",
+            "",
+            "  ends",
+            ""
+        ].joined(separator: "\r")
+
+        try? alAsm.write(toFile: scratchDisk + "/\(module).a", atomically: true, encoding: .utf8)
+
+        let name = "f$alarm: \(label) with the high bit set counts 256ths of a second"
+        if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+            let out = os9([
+                "load /dd/CMDS/r68 /dd/CMDS/l68",
+                "r68 /h5/\(module).a -o=/h5/\(module).r",
+                "l68 /h5/\(module).r -o=/h5/\(module)",
+                "/h5/\(module)"
+            ], timeout: 30)
+            // ARMED is required, not just the failure lines absent: a module
+            // that never assembled or never ran prints neither failure line.
+            if out.contains("256THS ALARM ARMED") && !out.contains("256THS ALARM DID NOT FIRE")
+                && !out.contains("ALARM SET FAILED") && out != "(timeout)" {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      [d3=$80000100 is one second; the alarm must end a 10-second sleep]")
+                print("      armed=\(out.contains("256THS ALARM ARMED")) "
+                      + "notFired=\(out.contains("256THS ALARM DID NOT FIRE")) timeout=\(out == "(timeout)")")
+                let preview = out.split(separator: "\n")
+                    .filter { !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty }
+                    .prefix(8).joined(separator: " | ")
+                print("      output: \(preview)")
+                failed += 1
+            }
+        }
+
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

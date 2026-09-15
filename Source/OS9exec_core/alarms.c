@@ -197,16 +197,34 @@ static os9err Alarm_Delete( _pid_, uint32_t aId )
 
 
 
+static uint32_t A_Interval( uint32_t aTime )
+/* An A$Set/A$Cycle interval in ticks. The caller's d3 is a tick count, or,
+ * with its high bit set, "the low 31 bits are interpreted as 256ths of a
+ * second" and "all times are rounded up to the nearest clock tick" (OS-9
+ * v2.4 Technical Manual, F$Alarm). It was stored as raw ticks, so a C
+ * program's alarm(2) -- unix.l passes the seconds shifted left 8 with bit 31
+ * set, $80000200 -- came due about 2^31 ticks away and never fired.
+ * 64-bit because 2^31-1 256ths times TICKS_PER_SEC overflows 32 bits. */
+{
+	uint64_t t;
+
+	if ((aTime & 0x80000000)==0) return aTime;
+	t= ((uint64_t)(aTime & 0x7fffffff)*TICKS_PER_SEC + 255)/256;
+	return t>0x7fffffff ? 0x7fffffff : (uint32_t)t;
+} /* A_Interval */
+
+
+
 static os9err Alarm_Set( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTicks )
 /* A$Set call: 1 */
-{	return A_Make( pid, aId,aCode,aTicks, false );
+{	return A_Make( pid, aId,aCode,A_Interval( aTicks ), false );
 } /* Alarm_Set */
 
 
 
 static os9err Alarm_Cycle( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTicks )
 /* A$Cycle call: 2 */
-{	return A_Make( pid, aId,aCode,aTicks, true );
+{	return A_Make( pid, aId,aCode,A_Interval( aTicks ), true );
 } /* Alarm_Cycle */
 
 
