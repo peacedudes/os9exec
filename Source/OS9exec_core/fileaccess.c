@@ -3001,29 +3001,43 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
 } /* pDread */
 
 #ifdef win_unix
-static Boolean HostPathInUse( const char* path )
-/* Is <path>, or anything below it, open on a host-file path or some process's
-   data or execution directory? Those remember a host path string, which a
-   rename would leave naming nothing. */
+static void HostRepathOne( char* s, const char* oldp, size_t oldLen, const char* newp )
+/* <s> is a remembered host path; if it is <oldp> or below it, respell it
+   under <newp>. Matched exactly, case and all: every such path was built by
+   AdjustPath in the host's own spelling, and on a case-sensitive host an
+   inexact match could rewrite a path to a different file. A result too long
+   to hold is left alone. */
 {
-    size_t len= strlen( path );
-    int    k;
+    char tail[OS9PATHLEN];
 
-    #define UNDER( s ) ( ustrncmp( (s),path,(ushort)len )==0 && \
-                         ((s)[ len ]==NUL || (s)[ len ]==PATHDELIM) )
+    if (strncmp( s,oldp,oldLen )!=0 || (s[ oldLen ]!=NUL && s[ oldLen ]!=PATHDELIM)) return;
+    if (strlen( newp )+strlen( s+oldLen )>=OS9PATHLEN) return;
+    strcpy( tail, s+oldLen );
+    strcpy( s, newp );
+    strcat( s, tail );
+} /* HostRepathOne */
+
+static void HostRepath( const char* oldp, const char* newp )
+/* A host rename moved <oldp> to <newp>. On RBF a path open on the file, or a
+   process's current directory inside it, is held by its FD sector and does
+   not care what the entry is called -- upperdir renames a directory while it
+   holds it open. Here those remember host path strings, so they follow the
+   rename rather than go on naming what is no longer there. */
+{
+    size_t oldLen= strlen( oldp );
+    int    k;
 
     for (k=1; k<MAXSYSPATHS; k++) {
         syspath_typ* sp= &syspaths[ k ];
-        if ((sp->type==fFile || sp->type==fDir) && UNDER( sp->fullName )) return true;
+        if (sp->type==fFile || sp->type==fDir) HostRepathOne( sp->fullName, oldp,oldLen, newp );
     }
     for (k=0; k<=MAXPROCESSES; k++) {
         process_typ* cp= &procs[ k ];
-        if (cp->state!=pUnused && (UNDER( cp->d.path ) || UNDER( cp->x.path ))) return true;
+        if (cp->state==pUnused) continue;
+        HostRepathOne( cp->d.path, oldp,oldLen, newp );
+        HostRepathOne( cp->x.path, oldp,oldLen, newp );
     }
-
-    #undef UNDER
-    return false;
-} /* HostPathInUse */
+} /* HostRepath */
 #endif
 
 os9err pDwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
@@ -3047,8 +3061,11 @@ os9err pDwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
  *  - a name some other entry already answers to, compared the way OS-9 does,
  *    ignoring case. POSIX rename() replaces an existing target; here that
  *    would be a second file's data, a hard link or a symlink;
- *  - a device root, or anything open or a current directory underneath it.
- * No inode numbers are used: mingw has none, and case-insensitive host
+ *  - a device root, or a mounted image's file under the name.
+ * Anything else open under the name, or a process's current directory in it,
+ * is not refused: on RBF those are held by FD sector and do not care what the
+ * entry says (upperdir renames a directory it holds open). They follow the
+ * rename instead -- see HostRepath. No inode numbers are used: mingw has none, and case-insensitive host
  * filesystems make names, not inodes, the question. A case-only rename a host
  * refuses goes through a temporary name. */
 {
@@ -3151,7 +3168,12 @@ os9err pDwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
     if (!PATH_FITS( i, tmpPath ))            return os9error(E_BPNAM);
     #undef PATH_FITS
 
-    if (IsHostDeviceRoot( srcPath ) || HostPathInUse( srcPath )) return os9error(E_SHARE);
+    /* A device root, or a mounted image's file: the mount holds it by host
+       path. Anything else open under the name follows the rename (HostRepath). */
+    if (IsHostDeviceRoot( srcPath ))             return os9error(E_SHARE);
+    #ifdef RBF_SUPPORT
+      if (RBF_ImageOpenUnder( srcPath ))         return os9error(E_SHARE);
+    #endif
 
     if (ustrcmp( srcHost,dstHost )!=0) {
         if (rename( srcPath,dstPath )!=0)    return host2os9err( -1,E_FNA );
@@ -3173,6 +3195,7 @@ os9err pDwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
     }
 
     debugprintf(dbgFiles,dbgNorm,("# pDwrite: renamed '%s' to '%s'\n", srcPath,dstPath));
+    HostRepath( srcPath,dstPath );    /* open paths and current directories follow it */
     seekD0( spP ); spP->svD_n= 0;     /* the host may list the directory in a new order */
     *pos+= DIRENTRYSZ;
     return 0;

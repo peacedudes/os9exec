@@ -2350,6 +2350,27 @@ static os9err CreateBlankDevice( ushort pid, const char* name, uint32_t sizeKB,
     return 0;
 } /* CreateBlankDevice */
 
+Boolean RBF_ImageOpenUnder( const char* hostpath )
+/* Is a mounted RBF image's file <hostpath> or somewhere below it? The device
+   keeps the image open by its host path, so renaming anything above it would
+   leave the mount naming nothing. RAM disks and SCSI devices have no file. */
+{
+    size_t len= strlen( hostpath );
+    int    ii;
+
+    for (ii=0; ii<MAXRBFDEV; ii++) {
+        rbfdev_typ* dev= &rbfdev[ ii ];
+        const char* img;
+
+        if (!dev->installed || dev->isRAM || IsSCSI( dev ) ||
+             dev->sp_img==0 || dev->sp_img>=MAXSYSPATHS) continue;
+        img= syspaths[ dev->sp_img ].fullName;
+        if (ustrncmp( img,hostpath,(ushort)len )==0 &&
+            (img[ len ]==NUL || img[ len ]==PATHDELIM)) return true;
+    }
+    return false;
+} /* RBF_ImageOpenUnder */
+
 os9err MountDev( ushort pid, char* name, char* mnt_dev, char* devCopy, short adapt,
                              ushort scsibus, short scsiID, ushort scsiLUN, 
                              int ramSize, int sctSize, int cluSize, 

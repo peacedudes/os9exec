@@ -207,6 +207,10 @@ os9err  int_mount       ( ushort pid, int argc, char **argv );
 os9err  int_unmount     ( ushort pid, int argc, char **argv );
 void    Disp_RBF_Devs   ( Boolean statistic );
 
+/* True when a mounted RBF image's host file is <hostpath> or below it --
+   fileaccess.c's pDwrite will not rename one out from under its mount. */
+Boolean RBF_ImageOpenUnder( const char* hostpath );
+
 /* True when Disp_RBF_Devs already printed a row for /<name> -- i.e. the device
    is mounted and has an rbfdev[] entry. `devs` uses it to avoid listing a
    configured OS9DISK/OS9Hx a second time under its own name or a synonym. */

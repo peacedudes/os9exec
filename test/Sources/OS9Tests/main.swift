@@ -2141,6 +2141,7 @@ do {
         var mode = 0x83
         var changeFD = false
         var holding: String?
+        var heldMode = 1
         let expect: Int
         let why: String
     }
@@ -2152,7 +2153,8 @@ do {
             "start", " sub.l #64,a7", " movea.l a7,a4"
         ]
         if probe.holding != nil {
-            lines += [" lea pheld(pc),a0", " moveq #1,d0", " trap #0", " dc.w IOpen", " bcs.w pfail"]
+            lines += [" lea pheld(pc),a0", " moveq #\(probe.heldMode),d0", " trap #0", " dc.w IOpen", " bcs.w pfail",
+                      " move.w d0,d6"]
         }
         lines += [
             " lea pdir(pc),a0", " moveq #0,d0", String(format: " move.b #$%02X,d0", probe.mode),
@@ -2170,7 +2172,14 @@ do {
         if probe.changeFD { lines.append(" eori.b #1,31(a4)") }
         lines += [
             " moveq #0,d0", " move.w d7,d0", " movea.l a4,a0", " moveq #32,d1",
-            " trap #0", " dc.w IWrite", " bcs.s pfail",
+            " trap #0", " dc.w IWrite", " bcs.s pfail"
+        ]
+        if probe.holding != nil {
+            // the path held open across the rename must still read
+            lines += [" moveq #0,d0", " move.w d6,d0", " movea.l a4,a0", " moveq #1,d1",
+                      " trap #0", " dc.w IRead", " bcs.s pfail"]
+        }
+        lines += [
             " moveq #0,d1", " trap #0", " dc.w FExit",
             "pnext", " addi.l #32,d5", " bra.w prd",
             "pfail", " trap #0", " dc.w FExit",
@@ -2194,24 +2203,30 @@ do {
                     why: "with another FD sector"),
         RenameProbe(module: "rn06", from: "rnother", into: "rnro", mode: 0x81, expect: 203,
                     why: "on a directory opened for read only"),
-        RenameProbe(module: "rn07", from: "rnother", into: "rnbusy", holding: "rnother", expect: 253,
-                    why: "of a file that is open"),
+        RenameProbe(module: "rn07", from: "rnheld", into: "rnheld2", holding: "rnheld", expect: 0,
+                    why: "of a file held open, read through afterwards"),
         RenameProbe(module: "rn08", from: "rn_sp", into: "rnsp2", expect: 203,
                     why: "of a host name the entry does not spell (a space)"),
         RenameProbe(module: "rn09", from: "rnother", into: "rn-x", expect: 235,
                     why: "to a name OS-9 cannot hold"),
         RenameProbe(module: "rn10", from: "rnother", into: "rnother", expect: 0,
-                    why: "writing the entry back unchanged")
+                    why: "writing the entry back unchanged"),
+        RenameProbe(module: "rn11", from: "rnsub", into: "rnsub2", holding: "rnsub", heldMode: 0x81,
+                    expect: 0, why: "of a directory held open, as upperdir does, read through afterwards")
     ]
 
     let name = "fs: a host directory renames by entry write, and refuses the rest"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
-        let hostNames = ["rnsrc", "rndst", "rnother", "rn sp", "rnsp2", "rnfd", "rnro", "rnbusy", "rn-x"]
+        let hostNames = ["rnsrc", "rndst", "rnother", "rn sp", "rnsp2", "rnfd", "rnro", "rnheld", "rnheld2",
+                         "rnsub", "rnsub2", "rn-x"]
         for leftover in hostNames { removeScratchItem(leftover) }
-        let seeded = ["rnsrc": "A", "rnother": "B", "rn sp": "C"]
+        let seeded = ["rnsrc": "A", "rnother": "B", "rn sp": "C", "rnheld": "H"]
         for (host, text) in seeded {
             try? text.write(toFile: scratchDisk + "/" + host, atomically: false, encoding: .utf8)
         }
+        try? FileManager.default.createDirectory(atPath: scratchDisk + "/rnsub",
+                                                 withIntermediateDirectories: false)
+        try? "S".write(toFile: scratchDisk + "/rnsub/inside", atomically: false, encoding: .utf8)
 
         var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
         for probe in probes {
@@ -2241,6 +2256,12 @@ do {
         }
         if text("rnother") != "B" { faults.append("rnother no longer holds B") }
         if text("rn sp") != "C" { faults.append("the host file with a space was changed") }
+        if text("rnheld2") != "H" || listing.contains("rnheld") {
+            faults.append("the file held open was not renamed to rnheld2")
+        }
+        if text("rnsub2/inside") != "S" || listing.contains("rnsub") {
+            faults.append("the directory held open was not renamed to rnsub2")
+        }
 
         if faults.isEmpty {
             print("PASS: \(name)")
@@ -2252,6 +2273,7 @@ do {
         }
 
         for leftover in hostNames + ["RNDST"] { removeScratchItem(leftover) }
+        removeScratchItem("rnsub2/inside")
         for probe in probes {
             for suffix in ["", ".a", ".r"] { removeScratchItem(probe.module + suffix) }
         }
