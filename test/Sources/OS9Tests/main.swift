@@ -5956,6 +5956,65 @@ do {
     }
 }
 
+// ── Pipes: SS_Size(0) leaves a pipe with a waiting writer alone ────────────────
+// "For pipe files, you can use SS_Size to reset the pipe path (d2.l=0), provided
+// the pipe has no active readers or writers" (I$SetStt SS_Size, p.2-24). The
+// reset happened regardless. Here `list` fills the pipe and parks waiting for
+// room; the program at the other end lets it, resets its stdin, and counts what
+// it can still read. Every byte of the file must arrive.
+do {
+    let resetAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$Sleep equ $0A", "I$Read equ $89", "I$WritLn equ $8C", "I$SetStt equ $8E",
+        "BUF equ -32700",
+        "  psect mpiperst,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #30,d0", "  OS9 F$Sleep",
+        "  moveq #0,d0", "  moveq #2,d1", "  moveq #0,d2", "  OS9 I$SetStt",          // SS_Size 0 on stdin
+        "  moveq #0,d4",
+        "rd:", "  moveq #0,d0", "  move.l #256,d1", "  lea BUF(a6),a0", "  OS9 I$Read", "  bcs.s done",
+        "  add.l d1,d4", "  bra.s rd",
+        "done:", "  cmpi.w #211,d1", "  bne.s bad",
+        "  cmpi.l #12000,d4", "  bne.s bad",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "mok: dc.b \"PIPE RESET LEFT THE WRITER ALONE\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"PIPE RESET DROPPED DATA\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    try? resetAsm.write(toFile: scratchDisk + "/mpiperst.a", atomically: true, encoding: .utf8)
+    // 12000 bytes of 20-byte lines: three times the pipe's 4096-byte buffer
+    let line = String(repeating: "p", count: 19) + "\r"
+    try? String(repeating: line, count: 600).write(toFile: scratchDisk + "/t_piperst", atomically: true,
+                                                    encoding: .utf8)
+
+    let name = "pipe: SS_Size(0) is ignored while a writer is waiting on the pipe"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/mpiperst.a -o=/h5/mpiperst.r",
+            "l68 /h5/mpiperst.r -o=/h5/mpiperst",
+            "list /h5/t_piperst ! /h5/mpiperst"
+        ], timeout: 30)
+        if out.contains("PIPE RESET LEFT THE WRITER ALONE") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("PIPE RESET") || $0.contains("Error")
+            }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for item in ["mpiperst.a", "mpiperst.r", "mpiperst", "t_piperst"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

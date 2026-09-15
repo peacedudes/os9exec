@@ -1050,11 +1050,32 @@ os9err pPsize( _pid_, syspath_typ* spP, uint32_t *sizeP )
 
 
 /* set pipe size */
+static Boolean PipeHasWaiters( pipechan_typ* p )
+/* whether a process is parked reading or writing this pipe: in a system task
+   that is one of the pipe's own, on a path to this channel */
+{
+    int k;
+
+    for (k=0; k<MAXPROCESSES; k++) {
+        process_typ* cp= &procs[ k ];
+        if (cp->state!=pSysTask || cp->systaskdataP==NULL) continue;
+        if (cp->systask!=(systaskfunc_typ)pReadSysTask  && cp->systask!=(systaskfunc_typ)pReadSysTaskLn &&
+            cp->systask!=(systaskfunc_typ)pWriteSysTask && cp->systask!=(systaskfunc_typ)pWriteSysTaskLn) continue;
+        if (((syspath_typ*)cp->systaskdataP)->u.pipe.pchP==p) return true;
+    }
+    return false;
+} /* PipeHasWaiters */
+
 os9err pPsetsz( _pid_, syspath_typ* spP, uint32_t *sizeP )
+/* "For pipe files, you can use SS_Size to reset the pipe path (d2.l=0),
+   provided the pipe has no active readers or writers. Any other value in d2.l
+   is ignored" (I$SetStt SS_Size, page 2-24). It reset regardless, and a writer
+   parked on a full pipe lost everything it had put there. The page names no
+   error: with a process waiting, the request is ignored like any other. */
 {
     pipechan_typ* p= spP->u.pipe.pchP;
 
-    if (*sizeP==0) {
+    if (*sizeP==0 && !PipeHasWaiters( p )) {
         /* clear pipe buffer */
         p->pwp= p->buf;
         p->prp= p->buf;
