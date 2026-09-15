@@ -158,7 +158,9 @@ You can also attach extra host directories as `/h1`, `/h2`, etc. (see [Devices](
 | `/h0`–`/h9`, `/ha`–`/hz` | `OS9H0=…` through `OS9HZ=…`, or files/dirs named `h0`–`hz` next to the binary | RBF disk images or host directories |
 | `/t1`–`/t49` | `OS9T1=…` through `OS9T49=…`, or the wildcard `OS9T=…` for any `/tN` not named individually | Terminals. `pty` allocates one on first open, and `devs` reports the host device plus how to attach; a `/dev/…` path opens that terminal or serial port. Unset (and no wildcard) means the device does not exist. |
 
-Files placed in a host directory appear immediately inside the emulator as OS-9 files, with no conversion needed for binary modules. Text files need OS-9 line endings (CR, `0x0D`) rather than Unix LF - the emulator handles this transparently for `I$ReadLn`/`I$WritLn`, but raw byte copies preserve whatever endings are in the file.
+Files placed in a host directory appear immediately inside the emulator as OS-9 files, with no conversion needed for binary modules. Text files need OS-9 line endings (CR, `0x0D`) rather than Unix LF. Nothing is translated: `I$ReadLn` stops only at CR, so an LF file reads as one long line. Convert host-edited text with `flip -m`.
+
+**A host directory is not an RBF disk, and programs can fail on one in ways they never would on real OS-9**: no locking, no owners, permissions checked by the host, synthesized directory entries and sector numbers. [`docs/host-drives.md`](docs/host-drives.md) lists how host drives work and exactly how they fail.
 
 **Record locking works on RBF images, not on host directories.** RBF
 implements the full mechanism - a read on an update-mode path locks the record
