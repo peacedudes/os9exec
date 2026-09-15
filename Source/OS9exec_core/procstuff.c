@@ -216,6 +216,7 @@
 
 #if defined UNIX && !defined MINGW
   #include <sys/select.h>   /* select()/fd_set for the interactive idle wait in DoWait() */
+  #include <signal.h>       /* sigprocmask(): the tick is held off around that select */
 #endif
 
 /* process routines */
@@ -1097,11 +1098,26 @@ void DoWait( void )
       if (isatty( STDIN_FILENO )) {
           fd_set         rfds;
           struct timeval tv;
+          sigset_t       tick, before;
           FD_ZERO( &rfds );
           FD_SET ( STDIN_FILENO, &rfds );
           tv.tv_sec =  0;
           tv.tv_usec= delay_ns/1000L;
+
+          /* The system tick is installed with SA_RESTART (os9_tick.c), and
+           * IRIX 6.5 restarts an interrupted select() with its WHOLE timeout:
+           * the 1ms rounds up to a clock tick, the next SIGALRM always lands
+           * first, and the select never returns until a key does. An idle
+           * shell then needed ~30 keystrokes before its read was retried
+           * (reported from an IRIX build, 2026-09-15; macOS and Linux return
+           * EINTR instead, so they never showed it). Hold the tick off for
+           * this one short wait: a tick due meanwhile is delivered when it is
+           * unblocked, and it is only an arbitration hint. */
+          sigemptyset( &tick );
+          sigaddset  ( &tick, SIGALRM );
+          sigprocmask( SIG_BLOCK, &tick, &before );
           select( STDIN_FILENO+1, &rfds, NULL,NULL, &tv );
+          sigprocmask( SIG_SETMASK, &before, NULL );
           waited= true;
       }
     #endif
