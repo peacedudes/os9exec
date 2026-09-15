@@ -420,3 +420,32 @@ RESULT t58 PASS  obs=000000 exp=000000  an F$STrap table may sit after the handl
 With t55 and t56 from the day before, the four F$STrap tests now cover what the
 manual states: the registers a handler is entered with, the stack it runs on,
 the vectors that may be caught, and the sign of the offset that finds it.
+
+## os9exec, 2026-09-14: t59, renaming by rewriting a directory entry
+
+A directory is a file of 32-byte entries, and a program renames a file by
+reading to its entry and writing it back spelt differently. Microware's C
+library rename() does that, and so do move, wndex and upperdir. On an RBF
+image os9exec always allowed it. On a host-native directory every directory
+write was E$BMode, so all four failed on a host `/dd` while working on an
+image; osk-freeware found them by running the same programs both ways.
+
+Before the fix, on a host-native directory:
+
+```
+RESULT t59 FAIL  obs=000203 exp=000000  a directory entry rewritten with a new name renames the file
+```
+
+After it, on both a host-native directory and an RBF image:
+
+```
+RESULT t59 PASS  obs=000000 exp=000000  a directory entry rewritten with a new name renames the file
+```
+
+A host directory has no entries to rewrite, so os9exec turns a write that is
+purely a rename into a host rename and refuses the rest: a new or zeroed
+entry, another file's FD sector, a name another entry already answers to
+(ignoring case, as OS-9 does), a host name the entry does not spell exactly,
+and anything open or in use as a current directory. Those refusals are
+host-directory policy rather than RBF behaviour, so they are checked by the
+integration suite, not here.

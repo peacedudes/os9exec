@@ -231,6 +231,7 @@ void   init_Dir  ( fmgr_typ* f );
 os9err pDopen    ( ushort pid, syspath_typ*, ushort  *modeP,  const char* pathname );
 os9err pDclose   ( ushort pid, syspath_typ* );
 os9err pDread    ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
+os9err pDwrite   ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
 os9err pDseek    ( ushort pid, syspath_typ*, uint32_t  *posP );
 os9err pDchd     ( ushort pid, syspath_typ*, ushort  *modeP,  const char* pathname );
 os9err pDmakdir  ( ushort pid, syspath_typ*, ushort  *modeP,  const char* pathname );
@@ -289,7 +290,7 @@ void init_Dir( fmgr_typ* f )
     f->close     = pDclose;
     f->read      = pDread;
     f->readln    = pDread;   /* the same as read */
-    f->write     = pBadMode_data; /* not allowed */
+    f->write     = pDwrite;       /* only a rename -- see pDwrite */
     f->writeln   = pBadMode_data; /* not allowed */
     f->seek      = pDseek;
     f->chd       = pDchd;
@@ -2968,6 +2969,189 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
   
   return 0;
 } /* pDread */
+
+#ifdef win_unix
+static Boolean HostPathInUse( const char* path )
+/* Is <path>, or anything below it, open on a host-file path or some process's
+   data or execution directory? Those remember a host path string, which a
+   rename would leave naming nothing. */
+{
+    size_t len= strlen( path );
+    int    k;
+
+    #define UNDER( s ) ( ustrncmp( (s),path,(ushort)len )==0 && \
+                         ((s)[ len ]==NUL || (s)[ len ]==PATHDELIM) )
+
+    for (k=1; k<MAXSYSPATHS; k++) {
+        syspath_typ* sp= &syspaths[ k ];
+        if ((sp->type==fFile || sp->type==fDir) && UNDER( sp->fullName )) return true;
+    }
+    for (k=0; k<=MAXPROCESSES; k++) {
+        process_typ* cp= &procs[ k ];
+        if (cp->state!=pUnused && (UNDER( cp->d.path ) || UNDER( cp->x.path ))) return true;
+    }
+
+    #undef UNDER
+    return false;
+} /* HostPathInUse */
+#endif
+
+os9err pDwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
+/* Write a directory entry on a host directory -- which renames the file.
+ *
+ * On RBF a directory is a file of 32-byte entries (28-byte name, sign bit on
+ * its last character; a zero byte; a 3-byte FD sector), and rewriting an
+ * entry's name renames that file. Microware's clib rename() does exactly
+ * that, and so do move, wndex and upperdir: open the directory for update,
+ * read to the entry, seek back, write it with the new name. A host directory
+ * has no entries to rewrite, so this was E$BMode, and GNU mv, move, wndex and
+ * upperdir all failed on a host /dd while working on an RBF image.
+ *
+ * Only a pure rename is taken: the entry already at this position, the same
+ * FD sector, a new legal name. Everything else stays E$BMode, as before --
+ * a new entry, a zeroed (deleted) one, another file's FD sector, a partial
+ * write. The rest refuses rather than guess, because a host rename cannot be
+ * undone by the program that asked for it:
+ *  - a host name the entry does not spell exactly (GetEntry cuts names to 27
+ *    characters and shows spaces as '_'), which the rename would shorten;
+ *  - a name some other entry already answers to, compared the way OS-9 does,
+ *    ignoring case. POSIX rename() replaces an existing target; here that
+ *    would be a second file's data, a hard link or a symlink;
+ *  - a device root, or anything open or a current directory underneath it.
+ * No inode numbers are used: mingw has none, and case-insensitive host
+ * filesystems make names, not inodes, the question. A case-only rename a host
+ * refuses goes through a temporary name. */
+{
+  #ifdef win_unix
+    uint32_t*       pos  = &spP->u.disk.u.dir.pos;
+    int             index= (int)(*pos >> 5);
+    const byte*     b    = (const byte*)buffer;
+    dirent_typ*     dEnt;
+    dirtable_entry* mP= NULL;
+    uint32_t        fdpos;
+    os9direntry_typ cur;
+    DIR*            d;
+    char            nm     [DIRNAMSZ];
+    char            newName[DIRNAMSZ+1];
+    char            srcHost[OS9PATHLEN];
+    char            dstHost[OS9PATHLEN];
+    char            srcPath[OS9PATHLEN];
+    char            dstPath[OS9PATHLEN];
+    char            tmpPath[OS9PATHLEN];
+    const char*     sep;
+    Boolean         ended= false;
+    int             len, i;
+    os9err          err= 0;
+
+    if (!(spP->mode & 0x02))                 return os9error(E_BMODE); /* not opened for write */
+    if (*n!=DIRENTRYSZ || (*pos & 0x1F)!=0)  return os9error(E_BMODE); /* not one whole entry */
+    if (index<2)                             return os9error(E_BMODE); /* ".." and "." */
+
+    err= DirNthEntry( spP,index, &dEnt );
+    if (err || dEnt==NULL)                   return os9error(E_BMODE); /* no entry here to rename */
+    strncpy( srcHost, dEnt->d_name, sizeof(srcHost)-1 ); srcHost[ sizeof(srcHost)-1 ]= NUL;
+
+    /* the entry exactly as pDread shows it */
+    memset  ( &cur,0,DIRENTRYSZ );
+    GetEntry( dEnt, cur.name, true );
+    FD_ID   ( spP->fullName, dEnt, &fdpos, &mP );
+    len= strlen( cur.name ); if (len==0)     return os9error(E_BMODE);
+    cur.name[ len-1 ] |= 0x80;
+    cur.fdsect= os9_long( fdpos );
+
+    if (memcmp( buffer,&cur,DIRENTRYSZ )==0) { *pos+= DIRENTRYSZ; return 0; } /* unchanged */
+    if (memcmp( buffer+DIRNAMSZ, (char*)&cur+DIRNAMSZ, DIRENTRYSZ-DIRNAMSZ )!=0)
+        return os9error(E_BMODE); /* not this file's FD sector */
+
+    /* the new name: legal characters up to one with the sign bit set */
+    for (len=0; len<DIRNAMSZ && !ended; len++) {
+        if (b[ len ]==0) break;
+        newName[ len ]= (char)(b[ len ] & 0x7F);
+        ended= (b[ len ] & 0x80)!=0;
+    }
+    newName[ len ]= NUL;
+    if (len==0)                              return os9error(E_BMODE); /* a zeroed entry: a delete */
+    if (!ended)                              return os9error(E_BNAM);
+    for (i=0; i<len; i++) {
+        unsigned char c= (unsigned char)newName[ i ];
+        if (!(isalnum(c) || c=='.' || c=='_' || c=='$' || c=='{' || c=='}')) return os9error(E_BNAM);
+    }
+    if (strspn( newName,"." )==(size_t)len ||
+        ustrcmp( newName,AppDo )==0 || ustrcmp( newName,DsSto )==0) return os9error(E_BNAM);
+
+    /* the host name has to be exactly what the entry spells */
+    if (strlen( srcHost )>DIRNAMSZ-1 || strchr( srcHost,' ' )!=NULL) {
+        debugprintf(dbgFiles,dbgNorm,("# pDwrite: '%s' is not spelt by its entry, not renamed\n", srcHost));
+        return os9error(E_BMODE);
+    }
+
+    strcpy( dstHost,newName );
+    #ifdef linux
+      /* a leading "." as I$Create would spell it on this host, unless the
+         file being renamed already spells one the other way */
+      if (newName[ 0 ]=='.' && srcHost[ 0 ]!='.')
+          snprintf( dstHost,sizeof(dstHost), "%s%s", L_P, newName+1 );
+    #endif
+
+    /* no other entry may already answer to the new name */
+    if (!OpenTDir( spP->fullName, &d ))      return os9error(E_FNA);
+    while ((dEnt= ReadTDir( d ))!=NULL) {
+        if (strcmp( dEnt->d_name,"."  )==0 ||
+            strcmp( dEnt->d_name,".." )==0 ||
+            strcmp( dEnt->d_name,srcHost )==0) continue;
+        GetEntry( dEnt, nm, true );
+        if (ustrcmp( nm,newName )==0 || ustrcmp( dEnt->d_name,dstHost )==0) { err= E_CEF; break; }
+    }
+    closedir( d );
+    if (err) return os9error(err);
+
+    /* Measured first, because mingw's C runtime may not report truncation the
+       way C99 does: every name here is under DIRNAMSZ+sizeof(L_P). The return
+       checks stay as well -- a second guard, and what tells gcc the output is
+       looked after (-Wformat-truncation). */
+    len= strlen( spP->fullName );
+    if (len+1+DIRNAMSZ+16>=OS9PATHLEN)      return os9error(E_BPNAM);
+    sep= (len>0 && spP->fullName[ len-1 ]==PATHDELIM) ? "" : PATHDELIM_STR;
+    #define PATH_FITS( r, buf ) ( (r)>=0 && (r)<(int)sizeof(buf) )
+    i= snprintf( srcPath,sizeof(srcPath), "%s%s%s", spP->fullName,sep,srcHost );
+    if (!PATH_FITS( i, srcPath ))            return os9error(E_BPNAM);
+    i= snprintf( dstPath,sizeof(dstPath), "%s%s%s", spP->fullName,sep,dstHost );
+    if (!PATH_FITS( i, dstPath ))            return os9error(E_BPNAM);
+    i= snprintf( tmpPath,sizeof(tmpPath), "%s%s.os9ren%d", spP->fullName,sep,(int)pid );
+    if (!PATH_FITS( i, tmpPath ))            return os9error(E_BPNAM);
+    #undef PATH_FITS
+
+    if (IsHostDeviceRoot( srcPath ) || HostPathInUse( srcPath )) return os9error(E_SHARE);
+
+    if (ustrcmp( srcHost,dstHost )!=0) {
+        if (rename( srcPath,dstPath )!=0)    return host2os9err( -1,E_FNA );
+    }
+    else {
+        /* A case-only rename always goes through a temporary name. Asked
+           directly, a case-insensitive filesystem may refuse it (Windows), or
+           report success and keep the old spelling: Linux over a macOS
+           directory bind-mounted into Docker did exactly that, measured. The
+           temporary name must not already exist, since rename() would replace
+           it. */
+        if (FileFound( tmpPath ) || PathFound( tmpPath )) return os9error(E_CEF);
+        if (rename( srcPath,tmpPath )!=0)    return host2os9err( -1,E_FNA );
+        if (rename( tmpPath,dstPath )!=0) {
+            err= host2os9err( -1,E_FNA );
+            rename( tmpPath,srcPath );
+            return err;
+        }
+    }
+
+    debugprintf(dbgFiles,dbgNorm,("# pDwrite: renamed '%s' to '%s'\n", srcPath,dstPath));
+    seekD0( spP ); spP->svD_n= 0;     /* the host may list the directory in a new order */
+    *pos+= DIRENTRYSZ;
+    return 0;
+
+  #else
+    (void)pid; (void)spP; (void)n; (void)buffer;
+    return os9error(E_BMODE);
+  #endif
+} /* pDwrite */
 
 /* get pointer position */
 os9err pDpos( _pid_, syspath_typ* spP, uint32_t *posP )

@@ -2005,6 +2005,148 @@ check("fs: permission ramdisk — non-owner (dog) blocked from a file with no pu
     "login dog", "chd /ram7", "dump f", "logout", "unmount ram7")
 
 
+// ── fs: a host directory renames by entry write, and refuses the rest ─────────
+// RBF renames a file when a program rewrites its directory entry spelt
+// differently -- Microware's clib rename(), move, wndex and upperdir all do it.
+// A host directory refused every such write with E$BMode until pDwrite turned
+// a pure rename into a host rename. CONF68K t59 checks the rename on both kinds
+// of device; these are the host directory's own refusals, which an RBF image
+// has no reason to make. Each probe opens /h5 as a directory, reads to the
+// entry spelt `from`, and writes it back spelt `into`, exiting with the error it
+// got. The host directory is then read back to see what actually happened.
+do {
+    /// A directory-entry name as the assembler spells it: the characters, the
+    /// last with its sign bit set.
+    func entryName(_ name: String) -> String {
+        let bytes = Array(name.utf8)
+        let last = String(format: "$%02X", Int(bytes[bytes.count - 1]) | 0x80)
+        return bytes.count == 1 ? "dc.b \(last)" : "dc.b \"\(String(name.dropLast()))\",\(last)"
+    }
+
+    struct RenameProbe {
+        let module: String
+        let from: String
+        let into: String
+        var mode = 0x83
+        var changeFD = false
+        var holding: String?
+        let expect: Int
+        let why: String
+    }
+
+    func source(_ probe: RenameProbe) -> String {
+        var lines = [
+            "IOpen set $84", "IRead set $89", "IWrite set $8A", "ISeek set $88", "FExit set $06",
+            " psect \(probe.module),$0101,$8001,0,2048,start",
+            "start", " sub.l #64,a7", " movea.l a7,a4"
+        ]
+        if probe.holding != nil {
+            lines += [" lea pheld(pc),a0", " moveq #1,d0", " trap #0", " dc.w IOpen", " bcs.w pfail"]
+        }
+        lines += [
+            " lea pdir(pc),a0", " moveq #0,d0", String(format: " move.b #$%02X,d0", probe.mode),
+            " trap #0", " dc.w IOpen", " bcs.w pfail", " move.w d0,d7", " moveq #0,d5",
+            "prd", " moveq #0,d0", " move.w d7,d0", " movea.l a4,a0", " moveq #32,d1",
+            " trap #0", " dc.w IRead", " bcs.w pfail",
+            " movea.l a4,a0", " lea pold(pc),a3", " moveq #\(probe.from.utf8.count - 1),d2",
+            "pcmp", " cmpm.b (a0)+,(a3)+", " bne.s pnext", " dbra d2,pcmp",
+            " moveq #0,d0", " move.w d7,d0", " move.l d5,d1", " trap #0", " dc.w ISeek", " bcs.w pfail",
+            " movea.l a4,a0", " lea pnew(pc),a3", " moveq #\(probe.into.utf8.count - 1),d2",
+            "pcpy", " move.b (a3)+,(a0)+", " dbra d2,pcpy",
+            " moveq #\(27 - probe.into.utf8.count),d2",
+            "pclr", " clr.b (a0)+", " dbra d2,pclr"
+        ]
+        if probe.changeFD { lines.append(" eori.b #1,31(a4)") }
+        lines += [
+            " moveq #0,d0", " move.w d7,d0", " movea.l a4,a0", " moveq #32,d1",
+            " trap #0", " dc.w IWrite", " bcs.s pfail",
+            " moveq #0,d1", " trap #0", " dc.w FExit",
+            "pnext", " addi.l #32,d5", " bra.w prd",
+            "pfail", " trap #0", " dc.w FExit",
+            "pdir dc.b \"/h5\",0",
+            "pold \(entryName(probe.from))",
+            "pnew \(entryName(probe.into))"
+        ]
+        if let held = probe.holding { lines.append("pheld dc.b \"/h5/\(held)\",0") }
+        lines += [" ends", ""]
+        return lines.joined(separator: "\r")
+    }
+
+    let probes = [
+        RenameProbe(module: "rn01", from: "rnsrc", into: "rndst", expect: 0, why: "a plain rename"),
+        RenameProbe(module: "rn02", from: "rndst", into: "RNDST", expect: 0, why: "a case-only rename"),
+        RenameProbe(module: "rn03", from: "RNDST", into: "rnother", expect: 218,
+                    why: "onto a name another file has"),
+        RenameProbe(module: "rn04", from: "RNDST", into: "RNOTHER", expect: 218,
+                    why: "onto another file's name in other case"),
+        RenameProbe(module: "rn05", from: "rnother", into: "rnfd", changeFD: true, expect: 203,
+                    why: "with another FD sector"),
+        RenameProbe(module: "rn06", from: "rnother", into: "rnro", mode: 0x81, expect: 203,
+                    why: "on a directory opened for read only"),
+        RenameProbe(module: "rn07", from: "rnother", into: "rnbusy", holding: "rnother", expect: 253,
+                    why: "of a file that is open"),
+        RenameProbe(module: "rn08", from: "rn_sp", into: "rnsp2", expect: 203,
+                    why: "of a host name the entry does not spell (a space)"),
+        RenameProbe(module: "rn09", from: "rnother", into: "rn-x", expect: 235,
+                    why: "to a name OS-9 cannot hold"),
+        RenameProbe(module: "rn10", from: "rnother", into: "rnother", expect: 0,
+                    why: "writing the entry back unchanged")
+    ]
+
+    let name = "fs: a host directory renames by entry write, and refuses the rest"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let hostNames = ["rnsrc", "rndst", "rnother", "rn sp", "rnsp2", "rnfd", "rnro", "rnbusy", "rn-x"]
+        for leftover in hostNames { removeScratchItem(leftover) }
+        let seeded = ["rnsrc": "A", "rnother": "B", "rn sp": "C"]
+        for (host, text) in seeded {
+            try? text.write(toFile: scratchDisk + "/" + host, atomically: false, encoding: .utf8)
+        }
+
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for probe in probes {
+            try? source(probe).write(toFile: scratchDisk + "/\(probe.module).a",
+                                     atomically: true, encoding: .utf8)
+            build += ["r68 /h5/\(probe.module).a -o=/h5/\(probe.module).r",
+                      "l68 /h5/\(probe.module).r -o=/h5/\(probe.module)"]
+        }
+        _ = os9(build, timeout: 60)
+
+        var faults: [String] = []
+        for probe in probes {
+            let out = os9(["/h5/\(probe.module)"], timeout: 20)
+            let code = out.range(of: "#000:").flatMap { Int(out[$0.upperBound...].prefix(3)) } ?? 0
+            if code != probe.expect {
+                faults.append("\(probe.why): \(probe.from) -> \(probe.into) gave \(code), expected \(probe.expect)")
+            }
+        }
+
+        let listing = Set((try? FileManager.default.contentsOfDirectory(atPath: scratchDisk)) ?? [])
+        func text(_ host: String) -> String? {
+            try? String(contentsOfFile: scratchDisk + "/" + host, encoding: .utf8)
+        }
+        if !listing.contains("RNDST") || text("RNDST") != "A" || listing.contains("rnsrc") {
+            let seen = listing.filter { $0.lowercased().hasPrefix("rn") && !$0.contains(".") }.sorted()
+            faults.append("host after the renames: expected RNDST holding A and no rnsrc, saw \(seen)")
+        }
+        if text("rnother") != "B" { faults.append("rnother no longer holds B") }
+        if text("rn sp") != "C" { faults.append("the host file with a space was changed") }
+
+        if faults.isEmpty {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            for fault in faults { print("      \(fault)") }
+            failed += 1
+        }
+
+        for leftover in hostNames + ["RNDST"] { removeScratchItem(leftover) }
+        for probe in probes {
+            for suffix in ["", ".a", ".r"] { removeScratchItem(probe.module + suffix) }
+        }
+    }
+}
+
 // ── CPU: NEG and NBCD leave X equal to C, as SUB does ─────────────────────────
 // Regression for a flag the core never set. On the 68000, NEG, SUB/SUBI/SUBQ
 // and NBCD leave X equal to C. Every NEG and NBCD handler, and the SUB family
