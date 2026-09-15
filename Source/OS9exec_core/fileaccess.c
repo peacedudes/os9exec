@@ -3621,7 +3621,7 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, uint32_t *attr )
 {
     os9err err= 0;
 
-    #if defined MACOS9 || defined linux || defined MINGW
+    #if defined MACOS9 || defined linux || defined MINGW || defined MACOSX
       OSErr  oserr= 0;
     #endif
       
@@ -3646,7 +3646,7 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, uint32_t *attr )
      ushort mode;
      char*  pp= spP->fullName;
       
-      #if defined windows32 || defined MACOSX
+      #ifdef windows32
         char cmd[OS9PATHLEN];
       #endif
     
@@ -3776,9 +3776,12 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, uint32_t *attr )
       err= call_hostcmd( cmd, pid, 0,NULL ); if (err) return err;
 
     #elif defined MACOSX
-      if (snprintf( cmd,sizeof(cmd), "rmdir %s", pp )>=(int)sizeof(cmd))
-          return E_BPNAM;
-      err= call_hostcmd( cmd, pid, 0,NULL ); if (err) return err;
+      /* rmdir(), not the host shell. "rmdir %s" split a host path with a
+       * space in it into two arguments: `attr -nd` on a directory under
+       * "/tmp/has space" asked the shell to remove "/tmp/has" and
+       * "space/victim", which could delete an unrelated empty directory, and
+       * never the one meant. */
+      oserr= rmdir( pp ); if (oserr) err= host2os9err( oserr,E_DNE );
 
     #elif defined MINGW
       /* mingw matched NONE of the branches above (it is not windows32, not
@@ -3813,7 +3816,14 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, uint32_t *attr )
     //upe_printf( "oserr=%d err=%d OPEN_IT\n", oserr, err ); 
     #else
                                mode= 0x03 | poCreateMask;
+       /* <pp> is the HOST path of the directory just removed, not an OS-9
+          pathlist, so pFopen must not parse it as one: the parse stops at a
+          space, so under "/tmp/has space" the file was never recreated and
+          `attr -nd` lost the entry altogether. img_hostPath is how Open_Image
+          hands pFopen a host path for the same reason. */
+       img_hostPath= true;
        err= pFopen( pid, spP, &mode, pp ); // and open it as file again on the same system path
+       img_hostPath= false;
     #endif  
     
     /*

@@ -154,7 +154,7 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
     os9err  err= 0;
     int     len;
     Boolean fnd, reduS;
-    char    *v, *q, *qs, *qc;
+    char    *q, *qs, *qc;
     char    startRoot[PATH_MAX];
     Boolean hadRoot;
     Boolean atRoot= false; /* the backward walk stopped at the root -- see below */
@@ -174,11 +174,12 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
     strncpy( adname,pathname, OS9PATHLEN );
     debugprintf( dbgFiles,dbgNorm,("# AdjustPath (in) '%s'\n", adname ));
 
-    v= adname;
-    while (true) { /* replace all " " by "_" */
-         q= strstr( v," " ); if (q==NULL) break;
-        *q= '_';
-    } /* loop */    
+    /* No space-to-'_' rewrite here. An OS-9 name cannot hold a space (name
+     * parsing stops at one), so the only spaces that reach this point belong
+     * to the HOST: a device's own host path, or a host name CaseSens already
+     * matched through its '_' spelling. Rewriting them made a device under
+     * "/tmp/has space" unreachable, and could turn "two words" into a
+     * different file spelt "two_words". */
 
     /* cut out /xxxx/../ sequences */
     CutUp( adname, Prev, true );
@@ -306,33 +307,20 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
         while (*q!=NUL && *q!=PATHDELIM) q++;
     } /* while */
 
-    /* CutUp() above already collapsed any "/xxx/../" sequences, so a path
-     * like "/dd/../../.." has, by this point, become a plain host
-     * absolute path with no trace of the device it started from -- this
-     * is the ONE function every caller shares for turning an OS-9 path
-     * into a real host path (GetRBFName's own confinement check, added
-     * first in the same session, doesn't cover callers like change_dir
-     * that call AdjustPath directly and never go through GetRBFName at
-     * all). If the result escaped every configured device root:
-     *   - if <pathname> belonged to one before CutUp ran (hadRoot), ".."
-     *     just walked above where it started -- clamp back to that
-     *     root's own path instead of erroring, the same way an RBF
-     *     image's real root inode already clamps (or Unix's own "/../"
-     *     is a no-op at "/"); a device root has no parent to escape to.
-     *     Needed for e.g. pd's own ".." lookup at a device root to keep
-     *     working, not just for defusing a deliberate escape attempt.
-     *   - if it never referenced a configured device at all (e.g. a
-     *     literal "/etc"), reject outright -- there's no root to clamp
-     *     to and nothing legitimate is asking for a parent that never
-     *     existed within any device.
-     * See the os9exec-host-confinement project memory for the full story. */
-    if (!err && !HostPathWithinConfiguredDevice( adname )) {
-        if (hadRoot) {
-            strncpy( adname, startRoot, OS9PATHLEN-1 );
-            adname[OS9PATHLEN-1]= NUL;
-        }
-        else err= E_PNNF;
-    }
+    /* This is the ONE function every caller shares for turning an OS-9 path
+     * into a real host path (GetRBFName's own confinement check doesn't cover
+     * callers like change_dir that call AdjustPath directly), so it is where
+     * confinement is decided. A ".." climb above the device root it started in
+     * was already clamped, textually, right after CutUp -- extra ".."s at a
+     * device root are no-ops, as on RBF, and pd's ".." lookup at a root relies
+     * on that. A result that is STILL outside every configured device got
+     * there another way: it never named a device (a literal "/etc"), or a host
+     * symlink inside the device points out of it. Both are refused. The symlink
+     * case used to be clamped back to <startRoot> as well, which answered a
+     * directory link pointing out with the device root under the link's name:
+     * `dir /h5/out` listed /h5, no error, wrong data. See the
+     * os9exec-host-confinement project memory. */
+    if (!err && !HostPathWithinConfiguredDevice( adname )) err= E_PNNF;
 
     debugprintf( dbgFiles,dbgNorm,("# AdjustPath(out) '%s' err=%d\n", adname,err ));
     return err;

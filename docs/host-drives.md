@@ -74,7 +74,7 @@ does. That is how `pd` and `dsave` know to stop.
 
 A pathlist is matched to the host in two steps, per component:
 
-1. the name exactly as given (with any space turned into `_`);
+1. the name exactly as given (an OS-9 name cannot contain a space);
 2. if that does not exist, a scan of the host directory for the **first**
    entry whose shown name (27 characters, spaces as `_`) matches, ignoring
    case.
@@ -226,6 +226,10 @@ RBF refuses `del` on any directory, `E$FNA`. A host drive **removes an empty
 directory** silently, and refuses a non-empty one with `E$DNE`. Measure `del`
 behaviour on an image, never on a host drive.
 
+**Known defect:** `deldir -q` of a directory that holds another directory
+fails on a host drive (`can't delete 'inner' - E$DNE`) and deletes nothing.
+The same tree on a RAM disk is removed.
+
 ### Line endings are not translated
 
 A host drive passes bytes unchanged. `I$ReadLn` stops only at a carriage return
@@ -251,21 +255,23 @@ host drive while OS-9 uses it:
 Host links are followed.
 
 - A symlink whose target is inside a configured device works like the target.
-- A **file** symlink pointing outside every device is `E$FNA`.
-- **Known defect:** a **directory** symlink pointing outside every device
-  silently resolves to the device root. `dir /h5/out` lists `/h5` itself, and
-  `chd /h5/out` then `pd` prints `/h5`, so anything written "through" the link
-  lands in the root.
-- `del` of a symlink removes the link, not the target.
+- A symlink pointing outside every device is refused. Through a directory link,
+  `dir` and `chd` are `E$PNNF`. Opening a file link, or creating a file through
+  a directory link, reports `E$MNF` (a misleading error, but still a refusal).
+  Builds before 2026-09-15 resolved a directory link pointing out to the
+  device root itself, so `dir /h5/out` listed `/h5`.
+- `del` of a symlink inside the device removes the link, not the target. A
+  link pointing outside every device cannot be deleted from OS-9 (`E$BPNam`);
+  remove it on the host.
+- A directory listing still shows a link pointing outside, with its target's
+  size and dates, because the listing reads the host directory itself.
 - Hard links: see [sector numbers](#sector-numbers-are-path-names). Renaming
   one name leaves the other.
 
 ### Where a device may live
 
-- **Known defect:** a device whose host path contains a space cannot be used.
-  `OS9H5="/tmp/has space"` gives `E$PNNF` for `dir /h5`, because path
-  resolution turns every space in the host path into `_`, including the part
-  that names the device itself.
+- A device's host path may contain spaces (`OS9H5="/tmp/has space"`). Builds
+  before 2026-09-15 could not use one at all.
 - `..` at a device root stays at the root. Nested devices are the exception:
   if one device's host directory lies inside another's, `..` from the inner
   root walks into the outer device.

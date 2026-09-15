@@ -1732,6 +1732,64 @@ do {
     removeScratchItem(nestFile)
     removeScratchItem("he")
 
+    // ---- a directory symlink pointing out of every device is refused ----
+    // AdjustPath clamps a `..` climb above a device root back to that root, and
+    // its last check used to clamp ANY result outside every device the same way.
+    // A symlink reaches there too, so `dir /h5/<dir>/out` with out -> ../.. (the
+    // scratch device's host parent) listed /h5's own root under the link's name:
+    // no error, wrong data, and dsave/deldir walked the root again. The climb is
+    // clamped earlier, textually; what is left outside must be refused. The link
+    // is relative so it means the same thing in a container, where /h5's parent
+    // is "/". Positive control first: a symlink that stays inside the device
+    // still resolves, which also proves the marker is visible when listed.
+    let symEscDir   = "symesc\(fsRun)"
+    let symRootMark = "SYMROOTMARK\(UUID().uuidString.prefix(8))"
+    try? FileManager.default.createDirectory(atPath: scratchDisk + "/" + symEscDir,
+                                             withIntermediateDirectories: true)
+    try? FileManager.default.createSymbolicLink(atPath: scratchDisk + "/" + symEscDir + "/in",
+                                                withDestinationPath: "..")
+    try? FileManager.default.createSymbolicLink(atPath: scratchDisk + "/" + symEscDir + "/out",
+                                                withDestinationPath: "../..")
+    try? "x\r".write(toFile: scratchDisk + "/" + symRootMark, atomically: true, encoding: .utf8)
+
+    run("fs: resolve a directory symlink that stays inside the device",
+        expectation: "control: dir through in -> .. lists /h5's root",
+        commands: ["dir \(scratch)/\(symEscDir)/in"]) { $0.contains(symRootMark) }
+
+    run("fs: confine a directory symlink out of every device, not to the device root",
+        expectation: "dir through out -> ../.. is E$PNNF and does not list /h5's root",
+        commands: ["dir \(scratch)/\(symEscDir)/out"]) {
+        $0.contains("Error #000:216") && !$0.contains(symRootMark)
+    }
+
+    removeScratchItem(symEscDir)
+    removeScratchItem(symRootMark)
+
+    // ---- a device whose host path has a space in it ----
+    // AdjustPath turned every space in the host path into '_' -- meant for the
+    // names below a device, which in OS-9 cannot hold a space anyway -- and so
+    // also mangled the device's own host path: OS9H7="/tmp/has space" made
+    // `dir /h7` E$PNNF. `attr -nd` must work there too: it removes the empty
+    // directory and makes a file of it, and on macOS the removal was a shell
+    // command line, "rmdir <path>", which split the path at the space.
+    let spaceDirName = "has space\(fsRun)"
+    let spacedHost   = scratchDisk + "/" + spaceDirName
+    let spaceMark    = "SPACEMARK\(UUID().uuidString.prefix(8))"
+    try? FileManager.default.createDirectory(atPath: spacedHost + "/victim",
+                                             withIntermediateDirectories: true)
+    try? (spaceMark + "\r").write(toFile: spacedHost + "/f", atomically: true, encoding: .utf8)
+
+    run("fs: a device whose host path has a space in it reads and clears a directory",
+        expectation: "list /h7/f shows the marker, attr -nd turns /h7/victim into a file, no error",
+        commands: ["list /h7/f", "attr -nd /h7/victim"],
+        env: ["OS9H7": scratchInEmulator + "/" + spaceDirName]) {
+        var isDir: ObjCBool = true
+        let exists = FileManager.default.fileExists(atPath: spacedHost + "/victim", isDirectory: &isDir)
+        return $0.contains(spaceMark) && !$0.contains("Error #") && exists && !isDir.boolValue
+    }
+
+    removeScratchItem(spaceDirName)
+
     // ---- host-native devices: attr round-trip only, NOT permission enforcement ----
     // A host directory cannot carry OS-9 ownership and attributes faithfully --
     // that is what an RBF image is for, and the "fs: permission" tests above own
