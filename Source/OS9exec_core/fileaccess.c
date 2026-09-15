@@ -1484,7 +1484,19 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
          * EXISTING file opens it without truncating, and must not silently
          * re-permission someone else's file. Needs fullName, which is why it
          * sits here rather than beside the fopen() above. */
-        if (newlyCreated) Set_FileAttr( spP, (byte)procs[pid].fileAtt );
+        if (newlyCreated) {
+            byte att= (byte)procs[pid].fileAtt;
+
+            /* A super user's file keeps owner READ on the host, whatever
+               attributes it was created with -- never write. combine creates
+               its output with attributes $0000 and writes through the path it
+               gets; on an RBF image the super user can open the file again
+               (has_perm), but here $0000 became host mode 000 and nobody could.
+               Host files only: RBF keeps its own create and its own check.
+               rdoggett's decision, 2026-09-15. */
+            if (is_super( pid )) att |= poRead;
+            Set_FileAttr( spP, att );
+        }
       #endif
     #endif
     

@@ -2005,6 +2005,72 @@ check("fs: permission ramdisk — non-owner (dog) blocked from a file with no pu
     "login dog", "chd /ram7", "dump f", "logout", "unmount ram7")
 
 
+// ── fs: a host file the super user creates with no permissions reads back ─────
+// combine creates its output with I$Create attributes $0000, writes through the
+// path that gives it, and closes it. On an RBF image the super user can open it
+// again ("any super-user may access any file", Technical Manual 7-11). On a
+// host directory the attributes became host mode 000 and nobody could, so
+// `cat out` answered E$FNA. A super-user create now keeps the owner-read bit on
+// the host file -- read only, never write (rdoggett, 2026-09-15): reopening to
+// read must work and see the data, reopening to write must still be refused.
+do {
+    let noBitsAsm = [
+        "ICreate set $83", "IOpen set $84", "IRead set $89", "IWrite set $8A",
+        "IWritLn set $8C", "IClose set $8F", "FExit set $06",
+        " psect nobits,$0101,$8001,0,2048,start",
+        "start", " sub.l #16,a7", " movea.l a7,a4",
+        " lea fname(pc),a0", " moveq #3,d0", " moveq #0,d1", " clr.l d2",
+        " trap #0", " dc.w ICreate", " bcs.w bad", " move.w d0,d7",
+        " moveq #0,d0", " move.w d7,d0", " lea chR(pc),a0", " moveq #1,d1",
+        " trap #0", " dc.w IWrite", " bcs.w bad",
+        " moveq #0,d0", " move.w d7,d0", " trap #0", " dc.w IClose",
+        " lea fname(pc),a0", " moveq #1,d0", " trap #0", " dc.w IOpen", " bcs.w bad",
+        " move.w d0,d7",
+        " moveq #0,d0", " move.w d7,d0", " movea.l a4,a0", " moveq #1,d1",
+        " trap #0", " dc.w IRead", " bcs.w bad",
+        " moveq #0,d0", " move.w d7,d0", " trap #0", " dc.w IClose",
+        " cmpi.b #'R',(a4)", " bne.w bad",
+        " lea okread(pc),a0", " moveq #1,d0", " moveq #okrl,d1", " trap #0", " dc.w IWritLn",
+        " lea fname(pc),a0", " moveq #2,d0", " trap #0", " dc.w IOpen", " bcc.w bad",
+        " cmpi.w #214,d1", " bne.w bad",
+        " lea okwrite(pc),a0", " moveq #1,d0", " moveq #okwl,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1", " trap #0", " dc.w FExit",
+        "bad", " trap #0", " dc.w FExit",
+        "fname dc.b \"/h5/nobits.dat\",0",
+        "chR dc.b 'R'",
+        "okread dc.b \"READ BACK A FILE CREATED WITH NO PERMISSIONS\",$0D",
+        "okrl equ *-okread",
+        "okwrite dc.b \"WRITE STILL REFUSED\",$0D",
+        "okwl equ *-okwrite",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "fs: a host file the super user creates with no permissions reads back, write refused"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem("nobits.dat")
+        try? noBitsAsm.write(toFile: scratchDisk + "/nobits.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/nobits.a -o=/h5/nobits.r",
+            "l68 /h5/nobits.r -o=/h5/nobits",
+            "/h5/nobits"
+        ], timeout: 30)
+        if out.contains("READ BACK A FILE CREATED WITH NO PERMISSIONS") && out.contains("WRITE STILL REFUSED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [a super-user create with attributes 0 must reopen for read, not for write (214)]")
+            let preview = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("READ BACK") || $0.contains("WRITE STILL") || $0.contains("rror #") }
+                .prefix(4).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+        for leftover in ["nobits.a", "nobits.r", "nobits", "nobits.dat"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── fs: a zero-length read or write with no buffer on a host file ─────────────
 // I$Read, I$ReadLn, I$Write and I$WritLn range-check the buffer only when the
 // count is non-zero, so a count of 0 with A0=0 reached the host-file manager,
