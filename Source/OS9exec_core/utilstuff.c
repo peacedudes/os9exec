@@ -679,7 +679,12 @@ void g_date(uint32_t jdn, int *dp, int *mp, int *yp )
   yb = y-1;                      /* the year before */
   fct= fct - 365*y - yb/4 + yb/100 - yb/400; 
   
-  fb=28; if ( (y % 4)==0 ) fb=29;
+  /* The Gregorian leap rule, as the year arithmetic just above already
+     counts it (yb/4 - yb/100 + yb/400): a century year is a leap year only
+     when it divides by 400. Testing y%4 alone gave 1700, 1800, 1900 and 2100
+     a 29th of February, so F$Gregor turned the Julian day of 1900-03-01
+     into 1900-02-29 and every later day of those years one day early. */
+  fb=28; if ( (y%4==0 && y%100!=0) || y%400==0 ) fb=29;
   
   marr[  1 ]= 31; /* not so sophisticated as the julian conversion */
   marr[  2 ]= fb;
