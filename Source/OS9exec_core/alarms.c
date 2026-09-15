@@ -101,23 +101,29 @@ void A_Insert( alarm_typ* aa )
 
 
 
-void A_Remove( alarm_typ* aa )
+static void A_Dequeue( alarm_typ* aa )
+/* take <aa> out of the due-time queue, leaving its slot allocated */
 {
-	alarm_typ* q;
-	Boolean    fnd= false;
-	
-	int  k;   /* be careful: index k+1 !! */
+	Boolean fnd= false;
+	int     k;   /* be careful: index k+1 !! */
 
-    debugprintf(dbgProcess,dbgNorm,("# A_Remove: aa=%p\n", (void*)aa ));
 	for (k=0; k<MAXALARMS-1; k++) {
-		    q=   alarm_queue[k];
-		if (q!=NULL && q==aa) { q->pid= 0; fnd= true; }    
-		    
+		if (alarm_queue[k]==aa) fnd= true;
 		if (fnd) alarm_queue[k]= alarm_queue[k+1];
 	} /* for */
-	
-	/* invalidate at least this */
-	alarm_queue[MAXALARMS-1]= NULL;
+
+	/* the last position is free after a shift, or it was <aa> itself */
+	if (fnd || alarm_queue[MAXALARMS-1]==aa) alarm_queue[MAXALARMS-1]= NULL;
+} /* A_Dequeue */
+
+
+
+void A_Remove( alarm_typ* aa )
+/* take <aa> out of the queue and free its slot */
+{
+    debugprintf(dbgProcess,dbgNorm,("# A_Remove: aa=%p\n", (void*)aa ));
+	A_Dequeue( aa );
+	aa->pid= 0;
 } /* A_Remove */
 
 
@@ -153,7 +159,10 @@ os9err A_Make( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTicks, Boolean
 	aa->cyclic= cyclic;
 
 	A_Insert   ( aa );
-	*aId= (uint32_t)(aa - alarms);  /* use array index, not pointer — fits in 32-bit OS-9 register */
+	/* slot + 1: an alarm ID is never 0, because A$Delete with ID 0 means
+	   "all pending alarms" (Technical Manual, F$Alarm A$Delete). Slot 0 used
+	   to hand out ID 0, which then could not be deleted by itself. */
+	*aId= (uint32_t)(aa - alarms) + 1;
 	return 0;
 } /* A_Make */
 
@@ -167,9 +176,16 @@ void A_Kill( ushort pid )
 	int        k;
 	
     debugprintf(dbgProcess,dbgNorm,("# A_Kill: pid=%d\n", pid ));
-	for (k=0; k<MAXALARMS; k++) {
+	/* A_Remove shifts the queue down over the removed entry, so the next
+	   candidate is now at <k> again: advance only past an entry that stays.
+	   Stepping on regardless skipped every second alarm of a dying process,
+	   which then fired at whatever process got its ID next ("The system
+	   automatically deletes a process's pending alarms when the process
+	   dies", Technical Manual, F$Alarm). */
+	for (k=0; k<MAXALARMS; ) {
 		    q= alarm_queue[k];
 		if (q!=NULL && q->pid==pid) A_Remove( q );
+		else                        k++;
 	} /* for */
 } /* A_Kill */
 
@@ -179,19 +195,25 @@ void A_Kill( ushort pid )
 
 /* ------------------------------------------------------------------ */
 
-static os9err Alarm_Delete( _pid_, uint32_t aId )
-/* A$Delete call: 0 */
+static os9err Alarm_Delete( ushort pid, uint32_t aId )
+/* A$Delete call: 0. "If zero is passed as the alarm ID, all pending alarm
+ * requests are removed" -- the caller's own, as the system-state page says
+ * ("for the current process"). Any other ID must be one of the caller's
+ * pending alarms: it used to delete whichever alarm held that slot, another
+ * process's included. */
 {
 	alarm_typ* aa;
 
-	if (aId >= MAXALARMS) return E_BPADDR;
-	aa= &alarms[ aId ];
-	if (aa->pid != 0) {
+	if (aId==0) { A_Kill( pid ); return 0; }
+
+	if (aId > MAXALARMS) return E_BPADDR;
+	aa= &alarms[ aId-1 ];
+	if (aa->pid==pid) {
 		A_Remove( aa );
 		return 0;
 	}
 
-	/* can't find this alarm */
+	/* not a pending alarm of this process */
 	return E_BPADDR;
 } /* Alarm_Delete */
 
@@ -311,13 +333,30 @@ void CheckAlarms( void )
  * (harmless -- A_Remove() makes a duplicate check inert). */
 {
 	alarm_typ* aa= alarm_queue[ 0 ];
-	uint32_t   aaNew;
+	ushort     pid;
+	ushort     sig;
 
 	if (aa!=NULL && GetSystemTick()>=aa->due) {
-		aaNew= 0; /* must be zero! */
-		if (aa->cyclic) A_Make( aa->pid, &aaNew, aa->signal, aa->ticks, true );
-		send_signal          ( aa->pid,         aa->signal ); /* renew it */
-		A_Remove( aa ); /* and remove the old one */
+		pid= aa->pid;
+		sig= aa->signal;
+
+		if (aa->cyclic) {
+			/* Re-arm IN PLACE: the same slot, so the ID A$Cycle returned stays
+			   valid for A$Delete. It used to be re-made in a new slot on every
+			   firing, and A$Delete of the original ID then missed it -- or hit
+			   another process's alarm that had taken the old slot. The queue
+			   entry is taken out and re-inserted at its next due time; the pid
+			   is kept, so the slot stays allocated. At least a tick per period,
+			   or a zero interval would be due forever. */
+			A_Dequeue( aa );
+			aa->due+= aa->ticks>0 ? aa->ticks : 1;
+			A_Insert ( aa );
+		}
+		else A_Remove( aa );
+
+		/* last: the signal may kill the process, and kill_process then
+		   removes its alarms (A_Kill) from the queue as it now stands */
+		send_signal( pid, sig );
 	} /* if */
 } /* CheckAlarms */
 

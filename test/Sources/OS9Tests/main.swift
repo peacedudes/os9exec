@@ -4073,6 +4073,145 @@ do {
     }
 }
 
+// ── F$Alarm: alarm IDs, A$Delete of all, a cyclic alarm's ID, and alarms at exit ──
+// Technical Manual, F$Alarm (pp.1-1, 1-2): "A$Delete removes a cyclic alarm, or
+// any alarm that has not expired. If zero is passed as the alarm ID, all pending
+// alarm requests are removed", and "The system automatically deletes a process's
+// pending alarms when the process dies". Found by the 2026-09-15 argument audit,
+// each probed live:
+//  - the first alarm got ID 0, so it could never be deleted by itself, and
+//    A$Delete(0) removed that one alarm instead of all of them;
+//  - a cyclic alarm was re-made in a new slot each time it fired, so A$Delete of
+//    the ID A$Cycle returned missed it (E$BPAddr) and it kept firing;
+//  - A_Kill skipped every second alarm of a dying process, and the survivors
+//    fired at the next process to get its ID (Error #001:044, signal 300).
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$Icpt   equ $09", "F$Sleep  equ $0A", "F$RTE    equ $1E",
+        "F$Alarm  equ $56", "I$WritLn equ $8C",
+        "CNT      equ -32768"
+    ]
+    func say(_ label: String) -> [String] {
+        ["  lea \(label)(pc),a0", "  moveq #\(label)l,d1", "  moveq #1,d0", "  OS9 I$WritLn"]
+    }
+    func message(_ label: String, _ text: String) -> [String] {
+        ["\(label): dc.b \"\(text)\",$0D", "\(label)l equ *-\(label)"]
+    }
+
+    // 1. IDs are never 0; A$Delete(0) removes every pending alarm of the caller.
+    let delAll = header + [
+        "  psect aldall,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #0,d0", "  move.w #1,d1", "  move.l #300,d2", "  move.l #10000,d3", "  OS9 F$Alarm",
+        "  bcs.w done", "  move.l d0,d5",
+        "  moveq #0,d0", "  move.w #1,d1", "  move.l #300,d2", "  move.l #10000,d3", "  OS9 F$Alarm",
+        "  bcs.w done", "  move.l d0,d6",
+        "  tst.l d5", "  beq.s idzero", "  tst.l d6", "  bne.s idok",
+        "idzero:"] + say("mzero") + [
+        "idok:",
+        "  moveq #0,d0", "  move.w #0,d1", "  OS9 F$Alarm",          // A$Delete(0): all
+        "  bcc.s delok"] + say("mdel0") + [
+        "delok:",
+        "  move.l d6,d0", "  move.w #0,d1", "  OS9 F$Alarm",         // must be gone already
+        "  bcs.s gone"] + say("mleft") + [
+        "gone:"] + say("mdone") + [
+        "done:",
+        "  moveq #0,d1", "  OS9 F$Exit"] +
+        message("mzero", "ALARM ID ZERO") + message("mdel0", "DELETE ALL FAILED") +
+        message("mleft", "DELETE ALL LEFT AN ALARM") + message("mdone", "DELALL DONE") + ["  ends", ""]
+
+    // 2. A cyclic alarm keeps the ID A$Cycle returned, so A$Delete stops it.
+    let cyclic = header + [
+        "  psect alcdel,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea icpt(pc),a0", "  OS9 F$Icpt", "  clr.l CNT(a6)",
+        "  moveq #0,d0", "  move.w #2,d1", "  move.l #300,d2", "  moveq #5,d3", "  OS9 F$Alarm",
+        "  bcs.w done", "  move.l d0,d5",
+        "wait1:", "  moveq #2,d0", "  OS9 F$Sleep", "  cmpi.l #3,CNT(a6)", "  blo.s wait1",
+        "  move.l d5,d0", "  move.w #0,d1", "  OS9 F$Alarm",
+        "  bcc.s delok"] + say("mfail") + [
+        "delok:",
+        "  move.l CNT(a6),d4", "  addq.l #1,d4",                     // one in flight is fine
+        "  moveq #30,d6",
+        "wait2:", "  moveq #2,d0", "  OS9 F$Sleep", "  subq.l #1,d6", "  bne.s wait2",
+        "  cmp.l CNT(a6),d4", "  bhs.s quiet"] + say("mfire") + [
+        "quiet:"] + say("mdone") + [
+        "done:",
+        "  moveq #0,d1", "  OS9 F$Exit",
+        "icpt:", "  addq.l #1,CNT(a6)", "  OS9 F$RTE"] +
+        message("mfail", "CYCLIC DELETE FAILED") + message("mfire", "CYCLIC STILL FIRING") +
+        message("mdone", "CYCLIC DONE") + ["  ends", ""]
+
+    // 3. Alarms die with their process: three pending at exit, then the next
+    //    process (which gets the same ID) sleeps past all of them.
+    let leaver = header + [
+        "  psect alleav,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #0,d0", "  move.w #1,d1", "  move.l #300,d2", "  move.l #150,d3", "  OS9 F$Alarm",
+        "  moveq #0,d0", "  move.w #1,d1", "  move.l #300,d2", "  move.l #160,d3", "  OS9 F$Alarm",
+        "  moveq #0,d0", "  move.w #1,d1", "  move.l #300,d2", "  move.l #170,d3", "  OS9 F$Alarm",
+        "  moveq #0,d1", "  OS9 F$Exit", "  ends", ""]
+    let sleeper = header + [
+        "  psect alslep,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  move.l #400,d0", "  OS9 F$Sleep"] + say("mdone") + [
+        "  moveq #0,d1", "  OS9 F$Exit"] + message("mdone", "SURVIVED") + ["  ends", ""]
+
+    let modules = ["aldall": delAll, "alcdel": cyclic, "alleav": leaver, "alslep": sleeper]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+    var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+    for module in modules.keys.sorted() {
+        build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+    }
+
+    struct AlarmCase {
+        let name: String
+        let commands: [String]
+        let pass: (String) -> Bool
+    }
+    let cases = [
+        AlarmCase(name: "f$alarm: IDs are never 0, and A$Delete of 0 removes every pending alarm",
+                  commands: ["/h5/aldall"]) {
+            $0.contains("DELALL DONE") && !$0.contains("ALARM ID ZERO")
+                && !$0.contains("DELETE ALL FAILED") && !$0.contains("DELETE ALL LEFT AN ALARM")
+        },
+        AlarmCase(name: "f$alarm: a cyclic alarm keeps its ID, so A$Delete stops it after it has fired",
+                  commands: ["/h5/alcdel"]) {
+            $0.contains("CYCLIC DONE") && !$0.contains("CYCLIC DELETE FAILED")
+                && !$0.contains("CYCLIC STILL FIRING")
+        },
+        AlarmCase(name: "f$alarm: every pending alarm dies with its process, none reaches the next",
+                  commands: ["/h5/alleav", "/h5/alslep"]) {
+            $0.contains("SURVIVED") && !$0.contains("#001:044")
+        }
+    ]
+    let wanted = cases.contains { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
+    if wanted { _ = os9(build, timeout: 60) }
+    for testCase in cases where filter.isEmpty || testCase.name.localizedCaseInsensitiveContains(filter) {
+        let out = os9(testCase.commands, timeout: 30)
+        if testCase.pass(out) {
+            print("PASS: \(testCase.name)")
+            passed += 1
+        } else {
+            print("FAIL: \(testCase.name)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty
+            }
+            print("      saw: \(lines.suffix(8).joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm
