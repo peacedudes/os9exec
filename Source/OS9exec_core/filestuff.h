@@ -210,6 +210,7 @@ void    Disp_RBF_Devs   ( Boolean statistic );
 /* True when a mounted RBF image's host file is <hostpath> or below it --
    fileaccess.c's pDwrite will not rename one out from under its mount. */
 Boolean RBF_ImageOpenUnder( const char* hostpath );
+ushort  PathFDOwner       ( syspath_typ* spP ); /* file_rbf.c: an RBF path's FD_OWN */
 
 /* True when Disp_RBF_Devs already printed a row for /<name> -- i.e. the device
    is mounted and has an rbfdev[] entry. `devs` uses it to avoid listing a

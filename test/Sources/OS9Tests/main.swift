@@ -6143,6 +6143,61 @@ do {
     }
 }
 
+// ── F$Load: super-user modules only from a file the super user owns ─────────────
+// "If any of the modules loaded belong to the super-user, the file must also be
+// owned by the super-user. This prevents normal users from executing privileged
+// service requests" (F$Load, p.1-41); the file security section adds "If not, the
+// modules contained within the file are not loaded", and E$Permit is "The process
+// or module must be owned by the super-user to perform the requested function".
+// It matters because F$SUser lets a program take its module's owner ID: without
+// the rule, any user could stamp 0.0 into a module and become the super user.
+// A module built here is owned 0.0; one copy of it on an RBF image is given to
+// 1.7 and must not load, the other, still the super user's, must.
+do {
+    let ownAsm = [
+        "  use /dd/DEFS/oskdefs.d", "F$Exit equ $06",
+        "  psect mownmod,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "start:", "  moveq #0,d1", "  OS9 F$Exit", "  ends", ""
+    ].joined(separator: "\r")
+    try? ownAsm.write(toFile: scratchDisk + "/mownmod.a", atomically: true, encoding: .utf8)
+
+    let name = "module: F$Load refuses a super-user module from a file a user owns, with E$Permit"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem("hq")
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/mownmod.a -o=/h5/mownmod.r", "l68 /h5/mownmod.r -o=/h5/mownmod",
+            "mount -k=1M hq",
+            "copy /h5/mownmod /hq/usermod", "copy /h5/mownmod /hq/supermod", "chown 1.7 /hq/usermod",
+            "load /hq/usermod", "echo AFTER-USER-LOAD", "mdir",
+            "load /hq/supermod", "echo AFTER-SUPER-LOAD", "mdir"
+        ], timeout: 60)
+        let lines = out.split(whereSeparator: \.isNewline).map { String($0) }
+        let userMark = lines.firstIndex { $0.trimmingCharacters(in: .whitespaces) == "AFTER-USER-LOAD" } ?? 0
+        let superMark = lines.firstIndex { $0.trimmingCharacters(in: .whitespaces) == "AFTER-SUPER-LOAD" }
+            ?? lines.count
+        // mdir lists names in columns; the shell's "$ ..." echoes are not the listing
+        func listed(_ rows: ArraySlice<String>) -> Bool {
+            rows.contains { !$0.hasPrefix("$") && $0.split(separator: " ").contains("mownmod") }
+        }
+        let refused = out.contains("#000:164") && !listed(lines[userMark..<superMark])
+        let loaded = listed(lines[superMark...])
+        if refused && loaded {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = lines.filter { $0.contains("Error") || $0.contains("AFTER-") || $0.contains("mownmod") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        removeScratchItem("hq")
+    }
+    for item in ["mownmod.a", "mownmod.r", "mownmod"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

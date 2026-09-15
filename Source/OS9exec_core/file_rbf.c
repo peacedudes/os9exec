@@ -2947,6 +2947,11 @@ static ushort FDOwn( syspath_typ* spP )
 {   return GET_OS9W(spP->fd_sct, 1);
 } /* FDOwn */
 
+ushort PathFDOwner( syspath_typ* spP )
+/* the owner word (group byte, user byte) of an open RBF path's file */
+{   return FDOwn( spP );
+} /* PathFDOwner */
+
 static void Set_FDOwn( syspath_typ* spP, ushort owner )
 /* set the file owner: packed group.user, group<<8|user */
 {   SET_OS9W(spP->fd_sct, 1, owner);

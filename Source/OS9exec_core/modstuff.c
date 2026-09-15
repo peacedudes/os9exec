@@ -1189,6 +1189,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
     #endif
     
     uint32_t dsize, loadbytes;
+    ushort   fileOwner= 0; /* FD_OWN of the file read; a host file counts as the super user's */
     os9err err;
     ushort par;
     uint32_t crc;
@@ -1428,6 +1429,13 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         debugprintf(dbgModules,dbgNorm,
           ("# load_module: loaded %u bytes from module's file\n", loadbytes));
           
+        #ifdef RBF_SUPPORT
+          if (bootPos==0) {
+              syspath_typ* fsp= get_syspath( pid, procs[ pid ].usrpaths[ path ] );
+              if (fsp!=NULL && fsp->type==fRBF) fileOwner= PathFDOwner( fsp );
+          }
+        #endif
+
         if (bootPos==0) err= usrpath_close( pid, path );
         break; /* module data loaded */
                   
@@ -1508,6 +1516,35 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
           
         return os9error( linkstyle ? E_MNF:E_PNNF ); /* could not link / load */    
     } while(true);
+    /* "If any of the modules loaded belong to the super-user, the file must
+       also be owned by the super-user. This prevents normal users from
+       executing privileged service requests" (F$Load, page 1-41), and "If not,
+       the modules contained within the file are not loaded" (file security).
+       It is what keeps F$SUser's "change to the module's owner" from letting
+       any user stamp 0.0 into a module and become the super user. The super
+       user is group 0: FD_OWN's high byte, M$Owner's high word. None of the
+       file's modules is entered unless all of them pass, so look at every
+       header first. E$Permit: "The process or module must be owned by the
+       super-user to perform the requested function". */
+    if (!isBuiltIn && (fileOwner>>8)!=0) {
+        ulong off= 0;
+        while (off+sizeof(modhcom)<=dsize) {
+            mod_exec* m= (mod_exec*)( (byte*)theModuleP + off );
+            ulong     msize;
+
+            if (os9_word(m->_mh._msync)!=MODSYNC) break; /* the loop below judges the rest */
+            if ((os9_long(m->_mh._mowner)>>16)==0) {
+                debugprintf(dbgModules,dbgNorm,("# load_module: super-user module in a file owned by $%04X\n",
+                                                  fileOwner));
+                release_mem( theModuleP );
+                return os9error(E_PERMIT);
+            }
+                msize= os9_long(m->_mh._msize);
+            if (msize==0) break;
+            off+= msize;
+        }
+    }
+
     /* module found, insert it into module directory */
     
     
