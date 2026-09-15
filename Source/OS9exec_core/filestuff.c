@@ -2008,19 +2008,20 @@ os9err syspath_read( ushort pid,ushort spnum, uint32_t *len, void* buffer, Boole
     if ((spP->type==fRBF || spP->type==fFile) && !(spP->mode & 0x01))
         return os9error(E_BMODE);
 
+    /* "The device or pipe is considered busy and returns an error if any read
+       request arrives before the signal is sent" (I$SetStt SS_SSig, page
+       2-24). The read went ahead instead, and the armed signal was then sent
+       to the reader -- which kills a program with no intercept routine. */
+    if (spP->signal_to_send) return os9error(E_DEVBSY);
+
                      f= fmgr_op[spP->type];
     if (rdln) rproc= f->readln;
     else      rproc= f->read;
     err=     rproc( pid,spP, len,(char*)buffer );
-    
-    
+
+
     if (!err) os9_long_inc( &pd->_rbytes, *len ); /* for statistics */
     if (!err && debugcheck(dbgSysCall,dbgDetail)) showbuff( spP, buffer,*len );
-    
-    if                   (spP->signal_to_send) {
-        send_signal( pid, spP->signal_to_send );
-                          spP->signal_to_send= 0; /* and reset it */
-    }
 
     /* Not a broadcast: data that has arrived on a path is consumed by whoever
        takes it, so waking every waiter would hand the same bytes to all of

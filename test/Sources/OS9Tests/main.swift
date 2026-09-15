@@ -5903,6 +5903,59 @@ do {
     }
 }
 
+// ── SS_SSig: a read while the signal is armed is refused ─────────────────────
+// SS_SSig (I$SetStt, p.2-24): "The device or pipe is considered busy and returns
+// an error if any read request arrives before the signal is sent." E$DevBsy is
+// the manual's "DEVICE BUSY". os9exec let the read go ahead and then sent the
+// armed signal, which kills a program with no intercept routine. The program
+// arms SS_SSig on an empty pipe of its own and reads it.
+do {
+    let ssigAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Open equ $84", "I$Read equ $89", "I$WritLn equ $8C", "I$SetStt equ $8E",
+        "BUF equ -32700",
+        "  psect mssigrd,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea pname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.s bad",
+        "  moveq #0,d5", "  move.w d0,d5",
+        "  move.l d5,d0", "  moveq #$1A,d1", "  moveq #$40,d2", "  OS9 I$SetStt", "  bcs.s bad",  // SS_SSig
+        "  move.l d5,d0", "  moveq #1,d1", "  lea BUF(a6),a0", "  OS9 I$Read", "  bcc.s bad",
+        "  cmpi.w #250,d1", "  bne.s bad",
+        "  move.l d5,d0", "  moveq #$1B,d1", "  OS9 I$SetStt",                                     // SS_Relea
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "pname: dc.b \"/pipe\",0",
+        "mok: dc.b \"SSIG READ BUSY\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"SSIG READ NOT REFUSED\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    try? ssigAsm.write(toFile: scratchDisk + "/mssigrd.a", atomically: true, encoding: .utf8)
+
+    let name = "io: a read on a path with SS_SSig armed is E$DevBsy"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/mssigrd.a -o=/h5/mssigrd.r",
+            "l68 /h5/mssigrd.r -o=/h5/mssigrd",
+            "/h5/mssigrd"
+        ], timeout: 30)
+        if out.contains("SSIG READ BUSY") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("SSIG") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for item in ["mssigrd.a", "mssigrd.r", "mssigrd"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm
