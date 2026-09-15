@@ -4132,7 +4132,13 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
                   }
                 }
                 else {                          /* if it is a dir  entry */
-                  if (isFile) err= E_FNA;       /* is file, should be path */
+                  /* Asked for a file, found a directory. Creating one is still
+                     "already there" (I$MakDir's errors are E$BPNam and E$CEF,
+                     page 2 - 15): makdir creates through this open, and
+                     answering E$FNA here told perl's mkdir and every script
+                     testing for E$CEF something else. Only a plain open gets
+                     "not a file". */
+                  if (isFile) err= cre ? E_CEF : E_FNA;
                   else        err= 0;           /* is there path -> ok */
                 }
                 

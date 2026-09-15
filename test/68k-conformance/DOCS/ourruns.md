@@ -537,3 +537,25 @@ of device:
 ```
 RESULT t62 PASS  obs=000000 exp=000000  a file moved by link-then-unlink opens under the new name only
 ```
+
+## os9exec, 2026-09-14: t63, makdir onto a directory that exists
+
+osk-freeware found it with Microware's makdir on an RBF image: the second
+`makdir` of a directory answered E$FNA, where onto an existing file, or onto
+a directory on a host-native device, it answered E$CEF. perl 4's mkdir then
+reported E$FNA, and scripts testing for E$CEF misread it.
+
+makdir creates through an open that asks for a file. When the name was
+already a directory, that open refused it as "not a file" before asking
+whether it was creating. Before the fix, on an RBF image (the host-native
+directory already passed):
+
+```
+RESULT t63 FAIL  obs=000214 exp=000218  I$MakDir of an existing directory reports E$CEF
+```
+
+After it, on both:
+
+```
+RESULT t63 PASS  obs=000218 exp=000218  I$MakDir of an existing directory reports E$CEF
+```
