@@ -3887,8 +3887,11 @@ static os9err CreateNewFile( ushort pid, syspath_typ* spP, byte fileAtt, char* n
 } /* CreateNewFile */
 
 static os9err ConvertToDir( syspath_typ* spP )
+/* Mark the freshly made file a directory. Only the directory bit is added: the
+   permissions came from I$MakDir's d1 when the file was created, and a fixed
+   $BF here used to replace them, whatever the caller asked for. */
 {
-  Set_FDAtt     ( spP, 0xbf );  /* as directory */    
+  Set_FDAtt     ( spP, (byte)(FDAtt( spP ) | 0x80) );  /* as directory */
   return WriteFD( spP );
 } /* ConvertToDir */
 
@@ -4361,16 +4364,23 @@ os9err pRdelete( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathna
     return err;
 } /* pRdelete */
 
-os9err pRmakdir( ushort pid, syspath_typ* spP, _modeP_, const char* pathname )
+os9err pRmakdir( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname )
 {
     os9err   err;
     uint32_t size= 2*DIRENTRYSZ;
     os9direntry_typ dirblk[ 2 ];
     ushort path;
     
-    procs[pid].fileAtt     = 0xBF;
+    /* "The new directory automatically has its directory bit set in the access
+       permission attributes. The remaining attributes are specified by the
+       bytes passed in register d1.w" (I$MakDir, page 2-15): the caller put d1
+       in fileAtt. They were forced to $BF here, whatever was asked. And "If the
+       execution bit is set, OS-9 begins searching for the file in the working
+       execution directory": the create went through a mode of its own, which
+       dropped that bit, so a relative name landed in the data directory. */
+    procs[pid].fileAtt     |= 0x80;
     procs[pid].cre_initsize= 0;   /* don't use mode at the moment */
-    err= usrpath_open( pid,&path, fRBF, pathname, 0x03 | poCreateMask ); if (err) return err;
+    err= usrpath_open( pid,&path, fRBF, pathname, (*modeP & poExec) | 0x03 | poCreateMask ); if (err) return err;
 
         spP= get_syspath( pid, procs[pid].usrpaths[path] ); /* get spP for fd sects */
     if (spP==NULL) return os9error(E_BPNUM);

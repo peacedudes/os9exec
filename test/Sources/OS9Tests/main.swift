@@ -5221,6 +5221,75 @@ do {
     }
 }
 
+// ── RBF I$MakDir: the permissions in d1, and the execution bit ────────────────
+// I$MakDir (Technical Manual p.2-15): "The remaining attributes are specified by
+// the bytes passed in register d1.w", and "If the execution bit is set, OS-9
+// begins searching for the file in the working execution directory". On an RBF
+// image the attributes were forced to $BF and the execution bit dropped. Found
+// by the 2026-09-15 argument audit, probed live.
+do {
+    func program(_ name: String, _ mode: String, _ attr: String, _ path: String) -> [String] {
+        ["  use /dd/DEFS/oskdefs.d", "F$Exit equ $06", "I$MakDir equ $85",
+         "  psect \(name),(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+         "start:", "  lea dname(pc),a0", "  moveq #\(mode),d0", "  move.w #\(attr),d1",
+         "  OS9 I$MakDir", "  bcs.s fail", "  moveq #0,d1", "fail:", "  OS9 F$Exit",
+         "dname: dc.b \"\(path)\",0", "  ends", ""]
+    }
+    let modules = ["mmkatt": program("mmkatt", "$01", "$0003", "/hq/md3"),
+                   "mmkexe": program("mmkexe", "$05", "$003F", "mdx")]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+    let attrName = "rbf: I$MakDir gives a new directory the permissions asked for in d1"
+    let execName = "rbf: I$MakDir with the execution bit makes a relative directory in the exec directory"
+    let chosen = [attrName, execName].filter { filter.isEmpty || $0.localizedCaseInsensitiveContains(filter) }
+    if !chosen.isEmpty {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for module in modules.keys.sorted() {
+            build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+        }
+        _ = os9(build, timeout: 60)
+    }
+    func report(_ name: String, _ good: Bool, _ out: String) {
+        if good {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("md3") || $0.contains("mdx") || $0.contains("Directory of") || $0.contains("Error")
+            }
+            print("      saw: \(lines.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    if chosen.contains(attrName) {
+        removeScratchItem("hq")
+        let out = os9(["mount -k=1M hq", "/h5/mmkatt", "attr /hq/md3"], timeout: 30)
+        let good = out.split(whereSeparator: \.isNewline).contains {
+            !$0.hasPrefix("$") && $0.contains("/hq/md3")
+                && $0.trimmingCharacters(in: .whitespaces).hasPrefix("d-----wr")
+        }
+        report(attrName, good, out)
+    }
+    if chosen.contains(execName) {
+        removeScratchItem("hq")
+        removeScratchItem("mdx")
+        let out = os9(["mount -k=1M hq", "makdir /hq/X", "chd /h5", "chx /hq/X", "/h5/mmkexe",
+                       "chx /dd/CMDS", "dir /hq/X"], timeout: 30)
+        let listing = out.components(separatedBy: "Directory of /hq/X").dropFirst().joined()
+        report(execName, listing.contains("mdx"), out)
+        removeScratchItem("mdx")
+    }
+    removeScratchItem("hq")
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

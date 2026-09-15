@@ -241,8 +241,11 @@ os9err OS9_I_MakDir( regs_type *rp, ushort cpid )
  *                also accepted as path element delimiters. Spaces cannot be
  *                part of names used by OS9exec, they are treated as path
  *                termination characters.
- *              - Access mode is not used
- *              - File attributes are not used
+ *              - d1's permission bits reach the create through fileAtt, with
+ *                the directory bit added ("The new directory automatically has
+ *                its directory bit set", page 2-15); the exec bit in d0 is
+ *                passed on, so a relative name is found from the execution
+ *                directory
  */
 {
     ushort    mode    = loword(rp->d[0]) | poCreateMask; /* internal open used */
@@ -254,6 +257,7 @@ os9err OS9_I_MakDir( regs_type *rp, ushort cpid )
 
 
     pastpath= nullterm(            os9_path,os9_name, OS9PATHLEN );
+    procs[cpid].fileAtt= (loword(rp->d[1]) & 0x7F) | 0x80;
     type    =  IO_Type( cpid,      os9_path,mode ); if (type==fNone) return E_BPNAM;
     err     =  make_dir( cpid,type, os9_path,mode );
 

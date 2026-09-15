@@ -1894,9 +1894,8 @@ os9err int_imakdir( ushort pid, int argc, char** argv )
     char*     p;
     char*     nargv[1];
 
-    /* os9exec documents both the access mode and the file attributes of
-       I$MakDir as unused (icalls.c), so this is the shape of the call rather
-       than a considered permission choice. */
+    /* The shape of Microware's makdir call: read access, and every permission
+       (it passes d1.w=$003F; the directory bit is added). */
     ushort    mode= poCreateMask | 0x03;
 
     for (h=1; h<argc; h++) {
@@ -1924,6 +1923,7 @@ os9err int_imakdir( ushort pid, int argc, char** argv )
         type= IO_Type( pid, path, mode );
     if (type==fNone) return _errmsg( E_BPNAM, "bad directory name \"%s\"\n", path );
 
+        procs[pid].fileAtt= 0xBF; /* make_dir's create reads fileAtt: not what the last I$Create left */
         err= make_dir( pid, type, path, mode );
     if (err) return _errmsg( err, "can't create directory \"%s\"\n", path );
     return 0;
