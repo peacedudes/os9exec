@@ -4775,6 +4775,117 @@ do {
     }
 }
 
+// ── process permissions: S$Kill, F$SPrior, F$SetSys, F$DExit ───────────────────
+// Technical Manual rules the 2026-09-15 argument audit found unenforced, each
+// probed live; rdoggett's decision: enforce them.
+//  - "The S$Kill signal may only be sent to processes with the same group ID as
+//    the sender. Super users may kill any process." (F$Send, p.1-48)
+//  - "A process can only change another process's priority if it has the same
+//    user ID", the super user excepted (F$SPrior, p.1-54)
+//  - "Only a super-user can change system variables." (F$SetSys, p.1-51)
+//  - F$DExit "terminates a suspended child process that was created with the
+//    F$DFork system call" (p.1-16); it killed any process.
+// The first program forks a sleeping child as the super user, becomes 5.5, and
+// tries each call on it. Refusals are E$IPrcID (224) or, for F$SetSys, E$Permit
+// (164). The second forks a plain child and tries F$DExit on it.
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Fork   equ $03", "F$Wait   equ $04", "F$Exit   equ $06", "F$Send   equ $08",
+        "F$Sleep  equ $0A", "F$SPrior equ $0D", "F$SUser  equ $1C", "F$DExit  equ $24",
+        "F$SetSys equ $27", "I$WritLn equ $8C"
+    ]
+    func say(_ label: String) -> [String] {
+        ["  lea \(label)(pc),a0", "  moveq #\(label)l,d1", "  moveq #1,d0", "  OS9 I$WritLn"]
+    }
+    func message(_ label: String, _ text: String) -> [String] {
+        ["\(label): dc.b \"\(text)\",$0D", "\(label)l equ *-\(label)"]
+    }
+    // refused when carry is set and d1.w equals <code>
+    func refused(_ code: Int, _ refusedLabel: String, _ acceptedLabel: String, _ tag: String) -> [String] {
+        ["  bcc.s acc\(tag)", "  cmpi.w #\(code),d1", "  bne.s acc\(tag)"] + say(refusedLabel) +
+            ["  bra.s end\(tag)", "acc\(tag):"] + say(acceptedLabel) + ["end\(tag):"]
+    }
+    let fork = [
+        "  lea cname(pc),a0", "  lea cparm(pc),a1", "  moveq #0,d0", "  moveq #1,d1", "  moveq #0,d2",
+        "  moveq #3,d3", "  moveq #0,d4", "  OS9 F$Fork"
+    ]
+    let child = header + [
+        "  psect mpchld,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:", "  move.l #300,d0", "  OS9 F$Sleep", "  moveq #0,d1", "  OS9 F$Exit", "  ends", ""]
+    let perms = header + [
+        "  psect mpperm,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:"] + fork + [
+        "  bcs.w fail", "  moveq #0,d5", "  move.w d0,d5",
+        "  move.l #$00050005,d1", "  OS9 F$SUser", "  bcc.s asuser"] + say("msufail") + ["  bra.w reap", "asuser:",
+        "  move.l d5,d0", "  moveq #0,d1", "  OS9 F$Send"] + refused(224, "mkref", "mkacc", "k") + [
+        "  move.l d5,d0", "  move.l #200,d1", "  OS9 F$SPrior"] + refused(224, "mpref", "mpacc", "p") + [
+        "  move.l #$28,d0", "  moveq #2,d1", "  moveq #50,d2", "  OS9 F$SetSys"] +
+        refused(164, "msref", "msacc", "s") + [
+        "reap:", "  OS9 F$Wait",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "cname: dc.b \"/h5/mpchld\",0", "cparm: dc.b $0D", "  align"] +
+        message("msufail", "SUSER FAILED") +
+        message("mkref", "SKILL REFUSED") + message("mkacc", "SKILL NOT REFUSED") +
+        message("mpref", "SPRIOR REFUSED") + message("mpacc", "SPRIOR NOT REFUSED") +
+        message("msref", "SETSYS REFUSED") + message("msacc", "SETSYS NOT REFUSED") + ["  ends", ""]
+    let dexit = header + [
+        "  psect mpdext,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:"] + fork + [
+        "  bcs.w fail", "  moveq #0,d5", "  move.w d0,d5",
+        "  move.l d5,d0", "  OS9 F$DExit"] + refused(224, "mdref", "mdacc", "d") + [
+        "  OS9 F$Wait",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "cname: dc.b \"/h5/mpchld\",0", "cparm: dc.b $0D", "  align"] +
+        message("mdref", "DEXIT REFUSED") + message("mdacc", "DEXIT NOT REFUSED") + ["  ends", ""]
+
+    let modules = ["mpchld": child, "mpperm": perms, "mpdext": dexit]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+    struct PermCase {
+        let name: String
+        let module: String
+        let want: [String]
+    }
+    let cases = [
+        PermCase(name: "process: a non-super user may not S$Kill, F$SPrior or F$SetSys outside its reach",
+                 module: "mpperm", want: ["SKILL REFUSED", "SPRIOR REFUSED", "SETSYS REFUSED"]),
+        PermCase(name: "process: F$DExit refuses a child that was not made by F$DFork",
+                 module: "mpdext", want: ["DEXIT REFUSED"])
+    ]
+    let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
+    if !chosen.isEmpty {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for module in modules.keys.sorted() {
+            build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+        }
+        _ = os9(build, timeout: 60)
+    }
+    for testCase in chosen {
+        let out = os9(["/h5/\(testCase.module)"], timeout: 30)
+        if testCase.want.allSatisfy({ out.contains($0) }) && !out.contains("SUSER FAILED") {
+            print("PASS: \(testCase.name)")
+            passed += 1
+        } else {
+            print("FAIL: \(testCase.name)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("REFUSED") || $0.contains("SUSER") || $0.contains("Error")
+            }
+            print("      saw: \(lines.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

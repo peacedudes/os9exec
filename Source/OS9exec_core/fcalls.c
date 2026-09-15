@@ -1070,8 +1070,21 @@ os9err OS9_F_Send( regs_type *rp, ushort cpid )
  *   because pid=0 is a valid process ID in os9exec/nt.
  */
 {
-    debugprintf(dbgProcess,dbgNorm,("# F$Send: pid=%d is sending signal %d to pid=%d\n",cpid,loword(rp->d[1]),loword(rp->d[0])));
-    return send_signal(loword(rp->d[0]), loword(rp->d[1]));
+    ushort spid= loword(rp->d[0]);
+    ushort sig = loword(rp->d[1]);
+
+    debugprintf(dbgProcess,dbgNorm,("# F$Send: pid=%d is sending signal %d to pid=%d\n",cpid,sig,spid));
+
+    /* "The S$Kill signal may only be sent to processes with the same group ID as
+       the sender. Super users may kill any process." (F$Send, page 1-48). It was
+       sent to any process. E$IPrcID is the call's documented error for a process
+       the caller may not reach. Checked here, at the system call, not in
+       send_signal: the emulator itself sends S$Kill (alarms, keyboard abort). */
+    if (sig==S_Kill && spid!=0 && spid<MAXPROCESSES && !is_super(cpid) &&
+        procs[spid].state!=pUnused &&
+        procs[spid].pd._group!=procs[cpid].pd._group) return os9error(E_IPRCID);
+
+    return send_signal(spid, sig);
 } /* OS9_F_Send */
 
 os9err OS9_F_Icpt( regs_type *rp, ushort cpid )
@@ -1550,6 +1563,14 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
     
     debugprintf(dbgPartial,dbgNorm,("# F$SetSys: %04X %x %d\n", offs, size, (uint32_t)v));
     
+    /* A size with its most significant bit clear is a change request ("the
+       variable is changed to the value in register d2"), and "Only a super-user
+       can change system variables" (F$SetSys, page 1-51). os9exec changes none
+       of them either way -- D_MinPty and D_MaxAge, the only useful ones, have no
+       scheduler to act on -- but a non-super caller was told it had succeeded.
+       The page names no error; E$Permit is the super-user refusal. */
+    if ((size==1 || size==2 || size==4) && !is_super(cpid)) return os9error(E_PERMIT);
+
     switch (size) {
       case          -1 : rp->d[2]=v<<24; break; /* two different ways to read them */
       case          -2 : rp->d[2]=v<<16; break;
@@ -2116,6 +2137,12 @@ os9err OS9_F_DExit( regs_type *rp, ushort cpid )
     if (childpid>=MAXPROCESSES) return os9error(E_IPRCID);
     cp= &procs[childpid];
     if (cp->state == pUnused) return 0; /* already gone */
+
+    /* "F$DExit terminates a suspended child process that was created with the
+       F$DFork system call" (page 1-16). It killed ANY process -- a plain child
+       looked to its parent like a normal exit. Only the caller's own F$DFork
+       child; anything else is E$IPrcID, the call's documented error. */
+    if (dbg_parent_pid[childpid]!=cpid) return os9error(E_IPRCID);
     dbg_parent_pid[childpid] = 0;     /* suppress wakeup from kill_process */
     cp->exiterr = 0;
     kill_process(childpid);
@@ -2639,15 +2666,24 @@ os9err OS9_F_Permit( _rp_, _pid_ )
   return 0;
 } /* OS9_F_Permit */
 
-os9err OS9_F_SPrior( regs_type *rp, _pid_ )
+os9err OS9_F_SPrior( regs_type *rp, ushort cpid )
 /* F$SPrior:
  * Input:   d0.w=process ID
  *          d1.w=new priority
  * Output:  none
  */
 { 
-  return setprior( loword( rp->d[ 0 ] ),
-                   loword( rp->d[ 1 ] ));
+  ushort tpid= loword( rp->d[ 0 ] );
+
+  /* "A process can only change another process's priority if it has the same
+     user ID. The one exception to this rule is a super user (group ID zero),
+     which may alter any process's priority." (F$SPrior, page 1-54). The user ID
+     is group.user; E$IPrcID is the call's only documented error. */
+  if (tpid<MAXPROCESSES && !is_super(cpid) && procs[tpid].state!=pUnused &&
+      (procs[tpid].pd._group!=procs[cpid].pd._group ||
+       procs[tpid].pd._user !=procs[cpid].pd._user)) return os9error(E_IPRCID);
+
+  return setprior( tpid, loword( rp->d[ 1 ] ));
 } /* OS9_F_SPrior */
 
 /* --------------------------------------------------------- */
