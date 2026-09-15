@@ -513,6 +513,18 @@ static Boolean dbg_should_stop(ushort cpid, uint32_t pc)
     return false;
 } /* dbg_should_stop */
 
+static void dbg_report_stop( regs_type* prp, ushort cpid )
+/* F$DExec's outputs when its child stops (p.1-14): d0.l the instructions
+ * executed, d1.l the "remaining count not executed" (none in continuous mode),
+ * and d2.w zero for no exception. d1 and d2 used to come back holding the
+ * caller's own count and breakpoint count, which reads as an exception. */
+{
+    prp->sr  &= ~CARRY;
+    prp->d[0] = dbg_exec_count[cpid];
+    prp->d[1] = dbg_remaining[cpid]>0 ? (uint32_t)dbg_remaining[cpid] : 0;
+    prp->d[2]&= ~(uint32_t)0xFFFF;
+} /* dbg_report_stop */
+
 /* the signal queue */
 sig_typ     sig_queue;
 
@@ -2273,8 +2285,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
                * A1-A6 are NOT forwarded to avoid corrupting debug's A6 frame pointer.
                * PC/SR/A7 are always the parent's own values. */
               if (ppid != 0 && procs[ppid].state == pSleeping) {
-                  procs[ppid].os9regs.sr &= ~CARRY;
-                  procs[ppid].os9regs.d[0] = dbg_exec_count[cpid]; /* F$DExec: instructions executed */
+                  dbg_report_stop( &procs[ppid].os9regs, cpid );
               }
               procs[cpid].wakeUpTick = ULONG_MAX;
               set_os9_state(cpid, pSleeping, "DExec step done");
@@ -2408,9 +2419,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
             dbg_step_pending[cpid] = 0;
             save_debug_regs(cpid);
             if (ppid != 0 && procs[ppid].state == pSleeping) {
-                regs_type* parent_rp = &procs[ppid].os9regs;
-                parent_rp->d[0] = dbg_exec_count[cpid];  /* F$DExec: instructions executed */
-                parent_rp->sr &= ~CARRY;
+                dbg_report_stop( &procs[ppid].os9regs, cpid );
             }
             procs[cpid].wakeUpTick = ULONG_MAX;
             set_os9_state(cpid, pSleeping, "DExec syscall stop");

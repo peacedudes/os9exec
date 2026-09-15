@@ -5504,6 +5504,87 @@ do {
     }
 }
 
+// ── F$DExec: its outputs, and a child that terminates ─────────────────────────
+// F$DExec (p.1-14) returns "d1.l = remaining count not executed" and "d2.w =
+// exception occurred, if non-zero"; os9exec set d0 alone, so d1 and d2 came
+// back as the caller's own count and breakpoint count, which reads as an
+// exception on every stop. "If the child process terminates for any reason,
+// the carry bit is set and returned", and "A F$DExit call must be made to
+// return the debugged process's resources": the parent was woken with no
+// carry, and F$DExit then refused the child it had forked (E$IPrcID).
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$DFork  equ $22", "F$DExec  equ $23", "F$DExit  equ $24", "I$WritLn equ $8C",
+        "REGS     equ -32700"
+    ]
+    func say(_ label: String) -> [String] {
+        ["  lea \(label)(pc),a0", "  moveq #\(label)l,d1", "  moveq #1,d0", "  OS9 I$WritLn"]
+    }
+    func message(_ label: String, _ text: String) -> [String] {
+        ["\(label): dc.b \"\(text)\",$0D", "\(label)l equ *-\(label)"]
+    }
+    let child = header + [
+        "  psect mdxchd,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:", "  nop", "  nop", "  nop", "  nop", "  moveq #0,d1", "  OS9 F$Exit", "  ends", ""]
+    let parent = header + [
+        "  psect mdxpar,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea cname(pc),a0", "  lea cparm(pc),a1", "  lea REGS(a6),a2", "  moveq #0,d0", "  moveq #0,d1",
+        "  moveq #1,d2", "  moveq #3,d3", "  moveq #0,d4", "  OS9 F$DFork", "  bcs.w fail",
+        "  moveq #0,d5", "  move.w d0,d5",
+        // two instructions, one breakpoint that is never reached
+        "  move.l d5,d0", "  moveq #2,d1", "  moveq #1,d2", "  lea bkpt(pc),a0", "  OS9 F$DExec",
+        "  bcs.s stepbad", "  tst.l d1", "  bne.s stepbad", "  tst.w d2", "  bne.s stepbad"] +
+        say("mstepok") + ["  bra.s run", "stepbad:"] + say("mstepbad") + [
+        "run:",
+        "  move.l d5,d0", "  moveq #0,d1", "  moveq #0,d2", "  OS9 F$DExec",
+        "  bcc.s exitbad", "  cmpi.w #228,d1", "  bne.s exitbad"] +
+        say("mexitok") + ["  bra.s dexit", "exitbad:"] + say("mexitbad") + [
+        "dexit:",
+        "  move.l d5,d0", "  OS9 F$DExit", "  bcs.s dxbad"] +
+        say("mdxok") + ["  bra.s done", "dxbad:"] + say("mdxbad") + [
+        "done:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "cname: dc.b \"/h5/mdxchd\",0", "cparm: dc.b $0D", "  align",
+        "bkpt: dc.l 0"] +
+        message("mstepok", "DEXEC STEP OUTPUTS OK") + message("mstepbad", "DEXEC STEP OUTPUTS WRONG") +
+        message("mexitok", "DEXEC EXIT REPORTED") + message("mexitbad", "DEXEC EXIT NOT REPORTED") +
+        message("mdxok", "DEXIT AFTER EXIT OK") + message("mdxbad", "DEXIT AFTER EXIT REFUSED") + ["  ends", ""]
+
+    let modules = ["mdxchd": child, "mdxpar": parent]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+    let name = "process: F$DExec returns its remaining count and no exception, and reports a child's exit"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for module in modules.keys.sorted() {
+            build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+        }
+        _ = os9(build, timeout: 60)
+        let out = os9(["/h5/mdxpar"], timeout: 30)
+        let want = ["DEXEC STEP OUTPUTS OK", "DEXEC EXIT REPORTED", "DEXIT AFTER EXIT OK"]
+        if want.allSatisfy({ out.contains($0) }) {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("DEXEC") || $0.contains("DEXIT") || $0.contains("Error")
+            }
+            print("      saw: \(lines.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

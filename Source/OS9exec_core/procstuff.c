@@ -663,11 +663,25 @@ os9err kill_process( ushort pid )
       set_os9_state( pid, pUnused, "kill_process" ); /* there's no parent => invalidate descriptor */
     } // if
 
-    /* If a debug parent is waiting on this child, wake it now. */
+    /* If a debug parent is waiting on this child, wake it now. Dying inside
+       F$DExec is the call's error return: "If the child process terminates
+       for any reason, the carry bit is set and returned" (page 1-14), E$PrcAbt
+       being the one listed error that says so. The step it had armed goes with
+       it -- left armed, the next instruction run was somebody else's. The
+       child keeps its debug parent, which still owes it an F$DExit; the slot
+       lets go of it when it is freed (set_os9_state). */
     if (dbg_parent_pid[pid] != 0 &&
         procs[dbg_parent_pid[pid]].state == pSleeping) {
+        if (dbg_step_pending[pid]) {
+            extern int m68k_os9singlestep;
+            regs_type* prp= &procs[dbg_parent_pid[pid]].os9regs;
+
+            dbg_step_pending[pid]= 0;
+            m68k_os9singlestep   = 0;
+            prp->sr|= CARRY;
+            retword( prp->d[1] )= E_PRCABT;
+        }
         set_os9_state(dbg_parent_pid[pid], pActive, "kill_process (dbg wake)");
-        dbg_parent_pid[pid] = 0;
     }
     
     debugprintf(dbgProcess,dbgNorm,("# kill_process: process killed\n" ));

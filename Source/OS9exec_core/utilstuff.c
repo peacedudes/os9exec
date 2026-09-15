@@ -405,6 +405,11 @@ void set_os9_state( ushort cpid, pstate_typ state, const char* callingProc )
                                            cp->state, state, callingProc ));
                                            
             cp->state= state;
+
+    /* a freed slot is nobody's debugged child: a dead F$DFork child keeps its
+       parent until F$DExit or F$Wait lets it go (see kill_process) */
+    if (state==pUnused && cpid<MAXPROCESSES) { dbg_parent_pid[cpid]= 0; dbg_step_pending[cpid]= 0; }
+
     switch (cp->state) {
         case pStart    : pd->_state= os9_word(0x8800); pd->_queueid= 'b'; break;
         case pUnused   : pd->_state= 0;                pd->_queueid= '-'; break;

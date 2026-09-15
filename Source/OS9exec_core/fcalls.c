@@ -2143,6 +2143,12 @@ os9err OS9_F_DExit( regs_type *rp, ushort cpid )
        looked to its parent like a normal exit. Only the caller's own F$DFork
        child; anything else is E$IPrcID, the call's documented error. */
     if (dbg_parent_pid[childpid]!=cpid) return os9error(E_IPRCID);
+
+    /* It terminated under F$DExec, which reported that with carry set: "A
+       F$DExit call must be made to return the debugged process's resources"
+       (page 1-15). They went when it died; it stays dead for F$Wait. */
+    if (cp->state == pDead) { dbg_parent_pid[childpid] = 0; return 0; }
+
     dbg_parent_pid[childpid] = 0;     /* suppress wakeup from kill_process */
     cp->exiterr = 0;
     kill_process(childpid);

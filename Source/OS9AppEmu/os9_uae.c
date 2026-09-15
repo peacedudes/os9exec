@@ -89,8 +89,17 @@ int os9exec_error_handler_installed(int vect)
     return procs[currentpid].ErrorTraps[vect-FIRSTEXCEPTION].handleraddr!=0;
 }
 
+extern int m68k_os9singlestep; /* newcpu.c: F$DExec's one-instruction step */
+
 /* called by newcpu.c's Exception routine */
 void handle_os9exec_exception(int nr, uaecptr oldpc)
+/* Every branch that leaves the emulator loop also ends an F$DExec step. The
+   loop marks a finished step AFTER the instruction's handler has run, and it
+   overwrote the result set here with its step token: a debugged child's
+   system call was never made, and neither was any error trap. Its F$Exit
+   came back as "one instruction done", and it ran on past the end of its
+   code. Clearing the step lets os9exec see the call, which it already counts
+   as one logical instruction of the step. */
 {
     // in case of os9exec, we apply special treating to most exceptions
     if (nr==32) {
@@ -100,6 +109,7 @@ void handle_os9exec_exception(int nr, uaecptr oldpc)
      // consprintf( ">%2d %3d<", nr-32, m68_os9go_result );
 
         os9_running=0; // force exit from emulator loop
+        m68k_os9singlestep=0;
     } else if (nr>32 && nr<48) {
         uae_u16 func=next_iword();  // get TCALL function word
         traphandler_typ *th;
@@ -141,6 +151,7 @@ void handle_os9exec_exception(int nr, uaecptr oldpc)
                case: a result only means something if we are leaving. */
             m68_os9go_result=(nr << 16) + func;
             os9_running=0; // force exit from emulator loop
+            m68k_os9singlestep=0;
         }
     }
     else {
@@ -198,6 +209,7 @@ void handle_os9exec_exception(int nr, uaecptr oldpc)
         m68k_dreg(regs,7) = nr * 4;            // D7 is vector OFFSET
         // os9exec_nt does the rest: set A6, point A7 at the register block, jump to handler
         os9_running=0; // force exit from emulator loop
+        m68k_os9singlestep=0;
     };
 }
 
