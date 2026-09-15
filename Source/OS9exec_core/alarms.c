@@ -219,8 +219,11 @@ static os9err Alarm_Delete( ushort pid, uint32_t aId )
 
 
 
-static uint32_t A_Interval( uint32_t aTime )
-/* An A$Set/A$Cycle interval in ticks. The caller's d3 is a tick count, or,
+uint32_t A_Interval( uint32_t aTime )
+/* An interval in ticks, from a value that is a tick count or, with its high bit
+ * set, 256ths of a second: F$Alarm's A$Set/A$Cycle d3, and SS_Ticks' d2, which
+ * the Technical Manual describes the same way. For F$Alarm the caller's d3 is a
+ * tick count, or,
  * with its high bit set, "the low 31 bits are interpreted as 256ths of a
  * second" and "all times are rounded up to the nearest clock tick" (OS-9
  * v2.4 Technical Manual, F$Alarm). It was stored as raw ticks, so a C

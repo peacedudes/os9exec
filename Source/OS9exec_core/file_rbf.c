@@ -4174,7 +4174,12 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
 //  printf( "RelBuffers %08X %08X %d\n", spP->fd_sct, spP->rw_sct, err );
     /* Checked here, before RingJoin, so a refusal takes the ordinary error exit
      * and leaves nothing spliced into the file's ring to unpick. */
-    if (!err && ShareConflict( spP, rbf->single )) err= os9error( E_SHARE );
+    /* single-user by the open's mode bit OR by the file's own attribute: "If
+       the single-user bit is set, only one process may open the file at a time"
+       (page 7-9) is about the S bit in the attribute byte, and only the mode
+       bit was honoured. The other side needs no change: another path to the
+       same file has the same attribute byte. */
+    if (!err && ShareConflict( spP, rbf->single || (rbf->att & 0x40)!=0 )) err= os9error( E_SHARE );
 
     if    (err) ReleaseBuffers( spP );
     else        RingJoin      ( spP ); /* <fd_nr> is only final once open succeeds */
@@ -4496,7 +4501,12 @@ os9err pRticks( _pid_, syspath_typ* spP, uint32_t* d2 )
  * would rather be late than fail, and wrong for one that must not hang behind
  * a peer that has stopped responding. */
 {
-    spP->u.rbf.lockTicks= loword( *d2 );
+    /* "d2.l = Delay interval ... If the high order bit is set, the lower 31
+       bits are converted from 256th of a second into ticks" (I$SetStt SS_Ticks,
+       page 2-28). Only the low word used to be kept, as raw ticks: $00010000
+       became 0, wait for ever, and a sub-second 256ths value was a huge tick
+       count. */
+    spP->u.rbf.lockTicks= A_Interval( *d2 );
     return 0;
 } /* pRticks */
 
@@ -4632,8 +4642,17 @@ os9err pRsetFD( _pid_, syspath_typ* spP, byte *buffer )
      * one only pins the low byte; nothing there constrains the group. */
     if (!is_super(pid) && (GET_OS9W( buffer,1 ) & 0xFF00)==0) return E_PERMIT;
 
-    memcpy( spP->fd_sct, buffer, maxbyt );  /* copy to the buffer */
-    RingPublishFD( spP );  /* owner/attrs just changed for every path, not one */
+    /* "The path must be open for write. NOTE: You can only change FD_OWN,
+       FD_DAT, and FD_Creat. These are the only fields written back to disk."
+       (I$SetStt SS_FD, page 2-24). All 16 bytes used to be copied, through any
+       path: the attribute byte (directory bit included), the link count and
+       the file size could all be rewritten from a read-only path. FD_OWN is
+       $01-$02, FD_DAT $03-$07, FD_Creat $0D-$0F. */
+    if ((spP->mode & 0x02)==0) return os9error(E_BMODE);
+    (void)maxbyt;
+    memcpy( &spP->fd_sct[1],  &buffer[1],  7 );  /* FD_OWN + FD_DAT */
+    memcpy( &spP->fd_sct[13], &buffer[13], 3 );  /* FD_Creat */
+    RingPublishFD( spP );  /* owner/dates just changed for every path, not one */
     return WriteFD( spP );
 } /* pRsetFD */
 
@@ -4698,6 +4717,13 @@ os9err pRsetatt( _pid_, syspath_typ* spP, uint32_t *attr )
 /* set the attributes of a file -- owner or super-user only */
 {
     if (!is_super(pid) && !IsOwner(pid, FDOwn(spP))) return E_FNA;
+
+    /* "It is not permitted to set the dir bit of a non-directory file"
+       (I$SetStt SS_Attr, page 2-22); it was stored as given, making a plain
+       file look like a directory. The page names no error. Clearing the bit
+       on a NON-EMPTY directory is also forbidden there, and still allowed
+       here: see the roadmap. */
+    if ((*attr & 0x80) && (spP->fd_sct[0] & 0x80)==0) return os9error(E_FNA);
     Set_FDAtt      ( spP, (byte)*attr ); /* byte ordering is already correct */
     RingPublishFD  ( spP );  /* others must see the new attributes at once */
     return WriteFD ( spP );

@@ -57,6 +57,7 @@ void   A_Insert   ( alarm_typ* aa );
 void   A_Remove   ( alarm_typ* aa );
 os9err A_Make     ( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTicks, Boolean cyclic );
 void   A_Kill     ( ushort pid );
+uint32_t A_Interval ( uint32_t aTime ); /* ticks, or 256ths of a second with bit 31 */
 
 os9err Alarm( ushort pid, uint32_t *aId, short aFunc, ushort aCode, uint32_t aTime, uint32_t aDate );
 

@@ -856,7 +856,7 @@ typedef struct {
             uint32_t  deptr;        // dir entry ptr
             ushort    sameFile;     // ring of the paths open on this same file
             ushort    waitPid;      // process asleep on this path, 0 if none
-            ushort    lockTicks;    // SS_Ticks: 0 = wait forever, else give up after n
+            uint32_t  lockTicks;    // SS_Ticks: 0 = wait forever, else give up after n ticks
             ushort    sas;          // PD_SAS: this path's segment allocation
                                     // size, copied from the device descriptor
                                     // when the path is opened and changeable

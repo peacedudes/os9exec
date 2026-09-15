@@ -96,7 +96,11 @@ static os9err OS9_I_OpenCreate( regs_type *rp, ushort cpid, Boolean cre )
     
     if (xmode & 0x20) size= rp->d[2]; /* initial file size, if size bit is set */
 
-    procs[cpid].fileAtt     = loword(rp->d[1]);
+    /* "You cannot use I$Create to make directory files (see I$MakDir)"
+       (I$Create, page 2-5), and the attribute table stops at bit 6. Bit 7 went
+       straight into the new FD, and an RBF create made an empty "directory"
+       with no . or .. entries. */
+    procs[cpid].fileAtt     = cre ? (loword(rp->d[1]) & 0x7F) : loword(rp->d[1]);
     procs[cpid].cre_initsize= size;
 
     type= IO_Type( cpid,os9_path, mode );

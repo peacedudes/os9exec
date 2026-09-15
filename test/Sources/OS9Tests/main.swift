@@ -4963,6 +4963,148 @@ do {
     }
 }
 
+// ── RBF: create's dir bit, the S attribute, SS_Ticks, SS_FD writes, SS_Attr ────
+// Found by the 2026-09-15 argument audit, each probed live on an RBF image:
+//  - I$Create stored attribute bit 7 and made an empty "directory" (p.2-5: "You
+//    cannot use I$Create to make directory files");
+//  - the file's own single-user attribute was ignored, only the open's mode bit
+//    counted (p.7-9: "only one process may open the file at a time");
+//  - SS_Ticks kept the low word of d2 as raw ticks and ignored the 256ths bit
+//    (p.2-28), so $00010001 gave up after one tick;
+//  - SS_FD SetStt wrote all 16 bytes through any path (p.2-24: "The path must be
+//    open for write ... You can only change FD_OWN, FD_DAT, and FD_Creat");
+//  - SS_Attr set the dir bit on a plain file (p.2-22: "It is not permitted").
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$Sleep  equ $0A", "I$Create equ $83", "I$Open   equ $84", "I$Read   equ $89",
+        "I$GetStt equ $8D", "I$SetStt equ $8E", "I$Close  equ $8F", "I$WritLn equ $8C",
+        "BUF equ -32700", "BUF2 equ -32600"
+    ]
+    func say(_ label: String) -> [String] {
+        ["  lea \(label)(pc),a0", "  moveq #\(label)l,d1", "  moveq #1,d0", "  OS9 I$WritLn"]
+    }
+    func message(_ label: String, _ text: String) -> [String] {
+        ["\(label): dc.b \"\(text)\",$0D", "\(label)l equ *-\(label)"]
+    }
+    func program(_ name: String, _ body: [String], _ data: [String]) -> [String] {
+        header + ["  psect \(name),(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "start:"] + body +
+            ["  moveq #0,d1", "fail:", "  OS9 F$Exit"] + data + ["  ends", ""]
+    }
+    let createDir = program("mcrdir", [
+        "  lea fname(pc),a0", "  moveq #3,d0", "  move.w #$FF,d1", "  OS9 I$Create", "  bcs.w fail",
+        "  OS9 I$Close"], ["fname: dc.b \"/hq/c80\",0"])
+    let holder = program("mshold", [
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.w fail",
+        "  move.l #300,d0", "  OS9 F$Sleep"], ["fname: dc.b \"/hq/s6\",0"])
+    let second = program("msopen", [
+        "  moveq #60,d0", "  OS9 F$Sleep",
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open",
+        "  bcc.s allowed", "  cmpi.w #253,d1", "  bne.s allowed"] + say("mref") + ["  bra.s done", "allowed:"] +
+        say("macc") + ["done:"],
+        ["fname: dc.b \"/hq/s6\",0"] + message("mref", "SINGLE ATTR REFUSED") + message("macc", "SINGLE ATTR ALLOWED"))
+    let lockHolder = program("mtkhld", [
+        "  lea fname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w fail",
+        "  move.w #$11,d1", "  moveq #-1,d2", "  OS9 I$SetStt", "  bcs.w fail",
+        "  move.l #300,d0", "  OS9 F$Sleep"], ["fname: dc.b \"/hq/tk\",0"])
+    let ticksReader = program("mtkrd", [
+        "  moveq #60,d0", "  OS9 F$Sleep",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "  move.w #$10,d1", "  move.l #$00010001,d2", "  OS9 I$SetStt", "  bcs.w fail",
+        "  move.w d7,d0", "  moveq #1,d1", "  lea BUF(a6),a0", "  OS9 I$Read",
+        "  bcs.s rderr"] + say("mread") + ["  bra.s done", "rderr:"] + say("merr") + ["done:"],
+        ["fname: dc.b \"/hq/tk\",0"] + message("mread", "TICKS WAITED AND READ") + message("merr", "TICKS READ ERROR"))
+    let setFD = program("msfdw", [
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "  move.w d7,d0", "  move.w #$0F,d1", "  moveq #16,d2", "  lea BUF(a6),a0", "  OS9 I$GetStt", "  bcs.w fail",
+        "  move.l BUF+9(a6),d6",
+        "  move.b #5,BUF+8(a6)",
+        "  move.w d7,d0", "  move.w #$0F,d1", "  lea BUF(a6),a0", "  OS9 I$SetStt",
+        "  bcc.s rdacc", "  cmpi.w #203,d1", "  bne.s rdacc"] + say("mrdref") + ["  bra.s rddone", "rdacc:"] +
+        say("mrdacc") + ["rddone:",
+        "  move.w d7,d0", "  OS9 I$Close",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "  move.w d7,d0", "  move.w #$0F,d1", "  moveq #16,d2", "  lea BUF(a6),a0", "  OS9 I$GetStt", "  bcs.w fail",
+        "  move.b #5,BUF+8(a6)", "  move.l #$1000,BUF+9(a6)",
+        "  move.w d7,d0", "  move.w #$0F,d1", "  lea BUF(a6),a0", "  OS9 I$SetStt", "  bcs.w fail",
+        "  move.w d7,d0", "  move.w #$0F,d1", "  moveq #16,d2", "  lea BUF2(a6),a0", "  OS9 I$GetStt", "  bcs.w fail",
+        "  cmpi.b #1,BUF2+8(a6)", "  bne.s changed", "  cmp.l BUF2+9(a6),d6", "  bne.s changed"] +
+        say("mkept") + ["  bra.s done", "changed:"] + say("mchg") + ["done:"],
+        ["fname: dc.b \"/hq/fdw\",0"] + message("mrdref", "SETFD READ PATH REFUSED") +
+        message("mrdacc", "SETFD READ PATH ALLOWED") + message("mkept", "SETFD KEPT LNK SIZ") +
+        message("mchg", "SETFD CHANGED LNK SIZ"))
+    let dirBit = program("madirb", [
+        "  lea fname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w fail",
+        "  move.w #$1C,d1", "  move.l #$9B,d2", "  OS9 I$SetStt",
+        "  bcc.s acc", "  cmpi.w #214,d1", "  bne.s acc"] + say("mref") + ["  bra.s done", "acc:"] + say("macc") +
+        ["done:"],
+        ["fname: dc.b \"/hq/ad\",0"] + message("mref", "ATTR DIR BIT REFUSED") + message("macc",
+            "ATTR DIR BIT ALLOWED"))
+
+    let modules = ["mcrdir": createDir, "mshold": holder, "msopen": second, "mtkhld": lockHolder,
+                   "mtkrd": ticksReader, "msfdw": setFD, "madirb": dirBit]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+    struct RBFCase {
+        let name: String
+        let commands: [String]
+        let pass: (String) -> Bool
+    }
+    let cases = [
+        RBFCase(name: "rbf: I$Create with attribute bit 7 makes a file, not a directory",
+                commands: ["mount -k=1M hq", "/h5/mcrdir", "attr /hq/c80"]) { out in
+            out.split(whereSeparator: \.isNewline).contains {
+                $0.contains("/hq/c80") && !$0.hasPrefix("$") && !$0.trimmingCharacters(in: .whitespaces).hasPrefix("d")
+            }
+        },
+        RBFCase(name: "rbf: a file's own single-user attribute refuses a second process",
+                commands: ["mount -k=1M hq", "echo hi >/hq/s6", "attr /hq/s6 -s -pr", "/h5/mshold &",
+                           "/h5/msopen", "w"]) { $0.contains("SINGLE ATTR REFUSED") },
+        RBFCase(name: "rbf: SS_Ticks keeps all of d2, so $00010001 waits out a lock",
+                commands: ["mount -k=1M hq", "echo data >/hq/tk", "/h5/mtkhld &", "/h5/mtkrd", "w"]) {
+            $0.contains("TICKS WAITED AND READ")
+        },
+        RBFCase(name: "rbf: SetStt SS_FD needs a write path and changes only owner and dates",
+                commands: ["mount -k=1M hq", "echo hello >/hq/fdw", "/h5/msfdw"]) {
+            $0.contains("SETFD READ PATH REFUSED") && $0.contains("SETFD KEPT LNK SIZ")
+        },
+        RBFCase(name: "rbf: SetStt SS_Attr will not set the dir bit on a plain file",
+                commands: ["mount -k=1M hq", "echo hi >/hq/ad", "/h5/madirb"]) { $0.contains("ATTR DIR BIT REFUSED") }
+    ]
+    let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
+    if !chosen.isEmpty {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for module in modules.keys.sorted() {
+            build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+        }
+        _ = os9(build, timeout: 90)
+    }
+    for testCase in chosen {
+        removeScratchItem("hq")
+        let out = os9(testCase.commands, timeout: 40)
+        if testCase.pass(out) {
+            print("PASS: \(testCase.name)")
+            passed += 1
+        } else {
+            print("FAIL: \(testCase.name)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("/hq/c80") || $0.contains("SINGLE") || $0.contains("TICKS") || $0.contains("SETFD")
+                    || $0.contains("ATTR DIR") || $0.contains("Error")
+            }
+            print("      saw: \(lines.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    removeScratchItem("hq")
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm
