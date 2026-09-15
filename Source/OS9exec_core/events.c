@@ -259,7 +259,7 @@ os9err evLink( char* evName, uint32_t *evId )
 {
     event_typ* ev;
     int        k;
-    if (strlen(evName)>=OS9EVNAMELEN) return E_BNAM; /* name too long */
+    if (evName[0]==NUL || strlen(evName)>=OS9EVNAMELEN) return E_BNAM; /* no name, or too long */
 
     for (k=0;  k<MAXEVENTS; k++) {
             ev= &events[k];
@@ -298,7 +298,7 @@ os9err evCreat( char* evName, int evValue, short wInc, short sInc, uint32_t *evI
     event_typ* ev;
     int        k;
 
-    if (strlen(evName)>=OS9EVNAMELEN) return E_BNAM; /* name too long */
+    if (evName[0]==NUL || strlen(evName)>=OS9EVNAMELEN) return E_BNAM; /* no name, or too long */
         
     for (k=0; k<MAXEVENTS; k++) { /* already there ? */
             ev= &events[k];
@@ -330,7 +330,7 @@ os9err evDelet( char* evName )
     int        k;
     ushort     pid;
 
-    if (strlen(evName)>=OS9EVNAMELEN) return E_BNAM; /* name too long */
+    if (evName[0]==NUL || strlen(evName)>=OS9EVNAMELEN) return E_BNAM; /* no name, or too long */
 
     for (k=0;  k<MAXEVENTS; k++) {
             ev= &events[k];

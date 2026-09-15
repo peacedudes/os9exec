@@ -5422,6 +5422,88 @@ do {
     removeScratchItem(linkTarget)
 }
 
+// ── F$Event: an empty event name is E$BNam ──────────────────────────────────
+// "E$BNam  Name is syntactically incorrect or longer than 11 characters"
+// (Ev$Link, Ev$Creat, Ev$Delet). The manual gives event names no syntax of
+// their own, so only the length was checked: Ev$Creat of "" made an event
+// with no name, and Ev$Link of "" answered E$EvNF. Whatever the syntax is, an
+// empty name is not in it -- F$PrsNam calls a null name a bad name.
+do {
+    let evAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Event  equ  $53",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect evbnam,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  lea     empty(pc),a0",
+        "  moveq   #0,d0",
+        "  move.w  #2,d1",           // Ev_Creat
+        "  moveq   #0,d2",
+        "  moveq   #0,d3",
+        "  OS9     F$Event",
+        "  bcc     fail",
+        "  cmp.w   #235,d1",
+        "  bne     fail",
+        "  lea     empty(pc),a0",
+        "  move.w  #0,d1",           // Ev_Link
+        "  OS9     F$Event",
+        "  bcc     fail",
+        "  cmp.w   #235,d1",
+        "  bne     fail",
+        "  lea     okmsg(pc),a0",
+        "  moveq   #okmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra     done",
+        "fail:",
+        "  lea     failmsg(pc),a0",
+        "  moveq   #failmsgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "empty:    dc.b  0",
+        "okmsg:    dc.b  \"EVENT EMPTY NAME REFUSED\",$0D",
+        "okmsgl    equ   *-okmsg",
+        "failmsg:  dc.b  \"EVENT EMPTY NAME TAKEN\",$0D",
+        "failmsgl  equ   *-failmsg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    try? evAsm.write(toFile: scratchDisk + "/evbnam.a", atomically: true, encoding: .utf8)
+
+    let name = "f$event: Ev_Creat and Ev_Link of an empty name are E$BNam"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/evbnam.a -o=/h5/evbnam.r",
+            "l68 /h5/evbnam.r -o=/h5/evbnam",
+            "/h5/evbnam"
+        ], timeout: 20)
+        if out.contains("EVENT EMPTY NAME REFUSED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("EVENT EMPTY") || $0.contains("Error")
+            }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for item in ["evbnam.a", "evbnam.r", "evbnam"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm
