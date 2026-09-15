@@ -1006,7 +1006,6 @@ typedef struct {
     #if defined win_unix
       DIR*        dDsc;
       int         svD_n;
-      dirent_typ* svD_dEnt;
     #endif
         
     int       term_id;          /* terminal/port id number, console|pipe|printer used together */

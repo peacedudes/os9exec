@@ -1815,77 +1815,219 @@ void Flush_FDCache( const char* pathname )
   
   
 #ifdef win_unix
+/* ------------------------------------------------------------------------
+ * Directory slots: the entries of a host directory kept where RBF keeps them.
+ *
+ * An RBF directory is a file of 32-byte entries, and deleting a file only
+ * clears its entry: every other entry stays at its offset. Programs rely on
+ * that. deldir notes where it is, descends into a subdirectory, deletes it,
+ * re-opens the parent and seeks to the entry after the one it left; a program
+ * that reads a directory entry by entry and deletes as it goes does the same
+ * one offset at a time. A host listing closes up instead, so each of them
+ * skipped the entry that followed a deletion.
+ *
+ * So the entries of a host directory are given slots the first time one is
+ * read by position, and keep them. An entry gone from the host leaves an empty
+ * slot, read as a zeroed entry (which OS-9 tools pass over), and a new one
+ * takes the first empty slot or goes on the end -- both as RBF does. Slots
+ * last as long as the directory is remembered: DIRSLOTS_MAX directories, the
+ * least recently used forgotten first, after which its next listing starts
+ * again from the host's own order.
+ * ------------------------------------------------------------------------ */
+#define DIRSLOTS_MAX 64
+
+typedef struct {
+    char       dir[OS9PATHLEN]; /* host path, no trailing delimiter; "" if unused */
+    char**     name;            /* host name by slot, NULL for an empty slot */
+    int        count;           /* slots, the empty ones included */
+    int        cap;             /* slots allocated */
+    ulong      used;            /* when last used, to forget the oldest */
+    dirent_typ entry;           /* what DirNthEntry hands out */
+} dirslots_typ;
+
+static dirslots_typ dirSlots[ DIRSLOTS_MAX ];
+static ulong        dirSlotsClock;
+
+static Boolean Listed( const char* name )
+/* the host entries a listing shows: not "." or "..", nor netatalk's and Finder's */
+{   return strcmp( name,"." )!=0 && strcmp( name,".." )!=0 &&
+          ustrcmp( name,AppDo )!=0 && ustrcmp( name,DsSto )!=0;
+} /* Listed */
+
+static char* SlotName( const char* name )
+{   char* s= malloc( strlen( name )+1 );
+    if (s!=NULL) strcpy( s,name );
+    return s;
+} /* SlotName */
+
+static dirslots_typ* SlotsFind( const char* dir )
+{
+    char   key[OS9PATHLEN];
+    size_t len;
+    int    k;
+
+    strncpy( key, dir, OS9PATHLEN-1 ); key[ OS9PATHLEN-1 ]= NUL;
+    len= strlen( key );
+    while (len>1 && (key[ len-1 ]==PATHDELIM || key[ len-1 ]=='/')) key[ --len ]= NUL;
+
+    for (k=0; k<DIRSLOTS_MAX; k++) {
+        if (dirSlots[ k ].dir[0]!=NUL && strcmp( dirSlots[ k ].dir,key )==0) return &dirSlots[ k ];
+    }
+    return NULL;
+} /* SlotsFind */
+
+static void SlotsFree( dirslots_typ* t )
+{
+    int k;
+
+    for (k=0; k<t->count; k++) free( t->name[ k ] );
+    free( t->name );
+    t->name= NULL; t->count= 0; t->cap= 0; t->dir[0]= NUL;
+} /* SlotsFree */
+
+static Boolean SlotsGrow( dirslots_typ* t, int count )
+/* room for <count> slots */
+{
+    int    cap= t->cap>0 ? t->cap : 32;
+    char** p;
+
+    while (cap<count) cap*= 2;
+    if    (cap==t->cap) return true;
+    p= realloc( t->name, (size_t)cap*sizeof(char*) ); if (p==NULL) return false;
+    t->name= p; t->cap= cap;
+    return true;
+} /* SlotsGrow */
+
+static os9err SlotsSync( dirslots_typ* t, DIR* d )
+/* bring the slots up to date with the host: an entry that has gone leaves its
+   slot empty, a new one fills the first empty slot or goes on the end */
+{
+    Boolean*    seen;
+    char**      fresh= NULL;
+    int         freshN= 0, freshCap= 0;
+    int         i, k= 0, next= 0;
+    dirent_typ* dEnt;
+    os9err      err= 0;
+
+    seen= calloc( (size_t)t->count+1, sizeof(Boolean) ); if (seen==NULL) return E_NORAM;
+
+    if (d!=NULL) rewinddir( d );
+    while (!err && (dEnt= ReadTDir( d ))!=NULL) {
+        if (!Listed( dEnt->d_name )) continue;
+
+        for (i=0; i<t->count; i++) { /* a host lists in a stable order: usually the next slot */
+            k= (next+i) % t->count;
+            if (t->name[ k ]!=NULL && !seen[ k ] && strcmp( t->name[ k ],dEnt->d_name )==0) break;
+        }
+        if (i<t->count) { seen[ k ]= true; next= k+1; continue; }
+
+        if (freshN==freshCap) {
+            char** p= realloc( fresh, (size_t)(freshCap= freshCap>0 ? 2*freshCap : 16)*sizeof(char*) );
+            if (p==NULL) { err= E_NORAM; break; }
+            fresh= p;
+        }
+        if ((fresh[ freshN ]= SlotName( dEnt->d_name ))==NULL) err= E_NORAM;
+        else freshN++;
+    }
+
+    for (k=0; k<t->count; k++) {
+        if (t->name[ k ]!=NULL && !seen[ k ] && !err) { free( t->name[ k ] ); t->name[ k ]= NULL; }
+    }
+
+    for (i=0, k=0; i<freshN; i++) {
+        while (k<t->count && t->name[ k ]!=NULL) k++;
+        if (k==t->count) {
+            if (err || !SlotsGrow( t, t->count+1 )) { err= E_NORAM; break; }
+            t->count++;
+        }
+        t->name[ k ]= fresh[ i ]; fresh[ i ]= NULL;
+    }
+
+    for (i=0; i<freshN; i++) free( fresh[ i ] );
+    free( fresh );
+    free( seen );
+    return err;
+} /* SlotsSync */
+
+static dirslots_typ* SlotsFor( const char* dir )
+/* the slots of <dir>, a new and empty set if it is not remembered */
+{
+    dirslots_typ* t= SlotsFind( dir );
+    int           k;
+
+    if (t==NULL) {
+        t= &dirSlots[0];
+        for (k=0; k<DIRSLOTS_MAX; k++) {
+            if (dirSlots[ k ].dir[0]==NUL)          { t= &dirSlots[ k ]; break; }
+            if (dirSlots[ k ].used<t->used)            t= &dirSlots[ k ];
+        }
+        SlotsFree( t );
+        strncpy( t->dir, dir, OS9PATHLEN-1 ); t->dir[ OS9PATHLEN-1 ]= NUL;
+        k= (int)strlen( t->dir );
+        while (k>1 && (t->dir[ k-1 ]==PATHDELIM || t->dir[ k-1 ]=='/')) t->dir[ --k ]= NUL;
+    }
+    t->used= ++dirSlotsClock;
+    return t;
+} /* SlotsFor */
+
+void DirSlotsPlace( const char* dir, int slot, const char* name )
+/* <name> now answers at <slot> of <dir> -- renamed in place, or linked in by
+   an entry written there -- and at no other slot */
+{
+    dirslots_typ* t= SlotsFind( dir );
+    char*         s;
+    int           k;
+
+    if (t==NULL || slot<0) return; /* not remembered: its next listing starts afresh */
+    for (k=0; k<t->count; k++) {
+        if (t->name[ k ]!=NULL && strcmp( t->name[ k ],name )==0) { free( t->name[ k ] ); t->name[ k ]= NULL; }
+    }
+
+    if (slot>t->count) slot= t->count; /* no run of empty slots out to a far offset */
+    s= SlotName( name );
+    if (s==NULL || (slot==t->count && !SlotsGrow( t, t->count+1 ))) { free( s ); SlotsFree( t ); return; }
+    if (slot==t->count) t->name[ t->count++ ]= NULL;
+    free( t->name[ slot ] );
+    t->name[ slot ]= s;
+} /* DirSlotsPlace */
+
+void DirSlotsForget( const char* dir )
+/* <dir> has gone, or is somewhere else now */
+{   dirslots_typ* t= SlotsFind( dir );
+    if (t!=NULL) SlotsFree( t );
+} /* DirSlotsForget */
+
 os9err DirNthEntry( syspath_typ* spP, int n, dirent_typ** dEnt )
-/* prepare directory to read the <n>th entry */
-{   
-//int m= n;
-  int i= 0;
-  
-  /*  
-  debugprintf(dbgFiles,dbgDetail,("# DirEntry: ---\n" )); 
-  seekD0( spP );
-  while (m>0) {
-        *dEnt= ReadTDir( spP->dDsc ); 
-    if (*dEnt==NULL) break;
-    debugprintf(dbgFiles,dbgDetail,("# DirEntry: '%s'\n", (*dEnt)->d_name )); 
-    m--;
-  } // while
-  debugprintf(dbgFiles,dbgDetail,("# DirEntry: ---\n" )); 
-  */
-  
-  do {
-    if (n>2) {
-             i=            spP->svD_n;
-      if (n==i  ) { *dEnt= spP->svD_dEnt; break; } // still the same
-      if (n!=i+1) i= 0;                            // not the next one
-    } // if
-  
-  //if (i==0) { seekD0( spP ); i= 1; }  // start at the beginning
+/* the <n>th entry of a host directory: ".." and "." first, then its slots.
+   An empty slot is an entry with an empty name. */
+{
+    dirslots_typ* t;
+    os9err        err;
+    const char*   dot;
 
-    if (n<=2 || i==0) { 
-      seekD0( spP );
-      i= 1; // ignore ".." and "." entries for n>=2
-    } // if
-    
-    if (n==0) {     // search for ".."
-      do     *dEnt= ReadTDir( spP->dDsc ); 
-      while (*dEnt!=NULL && strcmp( (*dEnt)->d_name,".." )!=0);
+    *dEnt= NULL;
+    if (n<=1) {
+        dot= n==0 ? ".." : ".";
+        seekD0( spP );
+        do    *dEnt= ReadTDir( spP->dDsc );
+        while (*dEnt!=NULL && strcmp( (*dEnt)->d_name,dot )!=0);
+        return *dEnt==NULL ? E_EOF : 0;
+    }
 
-      break;
-    } // if
+    t= SlotsFor( spP->fullName );
+    if (n==2 || spP->svD_n==0) { /* reading starts over: see what has changed */
+        err= SlotsSync( t, spP->dDsc ); if (err) { SlotsFree( t ); return err; }
+    }
+    spP->svD_n= n;
+    if (n-2>=t->count) return E_EOF;
 
-    if (n==1) {     // search for "."
-      do     *dEnt= ReadTDir( spP->dDsc ); 
-      while (*dEnt!=NULL && strcmp( (*dEnt)->d_name,"."  )!=0);
-
-      break;
-    } // if
-    
-  //#ifdef windows32 // missing top dir entry
-    /*
-    if (n==2 || i==0) { 
-      seekD0( spP );
-      i= 1; // ignore ".." and "." entries
-    } // if
-    */
-  //#endif
-    
-    // starting after ".." and "."
-    do {  *dEnt= ReadTDir( spP->dDsc );
-      if (*dEnt==NULL) break;
-      
-      if (strcmp( (*dEnt)->d_name,".."  )!=0 &&
-          strcmp( (*dEnt)->d_name,"."   )!=0 &&
-         ustrcmp( (*dEnt)->d_name,AppDo )!=0 &&
-         ustrcmp( (*dEnt)->d_name,DsSto )!=0) i++;
-    } while ( i<n );
-  } while (false);
-  
-  spP->svD_n   =     n;
-  spP->svD_dEnt= *dEnt;
-  
-  if (*dEnt==NULL) return E_EOF;
-  else             return 0;
+    t->entry.d_name[0]= NUL;
+    if (t->name[ n-2 ]!=NULL) {
+        strncpy( t->entry.d_name, t->name[ n-2 ], sizeof(t->entry.d_name)-1 );
+        t->entry.d_name[ sizeof(t->entry.d_name)-1 ]= NUL;
+    }
+    *dEnt= &t->entry;
+    return 0;
 } /* DirNthEntry */
 
 os9err RemoveAppledouble( syspath_typ* spP )
@@ -1937,30 +2079,26 @@ void seekD0( syspath_typ* spP )
 } /* seekD0 */
 
 uint32_t DirSize( syspath_typ* spP )
-/* get the virtual OS-9 dir size in bytes */
+/* get the virtual OS-9 dir size in bytes: ".." and ".", then every slot of a
+   remembered directory (the empty ones too, as an RBF directory's size counts
+   its cleared entries), else every entry a listing would show */
 {
-    int         cnt= 0;
-    dirent_typ* dEnt;
+    dirslots_typ* t= SlotsFind( spP->fullName );
+    int           cnt= 0;
+    dirent_typ*   dEnt;
 
-    seekD0( spP );       /* start at the beginning */
-    while (true) {       /* search for the nth entry */
-            dEnt= ReadTDir( spP->dDsc );
-        if (dEnt==NULL) break;
-        if (ustrcmp( dEnt->d_name,AppDo )!=0) cnt++; /* ignore ".AppleDouble" */
-    } /* loop */
+    if (t!=NULL && SlotsSync( t, spP->dDsc )==0) cnt= t->count;
+    else {
+        seekD0( spP );
+        while ((dEnt= ReadTDir( spP->dDsc ))!=NULL) {
+            if (Listed( dEnt->d_name )) cnt++;
+        }
+    }
 
-    /* This walk left the host stream at EOF on every platform (rewinddir()+
-     * readdir()-to-NULL, no telldir()/seekdir() restore -- mingw's dirent
-     * doesn't support those reliably anyway). DirNthEntry's sequential-read
-     * cache (svD_n/svD_dEnt) doesn't know that, so invalidate it the same
-     * way pDopen/pDseek already do: the next DirNthEntry call sees i==0 and
-     * reseeks from scratch instead of trusting a stale "just keep reading"
-     * position. */
+    /* Either walk left the host stream at EOF, which the next DirNthEntry
+     * must not take as a place to carry on from. */
     spP->svD_n= 0;
-
-                                      /* avoid also 1 entry !!! */
-    if    (cnt<2) cnt= 2; /* at least two entries are there !!! */
-    return cnt*DIRENTRYSZ;
+    return (uint32_t)(cnt+2)*DIRENTRYSZ;
 } /* DirSize */
 #endif
 

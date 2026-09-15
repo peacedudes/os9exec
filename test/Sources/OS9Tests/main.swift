@@ -5343,13 +5343,24 @@ do {
 // answer instead -- an empty directory vanished whatever the mode, a full one
 // gave E$DNE -- so `deldir -q` of any tree with a non-empty subdirectory failed
 // on a host directory and deleted nothing.
+//
+// And after descending, deldir re-opens the parent and seeks past the slot it
+// left. RBF keeps a deleted entry's slot, so the entries after it stay where
+// they were; a host listing closed up, the seek landed one entry too far, and
+// every entry after a subdirectory was left behind (then E$DNE). The tree
+// mixes files and subdirectories so that some file follows a subdirectory in
+// whatever order the host lists them.
 do {
     let tree = "t_deltree"
     removeScratchItem(tree)
-    run("fs: deldir -q removes a tree with a non-empty subdirectory on a host directory",
-        expectation: "the tree, its subdirectory and the file in it are all gone",
-        commands: ["makdir \(scratch)/\(tree)", "makdir \(scratch)/\(tree)/inner",
-                   "echo x >\(scratch)/\(tree)/inner/g", "deldir -q \(scratch)/\(tree)"]) { _ in
+    let treeCommands = ["makdir \(scratch)/\(tree)"]
+        + ["inner", "second"].flatMap { dir in
+            ["makdir \(scratch)/\(tree)/\(dir)", "echo x >\(scratch)/\(tree)/\(dir)/g"]
+        }
+        + ["f1", "f2", "f3", "f4"].map { "echo x >\(scratch)/\(tree)/\($0)" }
+    run("fs: deldir -q removes a tree of files and non-empty subdirectories on a host directory",
+        expectation: "the tree, its subdirectories and every file are all gone",
+        commands: treeCommands + ["deldir -q \(scratch)/\(tree)"]) { _ in
         !FileManager.default.fileExists(atPath: scratchDisk + "/" + tree)
     }
     removeScratchItem(tree)

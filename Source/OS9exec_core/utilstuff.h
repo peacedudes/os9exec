@@ -202,6 +202,8 @@ void    Flush_FDCache( const char* pathname );
 
 #ifdef win_unix
   os9err DirNthEntry       ( syspath_typ*, int n, dirent_typ** dEnt );
+  void   DirSlotsPlace     ( const char* dir, int slot, const char* name );
+  void   DirSlotsForget    ( const char* dir );
   os9err RemoveAppledouble ( syspath_typ* );
   void   seekD0            ( syspath_typ* );
   uint32_t DirSize         ( syspath_typ* );

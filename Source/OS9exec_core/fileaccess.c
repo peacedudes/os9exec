@@ -2959,7 +2959,7 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
         if (topFlag) strcpy( dEnt->d_name,".." );
       } // if
             
-      if (dEnt!=NULL) {
+      if (dEnt!=NULL && dEnt->d_name[0]!=NUL) { /* an empty slot stays a zeroed entry */
         GetEntry( dEnt, os9dirent.name, true );
         FD_ID          ( spP->fullName, dEnt, &fdpos, &mP );
 
@@ -2981,9 +2981,9 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
 
         if (topFlag) { seekD0( spP ); topFlag= false; }
       }
-      else err= E_EOF;
+      else if (dEnt==NULL) err= E_EOF;
           
-      if (!err) {
+      if (!err && os9dirent.name[0]!=NUL) {
         len= strlen( os9dirent.name );
         os9dirent.name[ len-1 ] |= 0x80; /* set old-style terminator */
         os9dirent.fdsect= os9_long( fdpos );
@@ -3186,6 +3186,7 @@ static os9err HostRename( ushort pid, const char* srcPath, const char* dstPath,
     }
 
     debugprintf(dbgFiles,dbgNorm,("# pDwrite: renamed '%s' to '%s'\n", srcPath,dstPath));
+    DirSlotsForget( srcPath );        /* a directory's slots were kept under its old path */
     HostRepath( srcPath,dstPath );    /* open paths and current directories follow it */
     return 0;
 } /* HostRename */
@@ -3226,7 +3227,7 @@ static Boolean MovedAwayTake( ushort pid, const char* dir )
     return hit;
 } /* MovedAwayTake */
 
-static os9err AppendAsMove( ushort pid, syspath_typ* spP, const byte* b )
+static os9err AppendAsMove( ushort pid, syspath_typ* spP, const byte* b, int index )
 /* A whole entry written past the last one: how move links a file into this
    directory. The entry's FD sector names the file (FD_Name), and on a host
    directory the link and the unlink that follows become one host rename. The
@@ -3272,6 +3273,7 @@ static os9err AppendAsMove( ushort pid, syspath_typ* spP, const byte* b )
     if (strcmp( srcPath,dstPath )==0)             return os9error(E_CEF); /* its own name */
     err= HostRename( pid, srcPath, dstPath, srcHost, dstHost, spP->fullName ); if (err) return err;
 
+    DirSlotsPlace( spP->fullName, index-2, dstHost ); /* at the slot its entry was written to */
     MovedAwayNote( pid, srcPath );
     seekD0( spP ); spP->svD_n= 0;
     return 0;
@@ -3339,8 +3341,8 @@ os9err pDwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
     if (index<2)                             return os9error(E_BMODE); /* ".." and "." */
 
     err= DirNthEntry( spP,index, &dEnt );
-    if (err || dEnt==NULL) {                 /* past the last entry: move linking a file in */
-        err= AppendAsMove( pid, spP, b ); if (err) return err;
+    if (err || dEnt==NULL || dEnt->d_name[0]==NUL) { /* past the last entry, or an empty slot: */
+        err= AppendAsMove( pid, spP, b, index ); if (err) return err; /* move linking a file in */
         *pos+= DIRENTRYSZ;
         return 0;
     }
@@ -3370,6 +3372,7 @@ os9err pDwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
     err= JoinPath ( dstPath, spP->fullName, dstHost );        if (err) return err;
     err= HostRename( pid, srcPath, dstPath, srcHost, dstHost, spP->fullName ); if (err) return err;
 
+    DirSlotsPlace( spP->fullName, index-2, dstHost ); /* renamed where it stands */
     seekD0( spP ); spP->svD_n= 0;     /* the host may list the directory in a new order */
     *pos+= DIRENTRYSZ;
     return 0;
@@ -3416,9 +3419,6 @@ os9err pDseek( ushort pid, syspath_typ* spP, uint32_t *posP )
     #ifdef MACOS9
       ulong       size;
       os9err      err;
-    #elif defined win_unix
-      int         cnt, n;
-      dirent_typ* dEnt;
     #else
       #pragma unused(pid)
     #endif
@@ -3430,24 +3430,9 @@ os9err pDseek( ushort pid, syspath_typ* spP, uint32_t *posP )
       if (*posP>size) return os9error(E_SEEK);
 
     #elif defined win_unix
-      seekD0( spP ); /* start at the beginning */
-
-      n= 0;    cnt= *posP/DIRENTRYSZ;
-      while (n<cnt) { /* search for the nth entry */
-        dEnt= ReadTDir( spP->dDsc );
-        spP->svD_n= 0; /* catch again */
-        
-        /* special handling for the root directory */
-        #ifdef windows32
-          if (n==0 && (dEnt==NULL || ustrcmp( dEnt->d_name,"." )!=0)) {
-              seekD0( spP ); break;
-          }
-        #endif
-         
-        if (dEnt==NULL) return os9error(E_SEEK);
-        if (ustrcmp( dEnt->d_name,AppDo )!=0 ) cnt--; /* ignore ".AppleDouble" */
-        n++;
-      } /* while */
+      /* by slot, as DirNthEntry reads it, so a seek past a deletion lands where
+         it would on RBF (see the directory slots in utilstuff.c) */
+      if (*posP/DIRENTRYSZ > DirSize( spP )/DIRENTRYSZ) return os9error(E_SEEK);
 
     #else
       return E_UNKSVC;
@@ -3575,6 +3560,8 @@ os9err pDmakdir( ushort pid, _spP_, ushort *modeP, const char* pathname )
     if (PathFound( adapted ) || 
         FileFound( adapted )) return E_CEF;
           
+    DirSlotsForget( adapted ); /* none left from a directory that had this name */
+
     #ifdef MINGW
       if (mkdir( adapted )==0) return 0; /* no POSIX mode bits on Windows */
     #else
@@ -3815,6 +3802,10 @@ os9err pDsetatt( ushort pid, syspath_typ* spP, uint32_t *attr )
     debugprintf( dbgFiles,dbgNorm,("# pDsetatt: '%s' remove err=%d\n", pp,err )); 
     if (err) return err;
       
+    #ifdef win_unix
+      DirSlotsForget( pp ); /* the directory has gone */
+    #endif
+
     spP->type= fFile; /* change the file type now */
     
     #ifdef MACOS9
