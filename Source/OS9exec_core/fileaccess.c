@@ -1706,7 +1706,21 @@ os9err pFdelete( ushort pid, _spP_, ushort *modeP, const char* pathname )
     #elif defined win_unix
       err     = AdjustPath( pathname,adapted, false ); if (err) return err;
       pathname= adapted;
-      
+
+      /* A directory is deleted only in directory mode; otherwise E$FNA, as
+       * RBF answers (its open of a directory without the directory bit is
+       * refused) and as the MACFILES branch above does. remove() alone took
+       * an empty directory in any mode and gave E$DNE for a full one, and
+       * deldir, which reads E$FNA as "descend and empty it first", then
+       * failed on every tree with a non-empty subdirectory. (A directory-mode
+       * I$Delete never gets here: it is dispatched to the directory manager,
+       * and deldir then clears the directory bit through SS_Attr.) */
+      {
+        struct stat info;
+        if (stat( pathname,&info )==0 && IsTrDir( info.st_mode ) && !IsDir( *modeP ))
+            return E_FNA;
+      }
+
       #ifdef windows32
 //      if (!DeleteFile( adapted )) oserr= GetLastError();
         /* snprintf, not sprintf: cmd and the path are BOTH OS9PATHLEN, so any

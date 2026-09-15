@@ -5336,6 +5336,34 @@ do {
     }
 }
 
+// ── I$Delete of a directory on a host directory device ──────────────────────
+// Deleting a directory without the directory bit in the mode is E$FNA on RBF,
+// and deldir relies on it: it tries I$Delete on every entry, and E$FNA is its
+// cue to descend and empty that directory first. The host device let remove()
+// answer instead -- an empty directory vanished whatever the mode, a full one
+// gave E$DNE -- so `deldir -q` of any tree with a non-empty subdirectory failed
+// on a host directory and deleted nothing.
+do {
+    let tree = "t_deltree"
+    removeScratchItem(tree)
+    run("fs: deldir -q removes a tree with a non-empty subdirectory on a host directory",
+        expectation: "the tree, its subdirectory and the file in it are all gone",
+        commands: ["makdir \(scratch)/\(tree)", "makdir \(scratch)/\(tree)/inner",
+                   "echo x >\(scratch)/\(tree)/inner/g", "deldir -q \(scratch)/\(tree)"]) { _ in
+        !FileManager.default.fileExists(atPath: scratchDisk + "/" + tree)
+    }
+    removeScratchItem(tree)
+
+    let plainDir = "t_delplaindir"
+    removeScratchItem(plainDir)
+    run("fs: del of an empty directory on a host directory is refused with E$FNA, as on RBF",
+        expectation: "Error #000:214, and the directory is still there",
+        commands: ["makdir \(scratch)/\(plainDir)", "del \(scratch)/\(plainDir)"]) { out in
+        out.contains("#000:214") && FileManager.default.fileExists(atPath: scratchDisk + "/" + plainDir)
+    }
+    removeScratchItem(plainDir)
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm
