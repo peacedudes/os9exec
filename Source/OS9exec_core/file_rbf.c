@@ -772,6 +772,32 @@ static Boolean RingSector( syspath_typ* spP, ulong sect, byte* b, ulong len )
     return false;
 } /* RingSector */
 
+static os9err RingFlushRange( syspath_typ* spP, ulong sect, ulong n )
+/* write out any other path's unflushed copy of sectors <sect>..<sect+n-1>,
+ * before a multi-sector read goes straight to the device for them -- RingSector
+ * only serves one sector at a time, so without this the read would return the
+ * bytes the device held before those writes. The copies stay valid: they now
+ * match the device. */
+{
+    rbfdev_typ*  dev= &rbfdev[spP->u.rbf.devnr];
+    syspath_typ* spK;
+    ushort       k= spP->u.rbf.sameFile;
+    os9err       err;
+
+    while (k!=spP->nr && k!=0) {
+             spK= &syspaths[k];
+      if (   spK->rw_sct!=NULL && spK->mustW!=0 &&
+             spK->mustW>=sect  && spK->mustW<sect+n) {
+        err= WriteSector( dev, spK->mustW,1, spK->rw_sct ); if (err) return err;
+        spK->mustW= 0;
+      } // if
+
+      k= spK->u.rbf.sameFile;
+    } // while
+
+    return 0;
+} /* RingFlushRange */
+
 static Boolean ShareConflict( syspath_typ* spP, Boolean wantSingle )
 /* Would this open break the single-user rule? True if another PROCESS already
  * has this file open and either side wants it to itself.
@@ -1030,17 +1056,31 @@ static void WakeOnFile( syspath_typ* spP )
 } /* WakeOnFile */
 
 static void RingInvalidate( syspath_typ* spP, ulong sect )
-/* drop this sector from the other paths' buffers. Without this they keep
- * serving themselves the copy they already hold -- DoAccess only re-reads a
- * sector when <rw_nr> differs -- and would never notice it has been rewritten. */
+/* drop this sector from the other paths' buffers -- unflushed copies included.
+ *
+ * A clean copy has to go or its path keeps serving itself the bytes it already
+ * holds: DoAccess only re-reads a sector when <rw_nr> differs.
+ *
+ * An unflushed copy has to go too, and keeping it -- "its own unflushed work" --
+ * lost writes. Only one path may hold a sector dirty. A path dirties a sector
+ * only after loading it, from the device or, through RingSector, from the one
+ * path holding it dirty; any copy loaded earlier was dropped here when that
+ * other path dirtied it. So the path calling this already carries every
+ * unflushed change, and an older copy left dirty would be written back over it
+ * at the next flush. That is what happened: move links the new name through
+ * one update path on the directory and clears the old one through a second,
+ * both paths flushed the same sector at close, and the stale one landed last --
+ * the old name survived beside the new, two names on one FD, so deleting
+ * either would free sectors the other still used. Measured on a plain file
+ * too: two update paths writing different bytes of one sector kept only one. */
 {
     syspath_typ* spK;
     ushort       k= spP->u.rbf.sameFile;
 
     while (k!=spP->nr && k!=0) {
              spK= &syspaths[k];
-      if (   spK->rw_nr==sect && spK->mustW!=sect) /* keep its own unflushed work */
-             spK->rw_nr= 0;
+      if (   spK->rw_nr==sect) spK->rw_nr= 0;
+      if (   spK->mustW==sect) spK->mustW= 0; /* superseded by this path's copy */
 
       k= spK->u.rbf.sameFile;
     } // while
@@ -3457,6 +3497,7 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
 
           if (!mlt || !wMode) {
             if (n!=1 || !RingSector( spP, sect, b, dev->sctSize )) {
+              if (n!=1) { err= RingFlushRange( spP, sect,n ); if (err) break; }
               err= ReadSector( dev, sect,n, b ); if (err) break;
             } // if
         //  if (dev->multiSct) upe_printf( "Rsct slm n n0 offs d len %7d %7d %7d %7d %7d %7d %7d\n", sect,slim,n,n0,offs,d,*lenP );
@@ -3522,6 +3563,8 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
             *mw= sect;
             if (mlt) {
               err= WriteSector( dev, sect,n, b ); if (err) break;
+              { ulong w; /* whole sectors replaced: nobody's copy of them stands */
+                for (w=0; w<n; w++) RingInvalidate( spP, sect+w ); }
               spP->rw_nr= sect + n0;
               *mw= 0; /* already written */
             } // if

@@ -477,3 +477,36 @@ What an out-of-range read returns depends on the host's memory layout, so the
 "before" answer can differ from machine to machine; E$IPrcID is the only answer
 that holds on all of them, which is why this is a conformance test and not only
 a local one.
+
+## os9exec, 2026-09-14: t61, two update paths on one sector
+
+Every RBF path keeps its own copy of the sector it is working in, and paths
+open on the same file share them through a ring. When one path dirtied a
+sector, the ring dropped the other paths' clean copies but kept any dirty
+one, "its own unflushed work". Both copies were then written back at close,
+and the one written last won. So when path A wrote a byte, path B picked up
+A's copy, wrote its own byte elsewhere in the same sector, and closed first,
+A's older copy landed on top and B's byte was gone.
+
+osk-freeware found it through move, which gives a file its new name through
+one update path on the directory and clears the old name through a second.
+On every image the old name survived beside the new one, on the same FD
+sector, so deleting either would have freed sectors the other still used.
+
+Before the fix, on an RBF image (the host-native directory has no sector
+copies and always passed):
+
+```
+RESULT t61 FAIL  obs=000008 exp=000000  two update paths keep both writes, whichever closes first
+```
+
+After it, on both:
+
+```
+RESULT t61 PASS  obs=000000 exp=000000  two update paths keep both writes, whichever closes first
+```
+
+A path dirties a sector only after loading the newest copy, from the device
+or from the one path holding it dirty. Dropping every other copy, dirty ones
+included, at that moment leaves exactly one unflushed copy, and it already
+carries everyone's changes.
