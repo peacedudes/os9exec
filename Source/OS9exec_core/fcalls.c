@@ -419,6 +419,17 @@ os9err OS9_F_UnLoad( regs_type *rp, _pid_ )
     int   mid= find_mod_id( mname );
     if   (mid>=MAXMODULES) return os9error(E_MNF); /* module not found */
 
+    /* "INPUT: d0.w = Module type/language" (F$UnLoad, page 1-70), matched as
+       F$Link matches it: type and language independently, 0 meaning any. It
+       was ignored, so a request for one kind of module unloaded another of
+       the same name. */
+    { ushort tylan= loword(rp->d[0]);
+      ushort act  = os9_word(get_module_ptr(mid)->_mh._mtylan);
+      ushort rTyp = tylan>>BpB, rLan= tylan & 0xFF;
+      if ((rTyp!=MT_ANY && rTyp!=act>>BpB) ||
+          (rLan!=ML_ANY && rLan!=(act & 0xFF))) return os9error(E_MNF);
+    }
+
     rp->a[0]= TO68K(p);
     unlink_module( mid );
     debugprintf(dbgModules,dbgNorm,("# F$UnLoad: Unloaded mid=%d, '%s', link now=%d\n",

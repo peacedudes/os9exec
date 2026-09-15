@@ -6089,6 +6089,60 @@ do {
     }
 }
 
+// ── F$UnLoad matches the module type/language it is given ─────────────────────
+// F$UnLoad (p.1-70) takes "d0.w = Module type/language" with the name. os9exec
+// ignored it, so asking to unload a data module named binex unloaded the
+// program binex. Matched now as F$Link matches: type and language each, 0 being
+// any. The program asks for a data module ($0400) first -- refused, 221 -- and
+// then for a program of any language ($0100), which does unload it.
+do {
+    let unloadAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$UnLoad equ $1D", "I$WritLn equ $8C",
+        "  psect munload,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "start:",
+        "  lea mname(pc),a0", "  move.w #$0400,d0", "  OS9 F$UnLoad", "  bcc.s bad",
+        "  cmpi.w #221,d1", "  bne.s bad",
+        "  lea mref(pc),a0", "  moveq #mrefl,d1", "  moveq #1,d0", "  OS9 I$WritLn",
+        "  lea mname(pc),a0", "  move.w #$0100,d0", "  OS9 F$UnLoad", "  bcs.s bad",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "mname: dc.b \"binex\",0",
+        "mref: dc.b \"UNLOAD WRONG TYPE REFUSED\",$0D", "mrefl equ *-mref",
+        "mok: dc.b \"UNLOAD MATCHING TYPE DONE\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"UNLOAD TYPE NOT HONOURED\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    try? unloadAsm.write(toFile: scratchDisk + "/munload.a", atomically: true, encoding: .utf8)
+
+    let name = "module: F$UnLoad refuses a name of the wrong type and unloads the matching one"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/munload.a -o=/h5/munload.r", "l68 /h5/munload.r -o=/h5/munload"], timeout: 60)
+        let out = os9(["load /dd/CMDS/binex", "/h5/munload", "mdir -e"], timeout: 30)
+        // mdir's table rows only: "$ load /dd/CMDS/binex" ends in binex too
+        let listed = out.split(whereSeparator: \.isNewline).contains {
+            !$0.hasPrefix("$") && $0.trimmingCharacters(in: .whitespaces).hasSuffix(" binex")
+        }
+        if out.contains("UNLOAD WRONG TYPE REFUSED") && out.contains("UNLOAD MATCHING TYPE DONE") && !listed {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("UNLOAD") || $0.hasSuffix(" binex") || $0.contains("Error")
+            }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for item in ["munload.a", "munload.r", "munload"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm
