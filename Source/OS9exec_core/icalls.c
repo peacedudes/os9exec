@@ -291,6 +291,14 @@ os9err OS9_I_ChgDir( regs_type *rp, ushort cpid )
     type=      IO_Type( cpid,      os9_path,mode ); if (type==fNone) return E_BPNAM;
     err =   change_dir( cpid,type, os9_path,mode );
 
+    /* "If the access mode is read, write, or update, the current data directory
+       changes. If the access mode is execute, the current execution directory
+       changes. Both can change simultaneously." (I$ChgDir, page 2-3). The call
+       above changes one of them: with the exec bit, the execution directory,
+       a relative pathlist searched from there as I$Open does. When read or
+       write is set too, the data directory becomes that same directory. */
+    if (!err && IsExec(mode) && (mode & 0x03)) procs[cpid].d= procs[cpid].x;
+
     /* "(a0) = Updated past pathlist" (I$ChgDir, page 2-3); only a guest
        pointer is handed back, not the "" stand-in for a null a0 */
     if (!err && guestName) rp->a[0]= TO68K(pastpath);

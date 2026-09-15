@@ -4418,6 +4418,142 @@ do {
     }
 }
 
+// ── F$Link link count on a type refusal, F$Panic, F$SRqMem wrap, I$ChgDir mode 5 ──
+// Found by the 2026-09-15 argument audit, each probed live:
+//  - F$Link with a type/language the module does not have returned E$MNF after
+//    link_module had already counted a link, so each refusal left the module one
+//    link higher and it could never be unlinked away;
+//  - F$Panic is a system-state call (Technical Manual p.3-16), but from a user
+//    program it entered the interactive debugger, which read the rest of stdin;
+//  - F$SRqMem rounded $FFFFFFF8 up to 0 and granted a zero-byte block;
+//  - I$ChgDir with read and execute changed only the execution directory, where
+//    "Both can change simultaneously" (p.2-3).
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$Link   equ $00", "F$SRqMem equ $28", "F$Panic  equ $5E",
+        "I$Open   equ $84", "I$ChgDir equ $86", "I$Close  equ $8F", "I$WritLn equ $8C"
+    ]
+    func say(_ label: String) -> [String] {
+        ["  lea \(label)(pc),a0", "  moveq #\(label)l,d1", "  moveq #1,d0", "  OS9 I$WritLn"]
+    }
+    func message(_ label: String, _ text: String) -> [String] {
+        ["\(label): dc.b \"\(text)\",$0D", "\(label)l equ *-\(label)"]
+    }
+    let linkRefused = header + [
+        "  psect mlrefu,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:", "  moveq #3,d7",
+        "again:",
+        "  lea mname(pc),a0", "  move.w #$0400,d0", "  OS9 F$Link",   // binex is a program, not data
+        "  bcc.s linked"] + say("mref") + ["  bra.s next", "linked:"] + say("macc") + [
+        "next:", "  subq.l #1,d7", "  bne.s again",
+        "  moveq #0,d1", "  OS9 F$Exit",
+        "mname: dc.b \"binex\",0"] + message("mref", "LINK REFUSED") + message("macc", "LINK ACCEPTED") +
+        ["  ends", ""]
+    let panic = header + [
+        "  psect mpanic,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #0,d0", "  OS9 F$Panic",
+        "  bcc.s taken", "  cmpi.w #208,d1", "  bne.s taken"] + say("mref") +
+        ["  bra.s done", "taken:"] + say("mtak") + [
+        "done:", "  moveq #0,d1", "  OS9 F$Exit"] +
+        message("mref", "PANIC REFUSED") + message("mtak", "PANIC NOT REFUSED") + ["  ends", ""]
+    let srqmem = header + [
+        "  psect msrqwr,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  move.l #$FFFFFFF8,d0", "  OS9 F$SRqMem",
+        "  bcs.s refused"] + say("mgrant") + ["  bra.s done", "refused:"] + say("mref") + [
+        "done:", "  moveq #0,d1", "  OS9 F$Exit"] +
+        message("mgrant", "SRQMEM GRANTED A WRAPPED SIZE") + message("mref", "SRQMEM REFUSED") + ["  ends", ""]
+    let chgdir = header + [
+        "  psect mcdboth,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea dname(pc),a0", "  moveq #5,d0", "  OS9 I$ChgDir", "  bcs.w fail",
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open",           // from the data directory
+        "  bcs.s nodata", "  OS9 I$Close"] + say("mdata") + [
+        "nodata:",
+        "  lea fname(pc),a0", "  moveq #5,d0", "  OS9 I$Open",           // from the execution directory
+        "  bcs.s noexec", "  OS9 I$Close"] + say("mexec") + [
+        "noexec:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "dname: dc.b \"/h5/cdboth\",0",
+        "fname: dc.b \"only5\",0"] +
+        message("mdata", "DATA DIR CHANGED") + message("mexec", "EXEC DIR CHANGED") + ["  ends", ""]
+
+    let modules = ["mlrefu": linkRefused, "mpanic": panic, "msrqwr": srqmem, "mcdboth": chgdir]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+
+    struct CallCase {
+        let name: String
+        let module: String
+        let commands: [String]
+        let timeout: TimeInterval
+        let pass: (String) -> Bool
+    }
+    let cases = [
+        CallCase(name: "module: F$Link refused on type leaves the link count as it was", module: "mlrefu",
+                 commands: ["load /dd/CMDS/binex", "/h5/mlrefu", "unlink binex", "mdir -e"],
+                 timeout: 30) { out in
+            // one unlink after the load must remove binex: a leaked link keeps it
+            // listed. Only mdir's table rows count -- "$ unlink binex" ends in binex too.
+            let listed = out.split(whereSeparator: \.isNewline).contains {
+                !$0.hasPrefix("$") && $0.trimmingCharacters(in: .whitespaces).hasSuffix(" binex")
+            }
+            return out.contains("LINK REFUSED") && !out.contains("LINK ACCEPTED") && !listed
+        },
+        CallCase(name: "module: F$Panic from a user program is refused, not the debugger", module: "mpanic",
+                 commands: ["/h5/mpanic", "echo AFTER-PANIC"], timeout: 20) {
+            $0.contains("PANIC REFUSED") && $0.contains("AFTER-PANIC")
+        },
+        CallCase(name: "memory: F$SRqMem refuses a size whose rounding wraps past zero", module: "msrqwr",
+                 commands: ["/h5/msrqwr"], timeout: 30) {
+            $0.contains("SRQMEM REFUSED")
+        },
+        CallCase(name: "io: I$ChgDir with read and execute changes both directories", module: "mcdboth",
+                 commands: ["/h5/mcdboth"], timeout: 30) {
+            $0.contains("DATA DIR CHANGED") && $0.contains("EXEC DIR CHANGED")
+        }
+    ]
+    let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
+    if !chosen.isEmpty {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for testCase in chosen {
+            build += ["r68 /h5/\(testCase.module).a -o=/h5/\(testCase.module).r",
+                      "l68 /h5/\(testCase.module).r -o=/h5/\(testCase.module)"]
+        }
+        _ = os9(build, timeout: 60)
+        try? FileManager.default.createDirectory(atPath: scratchDisk + "/cdboth", withIntermediateDirectories: true)
+        try? "x\r".write(toFile: scratchDisk + "/cdboth/only5", atomically: true, encoding: .utf8)
+    }
+    for testCase in chosen {
+        let out = os9(testCase.commands, timeout: testCase.timeout)
+        if testCase.pass(out) {
+            print("PASS: \(testCase.name)")
+            passed += 1
+        } else {
+            print("FAIL: \(testCase.name)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty
+            }
+            let telling = lines.filter {
+                $0.contains("LINK") || $0.contains("PANIC") || $0.contains("SRQMEM") || $0.contains("DIR ")
+                    || $0.contains("Error") || $0.contains(testCase.module) || $0.contains("binex")
+            }
+            print("      saw: \(telling.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    removeScratchItem("cdboth")
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

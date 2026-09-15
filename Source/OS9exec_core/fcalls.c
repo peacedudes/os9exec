@@ -365,7 +365,13 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
       ushort rTyp= tylan>>BpB, rLan= tylan & 0xFF; /* requested type / language */
       ushort aTyp= act  >>BpB, aLan= act   & 0xFF; /* actual    type / language */
       if ((rTyp!=MT_ANY && rTyp!=aTyp) ||
-          (rLan!=ML_ANY && rLan!=aLan)) return os9error(E_MNF); /* not this module */
+          (rLan!=ML_ANY && rLan!=aLan)) {
+          /* not this module -- and link_module above has already counted a
+             link to it. Give that back, or every refused F$Link leaves the
+             module one link higher and it can never be unlinked away. */
+          unlink_module( mid );
+          return os9error(E_MNF);
+      }
     }
         
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
@@ -445,7 +451,10 @@ os9err OS9_F_SRqMem( regs_type *rp, ushort cpid )
       #endif
     }
             
-    memsz= (memsz+15) & MxV; /* round up to next 16-byte boundary */
+    /* round up to the next 16-byte boundary -- unless that wraps past zero:
+       d0=$FFFFFFF8 rounded to 0, and a zero-byte block came back as success */
+    if (memsz>MxV) return os9error(E_NORAM);
+    memsz= (memsz+15) & MxV;
     bp   = os9malloc(cpid,memsz, &why);
 
     /* E$MemFul when the process is at its block limit, E$NoRAM when the machine
@@ -2591,9 +2600,13 @@ os9err OS9_F_Panic( _rp_, ushort cpid )
  * Output: none
  */
 {
-  uphe_printf( "PANIC: F$Panic called by pid=%d\n", cpid );
-  debugwait();
-  return 0;
+  /* F$Panic is a system-state call (Technical Manual, p.3-16), and system-state
+     calls "can only execute while OS-9 is in system state" (p.i). Every
+     os9exec process runs in user state, so refuse it as an unknown service.
+     It used to enter debugwait(), which reads debugger commands from stdin:
+     a stray $5E in a batch run swallowed the rest of the input and hung. */
+  debugprintf( dbgAnomaly,dbgNorm,("# F$Panic from user state, pid=%d: refused\n", cpid ));
+  return os9error(E_UNKSVC);
 } /* OS9_F_Panic */
 
 os9err OS9_F_SSvc( _rp_, _pid_ )
