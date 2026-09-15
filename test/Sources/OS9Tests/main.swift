@@ -5290,6 +5290,52 @@ do {
     }
 }
 
+// ── error: F$PErr prints the message for the error from the path it is given ──
+// F$PErr (Technical Manual p.1-44): "If an error path number is specified, the
+// path is searched for a text description of the error ... If the error number
+// matches the first seven characters in a line (that is, 000:215), the rest of
+// the line is printed along with the error number", continued on lines that begin
+// with a space. d0.w was ignored and the built-in text always printed. Found by
+// the 2026-09-15 argument audit, probed live.
+do {
+    let messages = "000:216 CUSTOM-MESSAGE-216\r    continued-line-216\r000:217 OTHER-MESSAGE-217\r"
+    try? messages.write(toFile: scratchDisk + "/errmsgs.txt", atomically: true, encoding: .utf8)
+    let lines = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$PErr   equ $0F", "I$Open   equ $84",
+        "  psect mperr,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.s fail",
+        "  move.w #216,d1", "  OS9 F$PErr",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "fname: dc.b \"/h5/errmsgs.txt\",0",
+        "  ends", ""
+    ]
+    try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/mperr.a", atomically: true, encoding: .utf8)
+    let name = "error: F$PErr prints the message for the error from the path it is given"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/mperr.a -o=/h5/mperr.r", "l68 /h5/mperr.r -o=/h5/mperr",
+                       "/h5/mperr"], timeout: 60)
+        if out.contains("CUSTOM-MESSAGE-216") && out.contains("continued-line-216")
+            && !out.contains("OTHER-MESSAGE-217") && !out.contains("Path Name Not Found") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("216") || $0.contains("217") || $0.contains("Error")
+            }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for item in ["mperr.a", "mperr.r", "mperr", "errmsgs.txt"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

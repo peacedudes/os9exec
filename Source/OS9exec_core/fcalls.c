@@ -2594,20 +2594,55 @@ os9err OS9_F_CmpNam( regs_type *rp, _pid_ )
     return os9error(E_DIFFER);
 } /* OS9_F_CmpNam */
 
-os9err OS9_F_PErr( regs_type *rp, _pid_ )
+os9err OS9_F_PErr( regs_type *rp, ushort cpid )
 /* F$PErr
  * Input:   d0.w=Error message path number (0=none)
  *          d1.w=Error number
  * Output:  none
  *
- * Restriction: Error message path is not used
+ * "If an error path number is specified, the path is searched for a text
+ * description of the error encountered ... If the error number matches the
+ * first seven characters in a line (that is, 000:215), the rest of the line is
+ * printed along with the error number. Error messages may be continued on
+ * several lines by beginning each continuation line with a space." (F$PErr,
+ * page 1-44). The path was never read: d0.w was ignored and the built-in text
+ * always printed. The search starts at the top of the path -- the page does not
+ * say where, and from wherever an earlier call left it a message that is there
+ * could be missed. With no such line, or a path that cannot be read, the
+ * built-in text is printed as before.
  */
 {
     os9err err;
     char   *nam,*desc;
     char   msgbuffer[255];
+    ushort path= loword(rp->d[0]);
 
     err=loword(rp->d[1]);
+
+    if (path!=0 && usrpath_seek( cpid, path, 0 )==0) {
+        char     key [8];
+        char     line[256];
+        uint32_t n;
+        Boolean  found= false;
+
+        snprintf( key,sizeof(key), "%03d:%03d", err>>8, err & 0xFF );
+        while (true) {
+            n= sizeof(line)-1;
+            if (usrpath_read( cpid, path, &n, line, true )!=0 || n==0) break;
+            line[n]= NUL;
+            while (n>0 && (line[n-1]=='\r' || line[n-1]=='\n')) line[--n]= NUL;
+
+            if (!found) {
+                if (strncmp( line, key, 7 )!=0) continue;
+                found= true;
+                upe_printf( "Error #%s\n", line );
+            }
+            else if (line[0]==' ') upe_printf( "%s\n", line );
+            else break;
+        }
+        if (found) return 0;
+    }
+
     get_error_strings(err, &nam,&desc);
     
     /* snprintf: <nam>/<desc> come from the error-string table, so they fit
