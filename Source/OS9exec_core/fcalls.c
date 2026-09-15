@@ -1836,6 +1836,7 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
     
     mod_crc( theModule );
     os9modules[mid].linkcount= 1;                 /* module is created and linked */
+    os9modules[mid].group    = mid;               /* a group of its own */
 
     theModule= get_module_ptr( mid );
     retword(rp->d[0])=os9_word(theModule->_mh._mtylan);

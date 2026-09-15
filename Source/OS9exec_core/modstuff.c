@@ -585,6 +585,7 @@ void init_modules()
     
         os9modules[k].isBuiltIn= false;
         os9modules[k].linkcount= 0;
+        os9modules[k].group    = (ushort)k; /* a group of one until a load says otherwise */
     }
    
     /* special treatement for init module */
@@ -660,6 +661,7 @@ void release_module(ushort mid, Boolean modOK)
      
     os9modules[mid].isBuiltIn= false;      
     os9modules[mid].linkcount= 0;
+    os9modules[mid].group    = mid;
 } /* release_module */
     
 
@@ -1521,7 +1523,13 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
           ("# load_module: (found) mid=%d, theModuleP=%p, ^theModuleP=%08X\n",
               mid, (void*) theModuleP, GET_OS9L( (byte*)theModuleP, 0 )));
    
-        os9modules[mid].linkcount= 1; /* module is loaded and linked */
+        /* "All modules that are loaded are added to the system module
+           directory, and the first module read is linked" (F$Load, page 1-41).
+           Every module of a file was linked, so the later ones could never be
+           unlinked away. They come in unlinked now, as the first one's group
+           (see unlink_module). */
+        os9modules[mid].group    = mid0;
+        os9modules[mid].linkcount= mid==mid0 ? 1 : 0;
         
         /* don't forget to flush the CodeRange !! */
         Flush68kCodeRange( theModuleP, dsize );
@@ -1631,7 +1639,10 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
             Boolean sameKind= Mod_Type( oldMod )==Mod_Type( theModuleP );
             Boolean isNewer = Mod_Revision( theModuleP )>Mod_Revision( oldMod );
 
-            if (sameKind && !isNewer) {
+            /* A later module of the file stays as it is, unlinked in its group:
+               lookups still find the resident one, and releasing it here would
+               free the rest of the file, which the loop reads next. */
+            if (sameKind && !isNewer && mid==mid0) {
                 /* the resident one is as good or better: keep it, as before */
                 os9modules[oldmid].linkcount++; /* link the old one */
                 os9modules[mid].modulebase=theModuleP; /* re-enable entry */
@@ -1845,8 +1856,13 @@ os9err load_OS9Boot( ushort pid )
 
 
 void unlink_module( ushort mid )
-/* unlink a module by ID */
+/* unlink a module by ID. "When several modules are loaded together as a group,
+   modules are only removed when the link count of all modules in the group have
+   zero link counts" (F$UnLink, page 1-69): one that reaches zero while another
+   member is still linked stays in the directory, and goes with the last of them. */
 {
+    ushort k, group;
+
     if (mid>=MAXMODULES)   return;
     if (os9mod(mid)==NULL) return;
    
@@ -1856,9 +1872,17 @@ void unlink_module( ushort mid )
     
     if (mid==0) debugprintf(dbgModules,dbgNorm,
                            ("# unlink_module: attempt to unlink mid=0, **PREVENTED**\n"));
-                           
-	release_module( mid,true ); }
-/* unlink_module */
+
+    group= os9modules[mid].group;
+    for (k=0; k<MAXMODULES; k++) {
+        if (k!=mid && os9mod(k)!=NULL && os9modules[k].group==group &&
+            os9modules[k].linkcount>0) { os9modules[mid].linkcount= 0; return; }
+    }
+    for (k=0; k<MAXMODULES; k++) {
+        if (k!=mid && os9mod(k)!=NULL && os9modules[k].group==group) release_module( k,true );
+    }
+    release_module( mid,true );
+} /* unlink_module */
 
 
 void free_modules()

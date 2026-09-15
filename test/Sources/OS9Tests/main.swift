@@ -5698,6 +5698,71 @@ do {
     }
 }
 
+// ── F$Load of a two-module file links the first, and the pair goes together ────
+// "All modules that are loaded are added to the system module directory, and
+// the first module read is linked" (F$Load, p.1-41); "When several modules are
+// loaded together as a group, modules are only removed when the link count of
+// all modules in the group have zero link counts" (F$UnLink, p.1-69). os9exec
+// linked every module of the file, so the second one stayed in the directory,
+// link count 1, after the first had been unlinked away.
+do {
+    func tinyModule(_ name: String) -> String {
+        [
+            "  use /dd/DEFS/oskdefs.d", "F$Exit equ $06",
+            "  psect \(name),(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+            "start:", "  moveq #0,d1", "  OS9 F$Exit", "  ends", ""
+        ].joined(separator: "\r")
+    }
+    let parts = ["mgrpa", "mgrpb"]
+    for part in parts {
+        try? tinyModule(part).write(toFile: scratchDisk + "/\(part).a", atomically: true, encoding: .utf8)
+    }
+    let name = "module: F$Load of a two-module file links the first only, and unlinking it removes both"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for part in parts {
+            build += ["r68 /h5/\(part).a -o=/h5/\(part).r", "l68 /h5/\(part).r -o=/h5/\(part)"]
+        }
+        _ = os9(build, timeout: 60)
+        var pair = Data()
+        for part in parts {
+            if let bytes = FileManager.default.contents(atPath: scratchDisk + "/" + part) {
+                pair.append(bytes)
+            }
+        }
+        FileManager.default.createFile(atPath: scratchDisk + "/mgrpab", contents: pair)
+
+        let out = os9(["load /h5/mgrpab", "mdir -e", "unlink mgrpa", "echo AFTER-UNLINK", "mdir -e"], timeout: 30)
+        let lines = out.split(whereSeparator: \.isNewline).map { String($0) }
+        let marker = lines.firstIndex { $0.trimmingCharacters(in: .whitespaces) == "AFTER-UNLINK" } ?? lines.count
+        // mdir -e rows end "<link count> <module name>"; the shell's "$ ..." echoes are not rows
+        func linkCount(of module: String, in rows: ArraySlice<String>) -> String? {
+            for row in rows where !row.hasPrefix("$") {
+                let fields = row.split(separator: " ")
+                if fields.count >= 2, fields[fields.count - 1] == Substring(module) {
+                    return String(fields[fields.count - 2])
+                }
+            }
+            return nil
+        }
+        let loaded = lines[..<marker]
+        let unlinked = lines[marker...]
+        if linkCount(of: "mgrpa", in: loaded) == "1" && linkCount(of: "mgrpb", in: loaded) == "0"
+            && linkCount(of: "mgrpa", in: unlinked) == nil && linkCount(of: "mgrpb", in: unlinked) == nil {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = lines.filter { $0.hasSuffix(" mgrpa") || $0.hasSuffix(" mgrpb") || $0.contains("AFTER-UNLINK") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for item in ["mgrpa.a", "mgrpa.r", "mgrpa", "mgrpb.a", "mgrpb.r", "mgrpb", "mgrpab"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm
