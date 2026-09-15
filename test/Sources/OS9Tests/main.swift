@@ -2005,6 +2005,70 @@ check("fs: permission ramdisk — non-owner (dog) blocked from a file with no pu
     "login dog", "chd /ram7", "dump f", "logout", "unmount ram7")
 
 
+// ── fs: a zero-length read or write with no buffer on a host file ─────────────
+// I$Read, I$ReadLn, I$Write and I$WritLn range-check the buffer only when the
+// count is non-zero, so a count of 0 with A0=0 reached the host-file manager,
+// whose assert(buffer!=NULL) then aborted the whole emulator. games4 adlrun
+// does exactly this on its data file. A count of 0 transfers nothing, and RBF
+// already answered it so; the probe must get four clean returns and live to say
+// so.
+do {
+    let zeroAsm = [
+        "IOpen set $84", "ICreate set $83", "IRead set $89", "IReadLn set $8B",
+        "IWrite set $8A", "IWritLn set $8C", "IClose set $8F", "FExit set $06",
+        " psect zerolen,$0101,$8001,0,2048,start",
+        "start",
+        " lea wname(pc),a0", " moveq #2,d0", " move.w #$1B,d1", " clr.l d2",
+        " trap #0", " dc.w ICreate", " bcs.w bad", " move.w d0,d7",
+        " moveq #0,d0", " move.w d7,d0", " moveq #0,d1", " suba.l a0,a0",
+        " trap #0", " dc.w IWrite", " bcs.w bad", " tst.l d1", " bne.w bad",
+        " moveq #0,d0", " move.w d7,d0", " moveq #0,d1", " suba.l a0,a0",
+        " trap #0", " dc.w IWritLn", " bcs.w bad", " tst.l d1", " bne.w bad",
+        " moveq #0,d0", " move.w d7,d0", " lea text(pc),a0", " moveq #textl,d1",
+        " trap #0", " dc.w IWrite", " bcs.w bad",
+        " moveq #0,d0", " move.w d7,d0", " trap #0", " dc.w IClose",
+        " lea wname(pc),a0", " moveq #1,d0", " trap #0", " dc.w IOpen", " bcs.w bad",
+        " move.w d0,d7",
+        " moveq #0,d0", " move.w d7,d0", " moveq #0,d1", " suba.l a0,a0",
+        " trap #0", " dc.w IRead", " bcs.w bad", " tst.l d1", " bne.w bad",
+        " moveq #0,d0", " move.w d7,d0", " moveq #0,d1", " suba.l a0,a0",
+        " trap #0", " dc.w IReadLn", " bcs.w bad", " tst.l d1", " bne.w bad",
+        " lea okmsg(pc),a0", " moveq #1,d0", " moveq #okl,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1", " trap #0", " dc.w FExit",
+        "bad", " trap #0", " dc.w FExit",
+        "wname dc.b \"/h5/zerolen.dat\",0",
+        "text dc.b \"some text\",$0D",
+        "textl equ *-text",
+        "okmsg dc.b \"FOUR ZERO-LENGTH CALLS RETURNED\",$0D",
+        "okl equ *-okmsg",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "fs: a zero-length read or write with no buffer returns on a host file"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? zeroAsm.write(toFile: scratchDisk + "/zerolen.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/zerolen.a -o=/h5/zerolen.r",
+            "l68 /h5/zerolen.r -o=/h5/zerolen",
+            "/h5/zerolen"
+        ], timeout: 30)
+        if out.contains("FOUR ZERO-LENGTH CALLS RETURNED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [I$Read/ReadLn/Write/WritLn with d1=0, a0=0 must return 0 bytes, no error]")
+            let preview = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("rror") || $0.contains("ssert") }
+                .prefix(4).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+        for leftover in ["zerolen.a", "zerolen.r", "zerolen", "zerolen.dat"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── process: the debugger calls refuse a process ID past the table ───────────
 // F$DExec and F$DExit take the child's ID from the guest's d0.w and indexed the
 // process table with it unchecked; F$DExit then WROTE through it. F$GPrDsc had

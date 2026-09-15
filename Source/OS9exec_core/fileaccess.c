@@ -335,6 +335,11 @@ os9err pFread( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
       OSErr oserr;
     #endif
     
+    /* A count of 0 transfers nothing, whatever the buffer pointer: I$Read and
+       I$Write only range-check A0 for a non-zero count, so a guest asking for
+       0 bytes with A0=0 arrives here with a NULL buffer, and the assert below
+       aborted the whole emulator (games4 adlrun). RBF already answered it. */
+    if (*n==0) return 0;
     assert( buffer!=NULL );
 
     if     (spP->rawMode) {
@@ -411,6 +416,11 @@ os9err pFreadln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
       int   c;
     #endif
      
+    /* A count of 0 transfers nothing, whatever the buffer pointer: I$Read and
+       I$Write only range-check A0 for a non-zero count, so a guest asking for
+       0 bytes with A0=0 arrives here with a NULL buffer, and the assert below
+       aborted the whole emulator (games4 adlrun). RBF already answered it. */
+    if (*n==0) return 0;
     assert( buffer!=NULL );
 
     #ifdef MACFILES
@@ -527,6 +537,11 @@ os9err pFwrite( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
     OSErr      oserr;
     long  cnt, effpos, k;
 
+    /* A count of 0 transfers nothing, whatever the buffer pointer: I$Read and
+       I$Write only range-check A0 for a non-zero count, so a guest asking for
+       0 bytes with A0=0 arrives here with a NULL buffer, and the assert below
+       aborted the whole emulator (games4 adlrun). RBF already answered it. */
+    if (*n==0) return 0;
     assert( buffer!=NULL );
     
     /* output to a file */
@@ -560,6 +575,11 @@ os9err pFwrite( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
     long   cnt;
     fpos_t tmp_pos;
 
+    /* A count of 0 transfers nothing, whatever the buffer pointer: I$Read and
+       I$Write only range-check A0 for a non-zero count, so a guest asking for
+       0 bytes with A0=0 arrives here with a NULL buffer, and the assert below
+       aborted the whole emulator (games4 adlrun). RBF already answered it. */
+    if (*n==0) return 0;
     assert( buffer!=NULL );
           
     if (f->readFlag) {
@@ -589,6 +609,11 @@ os9err pFwriteln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
     long      cnt, effpos, k;
     OSErr     oserr;
 
+    /* A count of 0 transfers nothing, whatever the buffer pointer: I$Read and
+       I$Write only range-check A0 for a non-zero count, so a guest asking for
+       0 bytes with A0=0 arrives here with a NULL buffer, and the assert below
+       aborted the whole emulator (games4 adlrun). RBF already answered it. */
+    if (*n==0) return 0;
     assert( buffer!=NULL );
 
     /* output line to a file */
@@ -626,6 +651,11 @@ os9err pFwriteln( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
     long   cnt, ii;
     fpos_t tmp_pos;
 
+    /* A count of 0 transfers nothing, whatever the buffer pointer: I$Read and
+       I$Write only range-check A0 for a non-zero count, so a guest asking for
+       0 bytes with A0=0 arrives here with a NULL buffer, and the assert below
+       aborted the whole emulator (games4 adlrun). RBF already answered it. */
+    if (*n==0) return 0;
     assert( buffer!=NULL );
 
     if (f->readFlag) {
