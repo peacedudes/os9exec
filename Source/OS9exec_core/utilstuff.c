@@ -655,6 +655,18 @@ os9err c2os9err(int cliberr,ushort suggestion)
    return os9error(err);
 } /* c2os9err */
 
+/* "The algorithm used by OS-9 makes this adjustment on October 15, 1582"
+   (F$Julian and F$Gregor, CAVEATS): days before it are Julian-calendar dates.
+   Both conversions were Gregorian for every date, which put 1582-10-04, the
+   day before the switch, ten days short of it. OS-9's day number is the
+   astronomical one less 1 (it changes at midnight, and the manual's weekday
+   formula, MOD(day+2, 7), fixes the offset); 2299160 is 1582-10-15. */
+#define GREGORIAN_FIRST_DAY 2299160L
+
+static Boolean IsJulianCalendar( int d, int m, int y )
+{   return y<1582 || (y==1582 && (m<10 || (m==10 && d<15)));
+} /* IsJulianCalendar */
+
 uint32_t j_date(int d, int m, int y)
 /* this routine returns the number of days
  * since January 1, 4713 B.C.              
@@ -662,6 +674,11 @@ uint32_t j_date(int d, int m, int y)
  * expected <d>: 1..31 / <m>: 1..12 / <y>: XXXX 
  */
 { 
+    if (IsJulianCalendar( d,m,y )) {
+        long a = (14-m)/12, yy= (long)y+4800-a, mm= m+12*a-3;
+        return (uint32_t)( d + (153*mm+2)/5 + 365*yy + yy/4 - 32083 - 1 );
+    }
+
     long fct= 365*y + 31*(m-1) + d;
     int  yb = y-1; /* the year before */;
 
@@ -677,8 +694,16 @@ void g_date(uint32_t jdn, int *dp, int *mp, int *yp )
   long fct;
   int  d, m, y, yb, fb;
   int  marr[ 12 ];
-  
-  
+
+  if (jdn<GREGORIAN_FIRST_DAY) { /* a Julian-calendar date, see j_date */
+      long c = (long)jdn + 1 + 32082;
+      long dd= (4*c+3)/1461, e= c - (1461*dd)/4, mm= (5*e+2)/153;
+      *dp= (int)( e - (153*mm+2)/5 + 1 );
+      *mp= (int)( mm + 3 - 12*(mm/10) );
+      *yp= (int)( dd - 4800 + mm/10 );
+      return;
+  }
+
   fct= jdn - DAYS_SINCE_0000;    /* see above */
   y  = 4*(fct+15) / ( 4*365+1 ); /* 100/400 year adaption: 15 days */
   yb = y-1;                      /* the year before */

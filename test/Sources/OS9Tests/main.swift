@@ -6015,6 +6015,73 @@ do {
     }
 }
 
+// ── time: F$Julian and F$Gregor switch calendars on 1582-10-15 ─────────────────
+// "The algorithm used by OS-9 makes this adjustment on October 15, 1582"
+// (F$Julian, F$Gregor, CAVEATS): earlier days are Julian-calendar dates. Both
+// calls were Gregorian for every date, so 1582-10-04, the day before the switch,
+// came out ten days short of it, and 1500-02-29, a Julian leap day, did not
+// exist. Day numbers worked out outside the emulator (astronomical JDN - 1, the
+// epoch of the manual's weekday formula); 1582-10-15 is a control that was right.
+do {
+    struct CalendarDate { let label: String; let packed: UInt32; let julian: UInt32 }
+    let dates = [
+        CalendarDate(label: "oct4", packed: 0x062E_0A04, julian: 0x231517),
+        CalendarDate(label: "oct15", packed: 0x062E_0A0F, julian: 0x231518),
+        CalendarDate(label: "feb29", packed: 0x05DC_021D, julian: 0x229F3F)
+    ]
+    func hex(_ value: UInt32) -> String { "$" + String(value, radix: 16, uppercase: true) }
+    func say(_ label: String) -> [String] {
+        ["  lea \(label)(pc),a0", "  moveq #\(label)l,d1", "  moveq #1,d0", "  OS9 I$WritLn"]
+    }
+    var lines = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$Julian equ $20", "F$Gregor equ $54", "I$WritLn equ $8C",
+        "  psect cl1582,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:"
+    ]
+    for date in dates {
+        let tag = date.label
+        lines += ["  moveq #0,d0", "  move.l #\(hex(date.packed)),d1", "  OS9 F$Julian", "  bcs.w fail",
+                  "  cmpi.l #\(hex(date.julian)),d1", "  beq.s jok\(tag)"] + say("mjb\(tag)") + [
+                  "jok\(tag):",
+                  "  moveq #0,d0", "  move.l #\(hex(date.julian)),d1", "  OS9 F$Gregor", "  bcs.w fail",
+                  "  cmpi.l #\(hex(date.packed)),d1", "  beq.s gok\(tag)"] + say("mgb\(tag)") + [
+                  "  bra.s gdn\(tag)", "gok\(tag):"] + say("mgo\(tag)") + ["gdn\(tag):"]
+    }
+    lines += ["  moveq #0,d1", "fail:", "  OS9 F$Exit"]
+    for date in dates {
+        let tag = date.label
+        for (label, text) in [("mjb\(tag)", "JULIAN \(tag) BAD"), ("mgb\(tag)", "GREGOR \(tag) BAD"),
+                              ("mgo\(tag)", "GREGOR \(tag) OK")] {
+            lines += ["\(label): dc.b \"\(text)\",$0D", "\(label)l equ *-\(label)"]
+        }
+    }
+    lines += ["  ends", ""]
+    try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/cl1582.a", atomically: true, encoding: .utf8)
+
+    let name = "time: F$Julian and F$Gregor use the Julian calendar before 1582-10-15"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/cl1582.a -o=/h5/cl1582.r", "l68 /h5/cl1582.r -o=/h5/cl1582",
+                       "/h5/cl1582"], timeout: 60)
+        let good = dates.allSatisfy { out.contains("GREGOR \($0.label) OK") } && !out.contains(" BAD")
+        if good {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("GREGOR") || $0.contains("JULIAN") || $0.contains("Error #")
+            }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for suffix in [".a", ".r", ""] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/cl1582" + suffix)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm
