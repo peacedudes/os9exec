@@ -5763,6 +5763,64 @@ do {
     }
 }
 
+// ── RBF: SS_Size allocates the space it gives a file ───────────────────────────
+// "The SETSTAT call (SS_Size) explicitly allocates file space" (I$Create,
+// p.2-5). On an RBF image SS_Size only wrote the new size into the FD: no
+// sector was allocated, so a read inside the new size found nothing there and
+// answered E$EOF. The program creates a file, sets its size to 3000, and reads
+// 16 bytes at 2500.
+do {
+    let sizeAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Create equ $83", "I$Seek equ $88", "I$Read equ $89",
+        "I$WritLn equ $8C", "I$SetStt equ $8E", "BUF equ -32700",
+        "  psect mszalloc,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  moveq #$1B,d1", "  OS9 I$Create", "  bcs.s bad",
+        "  moveq #0,d5", "  move.w d0,d5",
+        "  move.l d5,d0", "  moveq #2,d1", "  move.l #3000,d2", "  OS9 I$SetStt", "  bcs.s bad",   // SS_Size
+        "  move.l d5,d0", "  move.l #2500,d1", "  OS9 I$Seek", "  bcs.s bad",
+        "  move.l d5,d0", "  moveq #16,d1", "  lea BUF(a6),a0", "  OS9 I$Read", "  bcs.s bad",
+        "  cmpi.l #16,d1", "  bne.s bad",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "fname: dc.b \"/hq/szalloc\",0",
+        "mok: dc.b \"SS_SIZE SPACE READABLE\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"SS_SIZE SPACE NOT THERE\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    try? sizeAsm.write(toFile: scratchDisk + "/mszalloc.a", atomically: true, encoding: .utf8)
+
+    let name = "rbf: SS_Size allocates the space, so a read inside the new size succeeds"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem("hq")
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/mszalloc.a -o=/h5/mszalloc.r",
+            "l68 /h5/mszalloc.r -o=/h5/mszalloc",
+            "mount -k=1M hq",
+            "/h5/mszalloc"
+        ], timeout: 30)
+        if out.contains("SS_SIZE SPACE READABLE") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("SS_SIZE") || $0.contains("Error")
+            }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        removeScratchItem("hq")
+    }
+    for item in ["mszalloc.a", "mszalloc.r", "mszalloc"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

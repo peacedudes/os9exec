@@ -4707,8 +4707,34 @@ os9err pRdsize(ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
 os9err pRsetsz( _pid_, syspath_typ* spP, uint32_t *size )
 /* set the size of a file */
 {
-    rbf_typ* rbf= &spP->u.rbf;
-    
+    rbf_typ*    rbf= &spP->u.rbf;
+    rbfdev_typ* dev= &rbfdev[rbf->devnr];
+    os9err      err;
+
+    /* "The SETSTAT call (SS_Size) explicitly allocates file space" (I$Create,
+       page 2-5). Only the size in the FD was set, so a read inside the new size
+       found no sector there and answered E$EOF. Allocate what the new size
+       needs the way a write does (DoAccess); a smaller size frees nothing, as
+       nothing here ever has. */
+    if (!spP->rawMode) {
+        ulong fsize, totsize, sect, slim, pref, req, pos, scs;
+        ulong ma= Max( rbf->sas,dev->clusterSize );
+        byte  attr;
+
+        FD_Segment( spP, &attr,&fsize,&totsize,&sect,&slim,&pref );
+        if (*size>totsize) {
+            req= ( *size-totsize-1 ) / dev->sctSize + 1;
+            while (true) {
+                scs= Max( ma, req ); /* alloc size might be larger */
+                err= AllocateBlocks( spP,scs, &pos,&scs, pref ); if (err) return err;
+                err= AdaptAlloc_FD ( spP,      pos, scs       ); if (err) return err;
+
+                if (scs>=req) break;
+                req-= scs; /* still asking for some more sectors */
+            } // loop
+        } // if
+    } // if
+
         rbf->lastPos= *size; /* set position      to new max */
     if (rbf->currPos> *size)
         rbf->currPos= *size; /* set position back to new max */
