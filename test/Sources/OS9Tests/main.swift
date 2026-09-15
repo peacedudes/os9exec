@@ -4886,6 +4886,83 @@ do {
     }
 }
 
+// ── RBF permissions: a directory's mode bits, and SS_FDInf for the super group ──
+// Rules the 2026-09-15 argument audit found unenforced; rdoggett's decision:
+// enforce them.
+//  - I$ChgDir: "the caller must have access permission for the specified mode"
+//    (p.2-3), and the shell's chd uses update. A directory granting the public
+//    read only was still entered by a non-owner, because a directory at the end
+//    of a path had its read permission checked and nothing else.
+//  - SS_FDInf: "If SS_FDInf is called in user state, the caller must be a
+//    super-group user" (p.2-12). It reads any sector of the device by number.
+do {
+    let fdinf = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "I$Open   equ $84", "I$GetStt equ $8D", "I$WritLn equ $8C", "BUF equ -32700",
+        "  psect mfdinf,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.s fail",
+        "  move.w #$20,d1", "  moveq #16,d2", "  moveq #0,d3", "  lea BUF(a6),a0", "  OS9 I$GetStt",
+        "  bcc.s allowed", "  cmpi.w #164,d1", "  bne.s allowed",
+        "  lea mref(pc),a0", "  moveq #mrefl,d1", "  bra.s write",
+        "allowed:", "  lea macc(pc),a0", "  moveq #maccl,d1",
+        "write:", "  moveq #1,d0", "  OS9 I$WritLn",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "fname: dc.b \"/hq/one\",0",
+        "mref: dc.b \"FDINF REFUSED\",$0D", "mrefl equ *-mref",
+        "macc: dc.b \"FDINF ALLOWED\",$0D", "maccl equ *-macc",
+        "  ends", ""
+    ]
+    try? fdinf.joined(separator: "\r").write(toFile: scratchDisk + "/mfdinf.a", atomically: true, encoding: .utf8)
+
+    let dirName = "rbf: a non-owner may not chd into a directory that grants it read only"
+    if filter.isEmpty || dirName.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem("hq")
+        let out = os9(["mount -k=1M hq", "makdir /hq/pd", "attr /hq/pd -nw -npw -ne -npe",
+                       "login claude", "dir /hq/pd", "chd /hq/pd", "logout"], timeout: 30)
+        // the read-only open (dir) still works; the update-mode chd is E$FNA
+        if out.contains("Directory of /hq/pd") && out.contains("#000:214") {
+            print("PASS: \(dirName)")
+            passed += 1
+        } else {
+            print("FAIL: \(dirName)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("chd") || $0.contains("Directory of") || $0.contains("Error")
+            }
+            print("      saw: \(lines.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+
+    let infoName = "rbf: SS_FDInf is refused to a non-super user and allowed to the super user"
+    if filter.isEmpty || infoName.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem("hq")
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mfdinf.a -o=/h5/mfdinf.r", "l68 /h5/mfdinf.r -o=/h5/mfdinf"], timeout: 60)
+        // public read, or the non-super open fails before SS_FDInf is ever asked
+        let out = os9(["mount -k=1M hq", "echo hi >/hq/one", "attr /hq/one -pr", "/h5/mfdinf",
+                       "login claude", "/h5/mfdinf", "logout"], timeout: 30)
+        let allowedAt = out.range(of: "FDINF ALLOWED")
+        let refusedAt = out.range(of: "FDINF REFUSED")
+        if let allowed = allowedAt, let refused = refusedAt, allowed.lowerBound < refused.lowerBound {
+            print("PASS: \(infoName)")
+            passed += 1
+        } else {
+            print("FAIL: \(infoName)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("FDINF") || $0.contains("Error")
+            }
+            print("      saw: \(lines.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    removeScratchItem("hq")
+    for suffix in [".a", ".r", ""] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/mfdinf" + suffix)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

@@ -4139,6 +4139,14 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
                      testing for E$CEF something else. Only a plain open gets
                      "not a file". */
                   if (isFile) err= cre ? E_CEF : E_FNA;
+                  /* A directory opened (or made current) must grant the access
+                     the mode asks for, as a file does above: "the caller must
+                     have access permission for the specified mode" (I$ChgDir,
+                     page 2-3), and "the access mode must conform to the access
+                     permissions" (I$Open, page 2-16). Only read was checked, on
+                     the way through; update or execute on a d---rewr directory
+                     was granted. */
+                  else if (!has_open_perm( pid, attr, FDOwn(spP), *modeP )) err= E_FNA;
                   else        err= 0;           /* is there path -> ok */
                 }
                 
@@ -4566,7 +4574,7 @@ os9err pRgetFD( _pid_, syspath_typ* spP, uint32_t *maxbytP, byte *buffer )
     return 0;
 } /* pRgetFD */
 
-os9err pRgetFDInf( _pid_, syspath_typ* spP, uint32_t *maxbytP,
+os9err pRgetFDInf( ushort pid, syspath_typ* spP, uint32_t *maxbytP,
                                                        uint32_t *fdinf, byte *buffer )
 /* get any FD sector ( using variable <fdinf> ) */
 {
@@ -4578,6 +4586,11 @@ os9err pRgetFDInf( _pid_, syspath_typ* spP, uint32_t *maxbytP,
     debugprintf(dbgFiles,dbgNorm,("# RBF getFDInf (fd/bytes): $%x %d\n", 
                                      *fdinf, n ));
 
+    /* "If SS_FDInf is called in user state, the caller must be a super-group
+       user" (I$GetStt SS_FDInf, page 2-12): it reads any sector of the device
+       by number. Every os9exec process is in user state. The page names no
+       error; E$Permit is the super-user refusal. */
+    if (!is_super( pid )) return os9error(E_PERMIT);
     if (!RANGE_IN_ARENA( buffer, n )) return os9error(E_BPADDR);
     err= ReadSector( dev,*fdinf,1, dev->tmp_sct ); if (err) return err;
     memcpy               ( buffer, dev->tmp_sct, n ); /* copy to the buffer */
