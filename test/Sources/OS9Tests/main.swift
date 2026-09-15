@@ -5105,6 +5105,77 @@ do {
     }
 }
 
+// ── RBF: I$Delete refuses a file another path has open, readers included ──────
+// "The caller must have non-sharable write access to the file (the file may not
+// already be open) or an error results." (Technical Manual, I$Delete, p.2-7).
+// Only another writer was refused (E$Share); a file open for READING was deleted
+// out from under its reader, which went on reading freed sectors. Found by the
+// 2026-09-15 argument audit, probed live. A holder opens the file for read and
+// sleeps; a second process deletes it; the file must still be there afterwards.
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$Sleep  equ $0A", "I$Open   equ $84", "I$Delete equ $87", "I$WritLn equ $8C"
+    ]
+    let holder = header + [
+        "  psect mrdhld,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.s fail",
+        "  move.l #300,d0", "  OS9 F$Sleep",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "fname: dc.b \"/hq/rd\",0", "  ends", ""
+    ]
+    let deleter = header + [
+        "  psect mrddel,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #60,d0", "  OS9 F$Sleep",
+        "  lea fname(pc),a0", "  moveq #2,d0", "  OS9 I$Delete",
+        "  bcc.s gone", "  cmpi.w #253,d1", "  bne.s gone",
+        "  lea mref(pc),a0", "  moveq #mrefl,d1", "  bra.s write",
+        "gone:", "  lea mdel(pc),a0", "  moveq #mdell,d1",
+        "write:", "  moveq #1,d0", "  OS9 I$WritLn",
+        "  moveq #0,d1", "  OS9 F$Exit",
+        "fname: dc.b \"/hq/rd\",0",
+        "mref: dc.b \"DELETE REFUSED WHILE OPEN\",$0D", "mrefl equ *-mref",
+        "mdel: dc.b \"DELETE ALLOWED WHILE OPEN\",$0D", "mdell equ *-mdel",
+        "  ends", ""
+    ]
+    for (module, lines) in ["mrdhld": holder, "mrddel": deleter] {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+    let name = "rbf: I$Delete refuses a file another process has open for reading"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mrdhld.a -o=/h5/mrdhld.r", "l68 /h5/mrdhld.r -o=/h5/mrdhld",
+                 "r68 /h5/mrddel.a -o=/h5/mrddel.r", "l68 /h5/mrddel.r -o=/h5/mrddel"], timeout: 60)
+        removeScratchItem("hq")
+        let out = os9(["mount -k=1M hq", "echo KEEPTHIS >/hq/rd", "/h5/mrdhld &", "/h5/mrddel", "w",
+                       "list /hq/rd"], timeout: 40)
+        let survived = out.split(whereSeparator: \.isNewline).contains {
+            !$0.hasPrefix("$") && $0.trimmingCharacters(in: .whitespaces) == "KEEPTHIS"
+        }
+        if out.contains("DELETE REFUSED WHILE OPEN") && survived {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("DELETE") || $0.contains("KEEPTHIS") || $0.contains("Error")
+            }
+            print("      saw: \(lines.joined(separator: " | "))")
+            failed += 1
+        }
+        removeScratchItem("hq")
+    }
+    for module in ["mrdhld", "mrddel"] {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

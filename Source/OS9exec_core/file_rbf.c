@@ -838,24 +838,19 @@ static Boolean ShareConflict( syspath_typ* spP, Boolean wantSingle )
 
 
 
-static Boolean RingHasOtherWriter( syspath_typ* spP )
-/* True if some path OTHER than <spP> is open on the same file in write mode.
- * OS-9 RBF refuses to delete such a file (E$Share -- the canonical clone
- * returns 253 here). Allowing the delete instead orphans every cluster the
- * still-open writer allocates afterwards: <DeallocateBlocks> runs exactly
- * once, at delete time, and no later close frees what the writer adds. */
+static Boolean RingHasOther( syspath_typ* spP )
+/* True if some path OTHER than <spP> is open on the same file, in any mode.
+ * I$Delete: "The caller must have non-sharable write access to the file (the
+ * file may not already be open) or an error results." (Technical Manual, page
+ * 2-7). Only another WRITER used to be refused: a writer strands every cluster
+ * it allocates after the delete (<DeallocateBlocks> runs once, at delete time),
+ * but a READER was let through too, and kept reading sectors the delete had
+ * already freed and the next allocation could hand to another file. */
 {
-    syspath_typ* spK;
-    ushort       k= spP->u.rbf.sameFile;
+    ushort k= spP->u.rbf.sameFile;
 
-    while (k!=spP->nr && k!=0) {
-             spK= &syspaths[k];
-      if (   spK->u.rbf.wMode) return true;
-      k= spK->u.rbf.sameFile;
-    } // while
-
-    return false;
-} /* RingHasOtherWriter */
+    return k!=spP->nr && k!=0;
+} /* RingHasOther */
 
 /* A reader that has caught up to a file another path still has open for
  * writing is not at the end of it, it is merely early: the writer may write
@@ -4346,8 +4341,9 @@ os9err pRdelete( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathna
 
     /* Deleting a file another path still has open for writing would strand
      * every cluster that path allocates after this point (see
-     * RingHasOtherWriter). Real OS-9 refuses it; match that with E$Share. */
-    if (RingHasOtherWriter( spP )) { usrpath_close( pid, path ); return os9error( E_SHARE ); }
+     * RingHasOther). Real OS-9 refuses it; match that with E$Share -- and a
+     * file open for reading as well, "the file may not already be open". */
+    if (RingHasOther( spP )) { usrpath_close( pid, path ); return os9error( E_SHARE ); }
 
     do {
       err= Delete_DirEntry ( dev, dfd, (char*)&spP->name ); if (err) break;

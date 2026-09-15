@@ -81,6 +81,10 @@ final class DestructiveTests: XCTestCase {
     /// contention -- refuse the delete, defer it, or let the readers finish on
     /// the doomed file -- and whatever it chooses, the DEVICE must end
     /// structurally intact, with the file's clusters accounted for either way.
+    ///
+    /// os9exec refuses, as the manual requires: "The caller must have non-sharable
+    /// write access to the file (the file may not already be open)" (I$Delete,
+    /// page 2-7). Until 2026-09-15 it let the delete through for readers.
     func testDeletingAFileHeldOpenLeavesTheImageIntact() throws {
         let file = "/h9/held.dat"
         var roster = [WorkerSpec(id: 99, role: .create, file: file, count: 40)]
@@ -103,13 +107,25 @@ final class DestructiveTests: XCTestCase {
                      + structural.map(\.detail).joined(separator: "\n")
                      + "\nScratch kept at \(result.scratchPath)")
 
-        // The deleted file's clusters must return. A delete-while-open that
-        // freed nothing (or freed twice) would leave the free count well off the
-        // pristine baseline -- only the bitmap and root dir stay allocated.
         guard let free = StructuralOracle.freeSectors(in: result.transcript),
               let capacity = StructuralOracle.capacitySectors(in: result.transcript) else {
             return XCTFail("no free/capacity to judge reclamation:\n\(result.transcript)")
         }
+
+        // A refused delete (E$Share, 253) leaves the file and its clusters where
+        // they were; dcheck above has already certified that every allocated
+        // sector belongs to a file, so only a gross leak is left to rule out --
+        // held.dat is 40 short records, a handful of sectors.
+        if result.transcript.contains("#000:253") {
+            XCTAssertGreaterThanOrEqual(free, capacity - 8 - 64,
+                           "a refused delete-while-open still lost clusters: only \(free)/\(capacity) "
+                         + "sectors free, expected the bitmap/root and the held file allocated")
+            return
+        }
+
+        // A delete that went ahead (deferred or allowed) must give the clusters
+        // back. One that freed nothing, or freed twice, would leave the free count
+        // well off the pristine baseline -- only the bitmap and root dir stay allocated.
         XCTAssertGreaterThanOrEqual(free, capacity - 8,
                        "delete-while-open leaked clusters: only \(free)/\(capacity) sectors "
                      + "free, expected all but the bitmap/root reclaimed")
