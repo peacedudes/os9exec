@@ -4212,6 +4212,144 @@ do {
     }
 }
 
+// ── output registers: a0 after I$Delete/I$MakDir/I$ChgDir and Ev$Link; F$STime ──
+// Technical Manual: I$Delete, I$MakDir and I$ChgDir return "(a0) = Updated past
+// pathlist" (pp.2-7, 2-15, 2-3), Ev$Link returns "(a0) = updated past event name"
+// (p.1-19), and "registers not explicitly specified as input or output parameters
+// are not altered" (p.ii). Found by the 2026-09-15 argument audit: the three path
+// calls left a0 where it was, Ev$Link too, and F$STime handed back d0 and d1
+// converted to seconds-since-midnight and a Julian day. The path checks compare
+// against I$Open on the same name, which already returns a0 the documented way.
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$STime  equ $16", "F$Event  equ $53",
+        "I$Open   equ $84", "I$Create equ $83", "I$MakDir equ $85", "I$ChgDir equ $86",
+        "I$Delete equ $87", "I$Close  equ $8F", "I$WritLn equ $8C"
+    ]
+    func say(_ label: String) -> [String] {
+        ["  lea \(label)(pc),a0", "  moveq #\(label)l,d1", "  moveq #1,d0", "  OS9 I$WritLn"]
+    }
+    func message(_ label: String, _ text: String) -> [String] {
+        ["\(label): dc.b \"\(text)\",$0D", "\(label)l equ *-\(label)"]
+    }
+    // a0 minus the name's address after the call, into <reg>
+    func advance(_ reg: String) -> [String] { ["  move.l a0,\(reg)", "  sub.l a1,\(reg)"] }
+
+    let paths = header + [
+        "  psect rgpath,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea dname(pc),a1", "  movea.l a1,a0", "  moveq #3,d0", "  moveq #0,d1", "  OS9 I$MakDir",
+        "  bcs.w fail"] + advance("d5") + [
+        "  lea dname(pc),a1", "  movea.l a1,a0", "  move.w #$81,d0", "  OS9 I$Open",
+        "  bcs.w fail"] + advance("d3") + [
+        "  OS9 I$Close",
+        "  cmp.l d3,d5", "  beq.s mkok"] + say("mmkbad") + ["  bra.s mkdone", "mkok:"] + say("mmkok") + [
+        "mkdone:",
+        "  lea dname(pc),a1", "  movea.l a1,a0", "  moveq #1,d0", "  OS9 I$ChgDir",
+        "  bcs.w fail"] + advance("d5") + [
+        "  cmp.l d3,d5", "  beq.s cdok"] + say("mcdbad") + ["  bra.s cddone", "cdok:"] + say("mcdok") + [
+        "cddone:",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  moveq #$1B,d1", "  OS9 I$Create",
+        "  bcs.w fail", "  OS9 I$Close",
+        "  lea fname(pc),a1", "  movea.l a1,a0", "  moveq #1,d0", "  OS9 I$Open",
+        "  bcs.w fail"] + advance("d3") + [
+        "  OS9 I$Close",
+        "  lea fname(pc),a1", "  movea.l a1,a0", "  moveq #2,d0", "  OS9 I$Delete",
+        "  bcs.w fail"] + advance("d5") + [
+        "  cmp.l d3,d5", "  beq.s dlok"] + say("mdlbad") + ["  bra.s dldone", "dlok:"] + say("mdlok") + [
+        "dldone:",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "dname: dc.b \"/h5/rgdir\",0",
+        "fname: dc.b \"/h5/rgdir/rgf\",0"] +
+        message("mmkbad", "MAKDIR A0 NOT ADVANCED") + message("mmkok", "MAKDIR A0 OK") +
+        message("mcdbad", "CHGDIR A0 NOT ADVANCED") + message("mcdok", "CHGDIR A0 OK") +
+        message("mdlbad", "DELETE A0 NOT ADVANCED") + message("mdlok", "DELETE A0 OK") + ["  ends", ""]
+
+    let stime = header + [
+        "  psect rgstim,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  move.l #$00123456,d0", "  move.l #$07EA090F,d1", "  OS9 F$STime",
+        "  bcs.s fail",
+        "  cmpi.l #$00123456,d0", "  bne.s changed", "  cmpi.l #$07EA090F,d1", "  bne.s changed"] +
+        say("mkept") + ["  bra.s done", "changed:"] + say("mchg") + [
+        "done:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit"] +
+        message("mkept", "STIME KEPT D0 D1") + message("mchg", "STIME CHANGED D0 D1") + ["  ends", ""]
+
+    let evlink = header + [
+        "  psect rgevln,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea ename(pc),a0", "  moveq #0,d0", "  move.w #2,d1", "  moveq #0,d2", "  moveq #0,d3",
+        "  OS9 F$Event",                                            // Ev$Creat
+        "  bcs.s fail",
+        "  lea ename(pc),a1", "  movea.l a1,a0", "  move.w #0,d1", "  OS9 F$Event",  // Ev$Link
+        "  bcs.s fail"] + advance("d5") + [
+        "  move.l d0,d6",
+        "  cmpi.l #\(4),d5", "  beq.s lnok"] + say("mlnbad") + ["  bra.s lndone", "lnok:"] + say("mlnok") + [
+        "lndone:",
+        "  move.l d6,d0", "  move.w #1,d1", "  OS9 F$Event",         // Ev$UnLnk (the link)
+        "  move.l d6,d0", "  move.w #1,d1", "  OS9 F$Event",         // Ev$UnLnk (the create)
+        "  lea ename(pc),a0", "  move.w #3,d1", "  OS9 F$Event",      // Ev$Delet
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "ename: dc.b \"rgev\",0"] +
+        message("mlnbad", "EVLINK A0 NOT ADVANCED") + message("mlnok", "EVLINK A0 OK") + ["  ends", ""]
+
+    let modules = ["rgpath": paths, "rgstim": stime, "rgevln": evlink]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+
+    struct RegisterCase {
+        let name: String
+        let module: String
+        let want: [String]
+    }
+    let cases = [
+        RegisterCase(name: "io: I$MakDir, I$ChgDir and I$Delete return a0 updated past the pathlist",
+                     module: "rgpath", want: ["MAKDIR A0 OK", "CHGDIR A0 OK", "DELETE A0 OK"]),
+        RegisterCase(name: "time: F$STime leaves d0 and d1 as they were passed",
+                     module: "rgstim", want: ["STIME KEPT D0 D1"]),
+        RegisterCase(name: "event: Ev$Link returns a0 updated past the event name",
+                     module: "rgevln", want: ["EVLINK A0 OK"])
+    ]
+    let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
+    if !chosen.isEmpty {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for testCase in chosen {
+            build += ["r68 /h5/\(testCase.module).a -o=/h5/\(testCase.module).r",
+                      "l68 /h5/\(testCase.module).r -o=/h5/\(testCase.module)"]
+        }
+        _ = os9(build, timeout: 60)
+    }
+    for testCase in chosen {
+        removeScratchItem("rgdir/rgf")
+        removeScratchItem("rgdir")
+        let out = os9(["/h5/\(testCase.module)"], timeout: 30)
+        if testCase.want.allSatisfy({ out.contains($0) }) {
+            print("PASS: \(testCase.name)")
+            passed += 1
+        } else {
+            print("FAIL: \(testCase.name)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                !$0.hasPrefix("#") && $0 != "$" && !$0.isEmpty
+            }
+            print("      saw: \(lines.suffix(8).joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    removeScratchItem("rgdir/rgf")
+    removeScratchItem("rgdir")
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

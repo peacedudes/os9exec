@@ -200,14 +200,24 @@ os9err OS9_I_Delete( regs_type *rp, ushort cpid )
     ushort    mode    = lobyte(rp->d[0]); /* take do.b, avoid poCreate bug problem */
     char*     os9_name= (char*)FROM68K(rp->a[0]);
     char      os9_path[OS9PATHLEN];
-//  char*     pastpath;
+    char*     pastpath;
     ptype_typ type;
+    os9err    err;
 
 
-    if (os9_name==NULL)                     os9_name= "";
-    /*pastpath=*/ nullterm(         os9_path,os9_name, OS9PATHLEN );
+    Boolean   guestName= os9_name!=NULL;
+
+    if (!guestName)                         os9_name= "";
+    pastpath= nullterm(             os9_path,os9_name, OS9PATHLEN );
     type    =  IO_Type( cpid,      os9_path,mode ); if (type==fNone) return E_BPNAM;
-    return delete_file( cpid,type, os9_path,mode );
+    err     = delete_file( cpid,type, os9_path,mode );
+
+    /* "(a0) = Updated past pathlist" (I$Delete, page 2-7), as I$Open returns it:
+       a utility deleting a list of names walks it with the updated a0. Only a
+       guest pointer can be handed back: the "" stand-in for a null a0 is host
+       memory. */
+    if (!err && guestName) rp->a[0]= TO68K(pastpath);
+    return err;
 } /* OS9_I_Delete */
 
 
@@ -234,13 +244,18 @@ os9err OS9_I_MakDir( regs_type *rp, ushort cpid )
     ushort    mode    = loword(rp->d[0]) | poCreateMask; /* internal open used */
     char*     os9_name= (char*)FROM68K(rp->a[0]);
     char      os9_path[OS9PATHLEN];
-//  char*     pastpath;
+    char*     pastpath;
     ptype_typ type;
+    os9err    err;
 
 
-    /*pastpath=*/ nullterm(        os9_path,os9_name, OS9PATHLEN );
+    pastpath= nullterm(            os9_path,os9_name, OS9PATHLEN );
     type    =  IO_Type( cpid,      os9_path,mode ); if (type==fNone) return E_BPNAM;
-    return    make_dir( cpid,type, os9_path,mode );
+    err     =  make_dir( cpid,type, os9_path,mode );
+
+    /* "(a0) = Updated past pathlist" (I$MakDir, page 2-15) */
+    if (!err) rp->a[0]= TO68K(pastpath);
+    return err;
 } /* OS9_I_MakDir */
 
 
@@ -264,14 +279,22 @@ os9err OS9_I_ChgDir( regs_type *rp, ushort cpid )
     ushort    mode    = (loword(rp->d[0]) & 0x07) | 0x80; /* ignore some flags */
     char*     os9_name= (char*)FROM68K(rp->a[0]);
     char      os9_path[OS9PATHLEN];
-//  char*     pastpath;
+    char*     pastpath;
     ptype_typ type;
+    os9err    err;
 
 
-    if (os9_name==NULL)                     os9_name= ""; /* avoid problems without $HOME */
-    /*pastpath=*/ nullterm(        os9_path,os9_name, OS9PATHLEN );
+    Boolean   guestName= os9_name!=NULL;
+
+    if (!guestName)                         os9_name= ""; /* avoid problems without $HOME */
+    pastpath= nullterm(            os9_path,os9_name, OS9PATHLEN );
     type=      IO_Type( cpid,      os9_path,mode ); if (type==fNone) return E_BPNAM;
-    return  change_dir( cpid,type, os9_path,mode );
+    err =   change_dir( cpid,type, os9_path,mode );
+
+    /* "(a0) = Updated past pathlist" (I$ChgDir, page 2-3); only a guest
+       pointer is handed back, not the "" stand-in for a null a0 */
+    if (!err && guestName) rp->a[0]= TO68K(pastpath);
+    return err;
 } /* OS9_I_ChgDir */
 
 

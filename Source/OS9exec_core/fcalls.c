@@ -711,18 +711,24 @@ os9err OS9_F_STime( regs_type *rp, ushort cpid )
  *          d1.w = error
  */
 {
-  long    days= rp->d[ 1 ] - j_date( 1,1,1904 ); // get date
-  OS9_F_Julian( rp, cpid );
-
-  if ( days<0 ) { days= 0; }
-
+  /* F$STime has no output registers, and "registers not explicitly specified
+     as input or output parameters are not altered" (Technical Manual, p.ii).
+     The Julian conversion used to run on the caller's own registers, so d0
+     and d1 came back as seconds-since-midnight and a Julian day. Only the
+     classic Mac branch uses the result, from a copy. */
   #ifdef MACOS9
   {
-    ulong secs= rp->d[ 0 ];
-    if ( days<0 ) secs= 0;
-    secs+= SecsPerDay*days;
+    regs_type jr  = *rp;
+    long      days;
+    ulong     secs;
+
+    OS9_F_Julian( &jr, cpid );
+    days= (long)jr.d[ 1 ] - (long)j_date( 1,1,1904 );
+    secs= days<0 ? 0 : jr.d[ 0 ] + SecsPerDay*days;
     SetDateTime( secs );
   }
+  #else
+    (void)rp; (void)cpid; /* the host clock is not set from the guest */
   #endif
 
   return 0;
@@ -767,7 +773,12 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
     switch (evCode) {
         case Ev_Link:   EVENT_NAME_REQUIRED();
                              err= evLink( p, &evId );
-                        if (!err) rp->d[0]=   evId;
+                        if (err) break;
+
+                        /* "(a0) = updated past event name" (Ev$Link, page
+                           1-19), as Ev$Creat and Ev$Delet below already do */
+                        rp->a[0]= TO68K( p + strlen( p ) );
+                        rp->d[0]= evId;
                         break;
                         
         case Ev_UnLnk:  evId= rp->d[0];
