@@ -7,7 +7,7 @@
 #      OFF the image and compared with its source. A directory listing would
 #      only prove a NAME is present; this proves the bytes are.
 #   2. Does the suite RUN from the image and report the expected verdicts?
-#      All 61, checked against DOCS/expected-rbf -- an image is an RBF device,
+#      All 62, checked against DOCS/expected-rbf -- an image is an RBF device,
 #      so the record-locking tests must give real verdicts here rather than
 #      the SKIPs a host directory produces.
 #

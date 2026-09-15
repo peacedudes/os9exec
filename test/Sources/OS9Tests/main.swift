@@ -2116,6 +2116,150 @@ do {
     }
 }
 
+// ── fs: a host directory moves a file by link-then-unlink ───────────────────
+// move does not rewrite an entry: through one update path it appends an entry
+// past the last, carrying the file's FD sector, and through a second it clears
+// the old entry's first byte. A host directory has neither, so the append now
+// becomes a host rename of the file that FD sector names, and the clear that
+// follows is taken as already done -- but only right after such an append; a
+// clear on its own is a delete, which a host directory still refuses. The
+// probes run in order against /h5/mvd1 and /h5/mvd2, and the host directories
+// are read back afterwards.
+do {
+    func entryName(_ name: String) -> String {
+        let bytes = Array(name.utf8)
+        let last = String(format: "$%02X", Int(bytes[bytes.count - 1]) | 0x80)
+        return bytes.count == 1 ? "dc.b \(last)" : "dc.b \"\(String(name.dropLast()))\",\(last)"
+    }
+
+    struct MoveProbe {
+        let module: String
+        let srcDir: String
+        let dstDir: String
+        let from: String
+        let into: String
+        var append = true
+        var clear = true
+        let expect: Int
+        let why: String
+    }
+
+    func source(_ probe: MoveProbe) -> String {
+        var lines = [
+            "IOpen set $84", "IRead set $89", "IWrite set $8A", "ISeek set $88",
+            "IGetStt set $8D", "FExit set $06",
+            " psect \(probe.module),$0101,$8001,0,2048,start",
+            "start", " sub.l #64,a7", " movea.l a7,a4",
+            " lea psrc(pc),a0", " moveq #0,d0", " move.b #$83,d0",
+            " trap #0", " dc.w IOpen", " bcs.w pfail", " move.w d0,d6", " moveq #0,d5",
+            "prd", " moveq #0,d0", " move.w d6,d0", " movea.l a4,a0", " moveq #32,d1",
+            " trap #0", " dc.w IRead", " bcs.w pfail",
+            " movea.l a4,a0", " lea pold(pc),a3", " moveq #\(probe.from.utf8.count - 1),d2",
+            "pcmp", " cmpm.b (a0)+,(a3)+", " bne.s pnext", " dbra d2,pcmp", " bra.s pfound",
+            "pnext", " addi.l #32,d5", " bra.s prd",
+            "pfound"
+        ]
+        if probe.append {
+            lines += [
+                " lea pdst(pc),a0", " moveq #0,d0", " move.b #$83,d0",
+                " trap #0", " dc.w IOpen", " bcs.w pfail", " move.w d0,d7",
+                " moveq #0,d0", " move.w d7,d0", " moveq #2,d1", " trap #0", " dc.w IGetStt", " bcs.w pfail",
+                " moveq #0,d0", " move.w d7,d0", " move.l d2,d1", " trap #0", " dc.w ISeek", " bcs.w pfail",
+                " movea.l a4,a0", " lea pnew(pc),a3", " moveq #\(probe.into.utf8.count - 1),d2",
+                "pcpy", " move.b (a3)+,(a0)+", " dbra d2,pcpy",
+                " moveq #\(27 - probe.into.utf8.count),d2",
+                "pclr", " clr.b (a0)+", " dbra d2,pclr",
+                " moveq #0,d0", " move.w d7,d0", " movea.l a4,a0", " moveq #32,d1",
+                " trap #0", " dc.w IWrite", " bcs.w pfail"
+            ]
+        }
+        if probe.clear {
+            lines += [
+                " moveq #0,d0", " move.w d6,d0", " move.l d5,d1", " trap #0", " dc.w ISeek", " bcs.s pfail",
+                " moveq #0,d0", " move.w d6,d0", " lea pzero(pc),a0", " moveq #1,d1",
+                " trap #0", " dc.w IWrite", " bcs.s pfail"
+            ]
+        }
+        lines += [
+            " moveq #0,d1", " trap #0", " dc.w FExit",
+            "pfail", " trap #0", " dc.w FExit",
+            "psrc dc.b \"\(probe.srcDir)\",0",
+            "pdst dc.b \"\(probe.dstDir)\",0",
+            "pold \(entryName(probe.from))",
+            "pnew \(entryName(probe.into))",
+            "pzero dc.b 0",
+            " ends", ""
+        ]
+        return lines.joined(separator: "\r")
+    }
+
+    let probes = [
+        MoveProbe(module: "mv01", srcDir: "/h5/mvd1", dstDir: "/h5/mvd1", from: "mva", into: "mvb",
+                  expect: 0, why: "a move within one directory"),
+        MoveProbe(module: "mv02", srcDir: "/h5/mvd1", dstDir: "/h5/mvd2", from: "mvb", into: "mvc",
+                  expect: 0, why: "a move into another directory"),
+        MoveProbe(module: "mv03", srcDir: "/h5/mvd2", dstDir: "/h5/mvd2", from: "mvc", into: "mvc",
+                  append: false, expect: 203, why: "a clear with no append before it (a delete)"),
+        MoveProbe(module: "mv04", srcDir: "/h5/mvd2", dstDir: "/h5/mvd1", from: "mvc", into: "mvx",
+                  clear: false, expect: 218, why: "an append onto a name the directory already has")
+    ]
+
+    let name = "fs: a host directory moves a file by link-then-unlink"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let fileManager = FileManager.default
+        for leftover in ["mvd1", "mvd2"] { removeScratchItem(leftover) }
+        try? fileManager.createDirectory(atPath: scratchDisk + "/mvd1", withIntermediateDirectories: false)
+        try? fileManager.createDirectory(atPath: scratchDisk + "/mvd2", withIntermediateDirectories: false)
+        try? "M".write(toFile: scratchDisk + "/mvd1/mva", atomically: false, encoding: .utf8)
+        try? "X".write(toFile: scratchDisk + "/mvd1/mvx", atomically: false, encoding: .utf8)
+
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for probe in probes {
+            try? source(probe).write(toFile: scratchDisk + "/\(probe.module).a",
+                                     atomically: true, encoding: .utf8)
+            build += ["r68 /h5/\(probe.module).a -o=/h5/\(probe.module).r",
+                      "l68 /h5/\(probe.module).r -o=/h5/\(probe.module)"]
+        }
+        _ = os9(build, timeout: 60)
+
+        var faults: [String] = []
+        for probe in probes {
+            let out = os9(["/h5/\(probe.module)"], timeout: 20)
+            let code = out.range(of: "#000:").flatMap { Int(out[$0.upperBound...].prefix(3)) } ?? 0
+            if code != probe.expect {
+                faults.append("\(probe.why): \(probe.from) -> \(probe.into) gave \(code), expected \(probe.expect)")
+            }
+        }
+
+        func listing(_ dir: String) -> Set<String> {
+            Set((try? fileManager.contentsOfDirectory(atPath: scratchDisk + "/" + dir)) ?? [])
+        }
+        let one = listing("mvd1"), two = listing("mvd2")
+        let moved = try? String(contentsOfFile: scratchDisk + "/mvd2/mvc", encoding: .utf8)
+        if moved != "M" || one.contains("mva") || one.contains("mvb") {
+            faults.append("after the moves: expected mvd2/mvc holding M and neither mva nor mvb in mvd1; "
+                          + "saw mvd1 \(one.sorted()) mvd2 \(two.sorted())")
+        }
+        if !one.contains("mvx") { faults.append("mvd1/mvx, the name the last append collided with, is gone") }
+
+        if faults.isEmpty {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            for fault in faults { print("      \(fault)") }
+            failed += 1
+        }
+
+        for leftover in ["mvd1/mva", "mvd1/mvb", "mvd1/mvx", "mvd2/mvc", "mvd1", "mvd2"] {
+            removeScratchItem(leftover)
+        }
+        for probe in probes {
+            for suffix in ["", ".a", ".r"] { removeScratchItem(probe.module + suffix) }
+        }
+    }
+}
+
 // ── fs: a host directory renames by entry write, and refuses the rest ─────────
 // RBF renames a file when a program rewrites its directory entry spelt
 // differently -- Microware's clib rename(), move, wndex and upperdir all do it.

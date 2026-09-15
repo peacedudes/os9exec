@@ -510,3 +510,30 @@ A path dirties a sector only after loading the newest copy, from the device
 or from the one path holding it dirty. Dropping every other copy, dirty ones
 included, at that moment leaves exactly one unflushed copy, and it already
 carries everyone's changes.
+
+## os9exec, 2026-09-14: t62, moving a file by link-then-unlink
+
+move does not copy a file or rewrite its entry. It gives the file a second
+name, then removes the first. Through one update path on the directory it finds
+the old entry. Through a second it appends an entry carrying the same FD
+sector. Back through the first it clears the old entry's first byte.
+
+That failed on os9exec both ways, for different reasons. On an RBF image the
+clear was lost: the second path still held its copy of the sector, and wrote
+it back over the cleared byte at close. That was fixed by t61's change earlier
+the same day, so t62 passes on an RBF image from there on. On a host-native
+directory there are no entries, so the append was refused with E$BMode:
+
+```
+RESULT t62 FAIL  obs=000203 exp=000000  a file moved by link-then-unlink opens under the new name only
+```
+
+A host directory now takes the append as a host rename of the file its FD
+sector names. It then treats the clear that follows as already done, but only
+as the next directory write by the same process in the directory the file
+left; anywhere else a cleared entry is a delete, still refused. On both kinds
+of device:
+
+```
+RESULT t62 PASS  obs=000000 exp=000000  a file moved by link-then-unlink opens under the new name only
+```
