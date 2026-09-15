@@ -5853,6 +5853,56 @@ do {
     }
 }
 
+// ── SS_Attr: the directory bit on a plain host file is refused, as on RBF ──────
+// "It is not permitted to set the dir bit of a non-directory file" (I$SetStt
+// SS_Attr, p.2-22). RBF answers E$FNA (0d43a2e); on a host directory the bit
+// was dropped and the call reported success. (The attr utility refuses -d by
+// itself, so the program makes the call.)
+do {
+    let attrAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Create equ $83", "I$WritLn equ $8C", "I$SetStt equ $8E",
+        "  psect mattrdir,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  moveq #$1B,d1", "  OS9 I$Create", "  bcs.s bad",
+        "  moveq #$1C,d1", "  move.l #$9B,d2", "  OS9 I$SetStt", "  bcc.s bad",       // SS_Attr, dir bit
+        "  cmpi.w #214,d1", "  bne.s bad",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "fname: dc.b \"/h5/t_attrdirbit\",0",
+        "mok: dc.b \"HOST DIR BIT REFUSED\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"HOST DIR BIT ACCEPTED\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    try? attrAsm.write(toFile: scratchDisk + "/mattrdir.a", atomically: true, encoding: .utf8)
+
+    let name = "fs: SS_Attr setting the dir bit of a plain host file is E$FNA, as on RBF"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem("t_attrdirbit")
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/mattrdir.a -o=/h5/mattrdir.r",
+            "l68 /h5/mattrdir.r -o=/h5/mattrdir",
+            "/h5/mattrdir"
+        ], timeout: 30)
+        if out.contains("HOST DIR BIT REFUSED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("HOST DIR") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        removeScratchItem("t_attrdirbit")
+    }
+    for item in ["mattrdir.a", "mattrdir.r", "mattrdir"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

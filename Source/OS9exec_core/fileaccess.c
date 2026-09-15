@@ -2021,6 +2021,11 @@ os9err pFsetatt( _pid_, syspath_typ* spP, uint32_t *attr )
  * native files never actually reflected any attr-command change at all,
  * regardless of platform. */
 {
+    /* "It is not permitted to set the dir bit of a non-directory file"
+       (I$SetStt SS_Attr, page 2-22). RBF refuses it with E$FNA; here the bit
+       was dropped without a word, and the call reported success. */
+    if (*attr & 0x80) return os9error(E_FNA);
+
     #ifdef win_unix
       Set_FileAttr( spP, (byte)*attr );
     #endif
