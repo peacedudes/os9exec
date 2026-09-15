@@ -6198,6 +6198,62 @@ do {
     }
 }
 
+// ── F$Sleep: a few 256ths of a second still sleep ──────────────────────────────
+// "If the high order bit of d0.l is set, the low 31 bits are converted from
+// 256ths of a second into ticks" (F$Sleep, p.1-58); F$Alarm, for the same
+// encoding, rounds "up to the nearest clock tick". os9exec truncated, so at 100
+// ticks/s 1/256 was 0 ticks and returned at once. The program sleeps 1/256 twenty
+// times and measures ticks with F$Time format 3 (seconds since midnight and the
+// current tick): each sleep must reach a tick boundary, so at least 10 ticks.
+do {
+    let sleepAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$Sleep equ $0A", "F$Time equ $15", "I$WritLn equ $8C",
+        "  psect msleep256,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "start:",
+        "  bsr.s now", "  move.l d4,d7",
+        "  moveq #19,d2",
+        "nap:", "  move.l #$80000001,d0", "  OS9 F$Sleep", "  dbra d2,nap",
+        "  bsr.s now", "  sub.l d7,d4",
+        "  cmpi.l #10,d4", "  blt.s bad",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        // d4 = seconds since midnight * 100 + current tick
+        "now:", "  moveq #3,d0", "  OS9 F$Time",
+        "  move.l d0,d4", "  move.l d0,d5", "  move.l d0,d6",
+        "  lsl.l #6,d4", "  lsl.l #5,d5", "  lsl.l #2,d6", "  add.l d5,d4", "  add.l d6,d4",
+        "  moveq #0,d5", "  move.w d3,d5", "  add.l d5,d4", "  rts",
+        "mok: dc.b \"SLEEP 256THS WAITED\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"SLEEP 256THS DID NOT WAIT\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    try? sleepAsm.write(toFile: scratchDisk + "/msleep256.a", atomically: true, encoding: .utf8)
+
+    let name = "time: F$Sleep of 1/256 second sleeps at least to the next tick"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/msleep256.a -o=/h5/msleep256.r",
+            "l68 /h5/msleep256.r -o=/h5/msleep256",
+            "/h5/msleep256"
+        ], timeout: 30)
+        if out.contains("SLEEP 256THS WAITED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("SLEEP") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for item in ["msleep256.a", "msleep256.r", "msleep256"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

@@ -2416,7 +2416,8 @@ os9err OS9_F_Sleep( regs_type *rp, ushort cpid )
   if (cp->way_to_icpt) return 0; // don't sleep if signaled
     
   arbitrate= true;               // allow next process to run
-  if (sleep_x==1) return 0;      // do not really sleep
+  if (sleeptime==1) return 0;    // a one-tick sleep only gives up the time slice
+                                 // (not 1/256 s, which is a real wait -- see below)
     
   CheckInputBuffers();           // make shure that special chars like
                                  // CtrlC/CtrlE/XOn/XOff will be handled       
@@ -2431,9 +2432,14 @@ os9err OS9_F_Sleep( regs_type *rp, ushort cpid )
   }
   else {
     // --- timed sleep
-    if (sleeptime < 0)
-         ticks= sleep_x*TICKS_PER_SEC/256;
-    else ticks= sleep_x;
+    /* "If the high order bit of d0.l is set, the low 31 bits are converted
+       from 256ths of a second into ticks" (F$Sleep, page 1-58). The page gives
+       no rounding; F$Alarm, for the same encoding, says "All times are rounded
+       up to the nearest clock tick", and A_Interval does that for F$Alarm and
+       SS_Ticks. This truncated: at 100 ticks/s, 1/256 and 2/256 came to 0
+       ticks and did not sleep at all (a game pausing 2/256 between key polls
+       ran with no delay; measured by the osk-freeware session, 2026-09-15). */
+    ticks= (int)A_Interval( (uint32_t)sleeptime );
         
     debugprintf( dbgPartial,dbgNorm,
                  ( "# F$Sleep: pid=%d sleep for %d ticks\n", cpid, ticks ) );
