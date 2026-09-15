@@ -1691,6 +1691,16 @@ do {
     blocked("/h0 alias escape",     "/h0/../\(canaryName)")
     blocked("symlink out of device","esclink")            // realpath confinement must not follow it out
 
+    // Refused as a name that does not exist, E$PNNF, like any other name the
+    // device does not have. Spelt as an absolute path it was E$MNF, "module
+    // not found": IO_Type saw a path leading out of every device and gave it
+    // no file manager at all, as it does a device that does not exist.
+    run("fs: confine a file symlink out of the device, named absolutely, as E$PNNF",
+        expectation: "list \(sub)/esclink reports Error #000:216, not 221",
+        commands: ["list \(sub)/esclink"]) {
+        $0.contains("Error #000:216") && !$0.contains("#000:221") && !$0.contains(canarySecret)
+    }
+
     try? FileManager.default.removeItem(atPath: fsHostDir)
     // canaryHost is removed in the epilogue, not here -- see the note there.
 
@@ -1777,6 +1787,19 @@ do {
         return fileManager.fileExists(atPath: scratchDisk + "/" + symRootMark)
             && fileManager.fileExists(atPath: scratchDisk + "/" + symEscDir + "/" + deldirKeep)
     }
+
+    // Creating a file through that link is refused the same way, as a name the
+    // device does not have (E$PNNF; it was E$MNF), and nothing is created in
+    // the directory the link leads to.
+    let symEscNew = "SYMESCNEW\(UUID().uuidString.prefix(8))"
+    let symEscNewHost = (scratchDisk as NSString).deletingLastPathComponent + "/" + symEscNew
+    run("fs: confine a file created through a directory symlink out of every device, as E$PNNF",
+        expectation: "echo into out -> ../.. reports Error #000:216, not 221, and creates nothing there",
+        commands: ["echo x >\(scratch)/\(symEscDir)/out/\(symEscNew)"]) {
+        $0.contains("Error #000:216") && !$0.contains("#000:221")
+            && !FileManager.default.fileExists(atPath: symEscNewHost)
+    }
+    try? FileManager.default.removeItem(atPath: symEscNewHost)
 
     removeScratchItem(symEscDir)
     removeScratchItem(symRootMark)

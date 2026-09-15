@@ -186,6 +186,7 @@ Boolean HostStreamWithinConfiguredDevice( FILE* stream ); /* utilstuff.c -- syml
 #endif
 Boolean HostPathDeviceName( const char* hostpath, char* nameOut );
 Boolean IsHostDeviceRoot( const char* hostpath );
+Boolean HostDirDevicePath( const char* os9path );
 Boolean FindConfiguredDeviceRoot( const char* hostpath, char* rootOut );
 
 void    CutUp              ( char* pathname, const char* prev, Boolean hostName );

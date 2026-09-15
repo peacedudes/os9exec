@@ -3304,6 +3304,22 @@ Boolean RAM_Device( const char* os9path )
 } /* RAM_Device */
 // #endif
 
+Boolean HostDirDevicePath( const char* os9path )
+/* true if <os9path> is on a two-character device whose host side is a
+   directory (e.g. /h2 on a host folder), whether or not the rest resolves */
+{
+    const char* op= os9path;
+    char        devpath[4];
+    char        hostdev[OS9PATHLEN];
+    char*       dp= devpath;
+
+    if (*op==PSEP) op++;
+    if (op[0]==NUL || op[1]==NUL || (op[2]!=PSEP && op[2]!=NUL)) return false;
+
+    devpath[0]= PSEP; devpath[1]= op[0]; devpath[2]= op[1]; devpath[3]= NUL;
+    return !parsepath( 0, &dp, hostdev, false ) && PathFound( hostdev );
+} /* HostDirDevicePath */
+
 static Boolean OS9_Device( char* os9path, ushort mode, ptype_typ *typeP )
 /* Returns true, if <os9path> is an RBF device */
 {
@@ -3389,16 +3405,9 @@ static Boolean OS9_Device( char* os9path, ushort mode, ptype_typ *typeP )
        RBF image files (e.g., OS9DISK → /dd file) are NOT directories, so parsepath on
        "/dd" returns a file path, PathFound() returns false, and we fall through to SCSI. */
     if (err==E_PNNF) {
-        const char *op = os9path;
-        if (*op==PSEP) op++;
-        if (op[0]!=NUL && op[1]!=NUL && (op[2]==PSEP || op[2]==NUL)) {
-            char devpath[4] = { PSEP, op[0], op[1], NUL };
-            char hostdev[OS9PATHLEN];
-            char *dp        = devpath;
-            if (!parsepath(0, &dp, hostdev, false) && PathFound(hostdev)) {
-                if (IsDir(mode)) { *typeP= fDir;  return true;  }
-                else             { *typeP= fNone; return false; }
-            }
+        if (HostDirDevicePath( os9path )) {
+            if (IsDir(mode)) { *typeP= fDir;  return true;  }
+            else             { *typeP= fNone; return false; }
         }
         /* Neither the full path nor its 2-char device prefix resolves on
          * the host — this isn't a host-filesystem-backed path at all (and,

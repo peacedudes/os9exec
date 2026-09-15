@@ -1341,7 +1341,14 @@ os9err pNop_buf   ( _pid_, _spP_, uint32_t* d, byte* buffer )                   
 os9err pNop_path  ( _pid_, _spP_, _modeP_, const char* pathname )                       { return 0; }
 
 /* unavailable 'open' function, as in OS-9 */
-os9err pNoModule  ( _pid_, _spP_, _modeP_, const char* pathname )                       { return os9error(E_MNF); }
+os9err pNoModule  ( _pid_, _spP_, _modeP_, const char* pathname )
+/* No file manager for <pathname>. On a device that exists as a host directory
+   that is a name the device does not have -- one whose host path leads out of
+   every device, which IO_Type refuses before any manager sees it -- so
+   E$PNNF, as for any other missing name. E$MNF only when there is no such
+   device. */
+{   return os9error( pathname!=NULL && HostDirDevicePath( pathname ) ? E_PNNF : E_MNF );
+}
 
 os9err pNotReady( _pid_, _spP_, uint32_t* n )
 /* SS_Ready on a device that can never have input. SS_Ready IS in SCF's scope
