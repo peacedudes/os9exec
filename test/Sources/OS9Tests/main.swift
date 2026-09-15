@@ -5585,6 +5585,61 @@ do {
     }
 }
 
+// ── F$SRqMem with -1 allocates the largest free block ─────────────────────────
+// "If -1 is passed in d0.l, the largest block of free memory is allocated to
+// the calling process" (p.1-56). os9exec granted a fixed 8 MB however much was
+// free. The program takes the -1 block and, still holding it, asks for 64 bytes
+// more than it was given: if that was the largest block, there is none bigger.
+// (Asked after giving it back, the shell's own frees can merge with it first.)
+do {
+    let largestAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$SRqMem equ $28", "F$SRtMem equ $29", "I$WritLn equ $8C",
+        "  psect mlargest,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #-1,d0", "  OS9 F$SRqMem", "  bcs.s nomem",
+        "  move.l d0,d5", "  movea.l a2,a3",
+        "  addi.l #64,d0", "  OS9 F$SRqMem", "  bcc.s bigger",
+        "  lea mok(pc),a4", "  moveq #mokl,d6", "  bra.s giveback",
+        "bigger:", "  OS9 F$SRtMem",                             // d0 and a2 name the larger block
+        "  lea mbig(pc),a4", "  moveq #mbigl,d6",
+        "giveback:", "  move.l d5,d0", "  movea.l a3,a2", "  OS9 F$SRtMem",
+        "  movea.l a4,a0", "  move.l d6,d1", "  bra.s say",
+        "nomem:", "  lea mfail(pc),a0", "  moveq #mfaill,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "mok: dc.b \"SRQMEM LARGEST OK\",$0D", "mokl equ *-mok",
+        "mbig: dc.b \"SRQMEM LARGER BLOCK GRANTED\",$0D", "mbigl equ *-mbig",
+        "mfail: dc.b \"SRQMEM -1 FAILED\",$0D", "mfaill equ *-mfail",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    try? largestAsm.write(toFile: scratchDisk + "/mlargest.a", atomically: true, encoding: .utf8)
+
+    let name = "f$srqmem: -1 allocates the largest free block"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/mlargest.a -o=/h5/mlargest.r",
+            "l68 /h5/mlargest.r -o=/h5/mlargest",
+            "/h5/mlargest"
+        ], timeout: 30)
+        if out.contains("SRQMEM LARGEST OK") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("SRQMEM") || $0.contains("Error")
+            }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for item in ["mlargest.a", "mlargest.r", "mlargest"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

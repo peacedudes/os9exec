@@ -443,7 +443,11 @@ os9err OS9_F_SRqMem( regs_type *rp, ushort cpid )
     
     if (memsz==0xFFFFFFFF) { /* get max mem */
       #ifdef win_unix
-        memsz= 0x00800000; /* %%% a large portion */
+        /* "If -1 is passed in d0.l, the largest block of free memory is
+           allocated to the calling process" (page 1-56). It was a fixed 8 MB:
+           more than a nearly full arena has, and a quarter of a fresh one. */
+        memsz= largest_free_block();
+        if (memsz==0) return os9error(E_NORAM);
       #else
         memsz= MaxBlock()-15;  
         debugprintf(dbgMemory,dbgNorm,

@@ -179,6 +179,24 @@ ulong emul_arena_free( void )
 } /* emul_arena_free */
 
 
+ulong largest_free_block( void )
+/* The largest block get_mem can hand out in one piece right now: the arena
+ * still to be carved, rounded down to get_mem's 64-byte grain, or the biggest
+ * block waiting on the free list, whichever is larger. F$SRqMem allocates this
+ * when asked for -1, "the largest block of free memory". */
+{
+    ulong best= emul_arena_free() & ~(ulong)63;
+
+    #ifdef REUSE_MEM
+      int k;
+      for (k=0; k<MAX_MEMALLOC; k++) {
+          if (freeinfo.f[ k ].base!=NULL && freeinfo.f[ k ].size>best) best= freeinfo.f[ k ].size;
+      }
+    #endif
+    return best;
+} /* largest_free_block */
+
+
 /* prepare the memory handling for use */
 void init_all_mem(void)
 {

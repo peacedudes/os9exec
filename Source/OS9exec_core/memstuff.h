@@ -102,6 +102,7 @@ void   show_unused( void );
 void*      get_mem( ulong  memsz   );
 void   release_mem( void*  membase );
 ulong  emul_arena_free( void );
+ulong  largest_free_block( void );
 
 /* Report the run's suppressed allocation failures, once, at shutdown. Silent
    unless more failed than were announced -- see alloc_failed in memstuff.c. */
