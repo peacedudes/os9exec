@@ -197,6 +197,69 @@ ulong largest_free_block( void )
 } /* largest_free_block */
 
 
+typedef struct { uint32_t addr, size; } freeblk_typ;
+
+static int CompareFreeBlk( const void* a, const void* b )
+{   uint32_t x= ((const freeblk_typ*)a)->addr, y= ((const freeblk_typ*)b)->addr;
+    return x<y ? -1 : x>y ? 1 : 0;
+} /* CompareFreeBlk */
+
+static void PutBE32( byte* p, uint32_t v )
+{   p[0]= (byte)(v>>24); p[1]= (byte)(v>>16); p[2]= (byte)(v>>8); p[3]= (byte)v;
+} /* PutBE32 */
+
+uint32_t free_block_map( uint32_t from, byte* buf, uint32_t bufsz,
+                         uint32_t* totalFree, uint32_t* totalRam )
+/* F$GBlkMp's map of free memory: the arena not yet carved, and every block on
+ * the free list, as 68k address and size in address order. Those at or above
+ * <from> go into <buf> as big-endian pairs, as many as fit ahead of the 0 that
+ * ends the list. Returns how many free fragments there are in all; <totalFree>
+ * gets their total size and <totalRam> the arena's, less the low page that is
+ * never handed out. */
+{
+    freeblk_typ* list;
+    uint32_t     n= 0, i, room, put= 0;
+    int          k, count= 1;
+
+    *totalFree= 0;
+    *totalRam = emul_base!=NULL ? (uint32_t)(emul_end-emul_base) - EMUL_RESERVED : 0;
+    if (bufsz>=4) PutBE32( buf, 0 );
+
+    #ifdef REUSE_MEM
+      for (k=0; k<MAX_MEMALLOC; k++) if (freeinfo.f[ k ].base!=NULL) count++;
+    #endif
+    list= malloc( (size_t)count*sizeof(freeblk_typ) ); if (list==NULL) return 0;
+
+    if (emul_arena_free()>0) {
+        list[ n ].addr= (uint32_t)(emul_next-emul_base);
+        list[ n ].size= (uint32_t)emul_arena_free();
+        n++;
+    }
+    #ifdef REUSE_MEM
+      for (k=0; k<MAX_MEMALLOC && (int)n<count; k++) {
+          if (freeinfo.f[ k ].base==NULL) continue;
+          list[ n ].addr= (uint32_t)((unsigned char*)freeinfo.f[ k ].base-emul_base);
+          list[ n ].size= (uint32_t)freeinfo.f[ k ].size;
+          n++;
+      }
+    #endif
+    qsort( list, n, sizeof(freeblk_typ), CompareFreeBlk );
+
+    room= bufsz>=4 ? (bufsz-4)/8 : 0; /* pairs that fit ahead of the 0 */
+    for (i=0; i<n; i++) {
+        *totalFree+= list[ i ].size;
+        if (list[ i ].addr<from || put>=room) continue;
+        PutBE32( buf+8*put,   list[ i ].addr );
+        PutBE32( buf+8*put+4, list[ i ].size );
+        put++;
+    }
+    if (bufsz>=4) PutBE32( buf+8*put, 0 );
+
+    free( list );
+    return n;
+} /* free_block_map */
+
+
 /* prepare the memory handling for use */
 void init_all_mem(void)
 {

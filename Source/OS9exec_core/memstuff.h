@@ -103,6 +103,8 @@ void*      get_mem( ulong  memsz   );
 void   release_mem( void*  membase );
 ulong  emul_arena_free( void );
 ulong  largest_free_block( void );
+uint32_t free_block_map( uint32_t from, byte* buf, uint32_t bufsz,
+                         uint32_t* totalFree, uint32_t* totalRam );
 
 /* Report the run's suppressed allocation failures, once, at shutdown. Silent
    unless more failed than were announced -- see alloc_failed in memstuff.c. */

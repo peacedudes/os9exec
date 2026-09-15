@@ -1400,6 +1400,30 @@ os9err OS9_F_GBlkMp( regs_type *rp, _pid_ )
 //  Gestalt( FOUR_CHAR_CODE('ram '), &totalMem );
 //  #endif
 
+  #ifdef win_unix
+    /* "d1.l = Number of memory fragments in system", "d2.l = Total RAM found
+       by system at startup", "d3.l = Current total free RAM available", and
+       the address and size of each free block, ended by 0 (page 1-32). There
+       were no fragments and an empty map, and the free RAM counted only the
+       free list -- none of the arena still to be carved -- so mfree showed
+       0.06 K free of 117 K in a 32 MB arena. */
+    {
+        uint32_t from = rp->d[0];
+        uint32_t bufsz= rp->d[1];
+        byte*    buf  = (byte*)FROM68K(rp->a[0]);
+        uint32_t totalFree, totalRam;
+
+        (void)b; (void)memsz;
+        if (bufsz>8u*(MAX_MEMALLOC+1)+4) bufsz= 8u*(MAX_MEMALLOC+1)+4; /* more than any map needs */
+        if (bufsz<4 || !RANGE_IN_ARENA( buf, bufsz )) return os9error(E_BPADDR);
+
+        rp->d[0]= OS9MINSYSALLOC;
+        rp->d[1]= free_block_map( from, buf, bufsz, &totalFree, &totalRam );
+        rp->d[2]= totalRam;
+        rp->d[3]= totalFree;
+        return 0;
+    }
+  #else
     rp->d[0]= OS9MINSYSALLOC;
     rp->d[1]= 0;
 
@@ -1420,6 +1444,7 @@ os9err OS9_F_GBlkMp( regs_type *rp, _pid_ )
        UBSan caught this one. */
     os9_set_l( b, 0 ); /* no segments available */
     return 0;
+  #endif
 } /* OS9_F_GBlkMp */
 
 os9err OS9_F_SetSys( regs_type *rp, ushort cpid )

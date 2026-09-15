@@ -5640,6 +5640,64 @@ do {
     }
 }
 
+// ── F$GBlkMp reports the free memory there is ──────────────────────────────────
+// F$GBlkMp (p.1-32) returns "d1.l = Number of memory fragments", "d2.l = Total
+// RAM found by system at startup", "d3.l = Current total free RAM available",
+// and the address and size of each free block in the buffer, ended by 0.
+// os9exec reported no fragments, an empty map, and as free RAM only what sat on
+// its free list (mfree: 0.06 K free of 117 K) -- none of the 32 MB arena it had
+// yet to carve. The program asks for the map in a 256-byte buffer: there must be
+// a fragment, over a megabyte free, no more free than at startup, and when every
+// fragment fits in the buffer, sizes that add up to the free total.
+do {
+    let mapAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$GBlkMp equ $19", "I$WritLn equ $8C", "BUF equ -32700",
+        "  psect mblkmap,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #0,d0", "  move.l #256,d1", "  lea BUF(a6),a0", "  OS9 F$GBlkMp", "  bcs.s bad",
+        "  tst.l d1", "  beq.s bad",
+        "  cmpi.l #$100000,d3", "  bls.s bad",
+        "  cmp.l d3,d2", "  bcs.s bad",
+        "  cmpi.l #31,d1", "  bhi.s good",                   // 31 pairs and the 0 fill 252 of 256 bytes
+        "  lea BUF(a6),a1", "  moveq #0,d4",
+        "sum:", "  move.l (a1)+,d5", "  beq.s summed", "  add.l (a1)+,d4", "  bra.s sum",
+        "summed:", "  cmp.l d3,d4", "  bne.s bad",
+        "good:", "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "mok: dc.b \"GBLKMP MAP OK\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"GBLKMP MAP WRONG\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    try? mapAsm.write(toFile: scratchDisk + "/mblkmap.a", atomically: true, encoding: .utf8)
+
+    let name = "f$gblkmp: reports the free fragments, the RAM at startup and the free total"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/mblkmap.a -o=/h5/mblkmap.r",
+            "l68 /h5/mblkmap.r -o=/h5/mblkmap",
+            "/h5/mblkmap"
+        ], timeout: 30)
+        if out.contains("GBLKMP MAP OK") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("GBLKMP") || $0.contains("Error")
+            }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for item in ["mblkmap.a", "mblkmap.r", "mblkmap"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm
