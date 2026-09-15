@@ -4673,6 +4673,108 @@ do {
     }
 }
 
+// ── host-dir SS_Ready, F$DatMod's type, F$CCtl's reserved bits ─────────────────
+// Found by the 2026-09-15 argument audit, each probed live:
+//  - "RBF devices always return carry clear, d1.l=1" (I$GetStt SS_Ready,
+//    p.2-13), but a host directory -- which reports itself as RBF -- said E$UnkSvc;
+//  - F$DatMod's "d3.w = desired type/language (optional)" (p.1-12) was ignored,
+//    always $0400, so F$Link by the requested type got E$MNF;
+//  - F$CCtl: "If any reserved bit is set, an E$Param error is returned" (p.1-6),
+//    but every value succeeded.
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$Link   equ $00", "F$DatMod equ $25", "F$CCtl   equ $5A",
+        "I$Open   equ $84", "I$GetStt equ $8D", "I$WritLn equ $8C"
+    ]
+    func say(_ label: String) -> [String] {
+        ["  lea \(label)(pc),a0", "  moveq #\(label)l,d1", "  moveq #1,d0", "  OS9 I$WritLn"]
+    }
+    func message(_ label: String, _ text: String) -> [String] {
+        ["\(label): dc.b \"\(text)\",$0D", "\(label)l equ *-\(label)"]
+    }
+    let ready = header + [
+        "  psect mhrdy,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea dname(pc),a0", "  move.w #$81,d0", "  OS9 I$Open", "  bcs.w fail",
+        "  move.w #$01,d1", "  OS9 I$GetStt",
+        "  bcs.s notrdy", "  cmpi.l #1,d1", "  bne.s notrdy"] + say("mok") + ["  bra.s done", "notrdy:"] +
+        say("mbad") + [
+        "done:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "dname: dc.b \"/h5\",0"] + message("mok", "HOSTDIR READY 1") + message("mbad", "HOSTDIR READY FAILED") +
+        ["  ends", ""]
+    let datmod = header + [
+        "  psect mdmtyp,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea mname(pc),a0", "  moveq #16,d0", "  move.w #$8000,d1", "  move.w #$0333,d2", "  move.w #$0401,d3",
+        "  OS9 F$DatMod", "  bcs.w fail",
+        "  lea mname(pc),a0", "  move.w #$0401,d0", "  OS9 F$Link",
+        "  bcs.s lost"] + say("mkept") + ["  bra.s done", "lost:"] + say("mlost") + [
+        "done:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "mname: dc.b \"dmtyp\",0"] + message("mkept", "DATMOD TYPE KEPT") + message("mlost", "DATMOD TYPE LOST") +
+        ["  ends", ""]
+    let cctl = header + [
+        "  psect mcctl,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  move.l #$80,d0", "  OS9 F$CCtl",
+        "  bcc.s acc", "  cmpi.w #225,d1", "  bne.s acc"] + say("mref") + ["  bra.s flush", "acc:"] + say("macc") + [
+        "flush:",
+        "  moveq #0,d0", "  OS9 F$CCtl",
+        "  bcs.s done"] + say("mflush") + [
+        "done:", "  moveq #0,d1", "  OS9 F$Exit"] +
+        message("mref", "CCTL RESERVED REFUSED") + message("macc", "CCTL RESERVED ACCEPTED") +
+        message("mflush", "CCTL FLUSH OK") + ["  ends", ""]
+
+    let modules = ["mhrdy": ready, "mdmtyp": datmod, "mcctl": cctl]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+    struct StatusCase {
+        let name: String
+        let module: String
+        let want: [String]
+    }
+    let cases = [
+        StatusCase(name: "fs: GetStt SS_Ready on a host directory answers ready, d1=1",
+                   module: "mhrdy", want: ["HOSTDIR READY 1"]),
+        StatusCase(name: "module: F$DatMod keeps the type/language asked for in d3",
+                   module: "mdmtyp", want: ["DATMOD TYPE KEPT"]),
+        StatusCase(name: "cache: F$CCtl refuses reserved bits and still flushes on 0",
+                   module: "mcctl", want: ["CCTL RESERVED REFUSED", "CCTL FLUSH OK"])
+    ]
+    let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
+    if !chosen.isEmpty {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for testCase in chosen {
+            build += ["r68 /h5/\(testCase.module).a -o=/h5/\(testCase.module).r",
+                      "l68 /h5/\(testCase.module).r -o=/h5/\(testCase.module)"]
+        }
+        _ = os9(build, timeout: 60)
+    }
+    for testCase in chosen {
+        let out = os9(["/h5/\(testCase.module)"], timeout: 30)
+        if testCase.want.allSatisfy({ out.contains($0) }) {
+            print("PASS: \(testCase.name)")
+            passed += 1
+        } else {
+            print("FAIL: \(testCase.name)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("READY") || $0.contains("DATMOD") || $0.contains("CCTL") || $0.contains("Error")
+            }
+            print("      saw: \(lines.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

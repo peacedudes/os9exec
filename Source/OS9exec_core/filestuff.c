@@ -1616,8 +1616,14 @@ os9err usrpath_close( ushort pid, ushort up )
 {
   os9err       err;
   int          ll;
-  ushort*      sp = &procs[ pid ].usrpaths[ up ];
-  syspath_typ* spP= get_syspathd( pid,*sp );
+  ushort*      sp;
+  syspath_typ* spP;
+
+  /* before usrpaths[up] is touched: it used to be read (and the path looked
+     up) first, and the range check came afterwards */
+  if (up>=MAXUSRPATHS) return os9error(E_BPNUM);
+  sp = &procs[ pid ].usrpaths[ up ];
+  spP= get_syspathd( pid,*sp );
      
   if (spP==NULL) ll= 0;
   else           ll= spP->linkcount-1;
@@ -1625,7 +1631,6 @@ os9err usrpath_close( ushort pid, ushort up )
   debugprintf(dbgFMgrType,dbgNorm,( "# %s pid/up/sp-lnk: %2d  %2d %2d-%2d %s\n", 
                                        "close", pid, up, *sp, ll, spP_TypeStr( spP ) ) );
     
-  if (up>=MAXUSRPATHS) return os9error(E_BPNUM);
   err= syspath_close( pid, *sp );
   debugprintf(dbgFiles,dbgNorm,("# usrpath_close: pid=%d, up=%d, sp=%d, err=%d\n",
                                    pid,up,*sp,err)); 

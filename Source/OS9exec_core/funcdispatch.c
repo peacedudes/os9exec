@@ -342,7 +342,7 @@ const funcdispatch_entry fcalltable[NUMFCALLS] =
     { /* 0x57 */ OS9_F_Sigmask,"F$Sigmask",d_l(0)+d_l(1),        0      }, /* set signal mask */
     { /* 0x58 */ OS9_F_UnImp,  "F$ChkMem", d_w(0),               d_w(1) }, /* determine if user process may access memory area */
     { /* 0x59 */ OS9_F_UnImp,  "F$UAcct",  d_w(0),               d_w(1) }, /* inform user accounting of process status */
-    { /* 0x5A */ OS9_F_SDummy, "F$CCtl",   d_l(0),               0      }, /* cache control */
+    { /* 0x5A */ OS9_F_CCtl,   "F$CCtl",   d_l(0),               0      }, /* cache control */
     { /* 0x5B */ OS9_F_SUnImp, "F$GSPUMp", d_w(0),               d_w(1) }, /* get SPU map information for a process */
     { /* 0x5C */ OS9_F_SRqMem, "F$SRqCMem",d_l(0)+d_l(1),        d_l(0)+a_l(2) }, /* System Colored Memory Request */
     { /* 0x5D */ OS9_F_UnImp,  "F$POSK",   d_w(0),               d_w(1) }, /* execute svc request */

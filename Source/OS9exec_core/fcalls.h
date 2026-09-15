@@ -109,6 +109,7 @@ os9err OS9_F_Panic  (regs_type *rp, ushort cpid);
 os9err OS9_F_Event  (regs_type *rp, ushort cpid);
 
 os9err OS9_F_Dummy  (regs_type *rp, ushort cpid);
+os9err OS9_F_CCtl  (regs_type *rp, ushort cpid);
 os9err OS9_F_SDummy (regs_type *rp, ushort cpid);
 os9err OS9_F_UnImp  (regs_type *rp, ushort cpid);
 os9err OS9_F_SUnImp (regs_type *rp, ushort cpid);

@@ -1761,7 +1761,10 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
 //  #endif
     
     access= loword(rp->d[2]);    
-    tylan = 0x0400;                                /*this is the data module type */  
+    /* "d3.w = desired type/language (optional)" (F$DatMod, page 1-12): used
+       when given, the data module type otherwise. It was always $0400, so a
+       later F$Link asking for the requested type got E$MNF. */
+    tylan = loword(rp->d[3])!=0 ? loword(rp->d[3]) : 0x0400;  
     attrev= loword(rp->d[1]);
 
     FillTemplate (theModule,  access,tylan,attrev);           /* fill module body */
@@ -2658,6 +2661,20 @@ os9err OS9_F_Dummy( _rp_, ushort cpid )
                                       get_syscall_name(cp->lastsyscall), cpid ));
   return 0;
 } /* OS9_F_Dummy */
+
+os9err OS9_F_CCtl( regs_type *rp, _pid_ )
+/* F$CCtl
+ * Input : d0.l = cache control operation (0 = flush all)
+ * Output: none
+ * "All other bits are reserved. If any reserved bit is set, an E$Param error is
+ * returned" (F$CCtl, page 1-6): bits 0-2 and 4-6 are defined. os9exec's 68k
+ * has no cache to control, so a defined request succeeds and does nothing, as
+ * the silent dummy it replaces did for every value.
+ */
+{
+  if (rp->d[0] & ~(uint32_t)0x77) return os9error(E_PARAM);
+  return 0;
+} /* OS9_F_CCtl */
 
 os9err OS9_F_SDummy( _rp_, ushort cpid )
 /* F$SDummy:

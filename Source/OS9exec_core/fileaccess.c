@@ -302,7 +302,10 @@ void init_Dir( fmgr_typ* f )
     gs->_SS_DevNm= pHvolnam;
     gs->_SS_Pos  = pDpos;
     gs->_SS_EOF  = pDeof;
-    gs->_SS_Ready= pUnimp_num;      /* not used */
+    /* "RBF devices always return carry clear, d1.l=1" (I$GetStt SS_Ready,
+       page 2-13); a host directory reports itself as RBF, and host files
+       already answer through pFready. It used to be E$UnkSvc. */
+    gs->_SS_Ready= pFready;
     gs->_SS_FD   = pHgetFD;
     gs->_SS_FDInf= pHgetFDInf;
     gs->_SS_DSize= pHdsize;
