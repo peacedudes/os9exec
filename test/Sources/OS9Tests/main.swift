@@ -2005,6 +2005,53 @@ check("fs: permission ramdisk — non-owner (dog) blocked from a file with no pu
     "login dog", "chd /ram7", "dump f", "logout", "unmount ram7")
 
 
+// ── process: the debugger calls refuse a process ID past the table ───────────
+// F$DExec and F$DExit take the child's ID from the guest's d0.w and indexed the
+// process table with it unchecked; F$DExit then WROTE through it. F$GPrDsc had
+// the same hole and is CONF68K t60; these two are debugger calls, which a
+// conformance suite has no business making on a real system, so they are here.
+do {
+    let dbgAsm = [
+        "FDExec set $23", "FDExit set $24", "IWritLn set $8C", "FExit set $06",
+        " psect dbgpid,$0101,$8001,0,2048,start",
+        "start",
+        " moveq #0,d0", " move.w #$FFFF,d0", " moveq #0,d1", " moveq #0,d2", " lea start(pc),a0",
+        " trap #0", " dc.w FDExec", " bcc.s bad", " cmpi.w #224,d1", " bne.s bad",
+        " moveq #0,d0", " move.w #$FFFF,d0",
+        " trap #0", " dc.w FDExit", " bcc.s bad", " cmpi.w #224,d1", " bne.s bad",
+        " lea okmsg(pc),a0", " moveq #1,d0", " moveq #okl,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1", " trap #0", " dc.w FExit",
+        "bad", " moveq #1,d1", " trap #0", " dc.w FExit",
+        "okmsg dc.b \"BOTH DEBUGGER CALLS REFUSED THE ID\",$0D",
+        "okl equ *-okmsg",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "process: F$DExec and F$DExit refuse a process ID past the table"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? dbgAsm.write(toFile: scratchDisk + "/dbgpid.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/dbgpid.a -o=/h5/dbgpid.r",
+            "l68 /h5/dbgpid.r -o=/h5/dbgpid",
+            "/h5/dbgpid"
+        ], timeout: 30)
+        if out.contains("BOTH DEBUGGER CALLS REFUSED THE ID") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [F$DExec and F$DExit of ID $FFFF must both answer E$IPrcID (224)]")
+            let preview = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("Error") || $0.contains("rror #") }
+                .prefix(4).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+        for leftover in ["dbgpid.a", "dbgpid.r", "dbgpid"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── fs: a host directory renames by entry write, and refuses the rest ─────────
 // RBF renames a file when a program rewrites its directory entry spelt
 // differently -- Microware's clib rename(), move, wndex and upperdir all do it.

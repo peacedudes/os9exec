@@ -449,3 +449,31 @@ entry, another file's FD sector, a name another entry already answers to
 and anything open or in use as a current directory. Those refusals are
 host-directory policy rather than RBF behaviour, so they are checked by the
 integration suite, not here.
+
+## os9exec, 2026-09-14: t60, a process ID past the table
+
+F$GPrDsc indexed os9exec's process table with the caller's d0.w and checked
+nothing but whether the slot it landed on looked unused. An ID past the table
+read host memory beyond it, so some IDs came back as live processes with a
+descriptor made of whatever was there. osk-freeware's sysmon walks IDs until
+the errors come back: it was told of processes that did not exist, and at
+ID $1A8 it took a bus error. F$DExec and F$DExit had the same unchecked index,
+and F$DExit wrote through it; those are debugger calls, so they are checked by
+the integration suite rather than here.
+
+Before the fix, one of the four IDs was answered as a process:
+
+```
+RESULT t60 FAIL  obs=000000 exp=000224  F$GPrDsc of a process ID past any table reports E$IPrcID
+```
+
+After it:
+
+```
+RESULT t60 PASS  obs=000224 exp=000224  F$GPrDsc of a process ID past any table reports E$IPrcID
+```
+
+What an out-of-range read returns depends on the host's memory layout, so the
+"before" answer can differ from machine to machine; E$IPrcID is the only answer
+that holds on all of them, which is why this is a conformance test and not only
+a local one.

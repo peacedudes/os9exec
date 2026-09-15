@@ -1300,9 +1300,15 @@ os9err OS9_F_GPrDsc( regs_type *rp, ushort cpid )
   procid           pd; // this is a local construction buffer for the Process descriptor
   uint32_t         cnt;
   ushort           id= (ushort)loword( rp->d[ 0 ] );
-  process_typ*     cp= &procs[ id ];
+  process_typ*     cp;
   byte*            dst= (byte*)FROM68K( rp->a[ 0 ] );
 
+  /* The pid is the guest's, and indexes procs[], pmem[] and the debugger
+     arrays: bound it before any of them is touched. Unchecked, sysmon walking
+     pids read host memory past the table -- "found" processes out of it,
+     then a bus error. */
+  if (id>=MAXPROCESSES) return E_IPRCID;
+  cp= &procs[ id ];
   if (cp->state==pUnused) return E_IPRCID; // this is not a valid process
 
   BuildPrcDsc( id, cpid, rp->a[ 7 ], &pd );
@@ -2039,12 +2045,14 @@ os9err OS9_F_DExec( regs_type *rp, ushort cpid )
  */
 {
     ushort       childpid = loword(rp->d[0]);
-    process_typ* cp       = &procs[childpid];
+    process_typ* cp;
     uint32_t     count    = rp->d[1];
     ushort       bkptcnt  = loword(rp->d[2]);
     uint32_t*    bkptlist;
     ushort       i;
 
+    if (childpid>=MAXPROCESSES) return os9error(E_IPRCID); /* the guest's pid: bound it first */
+    cp= &procs[childpid];
     if (cp->state == pUnused) return os9error(E_IPRCID);
     if (cp->state == pDead  ) return os9error(E_IPRCID);
 
@@ -2079,8 +2087,11 @@ os9err OS9_F_DExit( regs_type *rp, ushort cpid )
  */
 {
     ushort       childpid = loword(rp->d[0]);
-    process_typ* cp       = &procs[childpid];
+    process_typ* cp;
 
+    /* the guest's pid: bound it before the writes below go through it */
+    if (childpid>=MAXPROCESSES) return os9error(E_IPRCID);
+    cp= &procs[childpid];
     if (cp->state == pUnused) return 0; /* already gone */
     dbg_parent_pid[childpid] = 0;     /* suppress wakeup from kill_process */
     cp->exiterr = 0;
