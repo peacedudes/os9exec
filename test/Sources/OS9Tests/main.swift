@@ -5821,6 +5821,38 @@ do {
     }
 }
 
+// ── RBF: SS_Attr will not clear the directory bit of a directory with files ───
+// SS_Attr: "It is not permitted to set the dir bit of a non-directory file, or
+// to clear the dir bit of a non-empty directory" (p.2-22), and E$DNE is
+// "DIRECTORY NOT EMPTY - An attempt was made to remove the directory attribute
+// from a directory that is not empty". On an RBF image `attr -nd` of a
+// directory holding a file turned it into a plain file, and the file inside
+// was left with no directory entry leading to it. deldir, which empties a
+// directory before clearing the bit, must still work.
+do {
+    let name = "rbf: attr -nd of a directory with a file in it is E$DNE, and deldir still removes it"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem("hq")
+        let out = os9(["mount -k=1M hq", "makdir /hq/keepdir9", "echo x >/hq/keepdir9/insidef9",
+                       "attr -nd /hq/keepdir9", "dir /hq/keepdir9",
+                       "deldir -q /hq/keepdir9", "dir -e /hq/keepdir9"], timeout: 30)
+        let lines = out.split(whereSeparator: \.isNewline)
+        let listed = lines.contains { !$0.hasPrefix("$") && $0.contains("insidef9") }
+        // the last dir, after deldir, must find nothing to list
+        let gone = out.range(of: "Error #000:216", options: .backwards) != nil
+        if out.contains("#000:238") && out.contains("Directory of /hq/keepdir9") && listed && gone {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = lines.filter { $0.contains("Error") || $0.contains("Directory of") || $0.contains("insidef9") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        removeScratchItem("hq")
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

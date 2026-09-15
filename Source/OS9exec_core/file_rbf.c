@@ -4745,6 +4745,37 @@ os9err pRsetsz( _pid_, syspath_typ* spP, uint32_t *size )
     return WriteFD ( spP );
 } /* pRsetsz */
 
+static os9err DirHasEntries( syspath_typ* spP, Boolean* hasP )
+/* whether a directory holds anything besides ".." and ".", read sector by
+   sector along its segment list -- not through DoAccess, which can park the
+   caller on a lock. A deleted entry's name starts with a zero byte. */
+{
+    rbfdev_typ* dev = &rbfdev[spP->u.rbf.devnr];
+    ulong       size= FDSize( spP ), seen= 0, pos, scs, k, off;
+    int         ii;
+    byte*       buf;
+    os9err      err= 0;
+
+    *hasP= false;
+    buf= malloc( dev->sctSize ); if (buf==NULL) return os9error(E_NORAM);
+
+    for (ii=FD_Header_Size; ii+SegSize<=dev->sctSize && seen<size && !*hasP; ii+=SegSize) {
+        pos= GET_OS9L(spP->fd_sct, ii) >> BpB;
+        scs= GET_OS9W(spP->fd_sct, ii+3);
+        if (scs==0) break;
+
+        for (k=0; k<scs && seen<size && !*hasP && !err; k++) {
+            err= ReadSector( dev, pos+k, 1, buf ); if (err) break;
+            for (off=0; off+DIRENTRYSZ<=dev->sctSize && seen<size; off+=DIRENTRYSZ, seen+=DIRENTRYSZ) {
+                if (seen>=2*DIRENTRYSZ && buf[ off ]!=NUL) { *hasP= true; break; }
+            }
+        }
+    }
+
+    free( buf );
+    return err;
+} /* DirHasEntries */
+
 os9err pRsetatt( _pid_, syspath_typ* spP, uint32_t *attr )
 /* set the attributes of a file -- owner or super-user only */
 {
@@ -4752,10 +4783,19 @@ os9err pRsetatt( _pid_, syspath_typ* spP, uint32_t *attr )
 
     /* "It is not permitted to set the dir bit of a non-directory file"
        (I$SetStt SS_Attr, page 2-22); it was stored as given, making a plain
-       file look like a directory. The page names no error. Clearing the bit
-       on a NON-EMPTY directory is also forbidden there, and still allowed
-       here: see the roadmap. */
+       file look like a directory. The page names no error. */
     if ((*attr & 0x80) && (spP->fd_sct[0] & 0x80)==0) return os9error(E_FNA);
+
+    /* "... or to clear the dir bit of a non-empty directory" (the same page),
+       E$DNE being "an attempt ... to remove the directory attribute from a
+       directory that is not empty". It turned the directory into a plain file
+       and left what was in it with no entry leading to it. An emptied one --
+       deldir's -- still has its bit cleared. */
+    if ((*attr & 0x80)==0 && (spP->fd_sct[0] & 0x80)!=0) {
+        Boolean has;
+        os9err  err= DirHasEntries( spP, &has ); if (err) return err;
+        if (has) return os9error(E_DNE);
+    }
     Set_FDAtt      ( spP, (byte)*attr ); /* byte ordering is already correct */
     RingPublishFD  ( spP );  /* others must see the new attributes at once */
     return WriteFD ( spP );
