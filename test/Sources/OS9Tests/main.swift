@@ -4554,6 +4554,125 @@ do {
     }
 }
 
+// ── GetStat/SetStat bounds: SS_FD's byte count, pipe SS_FDInf, SS_WTrk's track ──
+// Found by the 2026-09-15 argument audit, each probed live:
+//  - SS_FD / SS_FDInf copy "d2.w = Number of bytes to copy (<=logical sector
+//    size of media)" (Technical Manual pp.2-11, 2-12); RBF handed the full
+//    32-bit d2 to memcpy, so a stray upper word read past the 2048-byte host FD
+//    buffer and wrote over guest memory;
+//  - a pipe's SS_FDInf used d3 as an index into the system path table with no
+//    bound: d3=$00100000 faulted the host (the guest saw a bus error);
+//  - SS_WTrk "formats the entire media only when side 0 of the first accessable
+//    track is specified" (p.2-29), but os9exec formatted from any track to the
+//    END of the device: track 1 wiped a mount -k image from byte 16384 on.
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "I$Open   equ $84", "I$Close  equ $8F", "I$GetStt equ $8D",
+        "I$SetStt equ $8E", "I$WritLn equ $8C",
+        "BUF      equ -32700", "BUF16    equ -32684"
+    ]
+    func say(_ label: String) -> [String] {
+        ["  lea \(label)(pc),a0", "  moveq #\(label)l,d1", "  moveq #1,d0", "  OS9 I$WritLn"]
+    }
+    func message(_ label: String, _ text: String) -> [String] {
+        ["\(label): dc.b \"\(text)\",$0D", "\(label)l equ *-\(label)"]
+    }
+    let fdCount = header + [
+        "  psect msfdcp,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea BUF(a6),a1", "  moveq #31,d2",
+        "fill:", "  move.b #$AA,(a1)+", "  dbra d2,fill",
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "  move.w d7,d0", "  move.w #$0F,d1", "  move.l #$00010010,d2", "  lea BUF(a6),a0",
+        "  OS9 I$GetStt", "  bcs.w fail",
+        "  lea BUF16(a6),a1", "  moveq #15,d2",
+        "check:", "  cmpi.b #$AA,(a1)+", "  bne.s over", "  dbra d2,check"] + say("mkept") + [
+        "  bra.s done", "over:"] + say("mover") + [
+        "done:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "fname: dc.b \"/hq/fdcap\",0"] +
+        message("mkept", "SS_FD KEPT TO D2.W") + message("mover", "SS_FD OVERRAN") + ["  ends", ""]
+    let pipeInfo = header + [
+        "  psect mspipe,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea pname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "  move.w d7,d0", "  move.w #$20,d1", "  moveq #16,d2", "  move.l #$00100000,d3", "  lea BUF(a6),a0",
+        "  OS9 I$GetStt", "  bcs.s refused"] + say("macc") + ["  bra.s done", "refused:"] + say("mref") + [
+        "done:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "pname: dc.b \"/pipe\",0"] +
+        message("macc", "PIPE FDINF ACCEPTED") + message("mref", "PIPE FDINF REFUSED") + ["  ends", ""]
+    let writeTrack = header + [
+        "  psect mswtrk,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea rname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "  move.w d7,d0", "  move.w #$04,d1", "  moveq #1,d2", "  lea BUF(a6),a0", "  lea BUF(a6),a1",
+        "  moveq #0,d3", "  moveq #0,d4",
+        "  OS9 I$SetStt",                                     // the result is not the point
+        "  move.w d7,d0", "  OS9 I$Close"] + say("mdone") + [
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "rname: dc.b \"/hq@\",0"] + message("mdone", "WTRK DONE") + ["  ends", ""]
+
+    let modules = ["msfdcp": fdCount, "mspipe": pipeInfo, "mswtrk": writeTrack]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+    let names = [
+        "rbf: GetStt SS_FD copies d2.w bytes, not the whole d2",
+        "pipe: GetStt SS_FDInf refuses a path number past the table",
+        "rbf: SetStt SS_WTrk on a later track leaves the media alone"
+    ]
+    let chosen = names.filter { filter.isEmpty || $0.localizedCaseInsensitiveContains(filter) }
+    func report(_ name: String, _ good: Bool, _ out: String) {
+        if good {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("SS_FD") || $0.contains("FDINF") || $0.contains("WTRK") || $0.contains("Bytes")
+                    || $0.contains("Differences") || $0.contains("Error")
+            }
+            print("      saw: \(lines.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    if !chosen.isEmpty {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for module in modules.keys.sorted() {
+            build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+        }
+        _ = os9(build, timeout: 60)
+    }
+    if chosen.contains(names[0]) {
+        removeScratchItem("hq")
+        let out = os9(["mount -k=1M hq", "echo hi >/hq/fdcap", "/h5/msfdcp"], timeout: 30)
+        report(names[0], out.contains("SS_FD KEPT TO D2.W"), out)
+    }
+    if chosen.contains(names[1]) {
+        let out = os9(["/h5/mspipe"], timeout: 30)
+        report(names[1], out.contains("PIPE FDINF REFUSED"), out)
+    }
+    if chosen.contains(names[2]) {
+        // three runs, so no sector cache can stand between the format and cmp
+        removeScratchItem("hq")
+        _ = os9(["mount -k=1M hq", "copy /dd/CMDS/shell /hq/big"], timeout: 30)
+        let formatted = os9(["/h5/mswtrk"], timeout: 30)
+        let compared = os9(["cmp /dd/CMDS/shell /hq/big"], timeout: 30)
+        report(names[2], formatted.contains("WTRK DONE") && compared.contains("Bytes different: 00000000")
+                   && !compared.contains("Differences"), formatted + compared)
+    }
+    removeScratchItem("hq")
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

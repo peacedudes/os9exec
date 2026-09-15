@@ -977,15 +977,26 @@ static os9err pipeFDImage( syspath_typ* spK, uint32_t *maxbytP, byte* buffer )
   
   SET_OS9L(fdbeg, 9, Pipe_NReady( p ));
   
-  memcpy( buffer, fdbeg, *maxbytP>FDS ? FDS : *maxbytP );
+  /* "d2.w = Number of bytes to copy": the word only, as the RBF handlers
+     count it -- the full 32-bit d2 used to decide the length */
+  { uint32_t n= loword( *maxbytP );
+    if (n>FDS) n= FDS;
+    if (!RANGE_IN_ARENA( buffer, n )) return os9error(E_BPADDR);
+    memcpy( buffer, fdbeg, n ); }
   return 0;
 } /* pipeFDImage */
 
 
 os9err pPFDInf( _pid_, _spP_, uint32_t *maxbytP,
                               uint32_t *fdinf,  byte* buffer )
-/* SS_FDInf: the pseudo-FD of the path named in d3 */
-{ return pipeFDImage( &syspaths[ *fdinf ], maxbytP, buffer );
+/* SS_FDInf: the pseudo-FD of the path named in d3. A pipe directory's entries
+   carry the system path number where RBF has an FD sector (ShowPipeDir), so
+   d3 is an index into syspaths -- and a guest value, used to be taken on
+   trust: d3=$00100000 read far past the table and faulted the host. It must
+   name a pipe path. */
+{ uint32_t k= *fdinf;
+  if (k==0 || k>=MAXSYSPATHS || syspaths[ k ].type!=fPipe) return os9error(E_BPNUM);
+  return pipeFDImage( &syspaths[ k ], maxbytP, buffer );
 } /* pPFDInf */
 
 

@@ -4537,13 +4537,32 @@ os9err pRready( _pid_, _spP_, uint32_t *n )
 {   *n= 1; return 0;
 } /* pRready */
 
+static uint32_t FDCopyCount( rbfdev_typ* dev, uint32_t d2 )
+/* How many bytes SS_FD / SS_FDInf copy: "d2.w = Number of bytes to copy
+ * (<=logical sector size of media)" (I$GetStt, pages 2-11 and 2-12), and for
+ * SS_FDInf "(<=256)". Only the WORD counts, and never more than a sector. The
+ * full 32-bit d2 used to reach memcpy: a stray upper word read past the
+ * 2048-byte FD buffer on the host and wrote over guest memory. Capped at the
+ * smaller host buffer too, whatever the device claims its sectors are. */
+{
+    uint32_t n  = loword( d2 );
+    uint32_t max= dev->sctSize>0 ? dev->sctSize : STD_SECTSIZE;
+
+    if (max>2048) max= 2048; /* fd_sct is 2048 bytes; tmp_sct is at least that */
+    return n>max ? max : n;
+} /* FDCopyCount */
+
 os9err pRgetFD( _pid_, syspath_typ* spP, uint32_t *maxbytP, byte *buffer )
 /* get the current FD sector of the opened path */
 {
-    debugprintf(dbgFiles,dbgNorm,("# RBF getFD (fd/bytes): $%x %d\n", 
-                                     spP->u.rbf.fd_nr, *maxbytP ));
+    rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr];
+    uint32_t    n  = FDCopyCount( dev, *maxbytP );
 
-    memcpy( buffer, spP->fd_sct, *maxbytP); /* copy to the buffer */
+    debugprintf(dbgFiles,dbgNorm,("# RBF getFD (fd/bytes): $%x %d\n", 
+                                     spP->u.rbf.fd_nr, n ));
+
+    if (!RANGE_IN_ARENA( buffer, n )) return os9error(E_BPADDR);
+    memcpy( buffer, spP->fd_sct, n ); /* copy to the buffer */
     return 0;
 } /* pRgetFD */
 
@@ -4554,11 +4573,14 @@ os9err pRgetFDInf( _pid_, syspath_typ* spP, uint32_t *maxbytP,
     os9err      err;
     rbfdev_typ* dev= &rbfdev[spP->u.rbf.devnr];
 
-    debugprintf(dbgFiles,dbgNorm,("# RBF getFDInf (fd/bytes): $%x %d\n", 
-                                     *fdinf, *maxbytP ));
+    uint32_t    n  = FDCopyCount( dev, *maxbytP );
 
+    debugprintf(dbgFiles,dbgNorm,("# RBF getFDInf (fd/bytes): $%x %d\n", 
+                                     *fdinf, n ));
+
+    if (!RANGE_IN_ARENA( buffer, n )) return os9error(E_BPADDR);
     err= ReadSector( dev,*fdinf,1, dev->tmp_sct ); if (err) return err;
-    memcpy               ( buffer, dev->tmp_sct, *maxbytP); /* copy to the buffer */
+    memcpy               ( buffer, dev->tmp_sct, n ); /* copy to the buffer */
     return 0;
 } /* pRgetFDInf */
 
@@ -4699,11 +4721,19 @@ os9err pRWTrk( ushort pid, syspath_typ* spP, uint32_t* trackNr, byte* buffer )
     for (ii=0; ii<dev->sctSize; ii++)
         dev->tmp_sct[ii]= 0xE5; /* fill with formatting pattern */
     
+    /* "Formats the entire media only when side 0 of the first accessable track
+       is specified" (I$SetStt SS_WTrk, page 2-29). The loop below formats the
+       whole device, so do it for track 0 only. It used to run for any track,
+       from that track to the end of the device: SS_WTrk on track 1 of a
+       mount -k image left $E5 from byte 16384 through its last byte. A later
+       track has nothing left to format. */
+    if (*trackNr!=0) return 0;
+
     err= pRdsize( pid,spP, &scts, &dtype );  if (err) return err; /* else scts is
                      uninitialised: pRdsize returns DevSize()'s error without setting
                      *size, and the format loop below would run a garbage sector count */
 
-    for (ii=0; ii<scts; ii++) { sctNr= *trackNr*DEFAULT_SCT + ii;
+    for (ii=0; ii<scts; ii++) { sctNr= ii;
       err=    WriteSector( dev, sctNr,1, dev->tmp_sct ); if (err) return err;
     }
     
