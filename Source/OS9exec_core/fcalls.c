@@ -2465,6 +2465,14 @@ os9err OS9_F_SetCRC( regs_type *rp, _pid_ )
     if      (os9_word(m->_mh._msync)!=MODSYNC) return os9error(E_BMID); /* no good module */
     modsize= os9_long(m->_mh._msize);
 
+    /* "The module must have correct size and sync bytes" (F$SetCRC, page 1-50).
+       Only the sync word was checked: mod_crc computes over size-4 bytes, so a
+       size of 0 ran it over some 4 GB, off the arena, and the caller died with a
+       bus error. A module is at least its 48-byte header and a 4-byte CRC, and
+       must lie in the arena. Checked before the parity is written, so a refused
+       call leaves the image untouched. */
+    if (modsize < sizeof(modhcom)+4 || !RANGE_IN_ARENA( (byte*)m, modsize )) return os9error(E_BMID);
+
     hpar= calc_parity( (ushort*)m, 23 ); /* byte-order insensitive */
     debugprintf(dbgModules,dbgNorm,("# F$SetCRC: Module @ %p (size=%u): new parity=$%04X\n",
                                        (void*)m, (uint32_t)modsize, hpar));

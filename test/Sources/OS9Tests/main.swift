@@ -5176,6 +5176,51 @@ do {
     }
 }
 
+// ── module: F$SetCRC refuses an image whose size field is too small ───────────
+// "The module must have correct size and sync bytes; other parts of the module
+// are not checked." (Technical Manual, F$SetCRC, p.1-50), E$BMID. Only the sync
+// word was checked; a size of 0 made the CRC run over some 4 GB and killed the
+// caller with a bus error. Found by the 2026-09-15 argument audit, probed live.
+do {
+    let lines = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$SetCRC equ $26", "I$WritLn equ $8C", "BUF equ -32700",
+        "  psect msetcrc,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea BUF(a6),a1", "  moveq #63,d2",
+        "zero:", "  clr.b (a1)+", "  dbra d2,zero",
+        "  move.w #$4AFC,BUF(a6)", "  clr.l BUF+4(a6)",
+        "  lea BUF(a6),a0", "  OS9 F$SetCRC",
+        "  bcc.s accepted", "  cmpi.w #205,d1", "  bne.s accepted",
+        "  lea mref(pc),a0", "  moveq #mrefl,d1", "  bra.s write",
+        "accepted:", "  lea macc(pc),a0", "  moveq #maccl,d1",
+        "write:", "  moveq #1,d0", "  OS9 I$WritLn",
+        "  moveq #0,d1", "  OS9 F$Exit",
+        "mref: dc.b \"SETCRC SIZE REFUSED\",$0D", "mrefl equ *-mref",
+        "macc: dc.b \"SETCRC SIZE ACCEPTED\",$0D", "maccl equ *-macc",
+        "  ends", ""
+    ]
+    try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/msetcrc.a", atomically: true, encoding: .utf8)
+    let name = "module: F$SetCRC refuses an image whose size field is too small"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/msetcrc.a -o=/h5/msetcrc.r", "l68 /h5/msetcrc.r -o=/h5/msetcrc",
+                       "/h5/msetcrc"], timeout: 60)
+        if out.contains("SETCRC SIZE REFUSED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("SETCRC") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for suffix in [".a", ".r", ""] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/msetcrc" + suffix)
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm
