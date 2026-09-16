@@ -60,6 +60,11 @@
 #define SPFOP_LISTEN  0x6D
 #define SPFOP_CONNECT 0x6E
 #define SPFOP_SOPT    0x74
+#define SPFOP_NAME    0x922        /* observed: describe this socket */
+#define SPFOP_NEWID   0x66         /* observed: the caller asks the connection's
+                                      path to name itself ... */
+#define SPFOP_ATTACH  0x70         /* ... and gives that name to the listening
+                                      path, which is SS_Accept's own code */
 
 
 #if defined UNIX && !defined MINGW
@@ -238,7 +243,12 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
     len = os9_get_l( blk+4 );
     ptr = os9_get_l( blk+8 );
     args= (byte*)FROM68K( ptr );
-    if (ptr!=0 && !RANGE_IN_ARENA( args,len>64 ? 64:len )) return os9error(E_BPADDR);
+
+    /* ATTACH is the exception: its operand travels in the pointer field as a
+       plain value, so it is never a valid address and must not be checked as
+       one. */
+    if (op!=SPFOP_ATTACH &&
+        ptr!=0 && !RANGE_IN_ARENA( args,len>64 ? 64:len )) return os9error(E_BPADDR);
 
     switch (op) {
         case SPFOP_SOCKET: {
@@ -370,6 +380,79 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             return 0;
         }
 
+        case SPFOP_NEWID:
+            /* Observed: issued on the path the caller has just opened for the
+               connection, immediately before ATTACH on the listening path. The
+               value is only ever handed straight back to us, so the syspath
+               number serves: it is unique, stable, and resolves in one step.
+               Nothing outside this file depends on the choice. */
+            if (ptr==0 || len<4) return os9error(E_PARAM);
+            os9_set_l( args, spP->nr );
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: newid -> sp=%d\n", spP->nr ));
+            return 0;
+
+        case SPFOP_ATTACH: {
+            /* The connection accept took is moved onto the path the caller
+               opened for it. NOTE the operand is passed BY VALUE in the
+               pointer field of the block -- the caller copies what NEWID
+               handed it straight into that slot -- so there is nothing to
+               dereference here, and <ptr> is not an address. */
+            syspath_typ* nsp;
+            uint32_t     id= ptr;
+
+            if (spP->u.spf.acceptPlus1<=0) return os9error(E_NOTRDY);
+            if (id==0 || id>=MAXSYSPATHS)  return os9error(E_BPNUM);
+            nsp= &syspaths[ id ];
+            if (nsp->type!=fSPF)           return os9error(E_BPNUM);
+
+            if (SpfFd( nsp )>=0) close( SpfFd( nsp ) ); /* its own socket is unused */
+            nsp->u.spf.fdPlus1    = spP->u.spf.acceptPlus1;
+            nsp->u.spf.proto      = spP->u.spf.proto;
+            nsp->u.spf.connected  = true;
+            spP->u.spf.acceptPlus1= 0;                  /* handed over */
+
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: attach connection -> sp=%d\n", id ));
+            return 0;
+        }
+
+        case SPFOP_NAME: {
+            /* Observed, and entirely from what the caller checks on the way
+               back (it supplies no length, so the shape is inferred from its
+               own tests): a word at +4 it requires to be 8 or 32, a byte at
+               +48 it requires to be 3, a length byte at +51 that must not
+               exceed the maximum it passes, and that many bytes of address
+               from +52. It answers ENOTCONN, EPROTOTYPE or $71B in turn when
+               any of those is wrong, which is how this layout was pinned
+               down. Nothing here is from a Microware header. */
+            struct sockaddr_in who;
+            socklen_t          wlen= sizeof(who);
+            int  fd= SpfFd( spP );
+
+            if (fd<0) return os9error(E_NOTRDY);
+            if (ptr==0 || !RANGE_IN_ARENA( args,56 )) return os9error(E_BPADDR);
+
+            /* the far end if there is one, this end otherwise: the caller
+               prints this as "connected to <address> port <n>" */
+            memset( &who,0,sizeof(who) );
+            if (getpeername( fd, (struct sockaddr*)&who, &wlen )!=0) {
+                wlen= sizeof(who);
+                memset( &who,0,sizeof(who) );
+                getsockname( fd, (struct sockaddr*)&who, &wlen );
+            }
+
+            memset( args,0,56 );
+            os9_set_w( args+4,  8 );          /* the family it accepts */
+            memcpy   ( args+6,  &who.sin_port, 2 );        /* network order */
+            memcpy   ( args+8,  &who.sin_addr.s_addr, 4 );
+            args[48]= 3;                      /* the type it accepts */
+            args[51]= 4;                      /* four bytes of address follow */
+            memcpy   ( args+52, &who.sin_addr.s_addr, 4 );
+
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: name -> port %u\n",
+                                                 (uint32_t)ntohs( who.sin_port ) ));
+            return 0;
+        }
+
         case SPFOP_SOPT:                        /* accepted, not applied: the clients run */
             return 0;
 
@@ -406,6 +489,9 @@ void init_SPF( fmgr_typ* f )
     gs->_SS_SPF  = pSspf;
 
     /* setstat */
+    ss->_SS_Opt  = pNop_opt;      /* the caller copies the listening path's
+                                     option section onto the connection's path;
+                                     accepted and ignored, as in the ISP manager */
     ss->_SS_SPF  = pSspf;
 } /* init_SPF */
 
