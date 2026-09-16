@@ -194,7 +194,7 @@ static os9err pSnam( _pid_, syspath_typ* spP, char* volname )
 } /* pSnam */
 
 
-static os9err pSspf( ushort pid, syspath_typ* spP, byte* blk )
+static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
 /* The one call the socket library makes: an operation, a byte count, and a
    pointer to the arguments (all observed, see the top of this file). */
 {
@@ -254,6 +254,90 @@ static os9err pSspf( ushort pid, syspath_typ* spP, byte* blk )
             debugprintf( dbgSpecialIO,dbgNorm,("# SPF: connect -> %d\n", r ));
             if (r!=0) return os9error(E_NOTRDY);
             spP->u.spf.connected= true;
+            return 0;
+        }
+
+        case SPFOP_BIND: {
+            struct sockaddr_in sa;
+            int  fd= SpfFd( spP ), on= 1;
+
+            if (fd<0) return os9error(E_NOTRDY);
+            if (ptr==0 || len<8) return os9error(E_PARAM);
+
+            /* the same BSD socket address connect is given, observed: a 16-bit
+               family, then port and address already in network order */
+            memset( &sa,0,sizeof(sa) );
+            #ifdef __APPLE__
+              sa.sin_len= sizeof(sa);
+            #endif
+            sa.sin_family= AF_INET;
+            memcpy( &sa.sin_port,        args+2, 2 );
+            memcpy( &sa.sin_addr.s_addr, args+4, 4 );
+
+            /* A server that has just exited leaves its port in TIME_WAIT, and
+               without this the next run cannot bind it for a minute or more.
+               The guest asks for its own options through the option call,
+               which we accept without applying -- so if this were left to the
+               guest no server could be restarted. */
+            setsockopt( fd, SOL_SOCKET, SO_REUSEADDR, &on,sizeof(on) );
+
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: bind port %u\n",
+                                                 (uint32_t)ntohs( sa.sin_port ) ));
+            if (bind( fd, (struct sockaddr*)&sa, sizeof(sa) )!=0) return os9error(E_SHARE);
+            return 0;
+        }
+
+        case SPFOP_LISTEN: {
+            int fd= SpfFd( spP ), backlog= 5;
+
+            if (fd<0) return os9error(E_NOTRDY);
+            if (ptr!=0 && len>=4) backlog= (int)os9_get_l( args );
+            if (backlog<=0) backlog= 5;
+
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: listen backlog %d\n", backlog ));
+            if (listen( fd, backlog )!=0) return os9error(E_NOTRDY);
+            return 0;
+        }
+
+        case SPFOP_ACCEPT: {
+            struct sockaddr_in peer;
+            socklen_t          plen= sizeof(peer);
+            syspath_typ*       nsp;
+            ushort             up;
+            os9err             e;
+            int  fd= SpfFd( spP ), nfd, flags;
+
+            SpfResume( pid );   /* this call may be a retry of a parked accept */
+            if (fd<0) return os9error(E_NOTRDY);
+            if (ptr==0 || len<4) return os9error(E_PARAM);
+
+                nfd= accept( fd, (struct sockaddr*)&peer, &plen );
+            if (nfd<0) {
+                if (errno==EAGAIN || errno==EINTR) return SpfPark( pid );
+                return os9error(E_NOTRDY);
+            }
+
+            /* the connection needs a path of its own, and the caller goes on
+               using the listening path to accept the next one */
+            e= usrpath_new( pid,&up, fSPF );
+            if (e) { close( nfd ); return e; }
+
+            nsp= &syspaths[ procs[pid].usrpaths[up] ];
+            nsp->u.spf.fdPlus1  = nfd+1;
+            nsp->u.spf.proto    = spP->u.spf.proto;
+            nsp->u.spf.connected= true;
+            strcpy( nsp->name, spP->name );
+
+            flags= fcntl( nfd, F_GETFL, 0 );    /* reads must never block the emulator */
+            if (flags>=0) fcntl( nfd, F_SETFL, flags | O_NONBLOCK );
+
+            /* The connection is read and written on a path of its own; its
+               number goes back in d1, which is how the other socket calls
+               hand one over (see pNaccept in network.c). The caller keeps
+               using this path to accept the next connection. */
+            *d1= up;
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: accept from port %u -> host fd %d, path %d\n",
+                                                 (uint32_t)ntohs( peer.sin_port ), nfd, up ));
             return 0;
         }
 

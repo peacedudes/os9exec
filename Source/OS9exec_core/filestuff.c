@@ -219,7 +219,7 @@ void init_None( fmgr_typ* f )
     gs->_SS_DSize  = pUnimp_num2;
     
     gs->_SS_PCmd   = pUnimp_opt; /* network specific function  */
-    gs->_SS_SPF    = pUnimp_opt; /* SPF socket calls (spfsock.c) */
+    gs->_SS_SPF    = pUnimp_buf; /* SPF socket calls (spfsock.c) */
     
     gs->_SS_LBlink = pUnimp_num; /* /L2 specific function */
     
@@ -260,6 +260,7 @@ void init_None( fmgr_typ* f )
     ss->_SS_SOpt   = pUnimp_num2;
     ss->_SS_SendTo = pUnimp_buf2;
     ss->_SS_PCmd   = pUnimp_opt;
+    ss->_SS_SPF    = pUnimp_buf; /* SPF socket calls (spfsock.c) */
     
     ss->_SS_LBlink = pUnimp_num; /* /L2 specific function */
     
@@ -2114,7 +2115,7 @@ os9err syspath_getstat( ushort pid, ushort sp, ushort func,
         case SS_PCmd   : err= g->_SS_PCmd  ( pid,spP,        *a   ); break;
 
         /* $48 SPF: one code, the operation in the block it points at */
-        case SS_SPF    : err= g->_SS_SPF   ( pid,spP,        *a   ); break;
+        case SS_SPF    : err= g->_SS_SPF   ( pid,spP, d1,    *a   ); break;
 
         /* $80 + 32: "/L2" specific */
         case SS_LBlink : err= g->_SS_LBlink( pid,spP, d2          ); break;
@@ -2216,7 +2217,7 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
         case SS_SOpt   : err= s->_SS_SOpt   ( pid,spP, d1,d2    ); break; /* $74 */
         case SS_SendTo : err= s->_SS_SendTo ( pid,spP, d1,d2,*a ); break; /* $77 */
         case SS_PCmd   : err= s->_SS_PCmd   ( pid,spP,      *a ); break; /* $7A */
-        case SS_SPF    : err= s->_SS_SPF    ( pid,spP,      *a ); break; /* $48 */
+        case SS_SPF    : err= s->_SS_SPF    ( pid,spP, d1,  *a ); break; /* $48 */
 
         /* general block read — RBF only; non-block devices return E_UNIT */
         case SS_BlkRd:

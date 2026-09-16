@@ -1098,7 +1098,7 @@ typedef struct {
             pathop_num2_typ _SS_DSize;
 
             pathop_opt_typ  _SS_PCmd;   /* network specific function */
-            pathop_opt_typ  _SS_SPF;    /* SPF socket calls, subcode in the block */
+            pathop_buf_typ  _SS_SPF;    /* SPF socket calls, subcode in the block */
 
             pathop_num_typ  _SS_LBlink;                /* L2 support */
 
@@ -1126,7 +1126,7 @@ typedef struct {
             pathop_num2_typ _SS_SOpt;
             pathop_buf2_typ _SS_SendTo;
             pathop_opt_typ  _SS_PCmd;
-            pathop_opt_typ  _SS_SPF;    /* SPF socket calls, subcode in the block */
+            pathop_buf_typ  _SS_SPF;    /* SPF socket calls, subcode in the block */
 
             pathop_num_typ  _SS_LBlink;                /* L2 support */
 
