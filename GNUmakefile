@@ -338,6 +338,19 @@ WARNDIR := /tmp/os9exec-warnings-$(shell echo $$$$)
 # dogfooded binary from a -g debug build to an optimised one, losing the
 # symbols `lldb bt` needs. A checking target must not modify what it checks.
 #
+# The last leg is syntax-only because the ISP network stack cannot be LINKED
+# here: network.c and the net_* platform files are in no build (GNUmakefile's
+# SRCS never lists them; only os9Linux.mk does, and that CodeWarrior-era
+# makefile has been building a broken network.c for years). Left unchecked they
+# rotted -- 13 warnings and 6 errors by 2026-09-15, none of them noticed. A
+# syntax pass is the whole of the assurance, so the stamp file is the artifact:
+# no clean pass, no score, exactly as the binaries guard the legs above.
+#
+# Only the UNIX configuration is checkable. network.c under mingw dies on
+# <sys/utsname.h>, and net_windows.c needs `windows32`, which the precomp
+# header explicitly refuses to define for MINGW -- that path belongs to the
+# CodeWarrior Win32 build and no toolchain here can compile it at all.
+#
 # The linux leg is pinned to --platform linux/amd64. Unpinned, whatever gcc:13
 # happens to be cached locally is used: on this machine that was a ppc64le
 # image running under QEMU, so the leg named "linux" was compiling for
@@ -377,5 +390,14 @@ warnings:
 	@test -f $(WARNDIR)/win32/os9exec.exe \
 	  || echo "  NOT BUILT -- no Windows binary produced; the score below means nothing"
 	@$(TALLY) $(WARNDIR)/win32.log
-	@rm -rf $(WARNDIR)/win $(WARNDIR)/win32 $(WARNDIR)/linux-built
+	@echo "=== ISP network stack (syntax only, -DNET_SUPPORT) ==="
+	@$(CC) -fsyntax-only $(CFLAGS) -DNET_SUPPORT \
+	  $(CORE)/network.c $(PLAT)/net_linux.c \
+	  >$(WARNDIR)/net.log 2>&1 \
+	  && touch $(WARNDIR)/net.ok \
+	  || echo "  CHECK FAILED -- see $(WARNDIR)/net.log"
+	@test -f $(WARNDIR)/net.ok \
+	  || echo "  NOT CHECKED -- no clean syntax pass; the score below means nothing"
+	@$(TALLY) $(WARNDIR)/net.log
+	@rm -rf $(WARNDIR)/win $(WARNDIR)/win32 $(WARNDIR)/linux-built $(WARNDIR)/net.ok
 	@echo "logs: $(WARNDIR)"

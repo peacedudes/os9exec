@@ -69,7 +69,7 @@
 
 
 
-static netInstalled= false;
+static Boolean netInstalled= false;
 /* Connection from Internet Support Package (ISP) */
 /* to the host system's network connection */
 

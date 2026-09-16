@@ -62,6 +62,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
   
 #ifdef linux
   #include <asm/ioctls.h>

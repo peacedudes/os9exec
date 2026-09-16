@@ -169,6 +169,7 @@
   #include <netdb.h>
   #include <netinet/in.h>
   #include <sys/socket.h>
+  #include <sys/ioctl.h>
   
   #ifdef linux
     #include <asm/ioctls.h>
@@ -183,17 +184,6 @@
   
   typedef struct sockaddr_in SOCKADDR_IN;
 #endif
-
-// Newer socket libraries require these types
-#if !defined __SOCKADDR_ARG
-  #define    __SOCKADDR_ARG SOCKADDR_IN*
-#endif
-
-#if !defined __CONST_SOCKADDR_ARG
-  #define    __CONST_SOCKADDR_ARG SOCKADDR_IN*
-#endif
-
-
 
 /* --- local procedure definitions for object definition ------------------- */
 void   init_Net ( fmgr_typ* f );
@@ -491,7 +481,7 @@ static void SetDefaultEndpointModes( SOCKET s )
     
     #elif defined win_unix
       ulong nonblocking= true;
-      int err= ioctl( s, FIONBIO, &nonblocking );
+      (void)ioctl( s, FIONBIO, &nonblocking );
     
     #else
       #pragma unused(s)
@@ -595,6 +585,7 @@ os9err pNclose( _pid_, syspath_typ* spP )
         net->bound  = false;
     } /* if */
 
+    (void)err; /* every branch above assigns it; none reads it */
     return 0;
 } /* pNclose */
 
@@ -828,7 +819,7 @@ os9err pNbind( _pid_, syspath_typ* spP, _d2_, byte *ispP )
           name.sin_port       = os9_word(fPort);
           name.sin_addr.s_addr=          net->ipAddress.fHost;  /* my own address */
         
-          err= bind( net->ep, (__CONST_SOCKADDR_ARG)&name,sizeof(name) );
+          err= bind( net->ep, (const struct sockaddr*)&name,sizeof(name) );
           #ifdef windows32
             if     (err) {
                     err= WSAGetLastError();
@@ -957,7 +948,7 @@ os9err pNconnect( ushort pid, syspath_typ* spP, _d2_, byte *ispP)
     #endif
     
     #ifdef UNIX
-      int  id, u_err;
+      int  id;
     #endif
    
     #ifndef NET_SUPPORT
@@ -1008,23 +999,24 @@ os9err pNconnect( ushort pid, syspath_typ* spP, _d2_, byte *ispP)
 
           #ifdef UNIX
             if (isRaw) {
-                id= geteuid();        // printf( "%d\n",     id    );
-                u_err= seteuid( 0 );  // printf( "err=%d\n", u_err );
+                id= geteuid();
+                (void)seteuid( 0 );   /* raw sockets need root; best effort */
             }
           #endif
           
           net->ep= socket( af, ty, proto );
           
           #ifdef UNIX
-            if (isRaw) {              // printf(  "ep=%d %d\n", net->ep, fPort );
-                u_err= seteuid( id ); // printf( "err=%d\n", u_err   );
+            if (isRaw) {
+                (void)seteuid( id );  /* give the privilege straight back */
             }
           #endif
           
-          debugprintf(dbgSpecialIO,dbgNorm, ( "connect %d %d %d %d %d\n", net->ep, af, ty, proto, fPort ));
-          if (net->ep==INVALID_SOCKET)
+          debugprintf(dbgSpecialIO,dbgNorm, ( "connect %lu %d %d %d %d\n", (unsigned long)net->ep, af, ty, proto, fPort ));
+          if (net->ep==INVALID_SOCKET) {
               if (isRaw) return E_PERMIT;
               else       return E_FNA;
+          }
         #endif
             
         net->bound= true;
@@ -1055,7 +1047,7 @@ os9err pNconnect( ushort pid, syspath_typ* spP, _d2_, byte *ispP)
       name.sin_port       =          net->ipRemote.fPort;
       name.sin_addr.s_addr=          net->ipRemote.fHost;        /* no big/little endian change */
 
-      err= connect( net->ep, (__CONST_SOCKADDR_ARG)&name,sizeof(name) );
+      err= connect( net->ep, (const struct sockaddr*)&name,sizeof(name) );
 
 
       #ifdef windows32
@@ -1079,8 +1071,8 @@ os9err pNconnect( ushort pid, syspath_typ* spP, _d2_, byte *ispP)
       #endif
     #endif
 
-    debugprintf(dbgSpecialIO,dbgNorm, ( "connect err=%d %d: %d %d %x\n", 
-                                         err, net->ep, 
+    debugprintf(dbgSpecialIO,dbgNorm, ( "connect err=%d %lu: %d %d %x\n", 
+                                         err, (unsigned long)net->ep, 
                                          os9_word(net->ipRemote.fAddressType),
                                          os9_word(net->ipRemote.fPort),
                                          os9_long(net->ipRemote.fHost) ));
@@ -1158,7 +1150,7 @@ os9err pNaccept( ushort pid, syspath_typ* spP, uint32_t *d1, byte* ispP )
     
     #elif defined win_unix
       len= sizeof(name);
-          epNew= accept( net->ep, (__SOCKADDR_ARG)&name, (unsigned int*)&len );
+          epNew= accept( net->ep, (struct sockaddr*)&name, (socklen_t*)&len );
       if (epNew==INVALID_SOCKET) {
           cp->saved_state= cp->state;
           set_os9_state( pid, pWaitRead, "pNaccept" );
@@ -1375,7 +1367,7 @@ os9err pNsPCmd( _pid_, syspath_typ *spP, byte* a0 )
       if (err>0) err= 0;
     #endif
 
-    debugprintf(dbgSpecialIO,dbgNorm, ( "NsPCmd %d=%d %d: %d %d %x\n", err,sizeof(IcmpHeader), net->ep, 
+    debugprintf(dbgSpecialIO,dbgNorm, ( "NsPCmd %d=%lu %lu: %d %d %x\n", err,(unsigned long)sizeof(IcmpHeader), (unsigned long)net->ep, 
                                          os9_word(net->ipRemote.fAddressType),
                                          os9_word(net->ipRemote.fPort),
                                          os9_long(net->ipRemote.fHost) ));
@@ -1456,7 +1448,7 @@ os9err pNgPCmd( _pid_, syspath_typ *spP, byte* a0 )
                   err= recvfrom( net->ep, icmp_data, n, 0, (struct sockaddr*)&from, (unsigned int*)&fromlen);
                   if (err<=0) break;
               
-                  debugprintf(dbgSpecialIO,dbgNorm, ( "NgPCmd %d %d: %d %d %x\n", err, net->ep, 
+                  debugprintf(dbgSpecialIO,dbgNorm, ( "NgPCmd %d %lu: %d %d %x\n", err, (unsigned long)net->ep, 
                                                          from.sin_family,
                                                os9_word( from.sin_port ),
                                                os9_long( from.sin_addr.s_addr )));
@@ -1582,7 +1574,7 @@ os9err pNask( ushort pid, syspath_typ* spP )
 
     net_typ* net= &spP->u.net;
     os9err   sig, err;
-    ulong    n;
+    uint32_t n;
     Boolean  ok;
 
     #ifndef NET_SUPPORT
