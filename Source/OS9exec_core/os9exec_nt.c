@@ -567,7 +567,8 @@ fmgr_typ    fmgr_none,
             fmgr_pty,
             fmgr_rbf,
             fmgr_net,
-            fmgr_printer;
+            fmgr_printer,
+            fmgr_spf;
 
 /* the events */
 event_typ   events  [MAXEVENTS];

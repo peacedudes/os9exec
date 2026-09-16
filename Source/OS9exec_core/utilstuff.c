@@ -3516,6 +3516,7 @@ char* TypeStr( ptype_typ type )
         case fPTY : nam="fPTY";  break;
         case fRBF : nam="fRBF";  break;
         case fNET : nam="fNET";  break;
+        case fSPF : nam="fSPF";  break;
         default   : nam="unknown";
     }
     
@@ -3549,6 +3550,9 @@ ptype_typ IO_Type(ushort pid, char* os9path, ushort mode)
         } /* if */
     
         if  (ustrcmp (os9path,"/nil"   )==0) { type= fNIL;     break; }
+        /* SPF socket paths: the networking programs on the system disk open
+           "/ip0#1/tcp0" and its siblings (observed by tracing them). */
+        if  (ustrncmp(os9path,"/ip0",4 )==0) { type= fSPF;     break; }
         if  (ustrncmp(os9path,"/pipe",5)==0) { type= fPipe;    break; }
         if  (ustrncmp(os9path,"/lp",  3)==0 ||
              ustrcmp (os9path,"/p"     )==0 ||

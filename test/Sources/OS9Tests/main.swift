@@ -6254,6 +6254,90 @@ do {
     }
 }
 
+// SOCK_STREAM is Int32 on Darwin and an enum on Glibc; socket() wants Int32.
+#if canImport(Darwin)
+let streamSocketType = SOCK_STREAM
+#else
+let streamSocketType = Int32(SOCK_STREAM.rawValue)
+#endif
+
+// ── SPF sockets: an OS-9 program reaches the host network ─────────────────────
+// The networking programs on the system disk open a path like "/ip0#1/tcp0" and
+// drive it with one setstat whose parameter block says what to do; os9exec had
+// no such device, so every one of them stopped at its socket call (E$MNF).
+// spfsock.c gives those paths host sockets. Here the harness listens on the port
+// tcpsend uses, the OS-9 side sends a file, and every byte must arrive.
+// Skipped under a container: os9exec is then inside it and cannot reach this
+// listener on the host's loopback.
+do {
+    let name = "net: tcpsend sends a file over TCP through an /ip0 socket path"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(name) (the container cannot reach the host's loopback)")
+        } else {
+            let sendFile = "/dd/SYS/errmsg"
+            let port: UInt16 = 27000          // the port tcpsend connects to
+            let listenFd = socket(AF_INET, streamSocketType, 0)
+            var yes: Int32 = 1
+            setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = port.bigEndian
+            addr.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
+            let bound = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(listenFd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            if listenFd < 0 || bound != 0 || listen(listenFd, 1) != 0 {
+                if listenFd >= 0 { close(listenFd) }
+                print("SKIP: \(name) (port \(port) is not available here)")
+            } else {
+                // count what arrives, on a background thread, until the sender closes
+                var received = 0
+                let done = DispatchSemaphore(value: 0)
+                DispatchQueue.global().async {
+                    let conn = accept(listenFd, nil, nil)
+                    if conn >= 0 {
+                        var buf = [UInt8](repeating: 0, count: 4096)
+                        while true {
+                            let got = read(conn, &buf, buf.count)
+                            if got <= 0 { break }
+                            received += got
+                        }
+                        close(conn)
+                    }
+                    done.signal()
+                }
+
+                let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                               "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                               "tcpsend localhost \(sendFile)"], timeout: 45)
+                _ = done.wait(timeout: .now() + 20)
+                close(listenFd)
+
+                // tcpsend reports what it sent; the host must have got exactly that
+                let sent = out.split(whereSeparator: \.isNewline)
+                    .first { $0.contains("sent ") && $0.contains(" bytes") }
+                    .flatMap { $0.split(separator: " ").dropFirst().first.map(String.init) }
+                    .flatMap { Int($0) }
+                if let sent, sent > 0, sent == received {
+                    print("PASS: \(name)")
+                    passed += 1
+                } else {
+                    print("FAIL: \(name)")
+                    print("      saw: sent=\(sent.map(String.init) ?? "-") received=\(received)")
+                    let seen = out.split(whereSeparator: \.isNewline).filter {
+                        $0.contains("socket") || $0.contains("Error") || $0.contains("sent")
+                    }
+                    print("      out: \(seen.joined(separator: " | "))")
+                    failed += 1
+                }
+            }
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

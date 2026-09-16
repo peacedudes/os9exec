@@ -85,6 +85,7 @@ SRCS = \
     $(CORE)/pipefiles.c \
     $(CORE)/printer.c \
     $(CORE)/procstuff.c \
+    $(CORE)/spfsock.c \
     $(CORE)/telnetaccess.c \
     $(CORE)/utilstuff.c \
     $(CORE)/vmod.c \

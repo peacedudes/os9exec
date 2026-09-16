@@ -691,7 +691,7 @@ typedef enum { sysNonExisting=0, sysStdin=1, sysStdout=2,
 typedef enum { usrStdin=0, usrStdout=1, usrStderr=2 } usrpathEnum;
 
 typedef enum { fNone, fCons,fTTY,fNIL,fVMod,fSCF, fFile,fDir, 
-                      fPipe,fPTY, fRBF, fNET, fPrinter, fARRSZ } ptype_typ;
+                      fPipe,fPTY, fRBF, fNET, fPrinter, fSPF, fARRSZ } ptype_typ;
 
 
 /* Identification sector (LSN 0) field offsets. The names here are os9exec's
@@ -884,6 +884,14 @@ typedef struct {
         } scf_typ;
 
 
+/* variant for SPF socket paths (/ip0#N/tcp0 and friends), see spfsock.c */
+typedef struct {
+            int       fdPlus1;      /* host socket + 1; 0 = none yet */
+            ushort    proto;        /* the protocol the path was opened for */
+            Boolean   connected;
+        } spf_typ;
+
+
 /* Mount modes for RBF images */
 #define  Img_Unchanged 0 // as is
 #define  Img_Reduced   1 // reduced;   mount -i
@@ -1027,6 +1035,7 @@ typedef struct {
       #ifdef NET_SUPPORT
         net_typ net;            /* Network       object */
       #endif
+        spf_typ spf;            /* SPF socket    object */
     } u;
 } syspath_typ;
 
@@ -1089,6 +1098,7 @@ typedef struct {
             pathop_num2_typ _SS_DSize;
 
             pathop_opt_typ  _SS_PCmd;   /* network specific function */
+            pathop_opt_typ  _SS_SPF;    /* SPF socket calls, subcode in the block */
 
             pathop_num_typ  _SS_LBlink;                /* L2 support */
 
@@ -1116,6 +1126,7 @@ typedef struct {
             pathop_num2_typ _SS_SOpt;
             pathop_buf2_typ _SS_SendTo;
             pathop_opt_typ  _SS_PCmd;
+            pathop_opt_typ  _SS_SPF;    /* SPF socket calls, subcode in the block */
 
             pathop_num_typ  _SS_LBlink;                /* L2 support */
 
@@ -1552,7 +1563,8 @@ extern  fmgr_typ    fmgr_none,
                     fmgr_pty,
                     fmgr_rbf,
                     fmgr_net,
-                    fmgr_printer;
+                    fmgr_printer,
+                    fmgr_spf;
 
 /* the events */
 extern  event_typ   events  [MAXEVENTS];

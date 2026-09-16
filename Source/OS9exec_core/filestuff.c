@@ -177,6 +177,7 @@ void init_Pipe( fmgr_typ* f ); /* pipefiles */
 void init_PTY ( fmgr_typ* f );
 
 void init_Net ( fmgr_typ* f ); /* network */
+void init_SPF ( fmgr_typ* f ); /* spfsock: socket paths over host sockets */
 
 void init_RBF ( fmgr_typ* f ); /* file_rbf */
 
@@ -218,6 +219,7 @@ void init_None( fmgr_typ* f )
     gs->_SS_DSize  = pUnimp_num2;
     
     gs->_SS_PCmd   = pUnimp_opt; /* network specific function  */
+    gs->_SS_SPF    = pUnimp_opt; /* SPF socket calls (spfsock.c) */
     
     gs->_SS_LBlink = pUnimp_num; /* /L2 specific function */
     
@@ -306,6 +308,10 @@ void init_fmgrs(void)
     #ifdef NET_SUPPORT /* network support */
       conn_FMgr( fNET, &fmgr_net,  init_Net  ); /*    "    network          routines (network)    */
     #endif
+
+    /* SPF socket paths are not behind NET_SUPPORT: that flag belongs to the
+       older ISP emulation in network.c, which is not in any build. */
+    conn_FMgr  ( fSPF, &fmgr_spf,  init_SPF  ); /*    "    SPF sockets      routines (spfsock)    */
     
     #ifdef PRINTER_SUPPORT
       conn_FMgr( fPrinter, &fmgr_printer, init_Printer  ); /*    "    printer          routines (printer)    */
@@ -427,7 +433,8 @@ void show_files( ushort pid )
                 case fPipe:
                 case fPTY :
                 case fRBF :
-                case fNET : fsspec= false; nameflag=  true; break;
+                case fNET :
+                case fSPF : fsspec= false; nameflag=  true; break;
                 
                 case fFile:
                 case fDir : fsspec=  true; nameflag=  true; break;
@@ -2106,6 +2113,9 @@ os9err syspath_getstat( ushort pid, ushort sp, ushort func,
         /* $7A protocol direct command */
         case SS_PCmd   : err= g->_SS_PCmd  ( pid,spP,        *a   ); break;
 
+        /* $48 SPF: one code, the operation in the block it points at */
+        case SS_SPF    : err= g->_SS_SPF   ( pid,spP,        *a   ); break;
+
         /* $80 + 32: "/L2" specific */
         case SS_LBlink : err= g->_SS_LBlink( pid,spP, d2          ); break;
 
@@ -2206,6 +2216,7 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
         case SS_SOpt   : err= s->_SS_SOpt   ( pid,spP, d1,d2    ); break; /* $74 */
         case SS_SendTo : err= s->_SS_SendTo ( pid,spP, d1,d2,*a ); break; /* $77 */
         case SS_PCmd   : err= s->_SS_PCmd   ( pid,spP,      *a ); break; /* $7A */
+        case SS_SPF    : err= s->_SS_SPF    ( pid,spP,      *a ); break; /* $48 */
 
         /* general block read — RBF only; non-block devices return E_UNIT */
         case SS_BlkRd:

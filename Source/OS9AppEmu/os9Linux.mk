@@ -37,6 +37,7 @@ c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/os9main.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/pipefiles.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/printer.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/procstuff.c
+c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/spfsock.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/telnetaccess.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/utilstuff.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/vmod.c
