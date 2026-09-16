@@ -14,32 +14,14 @@
  * OS-9 C headers in freely distributed archives have carried for decades, and
  * that os9exec's own os9funcs.h has shipped since v4.0.0.
  *
- * WHAT WAS OBSERVED, and is all this relies on:
- *  - the block begins with three longwords: an operation, a byte count, and a
- *    pointer to that many bytes of arguments;
- *  - creating a socket passes three longwords, which are a BSD domain, type
- *    and protocol (2, 1, 0 for a TCP client);
- *  - connecting passes a BSD socket address: a 16-bit family, then the port
- *    and the address, both already in network order;
- *  - option calls pass a level and an option, and the clients run fine when
- *    they are accepted and not applied;
- *  - once connected, data moves with ordinary I$Read and I$Write on the path.
- *
  * SCOPE. Client connections work end to end (TCP, and UDP as far as
- * connect/read/write take it). The server calls -- bind, listen and accept --
- * are here and each does what it says, but NO SERVER WORKS YET: after accept
- * the caller asks for more of the protocol than is decoded (see the roadmap).
- * Raw sockets (ping) need host privileges and are not attempted.
+ * connect/read/write take it), and so do servers: a program that binds,
+ * listens and accepts receives its data. Raw sockets (ping) need host
+ * privileges and are not attempted. A few operations are answered E$UnkSvc
+ * on purpose, because the callers check for exactly that and carry on.
  *
- * What accept returns is worth stating, because it is not what it looks like.
- * It does NOT hand back a path. It answers three longwords {domain, type,
- * protocol}, which the caller feeds to its own socket() routine -- that opens
- * a second "/ip0#1/tcp0" itself and makes a fresh socket on it. So the
- * connection accepted here is held on the listening path (acceptPlus1) until
- * the call that transfers it to that path is understood; today it is closed
- * when the listening path closes. This was read out of the client's own code,
- * not guessed: four register and three memory layouts all behaved identically
- * beforehand, which is what "the value is never read" looks like.
+ * The connection a server accepts is held on the listening path until the
+ * caller claims it; see the accept and attach cases below.
  */
 
 #include "os9exec_incl.h"
@@ -244,9 +226,8 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
     ptr = os9_get_l( blk+8 );
     args= (byte*)FROM68K( ptr );
 
-    /* ATTACH is the exception: its operand travels in the pointer field as a
-       plain value, so it is never a valid address and must not be checked as
-       one. */
+    /* ATTACH's operand is a value, not an address: it must not be range
+       checked as one. */
     if (op!=SPFOP_ATTACH &&
         ptr!=0 && !RANGE_IN_ARENA( args,len>64 ? 64:len )) return os9error(E_BPADDR);
 
@@ -381,10 +362,8 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
         }
 
         case SPFOP_NEWID:
-            /* Observed: issued on the path the caller has just opened for the
-               connection, immediately before ATTACH on the listening path. The
-               value is only ever handed straight back to us, so the syspath
-               number serves: it is unique, stable, and resolves in one step.
+            /* The value is only ever handed straight back to us, so the
+               syspath number serves: unique, stable, resolves in one step.
                Nothing outside this file depends on the choice. */
             if (ptr==0 || len<4) return os9error(E_PARAM);
             os9_set_l( args, spP->nr );
@@ -392,11 +371,9 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             return 0;
 
         case SPFOP_ATTACH: {
-            /* The connection accept took is moved onto the path the caller
-               opened for it. NOTE the operand is passed BY VALUE in the
-               pointer field of the block -- the caller copies what NEWID
-               handed it straight into that slot -- so there is nothing to
-               dereference here, and <ptr> is not an address. */
+            /* Moves the accepted connection onto the path the caller opened
+               for it. The operand arrives by value, not as an address, which
+               is why nothing is dereferenced here. */
             syspath_typ* nsp;
             uint32_t     id= ptr;
 
@@ -416,14 +393,10 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
         }
 
         case SPFOP_NAME: {
-            /* Observed, and entirely from what the caller checks on the way
-               back (it supplies no length, so the shape is inferred from its
-               own tests): a word at +4 it requires to be 8 or 32, a byte at
-               +48 it requires to be 3, a length byte at +51 that must not
-               exceed the maximum it passes, and that many bytes of address
-               from +52. It answers ENOTCONN, EPROTOTYPE or $71B in turn when
-               any of those is wrong, which is how this layout was pinned
-               down. Nothing here is from a Microware header. */
+            /* The caller inspects what we hand back and refuses the
+               connection unless it suits. These are the values it accepts,
+               arrived at by running it and watching which ones it rejected;
+               nothing here is transcribed from a Microware header. */
             struct sockaddr_in who;
             socklen_t          wlen= sizeof(who);
             int  fd= SpfFd( spP );
