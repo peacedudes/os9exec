@@ -887,7 +887,8 @@ typedef struct {
 /* variant for SPF socket paths (/ip0#N/tcp0 and friends), see spfsock.c */
 typedef struct {
             int       fdPlus1;      /* host socket + 1; 0 = none yet */
-            ushort    proto;        /* the protocol the path was opened for */
+            int       acceptPlus1;  /* connection taken by accept, not yet claimed */
+            ushort    proto;        /* the BSD socket type this path was made with */
             Boolean   connected;
         } spf_typ;
 

@@ -25,12 +25,21 @@
  *    they are accepted and not applied;
  *  - once connected, data moves with ordinary I$Read and I$Write on the path.
  *
- * SCOPE. Client connections (TCP, and UDP as far as connect/read/write take
- * it). Listening servers need the accept operation, which must hand back a
- * second path; what the caller expects there has not been established, so it
- * answers E$UnkSvc -- the same "not implemented" the library already checks
- * for -- rather than guessing. Raw sockets (ping) need host privileges and
- * are not attempted.
+ * SCOPE. Client connections work end to end (TCP, and UDP as far as
+ * connect/read/write take it). The server calls -- bind, listen and accept --
+ * are here and each does what it says, but NO SERVER WORKS YET: after accept
+ * the caller asks for more of the protocol than is decoded (see the roadmap).
+ * Raw sockets (ping) need host privileges and are not attempted.
+ *
+ * What accept returns is worth stating, because it is not what it looks like.
+ * It does NOT hand back a path. It answers three longwords {domain, type,
+ * protocol}, which the caller feeds to its own socket() routine -- that opens
+ * a second "/ip0#1/tcp0" itself and makes a fresh socket on it. So the
+ * connection accepted here is held on the listening path (acceptPlus1) until
+ * the call that transfers it to that path is understood; today it is closed
+ * when the listening path closes. This was read out of the client's own code,
+ * not guessed: four register and three memory layouts all behaved identically
+ * beforehand, which is what "the value is never read" looks like.
  */
 
 #include "os9exec_incl.h"
@@ -46,7 +55,7 @@
 
 /* the operations seen in the first longword of the block */
 #define SPFOP_SOCKET  0x01060002   /* make a socket: domain, type, protocol */
-#define SPFOP_ACCEPT  0x01060080   /* take a connection (not implemented) */
+#define SPFOP_ACCEPT  0x01060080   /* take a connection: answers {domain,type,proto} */
 #define SPFOP_BIND    0x6C
 #define SPFOP_LISTEN  0x6D
 #define SPFOP_CONNECT 0x6E
@@ -93,9 +102,10 @@ static os9err pSopen( _pid_, syspath_typ* spP, _modeP_, const char* pathname )
 {
     const char* p= pathname;
 
-    spP->u.spf.fdPlus1  = 0;
-    spP->u.spf.proto    = 0;
-    spP->u.spf.connected= false;
+    spP->u.spf.fdPlus1    = 0;
+    spP->u.spf.acceptPlus1= 0;
+    spP->u.spf.proto      = 0;
+    spP->u.spf.connected  = false;
 
     while (*p!=NUL) p++;                    /* the protocol is the last element */
     while (p>pathname && *(p-1)!='/') p--;
@@ -109,8 +119,10 @@ static os9err pSclose( _pid_, syspath_typ* spP )
 {
   #if defined UNIX && !defined MINGW
     if (SpfFd( spP )>=0) close( SpfFd( spP ) );
+    if (spP->u.spf.acceptPlus1>0) close( spP->u.spf.acceptPlus1-1 );
   #endif
-    spP->u.spf.fdPlus1= 0;
+    spP->u.spf.fdPlus1    = 0;
+    spP->u.spf.acceptPlus1= 0;
     return 0;
 } /* pSclose */
 
@@ -189,6 +201,24 @@ static os9err pSready( _pid_, syspath_typ* spP, uint32_t* n )
 } /* pSready */
 
 
+/* The option section of a socket path. The caller asks the LISTENING path for
+   this straight after it has opened a path for the connection, and gave up
+   with "can't accept" while it answered E$UnkSvc. These are the same values
+   the ISP manager has always returned for a socket (network.c, netstdopts):
+   PD_DTP=7 is the socket device type. */
+static const byte spfstdopts[OPTSECTSIZE]=
+                { 7,        /* PD_DTP: 7 = SOCKET */
+                  0,
+                  0x01,
+                  0,
+                  0,
+                  0x10 };   /* the rest is zero */
+
+static os9err pSopt( _pid_, _spP_, byte* buffer )
+{   memcpy( buffer, spfstdopts, OPTSECTSIZE ); return 0;
+} /* pSopt */
+
+
 static os9err pSnam( _pid_, syspath_typ* spP, char* volname )
 {   strcpy( volname, spP->name ); return 0;
 } /* pSnam */
@@ -223,6 +253,7 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             if (fd<0) return os9error(E_NOTRDY);
 
             spP->u.spf.fdPlus1  = fd+1;
+            spP->u.spf.proto    = (ushort)type;
             spP->u.spf.connected= false;
             flags= fcntl( fd, F_GETFL, 0 );     /* reads must never block the emulator */
             if (flags>=0) fcntl( fd, F_SETFL, flags | O_NONBLOCK );
@@ -302,14 +333,11 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
         case SPFOP_ACCEPT: {
             struct sockaddr_in peer;
             socklen_t          plen= sizeof(peer);
-            syspath_typ*       nsp;
-            ushort             up;
-            os9err             e;
             int  fd= SpfFd( spP ), nfd, flags;
 
             SpfResume( pid );   /* this call may be a retry of a parked accept */
             if (fd<0) return os9error(E_NOTRDY);
-            if (ptr==0 || len<4) return os9error(E_PARAM);
+            if (ptr==0 || len<12) return os9error(E_PARAM);
 
                 nfd= accept( fd, (struct sockaddr*)&peer, &plen );
             if (nfd<0) {
@@ -317,27 +345,28 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
                 return os9error(E_NOTRDY);
             }
 
-            /* the connection needs a path of its own, and the caller goes on
-               using the listening path to accept the next one */
-            e= usrpath_new( pid,&up, fSPF );
-            if (e) { close( nfd ); return e; }
-
-            nsp= &syspaths[ procs[pid].usrpaths[up] ];
-            nsp->u.spf.fdPlus1  = nfd+1;
-            nsp->u.spf.proto    = spP->u.spf.proto;
-            nsp->u.spf.connected= true;
-            strcpy( nsp->name, spP->name );
-
             flags= fcntl( nfd, F_GETFL, 0 );    /* reads must never block the emulator */
             if (flags>=0) fcntl( nfd, F_SETFL, flags | O_NONBLOCK );
 
-            /* The connection is read and written on a path of its own; its
-               number goes back in d1, which is how the other socket calls
-               hand one over (see pNaccept in network.c). The caller keeps
-               using this path to accept the next connection. */
-            *d1= up;
-            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: accept from port %u -> host fd %d, path %d\n",
-                                                 (uint32_t)ntohs( peer.sin_port ), nfd, up ));
+            /* The caller does NOT want a path number here. It wants the socket
+               to make one with: it feeds these three longwords straight to its
+               own socket() (domain, type, protocol), which opens a fresh
+               "/ip0#1/tcp0" -- and then tells us, through NEWID and ATTACH
+               below, which path the connection should end up on. Anything it
+               does not recognise here becomes its own error $070C. */
+            os9_set_l( args+0, 2 );                       /* AF_INET */
+            os9_set_l( args+4, spP->u.spf.proto==0 ? 1 : spP->u.spf.proto );
+            os9_set_l( args+8, 0 );
+
+            /* Hold the connection on this path. Dropping it here would close
+               it on the client the instant it connects; the call that moves it
+               onto the caller's own path is not decoded yet, so it lives here
+               until this path closes. */
+            if (spP->u.spf.acceptPlus1>0) close( spP->u.spf.acceptPlus1-1 );
+            spP->u.spf.acceptPlus1= nfd+1;
+
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: accept from port %u -> host fd %d, pending\n",
+                                                 (uint32_t)ntohs( peer.sin_port ), nfd ));
             return 0;
         }
 
@@ -371,6 +400,7 @@ void init_SPF( fmgr_typ* f )
     f->seek      = pNop_num;      /* no random access, and no error: see pipeman */
 
     /* getstat */
+    gs->_SS_Opt  = pSopt;
     gs->_SS_Ready= pSready;
     gs->_SS_DevNm= pSnam;
     gs->_SS_SPF  = pSspf;
