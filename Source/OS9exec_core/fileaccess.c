@@ -3425,7 +3425,7 @@ os9err pDseek( ushort pid, syspath_typ* spP, uint32_t *posP )
       ulong       size;
       os9err      err;
     #else
-      #pragma unused(pid)
+      (void)pid; /* only the MACOS9 path below uses it */
     #endif
     
     
