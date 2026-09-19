@@ -411,6 +411,13 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
         if containerized { killContainer(containerName) } // client != container
         process.terminate()
         process.waitUntilExit()
+        // Still "(timeout)" to every caller -- a run that printed the right text
+        // and then hung must not pass -- but say what it had printed, since a
+        // bare "(timeout)" hid where the 2026-09-19 ftp-put freeze was stuck.
+        // Terminating closed the pipes, so the reader can now finish.
+        _ = readGroup.wait(timeout: .now() + 2)
+        let tail = output.split(whereSeparator: \.isNewline).suffix(4).joined(separator: " | ")
+        print("      [timed out after \(Int(timeout))s; last output: \(tail.isEmpty ? "(none)" : tail)]")
         return "(timeout)"
     }
     process.waitUntilExit()
