@@ -2330,7 +2330,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
  
       // --- now handle trap
       if (cp->vector==0xFCFC) {
-        /* Time slice expired (-p<n> only) -- not a trap, so there is nothing
+        /* Time slice expired (the system tick) -- not a trap, so there is nothing
          * to dispatch: the process has simply stopped owning the CPU. Must be
          * its own arm because vector 0 below means TRAP0, an OS-9 system call,
          * so clearing the vector here would run a syscall with function 0. */

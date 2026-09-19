@@ -99,11 +99,12 @@ static void os9_tick_arm( void )
     struct sigaction sa;
 
     /* SA_RESTART asked for explicitly rather than inherited: a signal 100
-     * times a second interrupts blocking host calls, and nothing in OS9exec
-     * checks for EINTR anywhere. Today that is harmless -- the only blocking
-     * calls on the hot paths are idle nanosleeps, which simply return early --
-     * but relying on signal()'s implementation-defined behaviour to keep it
-     * that way is luck, not design. Let the kernel restart them. */
+     * times a second interrupts blocking host calls, and relying on signal()'s
+     * implementation-defined behaviour is luck, not design. Let the kernel
+     * restart what it can. It cannot restart everything, and code calling the
+     * host must still expect EINTR: connect() is never restarted, poll() and
+     * select() come back early (the socket manager was bitten by both), and a
+     * write that has moved some bytes returns a short count instead. */
     sa.sa_handler= os9_tick_handler;
     sigemptyset( &sa.sa_mask );
     sa.sa_flags  = SA_RESTART;
