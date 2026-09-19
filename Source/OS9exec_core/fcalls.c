@@ -1491,6 +1491,17 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 	#define D_SPUMem   0x03D8   /* static storage of the System Security Module (SSM) */
 	#define D_IPID     0x040C   /* os9exec/nt identification!               */
 
+	/* offsets and meanings as freeware getsys (Hellmuth Michaelis, 1990)
+	   reads and labels them */
+	#define D_Year     0x002A   /* year (word) */
+	#define D_Month    0x002C   /* month (byte) */
+	#define D_Day      0x002D   /* day (byte) */
+	#define D_Proc     0x004C   /* current process descriptor ptr */
+	#define D_SysPrc   0x0050   /* system process descriptor ptr */
+	#define D_EvID     0x03D4   /* next (incrementing) event ID */
+	#define D_PrcDescSz 0x03E2  /* size of a process descriptor (word) */
+	#define D_ForkCnt  0x0794   /* number of actively forked processes */
+
 	#define D_ScreenW  0x1000   /* Width in pixels of this system's screen  */
 	#define D_ScreenH  0x1004   /* Hight  "   "    "    "    "         "    */
 	#define D_ScreenW1 0x1008   /* Width in pixels from OS9exec's option -x */
@@ -1528,6 +1539,26 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
                          Get_Time( &jTime,&jDate, &dw,&tk, false,false );
                          v= (offs==D_Julian) ? jDate : jTime; } break;
     
+      /* The date as F$Time gives it, from the same clock as D_Julian. */
+      case D_Year    :
+      case D_Month   :
+      case D_Day     : { uint32_t gTime,gDate; int dw,tk;
+                         Get_Time( &gTime,&gDate, &dw,&tk, true,false );
+                         v= offs==D_Year  ?  gDate>>16        :
+                            offs==D_Month ? (gDate>>8) & 0xFF : gDate & 0xFF; } break;
+
+      /* The descriptor images F$GPrDBT hands out: the caller's own, and
+         process 1's, which is 0 while there is none. */
+      case D_Proc    :
+      case D_SysPrc  : { ushort k= offs==D_Proc ? cpid : 1;
+                         Update_PrcDBT( rp, cpid );
+                         v= os9_long( prDBT[ k ] ); } break;
+
+      case D_EvID    : v= newEventId + EvOffs; break; /* what Ev$Creat gives next */
+      case D_PrcDescSz: v= sizeof(procid);   break; /* as the F$GPrDBT header says */
+      case D_ForkCnt : { int k; v= 0;
+                         for (k=1; k<MAXPROCESSES; k++) if (procs[k].state!=pUnused) v++; } break;
+
       case D_68881   : 
         #if defined powerc && !defined MACOSX
         /* Gestalt( gestaltFPUType,         &v ); not all defs visible for MPW ... */

@@ -2291,6 +2291,58 @@ do {
     }
 }
 
+// ── system globals: the date and the current process ─────────────────────────
+// F$SetSys answered 0 for year ($2A), month ($2C) and day ($2D), and for the
+// current process's descriptor ($4C), all things os9exec knows. The date must
+// agree with F$Time's, and D_Proc must lead to a descriptor carrying the
+// caller's own ID (P$ID, its first word).
+do {
+    let globAsm = [
+        "FSetSys set $27", "FID set $0C", "FTime set $15", "IWritLn set $8C", "FExit set $06",
+        " psect globals,$0101,$8001,0,2048,start",
+        "start",
+        " moveq #0,d0", " trap #0", " dc.w FTime", " bcs.w bad", " move.l d1,d6",
+        " moveq #$2A,d0", " move.l #$80000002,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " move.l d6,d3", " swap d3", " cmp.w d3,d2", " bne.w bad",
+        " moveq #$2C,d0", " move.l #$80000001,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " move.l d6,d3", " lsr.l #8,d3", " cmp.b d3,d2", " bne.w bad",
+        " moveq #$2D,d0", " move.l #$80000001,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " cmp.b d6,d2", " bne.w bad",
+        " trap #0", " dc.w FID", " bcs.w bad", " move.w d0,d5",
+        " moveq #$4C,d0", " move.l #$80000004,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " tst.l d2", " beq.w bad", " movea.l d2,a0", " cmp.w (a0),d5", " bne.w bad",
+        " lea okmsg(pc),a0", " moveq #1,d0", " moveq #okl,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1", " trap #0", " dc.w FExit",
+        "bad", " moveq #1,d1", " trap #0", " dc.w FExit",
+        "okmsg dc.b \"DATE AND CURRENT PROCESS AGREE\",$0D",
+        "okl equ *-okmsg",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "globals: F$SetSys gives the date F$Time does, and D_Proc is the caller"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? globAsm.write(toFile: scratchDisk + "/globals.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/globals.a -o=/h5/globals.r",
+            "l68 /h5/globals.r -o=/h5/globals",
+            "/h5/globals"
+        ], timeout: 30)
+        if out.contains("DATE AND CURRENT PROCESS AGREE") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let preview = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("rror") || $0.contains("globals") }
+                .prefix(4).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+        for leftover in ["globals.a", "globals.r", "globals"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── process: the debugger calls refuse a process ID past the table ───────────
 // F$DExec and F$DExit take the child's ID from the guest's d0.w and indexed the
 // process table with it unchecked; F$DExit then WROTE through it. F$GPrDsc had
