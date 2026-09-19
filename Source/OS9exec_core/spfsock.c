@@ -664,8 +664,62 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             return 0;
         }
 
-        case SPFOP_SOPT:                        /* accepted, not applied: the clients run */
+        case SPFOP_SOPT: {
+            /* The options arrive by their BSD numbers, which the host may
+               number differently (Linux does), so each one this knows is
+               translated and applied to the host socket. Anything else -- and
+               any the host refuses -- is still answered as done, as it always
+               was: the clients measured check for nothing more. */
+            uint32_t level, name, olen;
+            byte*    val;
+            int      hl= -1, hn= -1, fd= SpfFd( spP ), r= -1;
+
+            if (ptr==0 || len<20 || !RANGE_IN_ARENA( args,20 ) || fd<0) return 0;
+            level= os9_get_l( args+4 );
+            name = os9_get_l( args+8 );
+            val  = (byte*)FROM68K( os9_get_l( args+12 ) );
+            olen = os9_get_l( args+16 );
+            if (olen>16 || !RANGE_IN_ARENA( val,olen )) return 0;
+
+            if (level==0xFFFF) {                 /* SOL_SOCKET */
+                hl= SOL_SOCKET;
+                switch (name) {
+                    case 0x0004: hn= SO_REUSEADDR; break;
+                    #ifdef SO_REUSEPORT
+                    case 0x0200: hn= SO_REUSEPORT; break;
+                    #endif
+                    case 0x0020: hn= SO_BROADCAST; break;
+                    case 0x0008: hn= SO_KEEPALIVE; break;
+                }
+            }
+            else if (level==0) {                 /* IPPROTO_IP */
+                hl= IPPROTO_IP;
+                switch (name) {
+                    case  9: hn= IP_MULTICAST_IF;    break;
+                    case 10: hn= IP_MULTICAST_TTL;   break;
+                    case 11: hn= IP_MULTICAST_LOOP;  break;
+                    case 12: hn= IP_ADD_MEMBERSHIP;  break;
+                    case 13: hn= IP_DROP_MEMBERSHIP; break;
+                }
+            }
+
+            if (hn>=0) {
+                if (olen==4 && hl==SOL_SOCKET) {           /* an int, big-endian in the guest */
+                    int iv= (int)os9_get_l( val );
+                    r= setsockopt( fd, hl, hn, &iv, sizeof(iv) );
+                }
+                else if (olen==1) {                        /* TTL, loop: one byte */
+                    unsigned char cv= val[0];
+                    r= setsockopt( fd, hl, hn, &cv, sizeof(cv) );
+                }
+                else {                                     /* addresses: network order already */
+                    r= setsockopt( fd, hl, hn, val, (socklen_t)olen );
+                }
+            }
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: option level $%X name $%X len %u -> %s\n",
+                         level, name, olen, hn<0 ? "not known" : r==0 ? "applied" : "host refused" ));
             return 0;
+        }
 
         default:
             debugprintf( dbgSpecialIO,dbgNorm,("# SPF: operation $%08X not implemented\n",

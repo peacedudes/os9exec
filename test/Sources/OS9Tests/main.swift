@@ -7026,6 +7026,39 @@ do {
     }
 }
 
+// ── multicast: msend reaches mrecv through a group ───────────────────────────
+// Socket options were accepted and never applied, so mrecv's group join did
+// nothing and msend's datagram reached nobody. They are applied now, by their
+// BSD numbers translated to the host's. Both are pinned to the loopback
+// interface so nothing leaves this machine. Skipped in the container, whose
+// Linux loopback does not usually carry multicast.
+do {
+    let name = "net: msend reaches mrecv through a multicast group on the loopback"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(name) (Linux loopback in the container carries no multicast)")
+        } else {
+            let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                           "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                           "mrecv -v -i 127.0.0.1 &",
+                           "sleep -s 1",
+                           "msend -l -i 127.0.0.1 -m group-delivered",
+                           "sleep -s 2"], timeout: 30)
+            if out.contains("[group-delivered]") {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                let seen = out.split(whereSeparator: \.isNewline).filter {
+                    $0.contains("msend") || $0.contains("mrecv") || $0.contains("Received") || $0.contains("rror")
+                }
+                print("      out: \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+        }
+    }
+}
+
 // ── telnetd: a host telnet client logs in to OS-9 ─────────────────────────────
 // telnetd accepts the connection, and its telnetdc child opens /pk, takes a
 // pty/tty pair from it and forks login on the tty. Three things stopped it: a
