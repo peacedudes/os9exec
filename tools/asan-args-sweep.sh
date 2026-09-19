@@ -84,7 +84,13 @@ run() {
                            "$@"; : ) < /dev/null > "$WORK/out$cases" 2>&1 &
     pid=$!
     while kill -0 $pid 2>/dev/null && [ $t -lt 40 ]; do sleep 0.5; t=$((t+1)); done
-    if kill -0 $pid 2>/dev/null; then kill -TERM $pid; fi
+    # $pid is the subshell; the emulator is its child. Stop the CHILD first:
+    # signalling only the subshell left a hung emulator orphaned and spinning
+    # (2026-09-19: 21 of them, six cores, for three hours).
+    if kill -0 $pid 2>/dev/null; then
+        pkill -TERM -P $pid 2>/dev/null
+        kill -TERM $pid 2>/dev/null
+    fi
     wait $pid   # the trailing `:` keeps bash from exec-ing, so the subshell reaps an
                 # aborted case itself and its "Abort trap" lands in out$cases, not here
     if ls "$WORK/logs/"[au]$cases.* >/dev/null 2>&1; then
