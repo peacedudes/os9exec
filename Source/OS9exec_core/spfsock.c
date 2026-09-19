@@ -219,7 +219,19 @@ static os9err pSready( _pid_, syspath_typ* spP, uint32_t* n )
     if (fd<0) return os9error(E_NOTRDY);
     if (ioctl( fd, FIONREAD, &cnt )!=0) return os9error(E_NOTRDY);
     *n= (uint32_t)cnt;
-    return cnt>0 ? 0 : os9error(E_NOTRDY);
+    if (cnt>0) return 0;
+
+    /* Nothing pending, but readable all the same: the far end has closed.
+       Say one byte is ready, as a broken pipe does (pPready), so the caller
+       reads and meets the end of file. Answering "not ready" left a telnet
+       client waiting forever on a connection the server had already closed. */
+    {   struct pollfd pf;
+        pf.fd= fd; pf.events= POLLIN; pf.revents= 0;
+        if (spP->u.spf.connected && poll( &pf,1, 0 )>0 && (pf.revents & (POLLIN|POLLHUP))) {
+            *n= 1; return 0;
+        }
+    }
+    return os9error(E_NOTRDY);
   #else
     (void)spP; *n= 0;
     return os9error(E_UNKSVC);
@@ -731,6 +743,31 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
     return os9error(E_UNKSVC);
   #endif
 } /* pSspf */
+
+
+void spf_poll_signals( void )
+/* SS_SSig on a socket path: the signal goes out when data arrives. The arming
+   call already sends it if data is there at that moment; after that, sockets
+   have no one to notice, so the periodic input check asks here -- the way
+   terminals are asked (KeyToBuffer). Readable covers data, an end of file and
+   a connection waiting to be accepted. */
+{
+  #if defined UNIX && !defined MINGW
+    int k;
+
+    for (k=1; k<MAXSYSPATHS; k++) {
+        syspath_typ*  sp= &syspaths[k];
+        struct pollfd pf;
+
+        if (sp->type!=fSPF || sp->signal_to_send==0 || SpfFd( sp )<0) continue;
+        pf.fd= SpfFd( sp ); pf.events= POLLIN; pf.revents= 0;
+        if (poll( &pf,1, 0 )>0 && pf.revents!=0) {
+            send_signal( sp->signal_pid, sp->signal_to_send );
+            sp->signal_to_send= 0;             /* one signal per arming, as OS-9 */
+        }
+    }
+  #endif
+} /* spf_poll_signals */
 
 
 void init_SPF( fmgr_typ* f )

@@ -422,6 +422,8 @@ void HandleEvent( void )
 
 
 /* CheckInputBuffers */
+void spf_poll_signals( void ); /* spfsock.c: SS_SSig on socket paths */
+
 void CheckInputBuffers(void)
 {
     #if defined MACTERMINAL && defined USE_CLASSIC
@@ -430,6 +432,7 @@ void CheckInputBuffers(void)
     
     CheckInputBuffersTTY();      /*   "        "       "  ttys         */
     hostterm_poll();             /* and every host-backed /tN          */
+    spf_poll_signals();          /* and sockets armed with SS_SSig     */
     HandleEvent();               /* and check also the Mac events      */
 } /* CheckInputBuffers */
 

@@ -7059,6 +7059,69 @@ do {
     }
 }
 
+// ── telnet: data that arrives later still wakes the client ───────────────────
+// The telnet client arms SS_SSig on its socket and sleeps until data comes.
+// The signal was sent only if data was already there when it was armed, so a
+// server that spoke first and at once worked, and anything that arrived later
+// never woke it. Sockets are now checked with the terminals. And when the
+// server closed, a socket with nothing pending said "not ready" even though a
+// read would have met the end of file, so the client never left. Here the host
+// server waits 2.5 s, sends one line, and closes: the line must arrive and the
+// client must go, letting the shell run the next command.
+do {
+    let name = "net: telnet is woken by data that arrives later, and leaves when the server closes"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(name) (the container cannot reach the host's loopback)")
+        } else {
+            let port: UInt16 = 27023
+            let listenFd = socket(AF_INET, streamSocketType, 0)
+            var yes: Int32 = 1
+            setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = port.bigEndian
+            addr.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
+            let bound = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(listenFd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            if listenFd < 0 || bound != 0 || listen(listenFd, 1) != 0 {
+                if listenFd >= 0 { close(listenFd) }
+                print("SKIP: \(name) (port \(port) is not available here)")
+            } else {
+                let done = DispatchSemaphore(value: 0)
+                DispatchQueue.global().async {
+                    let conn = accept(listenFd, nil, nil)
+                    if conn >= 0 {
+                        usleep(2_500_000)
+                        let line = "late-line-from-host\r\n"
+                        _ = write(conn, line, line.utf8.count)
+                        sleep(1)
+                        close(conn)
+                    }
+                    done.signal()
+                }
+                let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                               "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                               "telnet 127.0.0.1 \(port) </nil",
+                               "echo TELNET-HAS-LEFT"], timeout: 20)
+                _ = done.wait(timeout: .now() + 10)
+                close(listenFd)
+                if out.contains("late-line-from-host") && out.contains("TELNET-HAS-LEFT") {
+                    print("PASS: \(name)")
+                    passed += 1
+                } else {
+                    print("FAIL: \(name)")
+                    print("      out: \(out.split(whereSeparator: \.isNewline).suffix(8).joined(separator: " | "))")
+                    failed += 1
+                }
+            }
+        }
+    }
+}
+
 // ── telnetd: a host telnet client logs in to OS-9 ─────────────────────────────
 // telnetd accepts the connection, and its telnetdc child opens /pk, takes a
 // pty/tty pair from it and forks login on the tty. Three things stopped it: a
