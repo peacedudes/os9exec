@@ -927,8 +927,13 @@ os9err send_signal( ushort spid, ushort signal )
       memcpy( (void*)&sigp->rteregs, (void*)v, sizeof(regs_type) ); /* save all regs */
             
       /* signal causes wakeup */
-      /* activate for all other cases */
-      if (sigp->state!=pWaitRead) set_os9_state( spid, pActive, "send_signal" );
+      /* activate for all other cases -- but not a request parked as a system
+         task (a pipe read or write waiting on the other end): F$RTE has to
+         know it was one, to end it with the signal as its error or let it wait
+         on. Recorded as pActive, the request was simply dropped: its I$Read
+         "returned" whatever the registers held, and the pipe kept counting
+         the reader as waiting. */
+      if (sigp->state!=pWaitRead && sigp->state!=pSysTask) set_os9_state( spid, pActive, "send_signal" );
       sigp->rtestate= sigp->state;                                  /* save it, active after signal */
       set_os9_state( spid, pActive, "send_signal" );                /* now activate it */
            

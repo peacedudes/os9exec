@@ -1049,6 +1049,26 @@ os9err pPsize( _pid_, syspath_typ* spP, uint32_t *sizeP )
 
 
 
+/* A signal is cutting short a request parked in one of pipeman's system tasks
+   (called from F$RTE): give back what the request holds -- a reader counts as
+   a waiting consumer -- and forget the task. True when <pid> was parked there,
+   so the caller can end the request with the signal as its error. */
+Boolean pipe_abort_request( ushort pid )
+{
+    process_typ* cp= &procs[ pid ];
+    Boolean      rd, wr;
+
+    if (cp->state!=pSysTask || cp->systaskdataP==NULL) return false;
+    rd= cp->systask==(systaskfunc_typ)pReadSysTask  || cp->systask==(systaskfunc_typ)pReadSysTaskLn;
+    wr= cp->systask==(systaskfunc_typ)pWriteSysTask || cp->systask==(systaskfunc_typ)pWriteSysTaskLn;
+    if (!rd && !wr) return false;
+
+    if (rd) ((syspath_typ*)cp->systaskdataP)->u.pipe.pchP->consumers--;
+    cp->systask     = NULL;
+    cp->systaskdataP= NULL;
+    return true;
+} /* pipe_abort_request */
+
 /* set pipe size */
 static Boolean PipeHasWaiters( pipechan_typ* p )
 /* whether a process is parked reading or writing this pipe: in a system task

@@ -1127,6 +1127,8 @@ os9err OS9_F_Icpt( regs_type *rp, ushort cpid )
     return 0;
 } /* OS9_F_Icpt */
 
+Boolean pipe_abort_request( ushort pid ); /* pipefiles.c */
+
 os9err OS9_F_RTE( _rp_, ushort cpid )
 /* F$RTE:
  * Input:   none
@@ -1173,6 +1175,21 @@ os9err OS9_F_RTE( _rp_, ushort cpid )
             }
             else arbitrate= true;
         } /* if pWaitRead */
+        else if (cp->state==pSysTask) {
+            /* The same for a pipe read or write parked as a system task: a
+               signal below 32 ends it with the signal as its error. "Signal
+               values less than 32 (S$Deadly) usually cause the current I/O
+               operation to terminate with an error status equal to the signal
+               value" (F$Send, page 1 - 49), and an alarm aborting an I$Read is
+               the chapter's own example. The task used to resume instead and
+               the read came back with a stale register as its "error". */
+                pds= os9_word(cp->pd._signal);
+            if (pds>0 && pds<=32 && pipe_abort_request( cpid )) {
+                cp->os9regs.d[1]= pds;
+                cp->os9regs.sr |= CARRY;
+                set_os9_state( cpid, pActive, "OS9_F_RTE (pipe request cut short)" );
+            }
+        } /* if pSysTask */
            
             cp->pd._signal= 0; /* intercept done */
         if (cp->os9regs.sr & CARRY) err= cp->os9regs.d[1];
