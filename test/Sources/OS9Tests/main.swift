@@ -2388,6 +2388,54 @@ do {
     }
 }
 
+// ── fs: I$Create's mode byte has no directory bit ────────────────────────────
+// Unix code ported to OS-9 calls creat(name, 0666), and 0666 cut to a byte is
+// $B6: bit 7 set. I$Create cannot make a directory ("see I$MakDir"), and an RBF
+// image ignores that bit and makes the file; a host directory took it as a
+// directory open and answered E$PNNF, so patch could not make its temporary.
+do {
+    let creAsm = [
+        "ICreate set $83", "IClose set $8F", "IWritLn set $8C", "FExit set $06",
+        " psect crebit7,$0101,$8001,0,2048,start",
+        "start",
+        " lea fname(pc),a0", " move.b #$B6,d0", " moveq #$1B,d1", " moveq #0,d2",
+        " trap #0", " dc.w ICreate", " bcs.s bad",
+        " trap #0", " dc.w IClose", " bcs.s bad",
+        " lea okmsg(pc),a0", " moveq #1,d0", " moveq #okl,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1", " trap #0", " dc.w FExit",
+        "bad", " trap #0", " dc.w FExit",
+        "fname dc.b \"/h5/crebit7.dat\",0",
+        "okmsg dc.b \"CREATED WITH BIT 7 IN THE MODE\",$0D",
+        "okl equ *-okmsg",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "fs: I$Create with mode bit 7 set makes a plain file on a host directory"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? creAsm.write(toFile: scratchDisk + "/crebit7.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/crebit7.a -o=/h5/crebit7.r",
+            "l68 /h5/crebit7.r -o=/h5/crebit7",
+            "/h5/crebit7"
+        ], timeout: 30)
+        var isDir: ObjCBool = false
+        let made = FileManager.default.fileExists(atPath: scratchDisk + "/crebit7.dat", isDirectory: &isDir)
+        if out.contains("CREATED WITH BIT 7 IN THE MODE") && made && !isDir.boolValue {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let preview = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("rror") || $0.contains("crebit7") }
+                .prefix(4).joined(separator: " | ")
+            print("      output: \(preview) made=\(made) dir=\(isDir.boolValue)")
+            failed += 1
+        }
+        for leftover in ["crebit7.a", "crebit7.r", "crebit7", "crebit7.dat"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── process: the debugger calls refuse a process ID past the table ───────────
 // F$DExec and F$DExit take the child's ID from the guest's d0.w and indexed the
 // process table with it unchecked; F$DExit then WROTE through it. F$GPrDsc had

@@ -79,8 +79,14 @@ static os9err OS9_I_OpenCreate( regs_type *rp, ushort cpid, Boolean cre )
 /* common routine for both I$Open and I$Create, for internal use only */
 {
     os9err    err;
-    ushort    mode    = loword(rp->d[0]) & 0x00ff; /* consider only byte => bugfix for the */
-    char*     os9_name= (char*)FROM68K(rp->a[0]);  /* poCreateMask problem */
+    /* Only the byte counts (the poCreateMask problem). A create has no
+       directory bit either: "You cannot use I$Create to make directory files"
+       (I$Create, page 2-5), and the mode it documents stops at bit 6. Unix
+       code's creat(name, 0666) arrives here as $B6, and a host device took bit
+       7 for a directory open and answered E$PNNF, where an RBF image makes the
+       file. So it is dropped here, as the attribute's bit 7 is below. */
+    ushort    mode    = loword(rp->d[0]) & (cre ? 0x007F : 0x00FF);
+    char*     os9_name= (char*)FROM68K(rp->a[0]);
     char      os9_path[OS9PATHLEN]; 
     char*     pastpath;
     
