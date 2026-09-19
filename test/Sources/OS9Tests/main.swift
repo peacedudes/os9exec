@@ -1682,6 +1682,41 @@ do {
         }
     }
 }
+// The debugger menu that `idbg` opens on an argument it does not parse waited
+// for a key from stdin. Redirected and at end of input, nothing could ever
+// answer, and it waited forever at 100% CPU: a script running `idbg` sat there
+// for hours. End of input now counts as [G]o. Local only, for the same reason
+// as the test above; bounded so a hang costs this test and no more.
+do {
+    let name = "debug: the debugger menu continues when stdin has run out"
+    if (filter.isEmpty || name.localizedCaseInsensitiveContains(filter)) && !containerized {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL  = execURL
+        process.arguments      = ["-r", "idbg", "src"]
+        process.environment    = ["OS9DISK": diskPath]
+        process.standardInput  = FileHandle.nullDevice
+        process.standardOutput = pipe
+        process.standardError  = pipe
+        var finished = false
+        var said = ""
+        if (try? process.run()) != nil {
+            let deadline = Date().addingTimeInterval(30)
+            while process.isRunning && Date() < deadline { usleep(50_000) }
+            finished = !process.isRunning
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+            said = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        }
+        if finished && said.contains("no input left") {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [the menu gives up on an exhausted stdin; finished=\(finished)]")
+            failed += 1
+        }
+    }
+}
 check  ("move: a cross-device move is refused",
     contains: "can't move",
     "mount -r=200 /ram9", "mount -r=200 /ram8", "echo x >/ram9/a.txt",
