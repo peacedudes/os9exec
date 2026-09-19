@@ -585,6 +585,27 @@ static void putEvLong( byte* p, uint32_t v )
 
 
 
+byte* evTableImage( void )
+/* The whole event table as the guest can walk it (F$SetSys D_EvTbl): every
+   slot in Ev$Info's own 32-byte layout, a free slot all zeros. Arena memory,
+   allocated once and refreshed on each call, like the process table images. */
+{
+    static byte* image= NULL;
+    ushort       k, found;
+
+    if (image==NULL) image= (byte*)get_mem( MAXEVENTS*Ev_BlockSize );
+    if (image==NULL) return NULL;
+
+    memset( image, 0, MAXEVENTS*Ev_BlockSize );
+    for (k=0; k<MAXEVENTS; k++) {
+        if (events[k].id==0) continue;
+        (void)evInfo( k, image + k*Ev_BlockSize, &found ); /* fills slot k itself */
+    }
+    return image;
+} /* evTableImage */
+
+
+
 os9err evInfo( ushort index, byte* buffer, ushort* foundP )
 /* Ev$Info: copy the information block of the first active event whose INDEX is
    >= <index>. The index is the event table position -- "the system event

@@ -1286,6 +1286,8 @@ void BuildPrcDsc( ushort id, ushort cpid, ulong32 usp, procid* pd )
  * at startup and reused forever, so repeated calls cannot leak. Entry 0 is left
  * alone: it carries the table header (process count + descriptor size) that
  * init_processes() wrote. */
+static void LinkQueues( ushort cpid );
+
 void Update_PrcDBT( regs_type* rp, ushort cpid )
 {
     int k;
@@ -1301,7 +1303,53 @@ void Update_PrcDBT( regs_type* rp, ushort cpid )
 
         prDBT[k]= os9_long( TO68K( &prcDsc[k] ) );
     } /* for */
+
+    LinkQueues( cpid ); /* the images were just rebuilt: thread them again */
 } /* Update_PrcDBT */
+
+
+static uint32_t queueHead[3][2]; /* first and last descriptor of each queue */
+
+static int QueueOf( ushort k, ushort cpid )
+/* the kernel queue a process would be in: 0 active, 1 sleeping, 2 waiting;
+   -1 for none -- the running process is in no queue, as on OS-9 */
+{
+    if (k==cpid) return -1;
+    switch (procs[k].state) {
+        case pStart    :
+        case pActive   :
+        case pSysTask  : return 0;
+        case pSleeping :
+        case pWaitRead :
+        case pWaitWrite: return 1; /* parked for I/O is asleep */
+        case pWaiting  : return 2;
+        default        : return -1;
+    }
+} /* QueueOf */
+
+static void LinkQueues( ushort cpid )
+/* thread the descriptor images into the three queues through P$QueueN and
+   P$QueueP, 0 at the ends, and note each queue's first and last */
+{
+    ushort   k;
+    int      q;
+    uint32_t last[3]= { 0,0,0 };
+
+    memset( queueHead, 0, sizeof(queueHead) );
+    for (k=1; k<MAXPROCESSES; k++) {
+        if (procs[k].state==pUnused) continue;
+        prcDsc[k]._queuen= 0;
+        prcDsc[k]._queuep= 0;
+            q= QueueOf( k, cpid );
+        if (q<0) continue;
+
+        prcDsc[k]._queuep= os9_long( last[q] );
+        if (last[q]!=0) ((procid*)FROM68K( last[q] ))->_queuen= os9_long( TO68K( &prcDsc[k] ) );
+        else            queueHead[q][0]= TO68K( &prcDsc[k] );
+        last[q]= TO68K( &prcDsc[k] );
+        queueHead[q][1]= last[q];
+    }
+} /* LinkQueues */
 
 
 os9err OS9_F_GPrDBT( regs_type *rp, _pid_ )
@@ -1502,6 +1550,10 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 	#define D_PrcDescSz 0x03E2  /* size of a process descriptor (word) */
 	#define D_ForkCnt  0x0794   /* number of actively forked processes */
 	#define D_HighAdr  0x03DC   /* highest address found during startup */
+	#define D_ActivQ   0x03AC   /* active queue: first descriptor, then last at +4 */
+	#define D_SleepQ   0x03B4   /* sleeping queue, the same */
+	#define D_WaitQ    0x03BC   /* waiting queue, the same */
+	#define D_EvTbl    0x03CC   /* event table: start, then end at +4 */
 	#define D_Tick     0x0774   /* current tick (word) */
 	#define D_RAMFnd   0x0798   /* RAM found during the boot search */
 	#define D_MinPty   0x08A6   /* system minimum process priority (word) */
@@ -1568,6 +1620,16 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
                          v= os9_long( prDBT[ k ] ); } break;
 
       case D_EvID    : v= newEventId + EvOffs; break; /* what Ev$Creat gives next */
+
+      /* The queues threaded through the descriptor images F$GPrDBT hands out.
+         Each head is two longs, the first descriptor and the last. */
+      case D_ActivQ  : case D_ActivQ+4:
+      case D_SleepQ  : case D_SleepQ+4:
+      case D_WaitQ   : case D_WaitQ +4: Update_PrcDBT( rp, cpid );
+                       v= queueHead[ (offs-D_ActivQ)/8 ][ ((offs-D_ActivQ)/4) & 1 ]; break;
+
+      case D_EvTbl   : case D_EvTbl+4 : { byte* t= evTableImage();
+                       v= t==NULL ? 0 : TO68K( t ) + (offs==D_EvTbl ? 0 : MAXEVENTS*Ev_BlockSize); } break;
       case D_PrcDescSz: v= sizeof(procid);   break; /* as the F$GPrDBT header says */
       case D_ForkCnt : { int k; v= 0;
                          for (k=1; k<MAXPROCESSES; k++) if (procs[k].state!=pUnused) v++; } break;

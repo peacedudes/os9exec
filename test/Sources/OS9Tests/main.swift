@@ -2544,6 +2544,76 @@ do {
     }
 }
 
+// ── system globals: the process queues and the event table ───────────────────
+// The active, sleeping and waiting queue heads ($3AC/$3B4/$3BC) and the event
+// table ($3CC, end at $3D0) answered 0. They now lead into the descriptor and
+// event images, threaded through P$QueueN ($30) as on OS-9. The parent shell,
+// waiting for this program, must be on the waiting queue; this program, the
+// running one, on no queue; and an event it creates must be in the table.
+do {
+    let qAsm = [
+        "FSetSys set $27", "FEvent set $53", "IWritLn set $8C", "FExit set $06",
+        " psect queues,$0101,$8001,0,2048,start",
+        "start",
+        " moveq #$4C,d0", " move.l #$80000004,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " movea.l d2,a1", " move.w (a1),d6", " move.w 2(a1),d7",
+        " move.w #$3BC,d0", " move.l #$80000004,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " movea.l d2,a0",
+        "wloop", " move.l a0,d0", " beq.w bad", " cmp.w (a0),d7", " beq.s wfound",
+        " movea.l $30(a0),a0", " bra.s wloop",
+        "wfound",
+        " move.w #$3AC,d0", " move.l #$80000004,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " movea.l d2,a0",
+        "aloop", " move.l a0,d0", " beq.s adone", " cmp.w (a0),d6", " beq.w bad",
+        " movea.l $30(a0),a0", " bra.s aloop",
+        "adone",
+        " lea evname(pc),a0", " moveq #0,d0", " moveq #2,d1", " moveq #0,d2", " moveq #0,d3",
+        " trap #0", " dc.w FEvent", " bcs.w bad",
+        " move.w #$3D0,d0", " move.l #$80000004,d1", " trap #0", " dc.w FSetSys", " bcs.w gone",
+        " move.l d2,d4",
+        " move.w #$3CC,d0", " move.l #$80000004,d1", " trap #0", " dc.w FSetSys", " bcs.w gone",
+        " movea.l d2,a0",
+        "eloop", " cmpa.l d4,a0", " bcc.w gone",
+        " cmpi.b #'q',2(a0)", " bne.s enext", " cmpi.b #'t',3(a0)", " bne.s enext",
+        " cmpi.b #'s',4(a0)", " bne.s enext", " cmpi.b #'t',5(a0)", " bne.s enext",
+        " bra.s efound",
+        "enext", " lea 32(a0),a0", " bra.s eloop",
+        "efound",
+        " lea evname(pc),a0", " moveq #3,d1", " trap #0", " dc.w FEvent",
+        " lea okmsg(pc),a0", " moveq #1,d0", " moveq #okl,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1", " trap #0", " dc.w FExit",
+        "gone", " lea evname(pc),a0", " moveq #3,d1", " trap #0", " dc.w FEvent",
+        "bad", " moveq #1,d1", " trap #0", " dc.w FExit",
+        "evname dc.b \"qtst\",0",
+        "okmsg dc.b \"QUEUES AND EVENT TABLE AGREE\",$0D",
+        "okl equ *-okmsg",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "globals: F$SetSys process queues and event table lead to the right entries"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? qAsm.write(toFile: scratchDisk + "/queues.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/queues.a -o=/h5/queues.r",
+            "l68 /h5/queues.r -o=/h5/queues",
+            "/h5/queues"
+        ], timeout: 30)
+        if out.contains("QUEUES AND EVENT TABLE AGREE") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let preview = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("rror") || $0.contains("queues") }
+                .prefix(4).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+        for leftover in ["queues.a", "queues.r", "queues"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── process: the debugger calls refuse a process ID past the table ───────────
 // F$DExec and F$DExit take the child's ID from the guest's d0.w and indexed the
 // process table with it unchecked; F$DExit then WROTE through it. F$GPrDsc had

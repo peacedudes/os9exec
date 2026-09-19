@@ -111,6 +111,7 @@ os9err evWait ( uint32_t evId, int minV, int maxV, ushort pid, int *evValue );
 
 os9err evRead ( uint32_t evId,                      int *evValue  );
 os9err evInfo ( ushort   index, byte* buffer,    ushort *foundP   );
+byte*  evTableImage( void );
 
 /* Take a process off whatever event queue it is on. Safe to call for a
    process that is not queued, which is what lets kill_process call it
