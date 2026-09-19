@@ -1624,6 +1624,64 @@ noError("move: -w wildcard leaves a non-matching file in place",
     "mount -r=200 /ram9", "makdir /ram9/dst",
     "echo f >/ram9/f.txt", "echo g >/ram9/g.dat",
     "move -w=/ram9/dst /ram9/*.txt", "list /ram9/g.dat", "unmount ram9")
+// A target name longer than a pathlist was concatenated into a 256-byte stack
+// buffer unchecked: the emulator died on the spot, with no output at all (found
+// by ASan: a 401-byte write). Now it is refused as a bad pathlist and the next
+// command still runs.
+run("move: a target too long for a pathlist is refused, and the emulator lives",
+    expectation: "E$BPNam (215) from move, then the following echo runs",
+    commands: ["move nosuchsrc " + String(repeating: "X", count: 400), "echo MOVELIVES"]) { out in
+    out.contains("215") &&
+        out.split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces) == "MOVELIVES" }
+}
+// The same shape in three more internal commands, found by running every one
+// of them under ASan with 450-character arguments: rename copied both names
+// unchecked, and mount and idbg -o handed theirs to helpers (pDopen,
+// InstalledDev) that concatenated into 256-byte buffers. Each killed the
+// emulator outright.
+for (label, command) in [("rename", "rename src " + String(repeating: "X", count: 450)),
+                         ("mount", "mount " + String(repeating: "X", count: 450)),
+                         ("idbg -o", "idbg -o /h5/" + String(repeating: "Y", count: 250)
+                                                    + "/" + String(repeating: "Y", count: 250))] {
+    run("\(label): an over-long argument is refused, and the emulator lives",
+        expectation: "an error from \(label), then the following echo runs",
+        commands: [command, "echo \(label.prefix(4))LIVES"]) { out in
+        out.split(whereSeparator: \.isNewline)
+           .contains { $0.trimmingCharacters(in: .whitespaces) == "\(label.prefix(4))LIVES" }
+    }
+}
+// And from the host command line: the program name went into a 256-byte
+// buffer unchecked in link_module, so `os9exec <450 characters>` died on a
+// signal (SIGTRAP, the stack protector) instead of saying it could not start.
+// Local only: the container adds its own entrypoint in front of the name.
+do {
+    let name = "startup: an over-long program name is refused, not a crash"
+    if (filter.isEmpty || name.localizedCaseInsensitiveContains(filter)) && !containerized {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL  = execURL
+        process.arguments      = ["-r", String(repeating: "X", count: 450)]
+        process.environment    = ["OS9DISK": diskPath]
+        process.standardInput  = FileHandle.nullDevice
+        process.standardOutput = pipe
+        process.standardError  = pipe
+        var said = ""
+        if (try? process.run()) != nil {
+            let deadline = Date().addingTimeInterval(30)
+            while process.isRunning && Date() < deadline { usleep(50_000) }
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+            said = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        }
+        if process.terminationReason == .exit && said.contains("E_BPNAM") {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [exits normally with E_BPNAM; reason=\(process.terminationReason.rawValue) status=\(process.terminationStatus)]")
+            failed += 1
+        }
+    }
+}
 check  ("move: a cross-device move is refused",
     contains: "can't move",
     "mount -r=200 /ram9", "mount -r=200 /ram8", "echo x >/ram9/a.txt",
