@@ -2515,7 +2515,16 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
 
   //if (fullArb || fromIntUtil) arbitrate= true;
     if (fullArb)                arbitrate= true;
-    if (!cwti && !cwti_svd && cp->masklevel<=0) {
+    /* A process with its signals masked keeps the CPU (the 2006 "ftp put"
+       fix, under the old ISP stack) -- but not one that is PARKED waiting to
+       read or write: it cannot make progress, and re-running it starved every
+       other process. The ftp client masks signals and then waits for the
+       server's reply on its control connection; ftpd, which had to run to
+       send it, never got a turn, and the whole emulator spun at 100% CPU. On
+       OS-9 a signal mask only holds signals back; it never stops a waiting
+       process from giving up the CPU. */
+    if (!cwti && !cwti_svd &&
+        (cp->masklevel<=0 || cp->state==pWaitRead || cp->state==pWaitWrite)) {
       do_arbitrate( svd_intpid );
     //if (cp->isIntUtil)
     //  debugprintf(dbgSysCall,dbgNorm,("# int after arb: pid=%d state=%d isInt=%d\n", 

@@ -7122,6 +7122,53 @@ do {
     }
 }
 
+// ── ftp put: a masked, waiting process still gives up the CPU ───────────────
+// The OS-9 ftp client masks signals and then waits for the server's reply.
+// os9exec never switched away from a process with signals masked -- even one
+// parked waiting to read -- so ftpd, which had to run to answer, never got a
+// turn: the upload hung and the emulator spun at 100% CPU. Here the guest's
+// own ftp client uploads 70,001 bytes to the guest's ftpd, all in /h5.
+do {
+    let name = "net: the ftp client uploads to ftpd (a masked waiting process yields)"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        var probeAddr = sockaddr_in()
+        probeAddr.sin_family = sa_family_t(AF_INET)
+        probeAddr.sin_port = UInt16(21).bigEndian
+        probeAddr.sin_addr.s_addr = INADDR_ANY
+        let probe = socket(AF_INET, streamSocketType, 0)
+        let probed = probe >= 0 && withUnsafePointer(to: &probeAddr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(probe, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        } == 0
+        if probe >= 0 { close(probe) }
+        if !probed && !containerized {
+            print("SKIP: \(name) (port 21 is not available to this user)")
+        } else {
+            var blob = [UInt8](repeating: 0, count: 70001)
+            for i in blob.indices { blob[i] = UInt8((i * 13 + 7) & 0xFF) }
+            FileManager.default.createFile(atPath: scratchDisk + "/putsrc", contents: Data(blob))
+            let script = "user dog\r\rbinary\rput /\(scratchDev)/putsrc /\(scratchDev)/putdst\rbye\r"
+            try? script.write(toFile: scratchDisk + "/putcmds", atomically: true, encoding: .utf8)
+            _ = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                     "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                     "ftpd &",
+                     "sleep -s 2",
+                     "ftp -n localhost </\(scratchDev)/putcmds"], timeout: 40)
+            let got = FileManager.default.contents(atPath: scratchDisk + "/putdst") ?? Data()
+            if got == Data(blob) {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      saw: \(got.count) of \(blob.count) bytes uploaded")
+                failed += 1
+            }
+            for leftover in ["putsrc", "putdst", "putcmds"] { removeScratchItem(leftover) }
+        }
+    }
+}
+
 // ── telnetd: a host telnet client logs in to OS-9 ─────────────────────────────
 // telnetd accepts the connection, and its telnetdc child opens /pk, takes a
 // pty/tty pair from it and forks login on the tty. Three things stopped it: a
