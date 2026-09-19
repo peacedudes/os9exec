@@ -373,6 +373,21 @@
 #define OS9EVNAMELEN     12 /* event name length */
 #define OS9MINSYSALLOC 2048 /* min system memory alloc block, a value that makes sense (bfo) */
 
+/* A dirent that is ours to fill. Some hosts declare d_name as a one-byte tail
+   that readdir's own buffer extends (IRIX's is d_name[1]), so a plain
+   dirent_typ variable has no room for a name, and sizeof(d_name) bounds a copy
+   to nothing. Write the name through DIRENT_NAME, bounded by DIRENT_NAMESZ --
+   the room array, so no write passes a declared bound on any host -- and
+   read it back as .d.d_name, the same bytes. */
+#include <stddef.h>
+typedef union {
+    dirent_typ d;
+    char       room[ sizeof(dirent_typ) + OS9PATHLEN ];
+} dirent_room_typ;
+#define DIRENT_NAME(e) ( (e)->room + offsetof( dirent_typ,d_name ) )
+#define DIRENT_NAMESZ  ( sizeof(((dirent_room_typ*)0)->room) - offsetof( dirent_typ,d_name ) )
+
+
 #define RBF_MINALLOC      4 /* min sector allocation for RBF   */
 #define DD__MINALLOC     32 /* min sector allocation for "/dd" */
 #define DEFAULT_SCT      64 /* default number of sectors per track (RBF) */

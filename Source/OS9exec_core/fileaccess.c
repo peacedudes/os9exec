@@ -775,9 +775,10 @@ os9err pFopt( ushort pid, syspath_typ* spP, byte *buffer )
     
   #elif defined win_unix
     dirtable_entry* mP= NULL;
-    dirent_typ      dEnt;
-    strcpy        ( dEnt.d_name, spP->name );
-    FD_ID                      ( spP->fullName, &dEnt, &fdID, &mP );
+    dirent_room_typ dEnt;
+    strncpy       ( DIRENT_NAME( &dEnt ), spP->name, DIRENT_NAMESZ-1 );
+    DIRENT_NAME( &dEnt )[ DIRENT_NAMESZ-1 ]= NUL;
+    FD_ID                      ( spP->fullName, &dEnt.d, &fdID, &mP );
   //upe_printf( "FD_ID '%s' '%s' fdPos=%08X\n", spP->fullName, dEnt.d_name, fdpos );                  
   #endif
     

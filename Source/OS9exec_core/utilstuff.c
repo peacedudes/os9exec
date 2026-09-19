@@ -1872,7 +1872,7 @@ typedef struct {
     int        count;           /* slots, the empty ones included */
     int        cap;             /* slots allocated */
     ulong      used;            /* when last used, to forget the oldest */
-    dirent_typ entry;           /* what DirNthEntry hands out */
+    dirent_room_typ entry;      /* what DirNthEntry hands out */
 } dirslots_typ;
 
 static dirslots_typ dirSlots[ DIRSLOTS_MAX ];
@@ -2051,12 +2051,12 @@ os9err DirNthEntry( syspath_typ* spP, int n, dirent_typ** dEnt )
     spP->svD_n= n;
     if (n-2>=t->count) return E_EOF;
 
-    t->entry.d_name[0]= NUL;
+    t->entry.d.d_name[0]= NUL;
     if (t->name[ n-2 ]!=NULL) {
-        strncpy( t->entry.d_name, t->name[ n-2 ], sizeof(t->entry.d_name)-1 );
-        t->entry.d_name[ sizeof(t->entry.d_name)-1 ]= NUL;
+        strncpy( DIRENT_NAME( &t->entry ), t->name[ n-2 ], DIRENT_NAMESZ-1 );
+        DIRENT_NAME( &t->entry )[ DIRENT_NAMESZ-1 ]= NUL;
     }
-    *dEnt= &t->entry;
+    *dEnt= &t->entry.d;
     return 0;
 } /* DirNthEntry */
 
