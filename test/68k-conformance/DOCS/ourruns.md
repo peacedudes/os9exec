@@ -630,3 +630,21 @@ After, on both:
 ```
 RESULT t79 PASS  obs=000011 exp=000011  SS_EOF answers 0 before the end of a file and E$EOF at it
 ```
+
+## os9exec, 2026-09-19: t85, a signal did not end a blocked pipe read
+
+A process waiting in a pipe read, interrupted by a signal it intercepts, came
+out of F$RTE with the read reported as done: carry clear and a count left
+over from the registers. The pipe also went on counting it as a waiting
+reader. The signal's own error never appeared, so an alarm used as a read
+timeout -- the manual's own example -- could not work on a pipe. Before:
+
+```
+RESULT t85 FAIL  obs=000000 exp=000002  an alarm's keyboard abort ends a blocked read with error 2
+```
+
+After:
+
+```
+RESULT t85 PASS  obs=000002 exp=000002  an alarm's keyboard abort ends a blocked read with error 2
+```
