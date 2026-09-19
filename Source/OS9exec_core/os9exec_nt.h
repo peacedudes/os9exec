@@ -1530,6 +1530,8 @@ extern  byte*       sigdat_arena; /* MAXPROCESSES * SIG_SCRATCH; procs[k].sigdat
 
 /* the signal queue */
 extern  sig_typ     sig_queue;
+extern  ushort      launch_pid;   /* procstuff.c */
+extern  Boolean     launch_alive;
 
 /* the alarms */
 extern  alarm_typ   alarms     [MAXALARMS];

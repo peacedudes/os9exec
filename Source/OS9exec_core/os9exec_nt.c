@@ -927,6 +927,8 @@ static os9err prepLaunch(char *toolname, char **argv, int argc, char **envp, ulo
   release_mem( pap ); /* return arg buffer anyway, alloc as pointer */
 	
   if (!err) { /* make this process ready to execute */
+    launch_pid  = newpid;  /* the one whose exit lets os9exec end (ShutdownDue) */
+    launch_alive= true;
     currentpid= newpid;    /* make this process current */
     set_os9_state( currentpid, pActive, "prepLaunch" ); /* now active */
   } // if

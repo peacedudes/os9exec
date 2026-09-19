@@ -597,6 +597,12 @@ void AssignNewChild( ushort parentid, ushort pid )
 
 
 
+/* The process os9exec was started with (prepLaunch), and whether it still
+   runs. Once it has gone, os9exec ends as soon as every process left is only
+   waiting for input -- see ShutdownDue. */
+ushort  launch_pid  = 0;
+Boolean launch_alive= false;
+
 os9err kill_process( ushort pid )
 /* kill a process
  * Note: exiterr must be set before calling kill_process (by F_Exit or F_Kill)
@@ -609,6 +615,7 @@ os9err kill_process( ushort pid )
     ushort       parentid,k;
     
   //upe_printf( "kill id=%d %d\n", pid, cp->state );
+    if (pid==launch_pid) launch_alive= false;
     cp->masklevel= 0;
     
     if (cp->state==pUnused) return os9error(E_IPRCID); /* process does not exist */
@@ -1208,6 +1215,32 @@ void DoWait( void )
  * Note: checks global flag "arbitrate" to see if global "currentpid"
  *       should be changed to next waiting/active process
  */
+Boolean pipe_request_reads( ushort pid ); /* pipefiles.c */
+
+/* Whether os9exec should end now: the process it was started with has gone,
+   and every process left is only waiting for input -- parked reading a
+   socket, a terminal or a pipe, or waiting for a child. None of them can
+   move until something arrives from outside, and there is no one left to
+   send it. (rdoggett, 2026-09-19: end, and let the connections close, rather
+   than keep the emulator open for them.) Whether a daemon kept os9exec open
+   used to depend on a scheduling counter: about one run in twelve it did,
+   forever. A process that is running, or sleeping, still keeps it open: a
+   background job gets to finish, as it always did. */
+static Boolean ShutdownDue( void )
+{
+    int k;
+
+    if (launch_alive) return false;
+    for (k=2; k<MAXPROCESSES; k++) {
+        process_typ* p= &procs[ k ];
+        if (p->state==pUnused || p->state==pDead)                 continue;
+        if (p->state==pWaitRead || p->state==pWaiting)             continue;
+        if (p->state==pSysTask && pipe_request_reads( (ushort)k )) continue;
+        return false;
+    }
+    return true;
+} /* ShutdownDue */
+
 void do_arbitrate( ushort allowedIntUtil )
 {
   ushort       cpid       = currentpid;
@@ -1224,6 +1257,8 @@ void do_arbitrate( ushort allowedIntUtil )
   Boolean      cOK;
 
   baud_drain_due();
+
+  if (ShutdownDue()) { currentpid= MAXPROCESSES; return; } /* nothing can move: end */
 
   debugprintf(dbgTaskSwitch,dbgDetail,("# arbitrate: current pid=%d, arbitrate=%d\n",
                                           currentpid, arbitrate));
@@ -1288,6 +1323,7 @@ void do_arbitrate( ushort allowedIntUtil )
             
             spid++;
             if (spid==MAXPROCESSES) { // no running process found => sleep a little bit !
+              if (ShutdownDue()) { currentpid= MAXPROCESSES; return; } /* nothing can move: end */
               #ifdef THREAD_SUPPORT
                 if (sprocess->isIntUtil && ptocThread) 
                   pthread_mutex_unlock( &sysCallMutex );

@@ -1049,6 +1049,15 @@ os9err pPsize( _pid_, syspath_typ* spP, uint32_t *sizeP )
 
 
 
+/* Whether <pid> is parked in one of pipeman's READ system tasks: waiting for a
+   writer, not doing anything itself (the shutdown rule in procstuff.c). */
+Boolean pipe_request_reads( ushort pid )
+{
+    process_typ* cp= &procs[ pid ];
+    return cp->state==pSysTask && cp->systaskdataP!=NULL &&
+          (cp->systask==(systaskfunc_typ)pReadSysTask || cp->systask==(systaskfunc_typ)pReadSysTaskLn);
+} /* pipe_request_reads */
+
 /* A signal is cutting short a request parked in one of pipeman's system tasks
    (called from F$RTE): give back what the request holds -- a reader counts as
    a waiting consumer -- and forget the task. True when <pid> was parked there,
