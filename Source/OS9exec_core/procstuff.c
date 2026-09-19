@@ -737,6 +737,14 @@ os9err kill_process( ushort pid )
 } /* kill_process */
 
 
+/* Set by sig_mask while it hands the OLDEST queued signal back to
+   send_signal. When that signal cannot be delivered yet either, it goes back
+   at the head of the queue, not the tail: appending it put it behind every
+   signal sent after it, so two signals sent while masked reached the
+   intercept routine last-in first-out. F$Send's queue is first-in first-out
+   (CONF68K t69). */
+static Boolean requeue_at_head= false;
+
 /* send a signal to a process */
 os9err send_signal( ushort spid, ushort signal )
 {
@@ -814,8 +822,18 @@ os9err send_signal( ushort spid, ushort signal )
         return os9error(E_USIGP);
     }
 
-    s->pid   [s->cnt]= spid;
-    s->signal[s->cnt]= signal;
+    if (requeue_at_head) {
+        for (k=s->cnt; k>0; k--) {
+            s->pid   [k]= s->pid   [k-1];
+            s->signal[k]= s->signal[k-1];
+        }
+        s->pid   [0]= spid;
+        s->signal[0]= signal;
+    }
+    else {
+        s->pid   [s->cnt]= spid;
+        s->signal[s->cnt]= signal;
+    }
     
 //  debugprintf(dbgSysCall,dbgNorm,("# STACK SIGNAL intUtil=%d spid=%d signal=%d lvl=%d\n", 
 //                                     cp->isIntUtil, spid, signal, s->cnt ));
@@ -1014,7 +1032,9 @@ os9err sig_mask( ushort cpid, int level )
             } /* for */
         
             if (s->cnt<=0) async_pending= false;
+            requeue_at_head= true;   /* it was the oldest: if it waits again, it waits first */
             send_signal( pid,signal );
+            requeue_at_head= false;
             break;
         } /* if */
     } /* for */
