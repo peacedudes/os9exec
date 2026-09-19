@@ -65,7 +65,7 @@ void      Update_MDir ( void );
 void      MoveBlk     ( void* dst, void* src, ulong size );
 Boolean   SameBlk     ( byte* a,   byte* b,   ulong size );
 uint32_t  DatMod_Size ( uint32_t namsize, uint32_t datsize );
-void      FillTemplate( mod_exec* m, short access, short tylan, short attrev );
+void      FillTemplate( mod_exec* m, ushort access, ushort tylan, ushort attrev );
 
 int   NextFreeModuleId( char* name );
 void      show_modules( char* cmp  );

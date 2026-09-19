@@ -489,8 +489,10 @@ uint32_t DatMod_Size( uint32_t namsize, uint32_t datsize )
 } /* DatMod_Size */
 
 
-void FillTemplate( mod_exec *m, short access, short tylan, short attrev )
-/* default values for data module */
+void FillTemplate( mod_exec *m, ushort access, ushort tylan, ushort attrev )
+/* default values for data module. The three words are bit patterns and
+   unsigned: an attribute word like $8001 arrived as a negative short, and
+   os9_word shifted it -- undefined behaviour, found by UBSan through F$DatMod. */
 {
     m->_mh._msync  = (short)os9_word(0x4AFC);  /* sync bytes ($4afc) */
     m->_mh._msysrev= os9_word(1);       /* system revision check value */

@@ -1920,7 +1920,7 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
     ulong  size, namsize, msz, xpos, npos, usz;
     ushort hpar;
     void   *pp;
-    short  access,tylan,attrev;
+    ushort access,tylan,attrev;
 
     size= rp->d[0];
     p= nullterm( mpath,(char*)FROM68K(rp->a[0]),OS9PATHLEN );
