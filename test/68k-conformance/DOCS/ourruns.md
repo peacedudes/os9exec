@@ -559,3 +559,20 @@ After it, on both:
 ```
 RESULT t63 PASS  obs=000218 exp=000218  I$MakDir of an existing directory reports E$CEF
 ```
+
+## os9exec, 2026-09-19: t65, braces in a name
+
+F$PrsNam accepted "{" and "}" as name characters, an extension written for
+the classic Macintosh MPW build, where the shell substitutes {variables}.
+The manual lists the name characters and says anything else ends the name.
+Before the fix:
+
+```
+RESULT t65 FAIL  obs=000007 exp=000000  F$PrsNam ends a name at any character the manual does not list
+```
+
+After it (braces are still accepted in the MPW build only):
+
+```
+RESULT t65 PASS  obs=000000 exp=000000  F$PrsNam ends a name at any character the manual does not list
+```
