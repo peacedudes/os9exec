@@ -6432,6 +6432,126 @@ do {
     }
 }
 
+// ── ftpd: a host FTP client logs in and fetches a file ────────────────────────
+// ftpdc, the per-connection child, would not run: it wants its socket path to
+// report the device type it checks for, and asks the socket for both ends'
+// addresses. Then an active-mode transfer failed: ftpd binds its data socket
+// to port 20 on 127.0.0.1, which macOS keeps for the super user on one address
+// but not on all. Here a client logs in as dog and fetches /dd/SYS/errmsg over
+// a data connection it listens for (PORT); every byte must match the disk.
+// ftpd serves port 21 and cannot be moved, so this skips where that port
+// cannot be bound, or another run already holds it.
+do {
+    let name = "net: an FTP client logs in to ftpd and fetches a file in active mode"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        func tcpSocket(port: UInt16, address: UInt32) -> (Int32, sockaddr_in) {
+            var sa = sockaddr_in()
+            sa.sin_family = sa_family_t(AF_INET)
+            sa.sin_port = port.bigEndian
+            sa.sin_addr.s_addr = address.bigEndian
+            return (socket(AF_INET, streamSocketType, 0), sa)
+        }
+        func bindTo(_ fd: Int32, _ sa: inout sockaddr_in) -> Bool {
+            withUnsafePointer(to: &sa) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            } == 0
+        }
+        var (probeFd, probeAddr) = tcpSocket(port: 21, address: INADDR_ANY)
+        let probed = probeFd >= 0 && bindTo(probeFd, &probeAddr)
+        if probeFd >= 0 { close(probeFd) }
+        let expected = FileManager.default.contents(atPath: diskPath + "/SYS/errmsg") ?? Data()
+
+        if containerized {
+            print("SKIP: \(name) (the container cannot reach the host's loopback)")
+        } else if !probed {
+            print("SKIP: \(name) (port 21 is not available to this user)")
+        } else {
+            var replies = ""
+            var fetched = Data()
+            let done = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                var (ctl, ctlAddr) = tcpSocket(port: 21, address: INADDR_LOOPBACK)
+                var linked = false
+                for _ in 0..<40 where !linked {
+                    linked = withUnsafePointer(to: &ctlAddr) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            connect(ctl, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                        }
+                    } == 0
+                    if !linked { close(ctl); usleep(150_000); ctl = socket(AF_INET, streamSocketType, 0) }
+                }
+                guard linked else { close(ctl); done.signal(); return }
+                var quiet = timeval(tv_sec: 0, tv_usec: 300_000)
+                setsockopt(ctl, SOL_SOCKET, SO_RCVTIMEO, &quiet, socklen_t(MemoryLayout<timeval>.size))
+                var buf = [UInt8](repeating: 0, count: 4096)
+                func gather(for seconds: Double) {
+                    let end = Date().addingTimeInterval(seconds)
+                    while Date() < end {
+                        let got = read(ctl, &buf, buf.count)
+                        if got == 0 { break }
+                        if got > 0 { replies += String(decoding: buf[0..<got], as: UTF8.self) }
+                    }
+                }
+                func say(_ line: String) { _ = write(ctl, line + "\r\n", line.utf8.count + 2); gather(for: 1.0) }
+
+                // the data connection: we listen, ftpd connects to us
+                var (data, dataAddr) = tcpSocket(port: 0, address: INADDR_LOOPBACK)
+                var dataLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+                if bindTo(data, &dataAddr) && listen(data, 1) == 0 {
+                    withUnsafeMutablePointer(to: &dataAddr) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { _ = getsockname(data, $0, &dataLen) }
+                    }
+                    let dataPort = UInt16(bigEndian: dataAddr.sin_port)
+                    gather(for: 1.0)
+                    say("USER dog")
+                    say("PASS ")
+                    say("TYPE I")
+                    say("PORT 127,0,0,1,\(dataPort >> 8),\(dataPort & 0xFF)")
+                    let retr = "RETR /dd/SYS/errmsg\r\n"   // answered on the data connection
+                    _ = write(ctl, retr, retr.utf8.count)
+                    let conn = accept(data, nil, nil)
+                    if conn >= 0 {
+                        var chunk = [UInt8](repeating: 0, count: 4096)
+                        while true {
+                            let got = read(conn, &chunk, chunk.count)
+                            if got <= 0 { break }
+                            fetched.append(contentsOf: chunk[0..<got])
+                        }
+                        close(conn)
+                    }
+                    gather(for: 1.0)
+                    say("QUIT")
+                }
+                close(data)
+                close(ctl)
+                done.signal()
+            }
+
+            let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                           "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                           "ftpd &",
+                           "sleep -s 10"], timeout: 30)
+            _ = done.wait(timeout: .now() + 10)
+
+            let loggedIn = replies.contains("230 ")
+            if loggedIn && !expected.isEmpty && fetched == expected {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      saw: logged in=\(loggedIn) fetched=\(fetched.count) of \(expected.count) bytes")
+                let codes = replies.split(whereSeparator: { $0 == "\r" || $0 == "\n" })
+                print("      server: \(codes.suffix(6).joined(separator: " | "))")
+                let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("ftpd") || $0.contains("Error") }
+                print("      out: \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

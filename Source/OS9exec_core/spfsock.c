@@ -16,9 +16,10 @@
  *
  * SCOPE. Client connections work end to end (TCP, and UDP as far as
  * connect/read/write take it), and so do servers: a program that binds,
- * listens and accepts receives its data. Raw sockets (ping) need host
- * privileges and are not attempted. A few operations are answered E$UnkSvc
- * on purpose, because the callers check for exactly that and carry on.
+ * listens and accepts receives its data, and telnetd and ftpd serve host
+ * clients. Datagrams sent to an address given per call (ping's raw socket)
+ * are not done yet. A few operations are answered E$UnkSvc on purpose,
+ * because the callers check for exactly that and carry on.
  *
  * The connection a server accepts is held on the listening path until the
  * caller claims it; see the accept and attach cases below.
@@ -48,6 +49,8 @@
 #define SPFOP_ATTACH  0x70         /* ... and gives that name to the listening
                                       path, which is SS_Accept's own code */
 #define SPFOP_EVENT   0x1004       /* observed: the event this path posts */
+#define SPFOP_MYNAME  0x00FF0006   /* observed: this end's address ... */
+#define SPFOP_PEER    0x00FF0007   /* ... and the far end's */
 
 
 #if defined UNIX && !defined MINGW
@@ -191,11 +194,12 @@ static os9err pSready( _pid_, syspath_typ* spP, uint32_t* n )
 
 /* The option section of a socket path. The caller asks the LISTENING path for
    this straight after it has opened a path for the connection, and gave up
-   with "can't accept" while it answered E$UnkSvc. These are the same values
-   the ISP manager has always returned for a socket (network.c, netstdopts):
-   PD_DTP=7 is the socket device type. */
+   with "can't accept" while it answered E$UnkSvc. The rest are the values the
+   ISP manager has always returned for a socket (network.c, netstdopts), but
+   not the device type: ftpdc refuses to run ("must be forked from 'ftpd'")
+   unless the path it was handed says 15 there, where ISP's said 7. */
 static const byte spfstdopts[OPTSECTSIZE]=
-                { 7,        /* PD_DTP: 7 = SOCKET */
+                { 15,       /* PD_DTP, as ftpdc checks it */
                   0,
                   0x01,
                   0,
@@ -323,8 +327,18 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
 
             debugprintf( dbgSpecialIO,dbgNorm,("# SPF: bind port %u\n",
                                                  (uint32_t)ntohs( sa.sin_port ) ));
-            if (bind( fd, (struct sockaddr*)&sa, sizeof(sa) )!=0) return os9error(E_SHARE);
-            return 0;
+            if (bind( fd, (struct sockaddr*)&sa, sizeof(sa) )==0) return 0;
+
+            /* A port below 1024 on one address is the super user's on macOS,
+               while the same port on every address is not. OS-9 grants it
+               (ftpd binds its data connection to 127.0.0.1 port 20), so try
+               the port the program asked for on every address before
+               refusing. */
+            if (errno==EACCES && ntohs( sa.sin_port )<1024 && sa.sin_addr.s_addr!=htonl( INADDR_ANY )) {
+                sa.sin_addr.s_addr= htonl( INADDR_ANY );
+                if (bind( fd, (struct sockaddr*)&sa, sizeof(sa) )==0) return 0;
+            }
+            return os9error(E_SHARE);
         }
 
         case SPFOP_LISTEN: {
@@ -441,6 +455,40 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
 
             debugprintf( dbgSpecialIO,dbgNorm,("# SPF: name -> port %u\n",
                                                  (uint32_t)ntohs( who.sin_port ) ));
+            return 0;
+        }
+
+        case SPFOP_MYNAME:
+        case SPFOP_PEER: {
+            /* A socket address comes back the way connect and bind are given
+               one, and its length through the pointer the caller passed. A
+               host that cannot answer gets E$UnkSvc, as before this existed:
+               the callers seen then ask the NAME operation instead. */
+            struct sockaddr_in who;
+            socklen_t          wlen= sizeof(who);
+            byte*              lenP= (byte*)FROM68K( len );
+            uint32_t           room;
+            int  fd= SpfFd( spP ), r;
+
+            if (fd<0 || ptr==0 || len==0)         return os9error(E_UNKSVC);
+            if (!RANGE_IN_ARENA( lenP,4 ))        return os9error(E_BPADDR);
+            memset( &who,0,sizeof(who) );
+            r= op==SPFOP_PEER ? getpeername( fd, (struct sockaddr*)&who, &wlen )
+                              : getsockname( fd, (struct sockaddr*)&who, &wlen );
+            if (r!=0 || who.sin_family!=AF_INET) return os9error(E_UNKSVC);
+
+            room= os9_get_l( lenP ); if (room>16) room= 16;
+            if (!RANGE_IN_ARENA( args,room ))    return os9error(E_BPADDR);
+            {   byte sa[16];
+                memset   ( sa,0,sizeof(sa) );
+                os9_set_w( sa, AF_INET );
+                memcpy   ( sa+2, &who.sin_port, 2 );          /* network order */
+                memcpy   ( sa+4, &who.sin_addr.s_addr, 4 );
+                memcpy   ( args, sa, room );
+            }
+            os9_set_l( lenP, room );
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: %s name -> port %u\n",
+                         op==SPFOP_PEER ? "peer":"own", (uint32_t)ntohs( who.sin_port ) ));
             return 0;
         }
 
