@@ -2668,6 +2668,54 @@ do {
     }
 }
 
+// ── system globals: the time slice follows the system tick ───────────────────
+// $776 (ticks per slice) and $778 (ticks left in this slice) answered 0. The
+// tick ends the running process's turn every tick, so both are 1 while the
+// clock runs and 0 with it off (-q). The program prints both as digits.
+do {
+    // The message is built in the data area: "SLICE a b" + CR.
+    let sliceAsm = [
+        "FSetSys set $27", "IWritLn set $8C", "FExit set $06",
+        " psect slice,$0101,$8001,0,2048,start",
+        " vsect",
+        "msg ds.b 10",
+        " ends",
+        "start",
+        " lea msg(a6),a0",
+        " move.b #'S',(a0)", " move.b #'L',1(a0)", " move.b #'I',2(a0)", " move.b #'C',3(a0)",
+        " move.b #'E',4(a0)", " move.b #' ',5(a0)", " move.b #' ',7(a0)", " move.b #$0D,9(a0)",
+        " move.w #$776,d0", " move.l #$80000002,d1", " trap #0", " dc.w FSetSys", " bcs.s bad",
+        " add.b #'0',d2", " lea msg(a6),a0", " move.b d2,6(a0)",
+        " move.w #$778,d0", " move.l #$80000002,d1", " trap #0", " dc.w FSetSys", " bcs.s bad",
+        " add.b #'0',d2", " lea msg(a6),a0", " move.b d2,8(a0)",
+        " moveq #1,d0", " moveq #10,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1", " trap #0", " dc.w FExit",
+        "bad", " moveq #1,d1", " trap #0", " dc.w FExit",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "globals: F$SetSys time slice is one tick with the clock on, none with it off"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? sliceAsm.write(toFile: scratchDisk + "/slice.a", atomically: true, encoding: .utf8)
+        let build = ["load /dd/CMDS/r68 /dd/CMDS/l68",
+                     "r68 /h5/slice.a -o=/h5/slice.r", "l68 /h5/slice.r -o=/h5/slice"]
+        let tickOffAlready = (ProcessInfo.processInfo.environment["OS9_FLAGS"] ?? "").contains("-q")
+        let asRun = os9(build + ["/h5/slice"], timeout: 30)
+        let offRun = os9(["/h5/slice"], timeout: 30, flags: ["-q"])
+        let wantOn = tickOffAlready ? "SLICE 0 0" : "SLICE 1 1"
+        if asRun.contains(wantOn) && offRun.contains("SLICE 0 0") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let pick = { (o: String) in o.split(whereSeparator: \.isNewline).filter { $0.contains("SLICE") || $0.contains("rror") }.joined(separator: " | ") }
+            print("      want \(wantOn) and SLICE 0 0 with -q; saw: [\(pick(asRun))] [\(pick(offRun))]")
+            failed += 1
+        }
+        for leftover in ["slice.a", "slice.r", "slice"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── process: the debugger calls refuse a process ID past the table ───────────
 // F$DExec and F$DExit take the child's ID from the guest's d0.w and indexed the
 // process table with it unchecked; F$DExit then WROTE through it. F$GPrDsc had

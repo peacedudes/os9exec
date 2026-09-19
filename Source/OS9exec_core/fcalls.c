@@ -1506,6 +1506,8 @@ os9err OS9_F_GBlkMp( regs_type *rp, _pid_ )
   #endif
 } /* OS9_F_GBlkMp */
 
+extern int os9_tick_us; /* os9_tick.c: microseconds per tick, 0 = no clock */
+
 os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 /* F$SetSys:
  * Input:   d0.w=offset
@@ -1555,6 +1557,8 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 	#define D_WaitQ    0x03BC   /* waiting queue, the same */
 	#define D_EvTbl    0x03CC   /* event table: start, then end at +4 */
 	#define D_Tick     0x0774   /* current tick (word) */
+	#define D_TSlice   0x0776   /* ticks per slice (word) */
+	#define D_Slice    0x0778   /* ticks left in the current slice (word) */
 	#define D_RAMFnd   0x0798   /* RAM found during the boot search */
 	#define D_MinPty   0x08A6   /* system minimum process priority (word) */
 	#define D_MaxAge   0x08A8   /* system priority maximum age limit (word) */
@@ -1671,6 +1675,13 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
       /* ticks since os9exec started, in the word getsys reads: it wraps every
          65536 ticks; D_Ticks has the same count in a long */
       case D_Tick    : v= GetSystemTick() & 0xFFFF; break;
+
+      /* The system tick ends the running process's turn on every tick
+         (newcpu.c hands back its tick token), so a slice is one tick and the
+         running process is always within its last one; with the clock off
+         (-q) nothing slices at all. */
+      case D_TSlice  :
+      case D_Slice   : v= os9_tick_us>0 ? 1 : 0; break;
 
       case D_MinPty  : v= minPty; break;
       case D_MaxAge  : v= maxAge; break;
