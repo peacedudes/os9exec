@@ -411,8 +411,8 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
                guest no server could be restarted. */
             setsockopt( fd, SOL_SOCKET, SO_REUSEADDR, &on,sizeof(on) );
 
-            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: bind port %u\n",
-                                                 (uint32_t)ntohs( sa.sin_port ) ));
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: bind port %u (host fd %d)\n",
+                                                 (uint32_t)ntohs( sa.sin_port ), fd ));
             if (bind( fd, (struct sockaddr*)&sa, sizeof(sa) )==0) return 0;
 
             /* A port below 1024 on one address is the super user's on macOS,
@@ -424,6 +424,8 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
                 sa.sin_addr.s_addr= htonl( INADDR_ANY );
                 if (bind( fd, (struct sockaddr*)&sa, sizeof(sa) )==0) return 0;
             }
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: bind port %u refused, errno %d\n",
+                                                 (uint32_t)ntohs( sa.sin_port ), errno ));
             return os9error(E_SHARE);
         }
 
