@@ -1484,6 +1484,18 @@ static ulong baud_bps( byte code )
     return code < sizeof(bps)/sizeof(bps[0]) ? bps[code] : 0;
 } /* baud_bps */
 
+/* The process whose write request holds each terminal: SCF gives one request
+   the device until it is done, setting V_BUSY, and queues any other process
+   that asks meanwhile ("check to see if the device is busy or not -- if so,
+   queue the process; otherwise set V_BUSY, call driver, clear V_BUSY",
+   Kevin Darling on Microware's Technical I/O Reference; Peter Dibble,
+   OS-9 Insights). A write here parks partway whenever the terminal cannot
+   take more, and another process's write used to go straight through while
+   it was parked, so two programs writing one terminal came out mixed
+   character by character. Indexed by console id; 0 is nobody. */
+#define CONS_OWNERS 256
+static ushort consOwner[ CONS_OWNERS ];
+
 static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                           uint32_t *maxlenP, char* buffer, Boolean wrln )
 /* output to console */
@@ -1505,6 +1517,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
     Boolean      paced= false;
     Boolean      held = false;       /* XOFF on this terminal: park, don't write */
     Boolean      narration= false;   /* emulator narration: host C, never parked */
+    Boolean      owned= false;       /* this write takes part in terminal ownership */
     baud_device_t* dev= NULL;
 
     gConsoleID=  spP->term_id;
@@ -1563,6 +1576,22 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
           if (pid>0 && pid<MAXPROCESSES && cp->state==pWaitWrite && !narration) {
               set_os9_state( pid, cp->saved_state, "ConsoleOut" );
               cnt=                cp->saved_cnt;
+          }
+
+          /* another process's request still holds this terminal: wait for it
+             (see consOwner), before writing anything */
+          owned= pid>0 && pid<MAXPROCESSES && !narration && !cp->isIntUtil &&
+                 cp->state!=pSysTask && gConsoleID>=0 && gConsoleID<CONS_OWNERS;
+          if (owned) {
+              ushort own= consOwner[ gConsoleID ];
+              if (own!=0 && own!=pid && own<MAXPROCESSES && procs[own].state==pWaitWrite) {
+                  cp->saved_cnt  = cnt;
+                  cp->saved_state= cp->state;
+                  set_os9_state( pid, pWaitWrite, "ConsoleOut (terminal busy)" );
+                  arbitrate= true;
+                  *maxlenP= cnt;
+                  return 0;
+              }
           }
 
           /* XOFF on this terminal: halt its output until XON, and PARK the
@@ -1762,6 +1791,12 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                   break; /* end of record -- LF (if any) already delivered above */
               }
           } /* while */
+
+          /* parked partway: this request keeps the terminal; done: let it go */
+          if (owned) {
+              if      (cp->state==pWaitWrite)          consOwner[ gConsoleID ]= pid;
+              else if (consOwner[ gConsoleID ]==pid) consOwner[ gConsoleID ]= 0;
+          }
 
         #else
           cnt= stdwrite(pid,buffer,*maxlenP,spP->stream,false);

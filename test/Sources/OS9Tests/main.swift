@@ -2614,6 +2614,60 @@ do {
     }
 }
 
+// ── terminal: two writers' lines arrive whole, never mixed ───────────────────
+// SCF gives one write request the device until it is done (V_BUSY) and queues
+// any other process that asks meanwhile. os9exec parks a terminal write
+// partway when the terminal cannot take more, and another process's write went
+// straight through while it was parked, so two programs writing one terminal
+// came out mixed character by character. Two writers of 40 lines each: every
+// line must be all one letter.
+do {
+    func linesAsm(_ letter: Character, _ mod: String) -> String {
+        [
+            "IWritLn set $8C", "FExit set $06",
+            " psect \(mod),$0101,$8001,0,4096,start",
+            "start",
+            " moveq #39,d5",
+            "loop", " lea line(pc),a0", " moveq #1,d0", " moveq #lnl,d1",
+            " trap #0", " dc.w IWritLn", " bcs.s bad", " dbra d5,loop",
+            " moveq #0,d1", " trap #0", " dc.w FExit",
+            "bad", " trap #0", " dc.w FExit",
+            "line dc.b \"\(String(repeating: letter, count: 70))\",$0D",
+            "lnl equ *-line",
+            " ends", ""
+        ].joined(separator: "\r")
+    }
+    let name = "terminal: two processes writing one terminal get whole lines, never mixed"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? linesAsm("A", "linesa").write(toFile: scratchDisk + "/linesa.a", atomically: true, encoding: .utf8)
+        try? linesAsm("B", "linesb").write(toFile: scratchDisk + "/linesb.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/linesa.a -o=/h5/linesa.r", "l68 /h5/linesa.r -o=/h5/linesa",
+            "r68 /h5/linesb.a -o=/h5/linesb.r", "l68 /h5/linesb.r -o=/h5/linesb",
+            // one line, typed in full before either writer starts: nothing typed
+            // later can be echoed into the middle of their output
+            "/h5/linesa & /h5/linesb; w"
+        ], timeout: 90, paced: true)   // paced: a write parks when the terminal is full
+        let lines = out.split(whereSeparator: \.isNewline).map(String.init)
+            .filter { $0.contains("AAAAAAAAAA") || $0.contains("BBBBBBBBBB") }
+        let whole = lines.filter { $0.hasSuffix(String(repeating: "A", count: 70)) && !$0.contains("B")
+                                || $0.hasSuffix(String(repeating: "B", count: 70)) && !$0.contains("A") }
+        if lines.count >= 80 && whole.count == lines.count {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      saw: \(lines.count) letter lines, \(whole.count) whole")
+            if let mixed = lines.first(where: { l in !whole.contains(l) }) { print("      e.g. \(mixed)") }
+            failed += 1
+        }
+        for leftover in ["linesa.a", "linesa.r", "linesa", "linesb.a", "linesb.r", "linesb"] {
+            removeScratchItem(leftover)
+        }
+    }
+}
+
 // ── process: the debugger calls refuse a process ID past the table ───────────
 // F$DExec and F$DExit take the child's ID from the guest's d0.w and indexed the
 // process table with it unchecked; F$DExit then WROTE through it. F$GPrDsc had
