@@ -6552,6 +6552,43 @@ do {
     }
 }
 
+// ── ping: an echo request goes out and its reply comes back ─────────────────
+// ping opens a raw socket and sends with an address given per datagram, then
+// receives with the sender's address; neither was there, so it stopped after
+// "PING ...". A raw socket is the host's ICMP datagram socket, which needs no
+// super user on macOS and hands replies back IP header first, as raw does.
+// Linux's version of that socket strips the header and renumbers the echo, so
+// ping would not know its own reply: the test is macOS-only for now.
+do {
+    let name = "net: ping gets an echo reply from the host's loopback"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        #if os(Linux)
+        print("SKIP: \(name) (Linux's unprivileged ICMP socket is not raw-shaped yet)")
+        #else
+        let icmp = socket(AF_INET, Int32(SOCK_DGRAM), Int32(IPPROTO_ICMP))
+        if icmp >= 0 { close(icmp) }
+        if containerized {
+            print("SKIP: \(name) (os9exec runs on Linux in the container)")
+        } else if icmp < 0 {
+            print("SKIP: \(name) (this host gives no ICMP socket to this user)")
+        } else {
+            let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                           "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                           "ping 127.0.0.1"], timeout: 20)
+            if out.contains("bytes from 127.0.0.1") {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("ping") || $0.contains("PING") }
+                print("      out: \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+        }
+        #endif
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

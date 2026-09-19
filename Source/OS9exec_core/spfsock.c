@@ -51,6 +51,8 @@
 #define SPFOP_EVENT   0x1004       /* observed: the event this path posts */
 #define SPFOP_MYNAME  0x00FF0006   /* observed: this end's address ... */
 #define SPFOP_PEER    0x00FF0007   /* ... and the far end's */
+#define SPFOP_SENDTO  0x77         /* SS_SendTo: a datagram to an address given with it */
+#define SPFOP_RECVFR  0x78         /* SS_RecvFr: a datagram, and whom it came from */
 
 
 #if defined UNIX && !defined MINGW
@@ -262,7 +264,15 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             type= os9_get_l( args+4 );          /* the BSD socket type */
             if (SpfFd( spP )>=0) close( SpfFd( spP ) );
 
-                fd= socket( AF_INET, type==2 ? SOCK_DGRAM : SOCK_STREAM, 0 );
+            /* A raw socket (type 3, what ping opens) becomes the host's ICMP
+               datagram socket, which an ordinary user may open where a raw one
+               needs the super user; it hands back replies IP header first, as
+               a raw socket does. Failing that, a real raw socket. */
+            if (type==3) {
+                    fd= socket( AF_INET, SOCK_DGRAM, IPPROTO_ICMP );
+                if (fd<0) fd= socket( AF_INET, SOCK_RAW, IPPROTO_ICMP );
+            }
+            else    fd= socket( AF_INET, type==2 ? SOCK_DGRAM : SOCK_STREAM, 0 );
             if (fd<0) return os9error(E_NOTRDY);
 
             spP->u.spf.fdPlus1  = fd+1;
@@ -489,6 +499,83 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             os9_set_l( lenP, room );
             debugprintf( dbgSpecialIO,dbgNorm,("# SPF: %s name -> port %u\n",
                          op==SPFOP_PEER ? "peer":"own", (uint32_t)ntohs( who.sin_port ) ));
+            return 0;
+        }
+
+        case SPFOP_SENDTO: {
+            /* The data is where the other operations keep their arguments;
+               the address it goes to is in a record the block points to --
+               its length in the fourth byte, then the address laid out the
+               way connect is given one. The count sent goes back where the
+               caller gave its own. */
+            struct sockaddr_in to;
+            byte*    rec;
+            ssize_t  n;
+            int      fd= SpfFd( spP );
+
+            if (fd<0) return os9error(E_NOTRDY);
+            if (!RANGE_IN_ARENA( blk,32 )) return os9error(E_BPADDR);
+                rec= (byte*)FROM68K( os9_get_l( blk+28 ) );
+            if (!RANGE_IN_ARENA( rec,20 ) || rec[3]<8) return os9error(E_PARAM);
+            if (ptr==0 || !RANGE_IN_ARENA( args,len )) return os9error(E_BPADDR);
+
+            memset( &to,0,sizeof(to) );
+            #ifdef __APPLE__
+              to.sin_len= sizeof(to);
+            #endif
+            to.sin_family= AF_INET;
+            memcpy( &to.sin_port,        rec+6, 2 );
+            memcpy( &to.sin_addr.s_addr, rec+8, 4 );
+
+                n= sendto( fd, args,len, 0, (struct sockaddr*)&to, sizeof(to) );
+            if (n<0) return os9error(E_WRITE);
+            os9_set_l( blk+4, (uint32_t)n );
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: sendto %d bytes\n", (int)n ));
+            return 0;
+        }
+
+        case SPFOP_RECVFR: {
+            /* The arguments describe the read: the buffer at +16, its size at
+               +20 (the count comes back there), and at +28/+32 a length and a
+               buffer for the sender's address, which comes back the way the
+               name operations give one. Nothing yet: park, as a read does. */
+            struct sockaddr_in from;
+            socklen_t          flen= sizeof(from);
+            byte              *buf, *fromP, *flenP;
+            uint32_t           size, room;
+            ssize_t            n;
+            int                fd= SpfFd( spP );
+
+            SpfResume( pid );
+            if (fd<0) return os9error(E_NOTRDY);
+            if (ptr==0 || !RANGE_IN_ARENA( args,40 )) return os9error(E_BPADDR);
+            buf  = (byte*)FROM68K( os9_get_l( args+16 ) );
+            size =                 os9_get_l( args+20 );
+            flenP= (byte*)FROM68K( os9_get_l( args+28 ) );
+            fromP= (byte*)FROM68K( os9_get_l( args+32 ) );
+            if (!RANGE_IN_ARENA( buf,size )) return os9error(E_BPADDR);
+
+            memset( &from,0,sizeof(from) );
+                n= recvfrom( fd, buf,size, 0, (struct sockaddr*)&from, &flen );
+            if (n<0) {
+                if (errno==EAGAIN || errno==EINTR) return SpfPark( pid );
+                return os9error(E_READ);
+            }
+            os9_set_l( args+20, (uint32_t)n );
+
+            if (os9_get_l( args+28 )!=0 && RANGE_IN_ARENA( flenP,4 )) {
+                room= os9_get_l( flenP ); if (room>16) room= 16;
+                if (os9_get_l( args+32 )!=0 && RANGE_IN_ARENA( fromP,room )) {
+                    byte sa[16];
+                    memset   ( sa,0,sizeof(sa) );
+                    os9_set_w( sa, AF_INET );
+                    memcpy   ( sa+2, &from.sin_port, 2 );
+                    memcpy   ( sa+4, &from.sin_addr.s_addr, 4 );
+                    memcpy   ( fromP, sa, room );
+                    os9_set_l( flenP, room );
+                }
+            }
+            debugprintf( dbgSpecialIO,dbgNorm,("# SPF: recvfrom %d bytes\n", (int)n ));
             return 0;
         }
 
