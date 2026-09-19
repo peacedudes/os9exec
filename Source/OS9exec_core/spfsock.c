@@ -340,8 +340,13 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             if (fd<0) return os9error(E_NOTRDY);
 
             if (spP->u.spf.connecting) {
+                /* Only an event says the handshake is over. poll() can also
+                   return -1 when the tick's signal lands in it, and SO_ERROR
+                   reads 0 on a connection still under way -- taken together
+                   those declared a pending connect made (then its first write
+                   failed), about one time in four under the tick. */
                 pf.fd= fd; pf.events= POLLOUT; pf.revents= 0;
-                if (poll( &pf,1, 0 )==0) return SpfPark( pid ); /* not yet */
+                if (poll( &pf,1, 0 )<=0 || pf.revents==0) return SpfPark( pid ); /* not yet */
                 spP->u.spf.connecting= false;
                 if (getsockopt( fd, SOL_SOCKET, SO_ERROR, &soerr,&elen )!=0 || soerr!=0) {
                     debugprintf( dbgSpecialIO,dbgNorm,("# SPF: connect failed, %d\n", soerr ));
