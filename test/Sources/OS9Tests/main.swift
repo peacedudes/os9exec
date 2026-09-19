@@ -2440,6 +2440,52 @@ do {
     }
 }
 
+// ── memory: a process may hold more than 512 separate blocks ─────────────────
+// os9exec kept a fixed 512-slot table of each process's F$SRqMem blocks and,
+// unlike OS-9, never joins adjacent ones -- so the 513th request failed
+// E$MemFul with the arena almost empty. utree, whose C library grows its heap
+// 4 KB at a time, stopped partway through /dd at about 2 MB. Here one process
+// holds 600 separate 4 KB blocks at once.
+do {
+    let blocksAsm = [
+        "FSRqMem set $28", "IWritLn set $8C", "FExit set $06",
+        " psect manyblks,$0101,$8001,0,2048,start",
+        "start",
+        " move.w #599,d5",
+        "loop", " move.l #4096,d0", " trap #0", " dc.w FSRqMem", " bcs.s bad",
+        " dbra d5,loop",
+        " lea okmsg(pc),a0", " moveq #1,d0", " moveq #okl,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1", " trap #0", " dc.w FExit",
+        "bad", " trap #0", " dc.w FExit",
+        "okmsg dc.b \"SIX HUNDRED BLOCKS HELD\",$0D",
+        "okl equ *-okmsg",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "memory: one process holds 600 separate F$SRqMem blocks"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? blocksAsm.write(toFile: scratchDisk + "/manyblks.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/manyblks.a -o=/h5/manyblks.r",
+            "l68 /h5/manyblks.r -o=/h5/manyblks",
+            "/h5/manyblks"
+        ], timeout: 30)
+        if out.contains("SIX HUNDRED BLOCKS HELD") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let preview = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("rror") || $0.contains("memory") || $0.contains("manyblks") }
+                .prefix(4).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+        for leftover in ["manyblks.a", "manyblks.r", "manyblks"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── process: the debugger calls refuse a process ID past the table ───────────
 // F$DExec and F$DExit take the child's ID from the guest's d0.w and indexed the
 // process table with it unchecked; F$DExit then WROTE through it. F$GPrDsc had

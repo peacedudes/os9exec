@@ -481,8 +481,14 @@ typedef char optsect_matches_sgs[ (sizeof(struct _sgs)==OPTSECTSIZE) ? 1 : -1 ];
  * adjacent memory blocks if possible, while OS9exec does not. 
  * Therefore, the MAXMEMBLOCKS constant must be much larger than
  * 32 to avoid that F$SRqMem fails with E_NORAM after 32 calls.
+ *
+ * 512 was not enough: a C library that grows its heap 4 KB at a time hit it
+ * at 2 MB with the arena nearly empty (utree on a large tree), where real
+ * OS-9 would have joined the blocks and carried on. 8192 blocks of 4 KB is
+ * the 32 MB arena, so the arena runs out first. Host cost: 16 bytes a slot,
+ * per process.
  */
-#define MAXMEMBLOCKS   512 
+#define MAXMEMBLOCKS  8192
 
 // total number of mem alloc entries
 #define MAX_MEMALLOC 10000
