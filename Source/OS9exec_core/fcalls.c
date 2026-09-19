@@ -2683,8 +2683,10 @@ os9err OS9_F_PrsNam( regs_type *rp, _pid_ )
  *          (a1)=pointer to path element delimiter (next / or <0x20)
  * Error:   E$BNam
  *          
- * Note: also allows "{" and "}" in filenames to take advantage of MPW shell variable
- *       substitution.
+ * Note: the MPW build also allows "{" and "}" in names, to take advantage of
+ *       MPW shell variable substitution. Nowhere else: the manual lists the
+ *       name characters (letters, digits, '.', '_', '$') and says any other
+ *       character ends the name (CONF68K t65).
  */
 {
     char *p;
@@ -2703,7 +2705,11 @@ os9err OS9_F_PrsNam( regs_type *rp, _pid_ )
        is UB for the ctype functions (cf. the (unsigned char) casts already in
        os9main.c and file_rbf.c). */
     while (IN_ARENA(p) &&
-           (isalnum((unsigned char)*p) || *p=='.' || *p=='_' || *p=='$' || *p=='{' || *p=='}')) {
+           (isalnum((unsigned char)*p) || *p=='.' || *p=='_' || *p=='$'
+            #ifdef MPW
+             || *p=='{' || *p=='}'
+            #endif
+           )) {
         p++; n++;
     }
     if (!IN_ARENA(p)) return os9error(E_BPADDR); /* name ran to the arena end with no terminator */
