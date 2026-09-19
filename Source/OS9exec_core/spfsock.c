@@ -63,6 +63,28 @@ static int SpfFd( syspath_typ* spP )
 } /* SpfFd */
 
 
+/* A write to a connection the far end has dropped raises SIGPIPE, and its
+   default action ends the process -- here the whole emulator, every OS-9
+   process with it (measured: exit 141 from one tcpsend). The guest is owed a
+   write error instead, so no socket of ours may raise it: macOS takes that
+   per socket, Linux per send. */
+#ifdef MSG_NOSIGNAL
+  #define SPF_SENDFLAGS MSG_NOSIGNAL
+#else
+  #define SPF_SENDFLAGS 0
+#endif
+
+static void SpfNoSigpipe( int fd )
+{
+  #ifdef SO_NOSIGPIPE
+    int on= 1;
+    setsockopt( fd, SOL_SOCKET, SO_NOSIGPIPE, &on,sizeof(on) );
+  #else
+    (void)fd;
+  #endif
+} /* SpfNoSigpipe */
+
+
 static os9err SpfPark( ushort pid )
 /* Nothing to read yet: park the caller the way a console read does, and let
    the dispatcher run the same call again later (procstuff.c retries a
@@ -160,7 +182,7 @@ static os9err pSwrite( ushort pid, syspath_typ* spP, uint32_t* lenP, char* buffe
     if (fd<0) return os9error(E_NOTRDY);
 
     while (done<*lenP) {
-        ssize_t n= send( fd, buffer+done, *lenP-done, 0 );
+        ssize_t n= send( fd, buffer+done, *lenP-done, SPF_SENDFLAGS );
         if (n>0) { done+= (uint32_t)n; continue; }
 
         if (n<0 && (errno==EAGAIN || errno==EINTR)) continue; /* see the read path */
@@ -279,6 +301,7 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             }
             else    fd= socket( AF_INET, type==2 ? SOCK_DGRAM : SOCK_STREAM, 0 );
             if (fd<0) return os9error(E_NOTRDY);
+            SpfNoSigpipe( fd );
 
             spP->u.spf.fdPlus1  = fd+1;
             spP->u.spf.proto    = (ushort)type;
@@ -385,6 +408,7 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
 
             flags= fcntl( nfd, F_GETFL, 0 );    /* reads must never block the emulator */
             if (flags>=0) fcntl( nfd, F_SETFL, flags | O_NONBLOCK );
+            SpfNoSigpipe( nfd );
 
             /* The caller does NOT want a path number here. It wants the socket
                to make one with: it feeds these three longwords straight to its
@@ -533,7 +557,7 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             memcpy( &to.sin_addr.s_addr, rec+8, 4 );
 
             if (spP->u.spf.bareIcmp && len>=8) memcpy( spP->u.spf.echoId, args+4, 2 );
-                n= sendto( fd, args,len, 0, (struct sockaddr*)&to, sizeof(to) );
+                n= sendto( fd, args,len, SPF_SENDFLAGS, (struct sockaddr*)&to, sizeof(to) );
             if (n<0) return os9error(E_WRITE);
             os9_set_l( blk+4, (uint32_t)n );
             debugprintf( dbgSpecialIO,dbgNorm,("# SPF: sendto %d bytes\n", (int)n ));

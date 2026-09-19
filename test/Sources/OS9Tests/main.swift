@@ -6535,6 +6535,70 @@ do {
     }
 }
 
+// ── sockets: a dropped connection is a write error, not the emulator's death ──
+// A write to a connection the far end has dropped raises SIGPIPE, whose default
+// action ended os9exec itself -- every OS-9 process with it, exit 141, from one
+// tcpsend. The listener here accepts and at once resets the connection, so
+// tcpsend's first write meets a dead socket; it must get a write error and the
+// shell must still be there to run the next command.
+do {
+    let name = "net: a write to a dropped connection fails in the guest, the emulator lives"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(name) (the container cannot reach the host's loopback)")
+        } else {
+            let port: UInt16 = 27000          // the port tcpsend connects to
+            let listenFd = socket(AF_INET, streamSocketType, 0)
+            var yes: Int32 = 1
+            setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = port.bigEndian
+            addr.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
+            let bound = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(listenFd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            if listenFd < 0 || bound != 0 || listen(listenFd, 1) != 0 {
+                if listenFd >= 0 { close(listenFd) }
+                print("SKIP: \(name) (port \(port) is not available here)")
+            } else {
+                // accept, then reset: a close that sends RST instead of FIN
+                let done = DispatchSemaphore(value: 0)
+                DispatchQueue.global().async {
+                    let conn = accept(listenFd, nil, nil)
+                    if conn >= 0 {
+                        var hard = linger(l_onoff: 1, l_linger: 0)
+                        setsockopt(conn, SOL_SOCKET, SO_LINGER, &hard, socklen_t(MemoryLayout<linger>.size))
+                        close(conn)
+                    }
+                    done.signal()
+                }
+
+                let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                               "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                               "tcpsend localhost /dd/SYS/errmsg",
+                               "echo EMULATOR-STILL-HERE"], timeout: 30)
+                _ = done.wait(timeout: .now() + 10)
+                close(listenFd)
+
+                if out.contains("EMULATOR-STILL-HERE") {
+                    print("PASS: \(name)")
+                    passed += 1
+                } else {
+                    print("FAIL: \(name)")
+                    let seen = out.split(whereSeparator: \.isNewline).filter {
+                        $0.contains("tcpsend") || $0.contains("rror") || $0.contains("Sending")
+                    }
+                    print("      out: \(seen.joined(separator: " | "))")
+                    failed += 1
+                }
+            }
+        }
+    }
+}
+
 // ── telnetd: a host telnet client logs in to OS-9 ─────────────────────────────
 // telnetd accepts the connection, and its telnetdc child opens /pk, takes a
 // pty/tty pair from it and forks login on the tty. Three things stopped it: a
