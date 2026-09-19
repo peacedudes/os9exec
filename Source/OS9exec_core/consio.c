@@ -145,6 +145,9 @@ static int term_line = 0;
    file. */
 static ulong baud_bps( byte code );
 
+/* ConsRead echoes through this, not ConsPutc: see its definition. */
+static void echo_putc( ushort pid, syspath_typ* spP, char c );
+
 void init_Cons( fmgr_typ* f )
 /* install all procedures of the console file manager */
 {
@@ -676,11 +679,11 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
                     if (reserveTerm && (uint32_t)cnt < *maxlenP) {
                         *(buffer+cnt)= c;
                         cnt++;
-                        if (ot->_sgs_echo) ConsPutcEdit( c, alf );
+                        if (ot->_sgs_echo) { echo_putc( pid,spP, c ); if (alf && c==CR) echo_putc( pid,spP, LF ); }
                     }
                     break;
                 }
-                if (ot->_sgs_ovfch)          ConsPutc( ot->_sgs_ovfch );
+                if (ot->_sgs_ovfch)          echo_putc( pid,spP, ot->_sgs_ovfch );
                 fflush(stdout);
                 continue;
             }
@@ -711,11 +714,11 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
                         *(buffer+cnt)= NUL; /* re-terminate at the shorter length */
                         if (ot->_sgs_echo) {
                             /* backspace echo */
-                            ConsPutc(ot->_sgs_bsech);
+                            echo_putc( pid,spP, ot->_sgs_bsech );
                             if (ot->_sgs_backsp) {
                                 /* BSP-Space-BSP Sequence wanted */
-                                ConsPutc(' ');
-                                ConsPutc(ot->_sgs_bsech);
+                                echo_putc( pid,spP, ' ' );
+                                echo_putc( pid,spP, ot->_sgs_bsech );
                             }
                         }
                     }
@@ -725,11 +728,11 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
                     /* clear line */
                     if (ot->_sgs_echo) {
                         while (cnt>0) {
-                            ConsPutc(ot->_sgs_bsech);
+                            echo_putc( pid,spP, ot->_sgs_bsech );
                             if (ot->_sgs_backsp) {
                                 /* BSP-Space-BSP Sequence wanted */
-                                ConsPutc(' ');
-                                ConsPutc(ot->_sgs_bsech);
+                                echo_putc( pid,spP, ' ' );
+                                echo_putc( pid,spP, ot->_sgs_bsech );
                             }
                             cnt--;                  
                         }
@@ -738,13 +741,13 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
                 }
                 else {
                     cnt++;
-                    if (ot->_sgs_echo) ConsPutcEdit( c, alf );
+                    if (ot->_sgs_echo) { echo_putc( pid,spP, c ); if (alf && c==CR) echo_putc( pid,spP, LF ); }
                 }
             }
             else {
                 /* without Editing */
                 cnt++;
-                if (ot->_sgs_echo) ConsPutc( c );
+                if (ot->_sgs_echo) echo_putc( pid,spP, c );
             }
             
             fflush(stdout); /* ensure all is written out */
@@ -1484,6 +1487,44 @@ static ulong baud_bps( byte code )
     return code < sizeof(bps)/sizeof(bps[0]) ? bps[code] : 0;
 } /* baud_bps */
 
+/* The paced device a write from <pid> on <spP> goes through, or NULL when it
+   goes straight to the screen: pacing off (-r), a baud rate that is not
+   throttled, a pty, or a writer that cannot be parked -- pid 0 (the system
+   process), the MAXPROCESSES banner sentinel, system state. Sets the device's
+   character time from the path's PD_BAU as a side effect. */
+static baud_device_t* paced_device( ushort pid, syspath_typ* spP )
+{
+    ulong          bps;
+    baud_device_t* dev;
+
+    if (!baud_throttle || pid==0 || pid>=MAXPROCESSES) return NULL;
+    if (procs[pid].state==pSysTask || spP->term_id>=TTY_Base) return NULL;
+    bps= baud_bps( spP->opt._sgs_bau );
+    if (bps==0) return NULL;
+    dev= baud_dev_for( spP->term_id );
+    if (dev!=NULL) dev->us_per_char= (10UL*1000000UL)/bps; /* 10 bits/char */
+    return dev;
+} /* paced_device */
+
+/* SCF's echo of a character being read, and every other byte I$ReadLn sends
+   back (backspace, PD_OVF). It goes out through the terminal's output queue,
+   BEHIND whatever is already waiting there, as a driver's echo does. Straight
+   to the screen it overtook paced output still in the FIFO: with commands
+   piped in, the shell's echo of its next line landed inside the previous
+   command's output ("$ Secho hi" / "eptember 19, ..."). A read cannot park for
+   output, so it waits for room, as narration does; a device that has stopped
+   taking bytes altogether gets the old best-effort direct write. */
+static void echo_putc( ushort pid, syspath_typ* spP, char c )
+{
+    baud_device_t* dev= paced_device( pid, spP );
+
+    if (dev!=NULL) {
+        if (BAUD_FIFO_SIZE - dev->count < 1) baud_make_room( dev, 1 );
+        if (fifo_push( dev, (byte)c, pid )) return;
+    }
+    ConsPutc( c );
+} /* echo_putc */
+
 /* The process whose write request holds each terminal: SCF gives one request
    the device until it is done, setting V_BUSY, and queues any other process
    that asks meanwhile ("check to see if the device is busy or not -- if so,
@@ -1549,16 +1590,8 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
           /* decide once whether this write is paced or goes straight to the
              screen; guards pid==0 (system process) and the pid>=MAXPROCESSES
              sentinel (banner/system output) used elsewhere in this file */
-          if (baud_throttle && pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask) {
-              ulong bps= baud_bps( ot->_sgs_bau );
-              if (bps>0) {
-                  dev= baud_dev_for( gConsoleID );
-                  if (dev!=NULL) {
-                      paced= true;
-                      dev->us_per_char= (10UL*1000000UL)/bps; /* microseconds/char, 10 bits/char */
-                  }
-              }
-          }
+          dev  = paced_device( pid, spP );
+          paced= dev!=NULL;
 
           /* Emulator NARRATION -- a `-d` trace line, an allocator warning, any
              u*_printf -- is host C running inside some process's syscall. It
