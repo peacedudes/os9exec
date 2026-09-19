@@ -612,3 +612,21 @@ After:
 ```
 RESULT t70 PASS  obs=003321 exp=003321  an intercept routine finds the queued-signal count in d0
 ```
+
+## os9exec, 2026-09-19: t79, SS_EOF at the exact end of a host file
+
+On a host-native directory SS_EOF asked the host C library whether end of
+file had been hit, which it only reports after a read has tried to go past
+the end. A path that had read a file exactly to its end -- the ordinary case
+-- was told it was not at end of file. RBF images compared the position with
+the size and were right. Before, on the host directory:
+
+```
+RESULT t79 FAIL  obs=000010 exp=000011  SS_EOF answers 0 before the end of a file and E$EOF at it
+```
+
+After, on both:
+
+```
+RESULT t79 PASS  obs=000011 exp=000011  SS_EOF answers 0 before the end of a file and E$EOF at it
+```
