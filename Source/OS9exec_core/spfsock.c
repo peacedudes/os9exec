@@ -47,6 +47,7 @@
                                       path to name itself ... */
 #define SPFOP_ATTACH  0x70         /* ... and gives that name to the listening
                                       path, which is SS_Accept's own code */
+#define SPFOP_EVENT   0x1004       /* observed: the event this path posts */
 
 
 #if defined UNIX && !defined MINGW
@@ -222,6 +223,23 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
     (void)pid;
     if (blk==NULL || !RANGE_IN_ARENA( blk,12 )) return os9error(E_BPADDR);
     op  = os9_get_l( blk   );
+
+    /* This operation's block is laid out apart from the rest -- the words
+       the others read below are left unset -- so it is taken first. The event
+       id goes where an event waiter already looks for one (set_evId, as
+       SS_SEvent keeps it on a tty), and the waiter polls this path's SS_Ready;
+       zero clears it. */
+    if (op==SPFOP_EVENT) {
+        byte* ev;
+
+        if (!RANGE_IN_ARENA( blk,24 )) return os9error(E_BPADDR);
+            ev= (byte*)FROM68K( os9_get_l( blk+20 ) );
+        if (!RANGE_IN_ARENA( ev,32 ))  return os9error(E_BPADDR);
+        spP->set_evId= os9_get_l( ev+24 );
+        debugprintf( dbgSpecialIO,dbgNorm,("# SPF: data-ready event -> %X\n", spP->set_evId ));
+        return 0;
+    }
+
     len = os9_get_l( blk+4 );
     ptr = os9_get_l( blk+8 );
     args= (byte*)FROM68K( ptr );
