@@ -1536,6 +1536,15 @@ run("rbf: OS9Hx wins over an image of the same name beside the emulator",
                                     && $0.contains("using OS9H9=")
     }
 
+// ...but only when there ARE two. OS9H9 naming the very image that sits at
+// <startPath>/h9 used to announce "using '<p>', ignoring '<p>'", the same path
+// twice, reporting a conflict that did not exist.
+run("rbf: OS9Hx naming the image beside the emulator announces no override",
+    expectation: "free /h9 reports the 500K image (2016 sectors) and says nothing about ignoring",
+    commands: ["free /h9"], env: ["OS9H9": scratchInEmulator + "/h9"]) {
+        $0.contains("2016 sectors") && !$0.contains("ignoring")
+    }
+
 try? FileManager.default.removeItem(atPath: scratchHostPath)
 try? FileManager.default.removeItem(atPath: awayHostPath)
 

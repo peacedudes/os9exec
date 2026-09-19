@@ -700,6 +700,8 @@ static void AnnounceOverride( const char* dev, const char* chosen )
 
     if (!FileFound( ambient ) &&
         !PathFound( ambient )) return;
+    /* OS9Hx naming <startPath>/hx itself is one candidate, not two */
+    if (strcmp( chosen,ambient )==0) return;
 
     announced[ key ]= true;
     uphe_printf( "/%.2s: using OS9H%c='%s', ignoring '%s'\n",
