@@ -25,6 +25,14 @@
  * caller claims it; see the accept and attach cases below.
  */
 
+/* Taken before os9exec_incl.h, which undefines the POSIX socket error names
+   so that os9errno.h can give them OS-9 values: past it, EINPROGRESS is not
+   the host's number any more. */
+#ifndef _WIN32
+  #include <errno.h>
+  static const int hostEINPROGRESS= EINPROGRESS;
+#endif
+
 #include "os9exec_incl.h"
 
 #if defined UNIX && !defined MINGW
@@ -34,6 +42,7 @@
   #include <unistd.h>
   #include <fcntl.h>
   #include <errno.h>
+  #include <poll.h>
 #endif
 
 /* the operations seen in the first longword of the block */
@@ -121,6 +130,7 @@ static os9err pSopen( _pid_, syspath_typ* spP, _modeP_, const char* pathname )
     spP->u.spf.acceptPlus1= 0;
     spP->u.spf.proto      = 0;
     spP->u.spf.connected  = false;
+    spP->u.spf.connecting = false;
     spP->u.spf.bareIcmp   = false;
 
     while (*p!=NUL) p++;                    /* the protocol is the last element */
@@ -303,9 +313,10 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             if (fd<0) return os9error(E_NOTRDY);
             SpfNoSigpipe( fd );
 
-            spP->u.spf.fdPlus1  = fd+1;
-            spP->u.spf.proto    = (ushort)type;
-            spP->u.spf.connected= false;
+            spP->u.spf.fdPlus1   = fd+1;
+            spP->u.spf.proto     = (ushort)type;
+            spP->u.spf.connected = false;
+            spP->u.spf.connecting= false;
             flags= fcntl( fd, F_GETFL, 0 );     /* reads must never block the emulator */
             if (flags>=0) fcntl( fd, F_SETFL, flags | O_NONBLOCK );
             debugprintf( dbgSpecialIO,dbgNorm,("# SPF: socket type=%u -> host fd %d\n",
@@ -314,10 +325,33 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
         }
 
         case SPFOP_CONNECT: {
+            /* Never a blocking connect: it would hold every OS-9 process for
+               as long as the handshake takes, and the system tick's signal
+               cuts it short anyway (connect is not restarted, SA_RESTART or
+               not), which failed a slow connection at once. So it is started
+               and the caller parked, as a read with nothing to read is; the
+               same call comes round again, and then asks whether it is done. */
             struct sockaddr_in sa;
-            int  fd= SpfFd( spP ), r, flags;
+            struct pollfd      pf;
+            int  fd= SpfFd( spP ), r, soerr= 0;
+            socklen_t          elen= sizeof(soerr);
 
+            SpfResume( pid );   /* this call may be a retry of a parked connect */
             if (fd<0) return os9error(E_NOTRDY);
+
+            if (spP->u.spf.connecting) {
+                pf.fd= fd; pf.events= POLLOUT; pf.revents= 0;
+                if (poll( &pf,1, 0 )==0) return SpfPark( pid ); /* not yet */
+                spP->u.spf.connecting= false;
+                if (getsockopt( fd, SOL_SOCKET, SO_ERROR, &soerr,&elen )!=0 || soerr!=0) {
+                    debugprintf( dbgSpecialIO,dbgNorm,("# SPF: connect failed, %d\n", soerr ));
+                    return os9error(E_NOTRDY);
+                }
+                debugprintf( dbgSpecialIO,dbgNorm,("# SPF: connect -> done\n" ));
+                spP->u.spf.connected= true;
+                return 0;
+            }
+
             if (ptr==0 || len<8) return os9error(E_PARAM);
 
             memset( &sa,0,sizeof(sa) );
@@ -328,15 +362,12 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             memcpy( &sa.sin_port,        args+2, 2 ); /* both already in network order */
             memcpy( &sa.sin_addr.s_addr, args+4, 4 );
 
-            flags= fcntl( fd, F_GETFL, 0 );           /* connect blocking, read non-blocking */
-            if (flags>=0) fcntl( fd, F_SETFL, flags & ~O_NONBLOCK );
-                r= connect( fd, (struct sockaddr*)&sa, sizeof(sa) );
-            if (flags>=0) fcntl( fd, F_SETFL, flags |  O_NONBLOCK );
-
+                r= connect( fd, (struct sockaddr*)&sa, sizeof(sa) ); /* fd is non-blocking */
             debugprintf( dbgSpecialIO,dbgNorm,("# SPF: connect -> %d\n", r ));
-            if (r!=0) return os9error(E_NOTRDY);
-            spP->u.spf.connected= true;
-            return 0;
+            if (r==0) { spP->u.spf.connected= true; return 0; }
+            if (errno!=hostEINPROGRESS && errno!=EINTR) return os9error(E_NOTRDY);
+            spP->u.spf.connecting= true;
+            return SpfPark( pid );
         }
 
         case SPFOP_BIND: {

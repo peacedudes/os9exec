@@ -6599,6 +6599,63 @@ do {
     }
 }
 
+// ── sockets: a slow connect parks its caller and nobody else ─────────────────
+// connect() ran blocking: every OS-9 process stood still for the whole
+// handshake, and the system tick's signal cut it short anyway (connect is not
+// restarted), so a connection that took longer than a tick failed at once.
+// 192.0.2.1 (TEST-NET-1) is never routed, so a connect to it stays in progress:
+// tcpsend must still be waiting two seconds later while procs runs. Skipped
+// where this network answers that address at once, which the harness checks.
+do {
+    let name = "net: a connect still in progress leaves the other processes running"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        var pending = false
+        let probe = socket(AF_INET, streamSocketType, 0)
+        if probe >= 0 {
+            _ = fcntl(probe, F_SETFL, fcntl(probe, F_GETFL, 0) | O_NONBLOCK)
+            var far = sockaddr_in()
+            far.sin_family = sa_family_t(AF_INET)
+            far.sin_port = UInt16(9).bigEndian
+            far.sin_addr.s_addr = UInt32(0xC000_0201).bigEndian      // 192.0.2.1
+            let r = withUnsafePointer(to: &far) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    connect(probe, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            if r != 0 && errno == EINPROGRESS {
+                var pf = pollfd(fd: probe, events: Int16(POLLOUT), revents: 0)
+                pending = poll(&pf, 1, 2500) == 0                     // still no answer
+            }
+            close(probe)
+        }
+        if containerized {
+            print("SKIP: \(name) (the container's network is not this host's)")
+        } else if !pending {
+            print("SKIP: \(name) (this network answers 192.0.2.1 at once)")
+        } else {
+            let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                           "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                           "tcpsend 192.0.2.1 /dd/SYS/errmsg &",
+                           "sleep -s 2",
+                           "procs"], timeout: 30)
+            let waiting = out.split(whereSeparator: \.isNewline).contains {
+                $0.contains("tcpsend") && $0.contains(">>>")
+            }
+            if waiting {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                let seen = out.split(whereSeparator: \.isNewline).filter {
+                    $0.contains("tcpsend") || $0.contains("rror") || $0.contains("procs")
+                }
+                print("      out: \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+        }
+    }
+}
+
 // ── telnetd: a host telnet client logs in to OS-9 ─────────────────────────────
 // telnetd accepts the connection, and its telnetdc child opens /pk, takes a
 // pty/tty pair from it and forks login on the tty. Three things stopped it: a
