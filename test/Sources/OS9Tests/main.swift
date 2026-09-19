@@ -7176,6 +7176,53 @@ do {
     }
 }
 
+// ── RPC: portmap, a registered server, and a client that finds it ────────────
+// Sun RPC over the socket manager: portmap on port 111, sortd registering with
+// it, and rsort asking portmap where sortd is and having it sort three words.
+// macOS's own rpcbind holds port 111, so this runs where the port is free --
+// the Linux container, typically -- and is skipped elsewhere.
+do {
+    let name = "net: rsort finds sortd through portmap and gets its words back sorted"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        var pa = sockaddr_in()
+        pa.sin_family = sa_family_t(AF_INET)
+        pa.sin_port = UInt16(111).bigEndian
+        pa.sin_addr.s_addr = INADDR_ANY
+        let probe = socket(AF_INET, Int32(SOCK_DGRAM), 0)
+        let free = probe >= 0 && withUnsafePointer(to: &pa) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(probe, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        } == 0
+        if probe >= 0 { close(probe) }
+        if !free && !containerized {
+            print("SKIP: \(name) (port 111 is taken on this host -- macOS runs its own rpcbind)")
+        } else {
+            let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                           "load /dd/CMDS/BOOTOBJS/SPF/inetdb2",
+                           "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                           "load /dd/CMDS/BOOTOBJS/SPF/rpcdb",
+                           "portmap &", "sleep -s 3",
+                           "sortd &", "sleep -s 3",
+                           "rsort localhost pear apple fig",
+                           // the daemons never exit, and the emulator waits for every
+                           // process: portmap and sortd are 3 and 4 (each load has exited)
+                           "kill 3", "kill 4"], timeout: 60)
+            let words = out.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { ["apple", "fig", "pear"].contains($0) || $0.hasSuffix(" apple") }
+                .map { $0.split(separator: " ").last.map(String.init) ?? $0 }
+            if words == ["apple", "fig", "pear"] {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      saw words: \(words); tail: \(out.split(whereSeparator: \.isNewline).suffix(5).joined(separator: " | "))")
+                failed += 1
+            }
+        }
+    }
+}
+
 // ── telnetd: a host telnet client logs in to OS-9 ─────────────────────────────
 // telnetd accepts the connection, and its telnetdc child opens /pk, takes a
 // pty/tty pair from it and forks login on the tty. Three things stopped it: a
