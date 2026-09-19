@@ -6932,7 +6932,8 @@ do {
                            "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
                            "tcpsend 192.0.2.1 /dd/SYS/errmsg &",
                            "sleep -s 2",
-                           "procs"], timeout: 30)
+                           "procs",
+                           "kill 3"], timeout: 30)   // never connects; see the multicast test
             let waiting = out.split(whereSeparator: \.isNewline).contains {
                 $0.contains("tcpsend") && $0.contains(">>>")
             }
@@ -7023,7 +7024,8 @@ do {
             let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
                            "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
                            "tftpd /\(scratchDev) &",
-                           "sleep -s 10"], timeout: 30)
+                           "sleep -s 10",
+                           "kill 3"], timeout: 30)   // a daemon listens until killed; see the multicast test
             _ = done.wait(timeout: .now() + 15)
 
             if got == blob {
@@ -7058,7 +7060,11 @@ do {
                            "mrecv -v -i 127.0.0.1 &",
                            "sleep -s 1",
                            "msend -l -i 127.0.0.1 -m group-delivered",
-                           "sleep -s 2"], timeout: 30)
+                           "sleep -s 2",
+                           // mrecv listens until killed. Left running, it decided
+                           // by a scheduler race whether the emulator ended after
+                           // the shell or waited on it forever (about 1 run in 12).
+                           "kill 3"], timeout: 30)
             if out.contains("[group-delivered]") {
                 print("PASS: \(name)")
                 passed += 1
@@ -7169,7 +7175,8 @@ do {
                      "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
                      "ftpd &",
                      "sleep -s 2",
-                     "ftp -n localhost </\(scratchDev)/putcmds"], timeout: 40)
+                     "ftp -n localhost </\(scratchDev)/putcmds",
+                     "kill 3"], timeout: 40)   // a daemon listens until killed; see the multicast test
             let got = FileManager.default.contents(atPath: scratchDisk + "/putdst") ?? Data()
             if got == Data(blob) {
                 print("PASS: \(name)")
@@ -7303,7 +7310,8 @@ do {
                            "load /dd/CMDS/BOOTOBJS/SPF/pkman",
                            "load /dd/CMDS/BOOTOBJS/SPF/pk",
                            "telnetd &",
-                           "sleep -s 8"], timeout: 30)
+                           "sleep -s 8",
+                           "kill 3"], timeout: 30)   // a daemon listens until killed; see the multicast test
             _ = done.wait(timeout: .now() + 10)
 
             let session = String(decoding: heard, as: UTF8.self)
@@ -7425,7 +7433,8 @@ do {
             let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
                            "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
                            "ftpd &",
-                           "sleep -s 10"], timeout: 30)
+                           "sleep -s 10",
+                           "kill 3"], timeout: 30)   // a daemon listens until killed; see the multicast test
             _ = done.wait(timeout: .now() + 10)
 
             let loggedIn = replies.contains("230 ")
@@ -9758,6 +9767,28 @@ run("console: PD_ALF adds the LF after CR, not after PD_EOR",
     expectation: "an output line still ends CR LF when PD_EOR is not CR",
     commands: ["tmode noecho eor=5F", "echo ALFMARK_tmode eor=0D_"]) { out in
     Data(out.utf8).range(of: Data("ALFMARK\r\n".utf8)) != nil
+}
+
+// SCF's echo of a line being read goes out BEHIND the output already queued
+// for the terminal, never ahead of it. Under baud pacing (the default) a
+// command's output waits in the pacing queue after the command has exited, and
+// the echo used to go straight to the screen, so with commands piped in the
+// shell's echo of its next line was printed inside the previous command's
+// output: "$ Oecho ORDERTWO" followed by "RDERONE". Paced on purpose -- the
+// harness's usual -r bypasses the queue and cannot show it.
+if filter.isEmpty || "console: a read's echo waits behind output already queued".localizedCaseInsensitiveContains(filter) {
+    let name = "console: a read's echo waits behind output already queued"
+    let out = os9(["echo ORDERONE", "echo ORDERTWO"], paced: true)
+    let lines = out.split(whereSeparator: \.isNewline)
+                   .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    if lines.contains("ORDERONE") && lines.contains("$ echo ORDERTWO") && lines.contains("ORDERTWO") {
+        print("PASS: \(name)"); passed += 1
+    } else {
+        print("FAIL: \(name)")
+        print("      [each command's output is whole, and the next echo follows it]")
+        print("      output: \(lines.filter { $0.contains("ORDER") }.joined(separator: " | "))")
+        failed += 1
+    }
 }
 
 // Claim: same chapter -- "If I$ReadLn has satisfied its input byte count, SCF
