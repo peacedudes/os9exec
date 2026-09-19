@@ -1531,13 +1531,15 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
       /* The current date and time as two raw globals, the way a process
          monitor reads them (aprocs) to age other processes.  Sourced from
          the same Get_Time the F$Time/F$Julian calls use, so the globals and
-         the syscalls always agree.  D_Second is seconds SINCE midnight
-         (v2.4 TRM, F$Time/F$STime -- the Guru's "until midnight" wording is
-         a transcription slip). */
+         the syscalls always agree.  D_Second counts the seconds LEFT UNTIL
+         midnight, where F$Time's Julian form gives seconds since: the OS-9
+         Guru says so, freeware getsys labels it so, and aprocs computes ages
+         that way -- answered as seconds since, it aged every process by
+         about 2^32 seconds. */
       case D_Julian  :
       case D_Second  : { uint32_t jTime,jDate; int dw,tk;
                          Get_Time( &jTime,&jDate, &dw,&tk, false,false );
-                         v= (offs==D_Julian) ? jDate : jTime; } break;
+                         v= (offs==D_Julian) ? jDate : 86400-jTime; } break;
     
       /* The date as F$Time gives it, from the same clock as D_Julian. */
       case D_Year    :

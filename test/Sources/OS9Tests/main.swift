@@ -2343,6 +2343,51 @@ do {
     }
 }
 
+// ── system globals: D_Second counts down to midnight ─────────────────────────
+// D_Second ($34) is the seconds LEFT until midnight (the Guru, getsys's label,
+// and aprocs's arithmetic all agree), where F$Time's Julian form gives seconds
+// since. Answered as seconds since, aprocs aged every process by ~2^32 s. The
+// two must add up to a day, give or take the second that may tick between.
+do {
+    let secAsm = [
+        "FSetSys set $27", "FTime set $15", "IWritLn set $8C", "FExit set $06",
+        " psect dsecond,$0101,$8001,0,2048,start",
+        "start",
+        " moveq #1,d0", " trap #0", " dc.w FTime", " bcs.s bad", " move.l d0,d6",
+        " moveq #$34,d0", " move.l #$80000004,d1", " trap #0", " dc.w FSetSys", " bcs.s bad",
+        " add.l d6,d2", " subi.l #86399,d2", " bmi.s bad", " cmpi.l #2,d2", " bhi.s bad",
+        " lea okmsg(pc),a0", " moveq #1,d0", " moveq #okl,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1", " trap #0", " dc.w FExit",
+        "bad", " moveq #1,d1", " trap #0", " dc.w FExit",
+        "okmsg dc.b \"D_SECOND COUNTS DOWN TO MIDNIGHT\",$0D",
+        "okl equ *-okmsg",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "globals: F$SetSys D_Second is the seconds left until midnight"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? secAsm.write(toFile: scratchDisk + "/dsecond.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/dsecond.a -o=/h5/dsecond.r",
+            "l68 /h5/dsecond.r -o=/h5/dsecond",
+            "/h5/dsecond"
+        ], timeout: 30)
+        if out.contains("D_SECOND COUNTS DOWN TO MIDNIGHT") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let preview = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("rror") || $0.contains("dsecond") }
+                .prefix(4).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+        for leftover in ["dsecond.a", "dsecond.r", "dsecond"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── process: the debugger calls refuse a process ID past the table ───────────
 // F$DExec and F$DExit take the child's ID from the guest's d0.w and indexed the
 // process table with it unchecked; F$DExit then WROTE through it. F$GPrDsc had
