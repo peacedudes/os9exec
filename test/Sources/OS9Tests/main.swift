@@ -6660,6 +6660,96 @@ do {
     }
 }
 
+// ── tftpd: a host fetches a file over UDP ────────────────────────────────────
+// tftpd binds UDP port 69, reads each request with the sender's address and
+// answers it with send-to, through the forked tftpdc -- the datagram half of
+// the socket manager, which no TCP program touches. The harness is the TFTP
+// client: a read request, then an ACK for every block (RFC 1350), and the file
+// must arrive byte for byte. Skipped where UDP port 69 cannot be bound.
+do {
+    let name = "net: tftpd serves a file to a host TFTP client over UDP"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let dgram = Int32(SOCK_DGRAM)
+        func udpAddr(_ port: UInt16, _ host: UInt32) -> sockaddr_in {
+            var a = sockaddr_in()
+            a.sin_family = sa_family_t(AF_INET)
+            a.sin_port = port.bigEndian
+            a.sin_addr.s_addr = host.bigEndian
+            return a
+        }
+        var probeAddr = udpAddr(69, INADDR_ANY)
+        let probe = socket(AF_INET, dgram, 0)
+        let probed = probe >= 0 && withUnsafePointer(to: &probeAddr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(probe, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        } == 0
+        if probe >= 0 { close(probe) }
+
+        if containerized {
+            print("SKIP: \(name) (the container cannot reach the host's loopback)")
+        } else if !probed {
+            print("SKIP: \(name) (UDP port 69 is not available to this user)")
+        } else {
+            var blob = [UInt8](repeating: 0, count: 3000)          // six blocks, the last short
+            for i in blob.indices { blob[i] = UInt8((i * 7 + 3) & 0xFF) }
+            FileManager.default.createFile(atPath: scratchDisk + "/tftpblob", contents: Data(blob))
+
+            var got = [UInt8]()
+            let done = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                sleep(4)                                         // tftpd's bind, after its loads
+                let fd = socket(AF_INET, dgram, 0)
+                var quiet = timeval(tv_sec: 2, tv_usec: 0)
+                setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &quiet, socklen_t(MemoryLayout<timeval>.size))
+                var server = udpAddr(69, INADDR_LOOPBACK)
+                func sendTo(_ bytes: [UInt8], _ to: inout sockaddr_in) {
+                    _ = withUnsafePointer(to: &to) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                        }
+                    }
+                }
+                sendTo([0, 1] + Array("tftpblob".utf8) + [0] + Array("octet".utf8) + [0], &server)
+                var buf = [UInt8](repeating: 0, count: 600)
+                var from = sockaddr_in()
+                var fromLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+                while true {
+                    let n = withUnsafeMutablePointer(to: &from) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            recvfrom(fd, &buf, buf.count, 0, $0, &fromLen)
+                        }
+                    }
+                    if n < 4 || buf[1] != 3 { break }             // not a DATA packet
+                    got += buf[4..<n]
+                    sendTo([0, 4, buf[2], buf[3]], &from)         // ACK that block, to tftpdc's port
+                    if n < 516 { break }                          // the short block is the last
+                }
+                close(fd)
+                done.signal()
+            }
+
+            let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                           "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                           "tftpd /\(scratchDev) &",
+                           "sleep -s 10"], timeout: 30)
+            _ = done.wait(timeout: .now() + 15)
+
+            if got == blob {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      saw: \(got.count) of \(blob.count) bytes")
+                let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("tftp") || $0.contains("rror") }
+                print("      out: \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+            removeScratchItem("tftpblob")
+        }
+    }
+}
+
 // ── telnetd: a host telnet client logs in to OS-9 ─────────────────────────────
 // telnetd accepts the connection, and its telnetdc child opens /pk, takes a
 // pty/tty pair from it and forks login on the tty. Three things stopped it: a
