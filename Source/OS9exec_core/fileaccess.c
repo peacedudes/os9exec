@@ -2058,6 +2058,16 @@ os9err pFeof( _pid_, syspath_typ* spP )
         struct stat info;
         return (stat( spP->fullName,&info )==0 && info.st_size==0) ? os9error(E_EOF) : 0;
     }
+    /* The position against the size, as RBF does (pReof). feof() alone only
+       turns true once a read has tried to go PAST the end, so a path that had
+       read exactly to the end -- the usual case -- answered "not EOF"
+       (CONF68K t79). feof() stays as the fallback if either lookup fails. */
+    {
+        struct stat info;
+        long        pos= ftell( spP->stream );
+        if (pos>=0 && fstat( fileno(spP->stream),&info )==0)
+            return ((off_t)pos >= info.st_size) ? os9error(E_EOF) : 0;
+    }
     if (feof(spP->stream)) return os9error(E_EOF);
   #endif
 
