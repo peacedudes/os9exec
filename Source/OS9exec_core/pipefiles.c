@@ -1101,7 +1101,19 @@ os9err pKopen( ushort pid, syspath_typ* spP, _modeP_, const char* pathname )
     strcpy( spP->name,&pathname[1] );
     strcpy( tty_cmp, spP->name );
             tty_cmp[0]= 't';
-        
+
+    /* Only a pair name (pty00..pty99) is one end of a pair, held by one path
+       at a time and joined to its tty by name. A PKMAN device such as /pk is
+       where pairs come from, not a pair: every open is a path of its own, so
+       two processes can each hold one, and pKlock makes the pair. Refusing the
+       second open as busy stopped telnetd's child at "open /pk". */
+    if (ustrncmp( spP->name,"pty",3 )!=0) {
+        err= pKopt( pid,spP, (byte*)&spP->opt ); /* no err returned */
+        err= getPipe( pid,spP, DEFAULTPTYSZ ); if (err) return err;
+        spP->u.pipe.pchP->sp_lock= spP->nr;      /* short circuit */
+        return 0;
+    }
+
     /* check whether this pty is already open by another syspath */
     for (n=0; n<MAXSYSPATHS; n++) {
         spK= get_syspathd( pid,n );
