@@ -1491,8 +1491,8 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 	#define D_SPUMem   0x03D8   /* static storage of the System Security Module (SSM) */
 	#define D_IPID     0x040C   /* os9exec/nt identification!               */
 
-	/* offsets and meanings as freeware getsys (Hellmuth Michaelis, 1990)
-	   reads and labels them */
+	/* offsets and meanings as the freeware getsys command reads and labels
+	   them (its author is not recorded in the binary) */
 	#define D_Year     0x002A   /* year (word) */
 	#define D_Month    0x002C   /* month (byte) */
 	#define D_Day      0x002D   /* day (byte) */
