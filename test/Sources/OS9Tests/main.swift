@@ -6556,20 +6556,15 @@ do {
 // ping opens a raw socket and sends with an address given per datagram, then
 // receives with the sender's address; neither was there, so it stopped after
 // "PING ...". A raw socket is the host's ICMP datagram socket, which needs no
-// super user on macOS and hands replies back IP header first, as raw does.
-// Linux's version of that socket strips the header and renumbers the echo, so
-// ping would not know its own reply: the test is macOS-only for now.
+// super user; Linux's gives replies without the IP header and with its own
+// echo identifier, so those are put back. Under a container os9exec pings the
+// container's own loopback, which Docker lets an ordinary user do.
 do {
-    let name = "net: ping gets an echo reply from the host's loopback"
+    let name = "net: ping gets an echo reply from the loopback"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
-        #if os(Linux)
-        print("SKIP: \(name) (Linux's unprivileged ICMP socket is not raw-shaped yet)")
-        #else
         let icmp = socket(AF_INET, Int32(SOCK_DGRAM), Int32(IPPROTO_ICMP))
         if icmp >= 0 { close(icmp) }
-        if containerized {
-            print("SKIP: \(name) (os9exec runs on Linux in the container)")
-        } else if icmp < 0 {
+        if !containerized && icmp < 0 {
             print("SKIP: \(name) (this host gives no ICMP socket to this user)")
         } else {
             let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
@@ -6585,7 +6580,6 @@ do {
                 failed += 1
             }
         }
-        #endif
     }
 }
 

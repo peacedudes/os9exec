@@ -99,6 +99,7 @@ static os9err pSopen( _pid_, syspath_typ* spP, _modeP_, const char* pathname )
     spP->u.spf.acceptPlus1= 0;
     spP->u.spf.proto      = 0;
     spP->u.spf.connected  = false;
+    spP->u.spf.bareIcmp   = false;
 
     while (*p!=NUL) p++;                    /* the protocol is the last element */
     while (p>pathname && *(p-1)!='/') p--;
@@ -268,8 +269,12 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
                datagram socket, which an ordinary user may open where a raw one
                needs the super user; it hands back replies IP header first, as
                a raw socket does. Failing that, a real raw socket. */
+            spP->u.spf.bareIcmp= false;
             if (type==3) {
                     fd= socket( AF_INET, SOCK_DGRAM, IPPROTO_ICMP );
+                #ifdef linux
+                  spP->u.spf.bareIcmp= fd>=0; /* see SPFOP_RECVFR */
+                #endif
                 if (fd<0) fd= socket( AF_INET, SOCK_RAW, IPPROTO_ICMP );
             }
             else    fd= socket( AF_INET, type==2 ? SOCK_DGRAM : SOCK_STREAM, 0 );
@@ -527,6 +532,7 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             memcpy( &to.sin_port,        rec+6, 2 );
             memcpy( &to.sin_addr.s_addr, rec+8, 4 );
 
+            if (spP->u.spf.bareIcmp && len>=8) memcpy( spP->u.spf.echoId, args+4, 2 );
                 n= sendto( fd, args,len, 0, (struct sockaddr*)&to, sizeof(to) );
             if (n<0) return os9error(E_WRITE);
             os9_set_l( blk+4, (uint32_t)n );
@@ -555,11 +561,30 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             fromP= (byte*)FROM68K( os9_get_l( args+32 ) );
             if (!RANGE_IN_ARENA( buf,size )) return os9error(E_BPADDR);
 
-            memset( &from,0,sizeof(from) );
-                n= recvfrom( fd, buf,size, 0, (struct sockaddr*)&from, &flen );
-            if (n<0) {
-                if (errno==EAGAIN || errno==EINTR) return SpfPark( pid );
-                return os9error(E_READ);
+            /* Linux's ICMP datagram socket gives the reply without the IP
+               header a raw socket puts first, and with the socket's own echo
+               identifier in place of the one the guest sent. The guest reads
+               it as raw, so it gets a header and its identifier back. */
+            {   uint32_t hdr= spP->u.spf.bareIcmp ? 20:0;
+                if (size<=hdr) return os9error(E_PARAM);
+
+                memset( &from,0,sizeof(from) );
+                    n= recvfrom( fd, buf+hdr,size-hdr, 0, (struct sockaddr*)&from, &flen );
+                if (n<0) {
+                    if (errno==EAGAIN || errno==EINTR) return SpfPark( pid );
+                    return os9error(E_READ);
+                }
+                if (hdr>0) {
+                    memset   ( buf,0,hdr );
+                    buf[0]= 0x45;                         /* IPv4, five words */
+                    os9_set_w( buf+2, (uint16_t)(n+hdr) );
+                    buf[8]= 64;                           /* time to live */
+                    buf[9]= IPPROTO_ICMP;
+                    memcpy   ( buf+12, &from.sin_addr.s_addr, 4 );
+                    memcpy   ( buf+16, &from.sin_addr.s_addr, 4 );
+                    if (n>=8) memcpy( buf+hdr+4, spP->u.spf.echoId, 2 );
+                    n+= hdr;
+                }
             }
             os9_set_l( args+20, (uint32_t)n );
 

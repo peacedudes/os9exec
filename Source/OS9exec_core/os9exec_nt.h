@@ -905,6 +905,9 @@ typedef struct {
             int       acceptPlus1;  /* connection taken by accept, not yet claimed */
             ushort    proto;        /* the BSD socket type this path was made with */
             Boolean   connected;
+            Boolean   bareIcmp;     /* host ICMP socket with no IP header on replies,
+                                       and its own echo identifier (Linux) */
+            byte      echoId[2];    /* the identifier the guest last sent, for those */
         } spf_typ;
 
 
