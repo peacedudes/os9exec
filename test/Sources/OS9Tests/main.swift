@@ -7145,6 +7145,104 @@ do {
     }
 }
 
+// ── shutdown: a daemon waiting for input does not hold os9exec open ─────────
+// Once the shell os9exec was started with has exited, os9exec ends when every
+// process left is only waiting for input (rdoggett, 2026-09-19: end and let the
+// connections close). Before this it depended on a scheduling counter: with a
+// daemon parked on a socket, about one run in twelve never ended at all. mrecv
+// listens until killed, so it is that daemon here, NOT killed at the end. Six
+// runs, because one run passed the old build eleven times in twelve; with the
+// tick off (-q), which is where the old race showed.
+do {
+    let name = "shutdown: a daemon waiting for input does not keep os9exec open after the shell"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(name) (Linux loopback in the container carries no multicast)")
+        } else {
+            var stuck = 0
+            for _ in 0..<6 {
+                let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                               "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                               "mrecv -v -i 127.0.0.1 &",
+                               "sleep -s 1"], timeout: 20, flags: ["-q"])
+                if out.contains("(timeout)") || !out.contains("Waiting for incoming multicasts") { stuck += 1 }
+            }
+            if stuck == 0 {
+                print("PASS: \(name)"); passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      [\(stuck) of 6 runs did not end, or never started the daemon]")
+                failed += 1
+            }
+        }
+    }
+}
+
+// The deterministic half of the same rule. A process blocked in a PIPE read is
+// parked as a system task, which the scheduler used to count as runnable: with
+// the shell gone and only such a reader left, os9exec never ended, every time.
+// pipewt opens an unnamed pipe, keeps a second path on it (so the read is not
+// end of file), says it is ready and reads -- forever.
+do {
+    let name = "shutdown: a process blocked on a pipe read does not keep os9exec open after the shell"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let pipewtAsm = [
+            "  use /dd/DEFS/oskdefs.d",
+            "",
+            "F$Exit   equ  $06",
+            "I$Dup    equ  $82",
+            "I$Create equ  $83",
+            "I$Read   equ  $89",
+            "I$WritLn equ  $8C",
+            "",
+            "  psect pipewt,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+            "",
+            "start:",
+            "  lea     pname(pc),a0",
+            "  moveq   #3,d0",
+            "  moveq   #0,d1",
+            "  moveq   #0,d2",
+            "  OS9     I$Create",
+            "  bcs.s   done",
+            "  move.w  d0,d7",
+            "  OS9     I$Dup",
+            "  lea     msg(pc),a0",
+            "  moveq   #msgl,d1",
+            "  moveq   #1,d0",
+            "  OS9     I$WritLn",
+            "  sub.l   #16,a7",
+            "  movea.l a7,a0",
+            "  moveq   #10,d1",
+            "  moveq   #0,d0",
+            "  move.w  d7,d0",
+            "  OS9     I$Read",
+            "done:",
+            "  moveq   #0,d1",
+            "  OS9     F$Exit",
+            "pname: dc.b \"/pipe\",0",
+            "msg:   dc.b \"PIPEWAIT READY\",$0D",
+            "msgl   equ  *-msg",
+            "",
+            "  ends",
+            ""
+        ].joined(separator: "\r")
+        try? pipewtAsm.write(toFile: scratchDisk + "/pipewt.a", atomically: true, encoding: .utf8)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/pipewt.a -o=/h5/pipewt.r",
+                       "l68 /h5/pipewt.r -o=/h5/pipewt",
+                       "/h5/pipewt &",
+                       "sleep -s 1"], timeout: 30)
+        if !out.contains("(timeout)") && out.contains("PIPEWAIT READY") {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [os9exec must end once only the pipe reader is left; timed out=\(out.contains("(timeout)"))]")
+            failed += 1
+        }
+        removeScratchItem("pipewt.a"); removeScratchItem("pipewt.r"); removeScratchItem("pipewt")
+    }
+}
+
 // ── multicast: msend reaches mrecv through a group ───────────────────────────
 // Socket options were accepted and never applied, so mrecv's group join did
 // nothing and msend's datagram reached nobody. They are applied now, by their
