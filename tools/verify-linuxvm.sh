@@ -44,6 +44,10 @@ multipass transfer /tmp/os9-linuxvm-src.tgz "$VM":/home/ubuntu/src.tgz >/dev/nul
 
 multipass exec "$VM" -- sh -c '
 set -e
+# an ordinary user runs the suite (rdoggett, 2026-09-16); multipass exec is
+# the ubuntu account, and this says so and refuses root
+echo "  running as $(id -un) (uid $(id -u))"
+[ "$(id -u)" != 0 ] || { echo "  REFUSED: the leg must not run as root"; exit 1; }
 rm -rf ~/os9 && mkdir -p ~/os9
 tar -xzf ~/src.tgz -C ~/os9 2>/dev/null || true   # header warnings are not failures
 cd ~/os9

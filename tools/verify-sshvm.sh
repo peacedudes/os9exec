@@ -96,6 +96,12 @@ COPYFILE_DISABLE=1 tar -czf /tmp/os9-sshvm-$PORT.tgz -C "$REPO" \
 LEG=/tmp/os9-leg-$PORT.sh
 cat > "$LEG" <<'REMOTE'
 set -u
+# The suite runs as an ORDINARY user (rdoggett, 2026-09-16): that is what the
+# people who use os9exec do, and os9exec has super-user branches -- module
+# ownership, SS_FD owner checks, RBF directory permissions -- that a root run
+# takes everywhere and so never tests. Say who ran it, and refuse root.
+echo "  running as $(id -un) (uid $(id -u))"
+[ "$(id -u)" != 0 ] || { echo "  REFUSED: the leg must not run as root"; exit 1; }
 rm -rf ~/os9 && mkdir -p ~/os9
 tar -xzf ~/src.tgz -C ~/os9 2>/dev/null || true   # header warnings are not failures
 cd ~/os9 || exit 1
@@ -169,6 +175,15 @@ scp -q -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/n
     -i "$KEY" -P "$PORT" "$LEG" root@localhost:/root/leg.sh \
   || { echo "  could not copy the leg script in"; exit 1; }
 
+# Root only to PREPARE: make the ordinary account if the guest lacks one and
+# hand it the source and the leg; the leg itself then runs as that account.
+LEGUSER=os9test
+PREP="id $LEGUSER >/dev/null 2>&1 || useradd -m -s /bin/sh $LEGUSER; \
+      install -o $LEGUSER -m 644 /root/src.tgz /home/$LEGUSER/src.tgz && \
+      install -o $LEGUSER -m 644 /root/leg.sh  /home/$LEGUSER/leg.sh"
+$SSH "$PREP" || { echo "  could not prepare the $LEGUSER account"; exit 1; }
+RUNLEG="runuser -u $LEGUSER -- sh /home/$LEGUSER/leg.sh"
+
 # ----------------------------------------------------------------- detach ---
 if [ "$MODE" = detach ]; then
     # -f backgrounds the client; setsid detaches the remote job from the ssh
@@ -180,7 +195,7 @@ if [ "$MODE" = detach ]; then
     # everything chained after it (2026-09-13). The exit status still reports
     # a client that could not start.
     ssh -n -f $SSH_OPTS root@localhost \
-        "setsid sh -c 'echo \$\$ > /root/leg.pid; sh /root/leg.sh > $GUEST_LOG 2>&1; \
+        "setsid sh -c 'echo \$\$ > /root/leg.pid; $RUNLEG > $GUEST_LOG 2>&1; \
                        echo LEG_EXIT=\$? >> $GUEST_LOG; rm -f /root/leg.pid' \
          < /dev/null > /dev/null 2>&1" > /dev/null 2>&1 \
       || { echo "  could not start the detached leg"; exit 1; }
@@ -189,7 +204,7 @@ if [ "$MODE" = detach ]; then
 fi
 
 # -------------------------------------------------------------------- run ---
-$SSH "sh /root/leg.sh" 2>&1 | tee "$LOG"
+$SSH "$RUNLEG" 2>&1 | tee "$LOG"
 rc=${PIPESTATUS[0]}
 # A leg that produced NO recognisable result has not passed -- it has failed to
 # run. Teed rather than captured so a slow guest shows progress.

@@ -195,7 +195,11 @@ public struct Adapter68k: Adapter {
             // at /h5 and used as the working directory, the system disk read-only.
             // Both paths are spelled as the emulator sees them.
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            // As this user, not the image's root: the suites run as an ordinary
+            // user everywhere (rdoggett, 2026-09-16), and root skips the
+            // emulator's own permission checks.
             process.arguments = ["docker", "run", "--rm", "-i", "--name", containerName,
+                                 "--user", "\(getuid()):\(getgid())",
                                  "-v", "\(scratch.path):/h5",
                                  "-v", "\(Adapter68k.systemDisk):/disk:ro",
                                  "-w", "/h5", "-e", "OS9DISK=/disk", "-e", "OS9H5=/h5",

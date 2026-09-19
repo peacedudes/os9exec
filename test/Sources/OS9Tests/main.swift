@@ -305,10 +305,14 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
     //    on the emulator refusing to escape -- the exact false-pass shape this
     //    suite has already been bitten by. Both were confirmed load-bearing by
     //    making the secret reachable and watching the assertions fail.
+    // As this user, not the image's root: the suites run as an ordinary user
+    // everywhere (rdoggett, 2026-09-16) -- that is who uses os9exec, and a root
+    // run takes the emulator's super-user branches and never tests the checks.
     let containerRunArgs = [
         "--rm",
         "-i",
         "--name", containerName,
+        "--user", "\(getuid()):\(getgid())",
         "-v", disk + ":/dd",
         "-v", diskPath + ":" + diskPath,
         "-v", canaryHost + ":/" + canaryName,
