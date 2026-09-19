@@ -2486,6 +2486,64 @@ do {
     }
 }
 
+// ── system globals: RAM, the tick, and the writable priority globals ─────────
+// D_TotRAM ($6C) answered the pool of freed blocks ($c00 one run) instead of
+// the arena; the allocatable top ($8B4) must equal it. $774, the current tick,
+// is ticks since os9exec started -- it must advance across a sleep by at least
+// the ticks slept. D_MinPty ($8A6) dropped a super-user's write: it must read
+// back what was written, and the write must return the value before it.
+do {
+    let ramAsm = [
+        "FSetSys set $27", "FSleep set $0A", "IWritLn set $8C", "FExit set $06",
+        " psect ramtick,$0101,$8001,0,2048,start",
+        "start",
+        " moveq #$6C,d0", " move.l #$80000004,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " cmpi.l #$100000,d2", " bcs.w bad", " move.l d2,d6",
+        " move.w #$8B4,d0", " move.l #$80000004,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " cmp.l d6,d2", " bne.w bad",
+        " move.w #$774,d0", " move.l #$80000002,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " move.w d2,d5",
+        " moveq #20,d0", " trap #0", " dc.w FSleep",
+        " move.w #$774,d0", " move.l #$80000002,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " sub.w d5,d2", " cmpi.w #20,d2", " bcs.w bad",
+        " move.w #$8A6,d0", " moveq #2,d1", " moveq #5,d2", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " tst.l d2", " bne.w bad",
+        " move.w #$8A6,d0", " move.l #$80000002,d1", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " cmpi.w #5,d2", " bne.w bad",
+        " move.w #$8A6,d0", " moveq #2,d1", " moveq #0,d2", " trap #0", " dc.w FSetSys", " bcs.w bad",
+        " cmpi.l #5,d2", " bne.w bad",
+        " lea okmsg(pc),a0", " moveq #1,d0", " moveq #okl,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1", " trap #0", " dc.w FExit",
+        "bad", " moveq #1,d1", " trap #0", " dc.w FExit",
+        "okmsg dc.b \"RAM TICK AND MINPTY AGREE\",$0D",
+        "okl equ *-okmsg",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "globals: F$SetSys gives the arena as RAM, a counting tick, and keeps D_MinPty"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? ramAsm.write(toFile: scratchDisk + "/ramtick.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/ramtick.a -o=/h5/ramtick.r",
+            "l68 /h5/ramtick.r -o=/h5/ramtick",
+            "/h5/ramtick"
+        ], timeout: 30)
+        if out.contains("RAM TICK AND MINPTY AGREE") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let preview = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("rror") || $0.contains("ramtick") }
+                .prefix(4).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+        for leftover in ["ramtick.a", "ramtick.r", "ramtick"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── process: the debugger calls refuse a process ID past the table ───────────
 // F$DExec and F$DExit take the child's ID from the guest's d0.w and indexed the
 // process table with it unchecked; F$DExit then WROTE through it. F$GPrDsc had

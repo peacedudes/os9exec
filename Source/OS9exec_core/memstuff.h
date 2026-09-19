@@ -102,6 +102,9 @@ void   show_unused( void );
 void*      get_mem( ulong  memsz   );
 void   release_mem( void*  membase );
 ulong  emul_arena_free( void );
+
+#define EMUL_RESERVED 0x1000u    /* the arena's low page, never allocated */
+extern ulong emul_arena_size;    /* the 68k arena, in bytes (-M sets it) */
 ulong  largest_free_block( void );
 uint32_t free_block_map( uint32_t from, byte* buf, uint32_t bufsz,
                          uint32_t* totalFree, uint32_t* totalRam );

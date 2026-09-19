@@ -1501,6 +1501,13 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 	#define D_EvID     0x03D4   /* next (incrementing) event ID */
 	#define D_PrcDescSz 0x03E2  /* size of a process descriptor (word) */
 	#define D_ForkCnt  0x0794   /* number of actively forked processes */
+	#define D_HighAdr  0x03DC   /* highest address found during startup */
+	#define D_Tick     0x0774   /* current tick (word) */
+	#define D_RAMFnd   0x0798   /* RAM found during the boot search */
+	#define D_MinPty   0x08A6   /* system minimum process priority (word) */
+	#define D_MaxAge   0x08A8   /* system priority maximum age limit (word) */
+	#define D_MinAdr   0x08B0   /* lowest allocatable address */
+	#define D_MaxAdr   0x08B4   /* highest allocatable address, plus one */
 
 	#define D_ScreenW  0x1000   /* Width in pixels of this system's screen  */
 	#define D_ScreenH  0x1004   /* Hight  "   "    "    "    "         "    */
@@ -1509,6 +1516,10 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 	#define D_UserOpt  0x1010   /* User defined option -u                   */
 	#define D_IPAddr   0x1014   /* Open MGR screen at IP address: option -g */
 	    
+    /* os9exec's scheduler does not act on these, but a super-user that sets
+       one reads back what it set, as on OS-9, instead of 0 */
+    static uint32_t minPty, maxAge;
+
     uint32_t     offs= loword(rp->d[0]);
     int          size= (int)  rp->d[1];
     ulong        b   = TO68K(mdirField);
@@ -1586,7 +1597,21 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
 
       case D_PthDBT  : v= TO68K(syspth); break;             /* pth table image  */
       case D_Ticks   : v=           GetSystemTick(); break; /* system heartbeat */
-      case D_TotRAM  : v=                 max_mem(); break;
+      /* The arena is the whole of the guest's RAM. This answered max_mem(),
+         which on every modern host is only the pool of freed blocks waiting
+         for reuse -- $c00 one run, $23c00 another. */
+      case D_TotRAM  :
+      case D_RAMFnd  : v=           emul_arena_size; break;
+      case D_HighAdr : v=         emul_arena_size-1; break;
+      case D_MinAdr  : v=            EMUL_RESERVED; break; /* the low page is kept back */
+      case D_MaxAdr  : v=           emul_arena_size; break;
+
+      /* ticks since os9exec started, in the word getsys reads: it wraps every
+         65536 ticks; D_Ticks has the same count in a long */
+      case D_Tick    : v= GetSystemTick() & 0xFFFF; break;
+
+      case D_MinPty  : v= minPty; break;
+      case D_MaxAge  : v= maxAge; break;
       case D_MinBlk  : v=                        16; break; /* as on real OS-9 systems */
       case D_FreMem  : v=  (ulong)             NULL; break; /* no list available */
       case D_FreMem_L: v=  (ulong)             NULL; break;  
@@ -1641,11 +1666,16 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
     
     /* A size with its most significant bit clear is a change request ("the
        variable is changed to the value in register d2"), and "Only a super-user
-       can change system variables" (F$SetSys, page 1-51). os9exec changes none
-       of them either way -- D_MinPty and D_MaxAge, the only useful ones, have no
-       scheduler to act on -- but a non-super caller was told it had succeeded.
+       can change system variables" (F$SetSys, page 1-51). os9exec keeps what
+       is written to D_MinPty and D_MaxAge (though no scheduler acts on them) and
+       changes nothing else -- but a non-super caller was told it had succeeded.
        The page names no error; E$Permit is the super-user refusal. */
     if ((size==1 || size==2 || size==4) && !is_super(cpid)) return os9error(E_PERMIT);
+
+    if (size==1 || size==2 || size==4) { /* the value before the change goes back in d2 */
+        if (offs==D_MinPty) minPty= rp->d[2] & 0xFFFF;
+        if (offs==D_MaxAge) maxAge= rp->d[2] & 0xFFFF;
+    }
 
     switch (size) {
       case          -1 : rp->d[2]=v<<24; break; /* two different ways to read them */

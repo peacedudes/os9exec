@@ -139,7 +139,6 @@ pmem_typ     pmem    [ MAXPROCESSES ];
    mirrors the 68000 exception-vector region and keeps NULL == 0 valid.
    The reservation is demand-zero (untouched pages cost no real memory). */
 #define EMUL_ARENA_DEFAULT (32u*1024u*1024u)  /* 32 MB default; covers real OS-9/68k machines */
-#define EMUL_RESERVED      0x1000u           /* low page never allocated */
 
 ulong emul_arena_size = EMUL_ARENA_DEFAULT;  /* 68k arena size; can be overridden via -M option */
 
