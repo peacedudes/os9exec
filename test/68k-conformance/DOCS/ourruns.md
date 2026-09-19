@@ -576,3 +576,39 @@ After it (braces are still accepted in the MPW build only):
 ```
 RESULT t65 PASS  obs=000000 exp=000000  F$PrsNam ends a name at any character the manual does not list
 ```
+
+## os9exec, 2026-09-19: t69, signals queued while masked came out of order
+
+Three signals sent to a process with its signals masked reached its
+intercept routine as 301, 300, 302. The queue itself was first-in
+first-out; the fault was in handing one back. When the mask was cleared the
+oldest signal was taken off the queue and delivered -- and, where delivery
+had to wait a moment longer, put back on the END of the queue, behind every
+signal sent after it. It now goes back at the head. Before:
+
+```
+RESULT t69 FAIL  obs=003102 exp=003012  signals sent while masked are queued, delivered first-in first-out
+```
+
+After:
+
+```
+RESULT t69 PASS  obs=003012 exp=003012  signals sent while masked are queued, delivered first-in first-out
+```
+
+## os9exec, 2026-09-19: t70, the queued-signal count in d0
+
+OS-9 Insights documents what the Technical Manual does not: an intercept
+routine is entered with d0 holding the number of signals queued for the
+process, the one being delivered included. os9exec set only d1 and a6, so
+the routine saw whatever the interrupted code had in d0. Before:
+
+```
+RESULT t70 FAIL  obs=003000 exp=003321  an intercept routine finds the queued-signal count in d0
+```
+
+After:
+
+```
+RESULT t70 PASS  obs=003321 exp=003321  an intercept routine finds the queued-signal count in d0
+```
