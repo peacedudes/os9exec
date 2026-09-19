@@ -2123,6 +2123,19 @@ void os9exec_globinit( void )
 // arbitrated. In one direction the 68k emulation (MacOS9 built-in or UAE) will be
 // called, in the other direction the systemcall interface will be used.
 // An exception handler one level higher can recall this procedure again.
+/* The number an intercept routine finds in d0: the signals queued for <pid>,
+   counting the one being delivered, so 1 means none is waiting and a routine
+   can drain the queue in one visit. Undocumented by Microware -- the manual
+   names only d1 and a6 -- and given by Peter Dibble, OS-9 Insights (3rd ed.),
+   8.1 "An Undocumented Feature". */
+static uint32_t IcptQueued( ushort pid )
+{
+    int      k;
+    uint32_t n= 1;
+    for (k=0; k<sig_queue.cnt; k++) if (sig_queue.pid[k]==pid) n++;
+    return n;
+} /* IcptQueued */
+
 void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
 {
   ushort       cpid;
@@ -2437,6 +2450,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
         if (cwti && sigp!=NULL && cp->icpt_signal!=S_Wake && sigp->state!=pDead) {
           sigp->masklevel   = 1;               // not interrupteable during intercept		
           sigp->os9regs.d[1]= cp->icpt_signal; // get signal code at icpt routine
+          sigp->os9regs.d[0]= IcptQueued( cp->icpt_pid );
           sigp->rtevector   = sigp->vector;
           sigp->rtefunc     = sigp->func;		
 
@@ -2549,6 +2563,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
 				
         if (cp->icpt_signal!=S_Wake) {
             cp->os9regs.d[1]= cp->icpt_signal; // get signal code at icpt routine
+            cp->os9regs.d[0]= IcptQueued( cp->icpt_pid );
         } // if
 				
         cp= &procs[currentpid];
