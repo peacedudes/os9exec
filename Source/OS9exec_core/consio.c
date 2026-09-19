@@ -585,8 +585,14 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
                    this): return E$EOF instead of parking forever waiting for
                    input that cannot come. cnt>0 means a final unterminated line
                    was already gathered -- hand it back first, EOF next read,
-                   the way a partial last line behaves everywhere else. */
-                if (host_stdin_eof) { err= (cnt>0) ? 0 : E_EOF; break; }
+                   the way a partial last line behaves everywhere else.
+                   Only for a terminal that READS host stdin: a pty's tty and a
+                   host-bound /tN have sources of their own (ConsGetc), and
+                   ending them here logged a telnet user out before a key was
+                   typed, whenever os9exec was started from a pipe. */
+                if (host_stdin_eof && gConsoleID<TTY_Base && !hostterm_bound( gConsoleID )) {
+                    err= (cnt>0) ? 0 : E_EOF; break;
+                }
 
                 cp->saved_cnt  = cnt;
                 cp->saved_state= cp->state;

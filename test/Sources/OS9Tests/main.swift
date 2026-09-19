@@ -6338,6 +6338,100 @@ do {
     }
 }
 
+// ── telnetd: a host telnet client logs in to OS-9 ─────────────────────────────
+// telnetd accepts the connection, and its telnetdc child opens /pk, takes a
+// pty/tty pair from it and forks login on the tty. Three things stopped it: a
+// second open of /pk was refused as busy, the socket could not carry the event
+// telnetdc waits on, and a tty took os9exec's own host-stdin EOF as its own --
+// so login gave up before a key was typed. Here a host client logs in as dog
+// and runs procs; the listing proves the shell ran with its I/O on the tty.
+// telnetd serves port 23 and has no option to move it, so the test skips where
+// this user cannot bind that port, or another run already holds it.
+do {
+    let name = "net: a telnet client logs in through telnetd and runs a command"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let port: UInt16 = 23                 // telnet/tcp, telnetd's default
+        let probeFd = socket(AF_INET, streamSocketType, 0)
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        addr.sin_addr.s_addr = INADDR_ANY
+        let probed = probeFd >= 0 && withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(probeFd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        } == 0
+        if probeFd >= 0 { close(probeFd) }
+
+        if containerized {
+            print("SKIP: \(name) (the container cannot reach the host's loopback)")
+        } else if !probed {
+            print("SKIP: \(name) (port \(port) is not available to this user)")
+        } else {
+            // the client: connect once telnetd listens, type, and keep all it hears
+            var heard = [UInt8]()
+            let done = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                var loopback = addr
+                loopback.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
+                var conn: Int32 = -1
+                for _ in 0..<40 where conn < 0 {
+                    let fd = socket(AF_INET, streamSocketType, 0)
+                    let ok = withUnsafePointer(to: &loopback) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                        }
+                    } == 0
+                    if ok { conn = fd } else { close(fd); usleep(150_000) }
+                }
+                if conn >= 0 {
+                    var quiet = timeval(tv_sec: 0, tv_usec: 300_000)
+                    setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &quiet, socklen_t(MemoryLayout<timeval>.size))
+                    var buf = [UInt8](repeating: 0, count: 4096)
+                    func gather(for seconds: Double) {
+                        let end = Date().addingTimeInterval(seconds)
+                        while Date() < end {
+                            let got = read(conn, &buf, buf.count)
+                            if got == 0 { break }
+                            if got > 0 { heard += buf[0..<got] }
+                        }
+                    }
+                    for line in ["", "dog\r", "procs\r", "logout\r"] {
+                        if !line.isEmpty { _ = write(conn, line, line.utf8.count) }
+                        gather(for: 1.0)
+                    }
+                    close(conn)
+                }
+                done.signal()
+            }
+
+            let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                           "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                           "load /dd/CMDS/BOOTOBJS/SPF/pkman",
+                           "load /dd/CMDS/BOOTOBJS/SPF/pk",
+                           "telnetd &",
+                           "sleep -s 8"], timeout: 30)
+            _ = done.wait(timeout: .now() + 10)
+
+            let session = String(decoding: heard, as: UTF8.self)
+                .split(whereSeparator: { $0 == "\r" || $0 == "\n" })
+            let loggedOn = session.contains { $0.contains("logged on") }
+            let procsOnTty = session.contains { $0.contains("procs") && $0.contains("tty") }
+            if loggedOn && procsOnTty {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      saw: logged on=\(loggedOn) procs on a tty=\(procsOnTty)")
+                print("      client: \(session.suffix(6).joined(separator: " | "))")
+                let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("Error") }
+                print("      out: \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm
