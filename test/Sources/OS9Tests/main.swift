@@ -2239,6 +2239,58 @@ do {
     }
 }
 
+// ── system globals: D_Init points at the init module ──────────────────────────
+// F$SetSys D_Init ($20) answered the host's own address of the init module,
+// cut to 32 bits -- getsys printed $e8447dc0 -- so a program that followed it
+// read nothing it could make sense of, or faulted. It must lead to a module
+// header: the sync word, and a name offset that names "init".
+do {
+    let initAsm = [
+        "FSetSys set $27", "IWritLn set $8C", "FExit set $06",
+        " psect initptr,$0101,$8001,0,2048,start",
+        "start",
+        " moveq #$20,d0", " move.l #$80000004,d1",
+        " trap #0", " dc.w FSetSys", " bcs.s bad",
+        " movea.l d2,a0",
+        " cmpi.w #$4AFC,(a0)", " bne.s bad",
+        " move.l $C(a0),d0", " lea 0(a0,d0.l),a1",
+        " move.b (a1)+,d0", " ori.b #$20,d0", " cmpi.b #'i',d0", " bne.s bad",
+        " move.b (a1)+,d0", " ori.b #$20,d0", " cmpi.b #'n',d0", " bne.s bad",
+        " move.b (a1)+,d0", " ori.b #$20,d0", " cmpi.b #'i',d0", " bne.s bad",
+        " move.b (a1)+,d0", " ori.b #$20,d0", " cmpi.b #'t',d0", " bne.s bad",
+        " tst.b (a1)", " bne.s bad",
+        " lea okmsg(pc),a0", " moveq #1,d0", " moveq #okl,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1", " trap #0", " dc.w FExit",
+        "bad", " moveq #1,d1", " trap #0", " dc.w FExit",
+        "okmsg dc.b \"D_INIT LEADS TO THE INIT MODULE\",$0D",
+        "okl equ *-okmsg",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "globals: F$SetSys D_Init points at the init module's header"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? initAsm.write(toFile: scratchDisk + "/initptr.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/initptr.a -o=/h5/initptr.r",
+            "l68 /h5/initptr.r -o=/h5/initptr",
+            "/h5/initptr"
+        ], timeout: 30)
+        if out.contains("D_INIT LEADS TO THE INIT MODULE") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let preview = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("rror") || $0.contains("initptr") }
+                .prefix(4).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+        for leftover in ["initptr.a", "initptr.r", "initptr"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── process: the debugger calls refuse a process ID past the table ───────────
 // F$DExec and F$DExit take the child's ID from the guest's d0.w and indexed the
 // process table with it unchecked; F$DExit then WROTE through it. F$GPrDsc had

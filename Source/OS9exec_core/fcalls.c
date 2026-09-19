@@ -1512,7 +1512,10 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
          the answer a real system without one gives.  It used to fall
          through to the "unimplemented" diagnostic four times per program. */
       case D_SPUMem  : v=                         0; break;
-      case D_Init    : v=       (ulong) init_module; break;
+      /* The init module sits in the arena like every module: hand out the
+         address the guest can follow, as D_ModDir does. This was the host's
+         own pointer, cut to 32 bits (getsys printed $e8447dc0). */
+      case D_Init    : v= init_module!=NULL ? TO68K(init_module) : 0; break;
       case D_TckSec  : v=             TICKS_PER_SEC; break;
       /* The current date and time as two raw globals, the way a process
          monitor reads them (aprocs) to age other processes.  Sourced from
