@@ -3376,6 +3376,13 @@ static Boolean OS9_Device( char* os9path, ushort mode, ptype_typ *typeP )
     
 
     *typeP= fRBF; /* default value */
+
+    /* Everything below copies os9path into OS9PATHLEN buffers. A pathlist that
+       does not fit names no device; internal commands (idbg -o, mount) pass
+       their raw arguments through here, and a long one overran the stack in
+       GetRBFName (found by ASan). */
+    if (strlen( os9path )>=OS9PATHLEN) return false;
+
     #ifdef RBF_SUPPORT
       if (InstalledDev( os9path,"",false, &cdv )) return true; /* already ? */
       

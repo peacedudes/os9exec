@@ -205,6 +205,11 @@ os9err int_rename( ushort cpid, int argc, char **argv )
         upe_printf("Error: two arguments required\n"); return 1;
     }
 
+    /* both are copied into OS9PATHLEN buffers below (a long one overran the
+       stack, found by ASan) */
+    if (strlen( nargv[0] )>=OS9PATHLEN || strlen( nargv[1] )>=OS9PATHLEN)
+        return _errmsg( E_BPNAM,"pathlist too long\n" );
+
     /* first get file/dir to be renamed */
                nameP= nargv[0];
     strcpy(nmS,nameP);

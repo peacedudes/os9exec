@@ -2117,7 +2117,7 @@ os9err _errmsg(os9err err, char* format, ...)
     va_list vp;
     va_start(vp,format);
     upe_printf("%s: ",icmname);
-    vsprintf(obuf,format,vp);
+    vsnprintf(obuf,sizeof(obuf),format,vp); /* messages echo user-supplied names */
     va_end(vp);
 
     upe_printf("%s",obuf); /* already formatted -- a '%' in the message must not re-format */

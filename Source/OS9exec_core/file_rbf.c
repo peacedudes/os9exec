@@ -1425,6 +1425,12 @@ Boolean InstalledDev( const char* os9path, const char* curpath,
     char        *p, *dvn;
     int         ii;
 
+    /* A pathlist that does not fit cannot name an installed image. Internal
+       commands (mount, idbg -o) hand their raw arguments down to here, and a
+       long one overran tmp (found by ASan). */
+    if ((AbsPath(os9path) ? 0 : strlen( curpath )+1) + strlen( os9path ) >= sizeof(tmp))
+        return false;
+
     strcpy( tmp,curpath  ); /* create the full pathname */
     strcat( tmp,PSEP_STR );
     if (AbsPath(os9path)) strcpy( tmp,"" );

@@ -282,7 +282,7 @@ void _debugprintf(char *format, ...)
     
     /* message enabled for that level */
     va_start    (vp,format);
-    vsprintf(buffer,format,vp);
+    vsnprintf(buffer,sizeof(buffer),format,vp); /* traces carry guest paths and names */
     va_end                (vp);
     
     /* "%s", buffer -- NOT buffer: it is already-formatted text, so any '%' that

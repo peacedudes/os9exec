@@ -229,6 +229,15 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
     Boolean    isRBF, asDirS, asDirD;
     
     
+    /* Both pathlists are built by concatenation into OS9PATHLEN buffers, from
+       names that come straight off the command line: a 400-character target
+       overran the stack here (found by ASan). Refuse before building either,
+       and without echoing the name -- it is exactly what does not fit. */
+    destname= (strcmp( toname,"" )==0) ? fromname : toname;
+    if (strlen( fromdir )+1+strlen( fromname ) >= OS9PATHLEN ||
+        strlen( todir   )+1+strlen( destname ) >= OS9PATHLEN)
+        return _errmsg( E_BPNAM,"pathlist too long\n" );
+
     strcpy(nmS,fromdir );
     strcat(nmS,PSEP_STR);
     strcat(nmS,fromname);
@@ -247,10 +256,7 @@ static os9err move_file( ushort cpid, char *fromdir,char *fromname,
 
     strcpy(nmD,todir);
     strcat(nmD,PSEP_STR);
-    if      (strcmp( toname,"" )==0) /* use source's name if no new dest name specified */
-         destname= fromname;
-    else destname=   toname;
-    strcat(nmD,destname);
+    strcat(nmD,destname); /* the source's name when no new one was given */
     nameD= nmD;
     
     typeD= IO_Type( cpid,nameD, 0x00 );

@@ -2696,6 +2696,7 @@ os9err pDopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
 
  /* if (strlen(pathname)>DIRNAMSZ) return os9error(E_BPNAM); */
 
+    if (strlen( pathname )>=sizeof(ploc)) return E_BPNAM; /* mount's raw argument got here unchecked (ASan) */
     strcpy  ( ploc,pathname );
     if      (*ploc==NUL) return E_BPNAM;
     pastpath= ploc;

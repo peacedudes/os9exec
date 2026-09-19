@@ -1786,6 +1786,10 @@ os9err link_module( ushort pid, const char* name, ushort* midP )
   void*   modBase = NULL;
 
   char    lName[OS9PATHLEN];
+
+  /* a name longer than any pathlist is no module's (the host command line
+     reached this unchecked and overran lName, found by ASan) */
+  if (strlen( name )>=sizeof(lName)) return E_BNAM;
   strcpy( lName, name );
 
   #ifdef INT_CMD

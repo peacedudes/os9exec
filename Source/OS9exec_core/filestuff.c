@@ -1756,6 +1756,11 @@ os9err syspath_open( ushort pid, ushort *sp, ptype_typ type, const char* pathnam
     spP->linkcount++; /* and hold it */
   }
   else {
+    /* Every manager's open copies the name into an OS9PATHLEN buffer. Guest
+       calls arrive already bounded (nullterm in icalls.c); internal commands
+       pass their raw arguments, and a long one overran pFopen's stack (ASan). */
+    if (strlen( pathname )>=OS9PATHLEN) return E_BPNAM;
+
     /* prepare new syspath record */
     err= syspath_new  ( sp,type ); if (err) return err;
     spP=     &syspaths[*sp];                                /* this is a free syspath */
