@@ -724,7 +724,15 @@ ushort debugwait( void )
               /* clearerr resets the EOF flag getchar() sets on each VTIME timeout,
                * allowing read() to be called again on the next ConsGetc iteration. */
               do { clearerr(stdin); ConsGetc(cp);
+                   if (!devIsReady && host_stdin_eof) break;
               } while (!devIsReady);
+              /* A redirected stdin that has run out can never answer: take it
+                 as [G]o. This loop used to wait on it forever at full CPU --
+                 `os9exec idbg <name>` from a script sat there for hours. */
+              if (!devIsReady) {
+                  uphe_printf("debugger: no input left, continuing\n");
+                  goto goon;
+              }
               ConsPutcEdit(*cp, true);   /* do echo -- auto-LF follows the CR */
               if          (*cp!=CR) cp++;
           } while         (*cp!=CR);
@@ -737,7 +745,10 @@ ushort debugwait( void )
             cp= inp;
             do {
                 n= read(0, &rc, 1);
-                if (n==0) continue;
+                if (n==0) {   /* end of input: nobody can answer, so [G]o */
+                    uphe_printf("debugger: no input left, continuing\n");
+                    goto goon;
+                }
                 if (n<0) break;
                 if (rc=='\r' || rc=='\n') { dbg_echo("\r\n",2); break; }
                 if ((rc==0x7f || rc=='\b') && cp>inp) { cp--; dbg_echo("\b \b",3); continue; }
