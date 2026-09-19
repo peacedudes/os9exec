@@ -360,8 +360,16 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
             defer { free(r) }
             return String(cString: r)
         }()
+        // Sanitizer settings pass through when set, so a sanitizer build run
+        // under this harness can log its reports somewhere; without them the
+        // reports went to the emulator's stderr, which is read and thrown away,
+        // and an empty log directory looked like a clean run.
+        let sanitizers = ProcessInfo.processInfo.environment.filter {
+            ["ASAN_OPTIONS", "UBSAN_OPTIONS"].contains($0.key)
+        }
         process.environment  = ["OS9DISK": disk,
                                 "OS9H\(scratchDev.dropFirst())": resolvedScratchDisk]
+                               .merging(sanitizers) { mine, _ in mine }
                                .merging(env) { _, caller in caller }
     }
 
@@ -9491,8 +9499,16 @@ if runConsoleRaw && !containerized {
         var sawRaw = false
         if (try? process.run()) != nil {
             // Poll rather than sleep a fixed interval: setup_term() runs early,
-            // but "early" is not a guarantee worth hard-coding.
+            // but "early" is not a guarantee worth hard-coding. Drain the master
+            // while polling: the banner comes first, and a pty holds only about
+            // 1 KB on macOS, so anything that lengthens it (a sanitizer build's
+            // own warnings did) blocks os9exec in write() before it ever
+            // reaches setup_term(), and the test would blame the tty setup.
+            let flags = fcntl(master, F_GETFL)
+            _ = fcntl(master, F_SETFL, flags | O_NONBLOCK)
+            var drain = [UInt8](repeating: 0, count: 4096)
             for _ in 0..<100 {
+                while read(master, &drain, drain.count) > 0 {}
                 var now = termios()
                 if tcgetattr(slave, &now) == 0, (now.c_iflag & tcflag_t(IXON)) == 0 {
                     sawRaw = true
