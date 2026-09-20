@@ -2660,6 +2660,140 @@ os9err OS9_F_CRC( regs_type *rp, _pid_ )
   return 0;
 } /* OS9_F_CRC */
 
+/* --- the three elementary allocation-bitmap operations --------------------
+ *
+ * F$SchBit, F$AllBit and F$DelBit "perform the elementary bitmap operations
+ * of finding a free segment, allocating it, and returning it when it is no
+ * longer needed. RBF uses these routines to manage cluster allocation on
+ * disks. They are accessible to users because they are occasionally useful"
+ * (F$AllBit, page 1 - 5). A set bit means the block is in use, a clear bit
+ * means it is available, and bits are numbered 0 to n-1 (same page).
+ * Unimplemented -- E$UnkSvc to any caller -- until 2026-09-20; CONF68K t97
+ * and t98 are the tests, and they failed against the build before this.
+ *
+ * BIT 0 IS THE TOP BIT OF BYTE 0. The pages do not say which end of a byte
+ * the numbering starts at, so the evidence used is the disk format itself:
+ * RBF's own allocation map walks a mask from 0x80 downwards (file_rbf.c),
+ * which is what an OS-9 disk holds. Nothing here is endian-dependent -- an
+ * allocation map is a string of bytes, not an array of words -- so the same
+ * code is right on a big- and a little-endian host.
+ */
+static Boolean bitmap_in_use( const byte* map, uint32_t bit )
+{
+    return (map[ bit>>3 ] & (byte)(0x80 >> (bit & 7))) != 0;
+} /* bitmap_in_use */
+
+/* Shared by F$AllBit and F$DelBit, which differ only in what they do to the
+ * bits. Neither call is given the map's length -- the caller is trusted for
+ * that, as on real OS-9 -- so what can be checked is that the bytes it would
+ * touch lie inside the emulated machine at all, the same guard F$CRC uses on
+ * the range it is handed. */
+static os9err bitmap_mark( regs_type *rp, Boolean inUse )
+{
+    uint32_t first= loword( rp->d[0] );  /* d0.w = first bit to change */
+    uint32_t count= loword( rp->d[1] );  /* d1.w = how many           */
+    byte*    map  = (byte*)FROM68K( rp->a[0] );
+    uint32_t bytes, bit;
+
+    if (count==0) return 0; /* nothing asked for: nothing to refuse either */
+
+    /* Both are 16-bit inputs, so first+count cannot overflow here. */
+    bytes= ((first+count+7)>>3) - (first>>3);
+    if (!RANGE_IN_ARENA( map + (first>>3), bytes )) return os9error(E_BPADDR);
+
+    for (bit=first; bit<first+count; bit++) {
+        if (inUse) map[ bit>>3 ] |=  (byte) (0x80 >> (bit & 7));
+        else       map[ bit>>3 ] &= (byte)~(0x80 >> (bit & 7));
+    } /* for */
+
+    return 0;
+} /* bitmap_mark */
+
+os9err OS9_F_AllBit( regs_type *rp, _pid_ )
+/* F$AllBit
+ * Input:   d0.w=first bit number, d1.w=bit count, (a0)=allocation bit map
+ * Output:  none -- the bits are set, marking those blocks in use
+ */
+{
+    return bitmap_mark( rp, true );
+} /* OS9_F_AllBit */
+
+os9err OS9_F_DelBit( regs_type *rp, _pid_ )
+/* F$DelBit
+ * Input:   d0.w=first bit number, d1.w=bit count, (a0)=allocation bit map
+ * Output:  none -- the bits are cleared, returning those blocks
+ */
+{
+    return bitmap_mark( rp, false );
+} /* OS9_F_DelBit */
+
+os9err OS9_F_SchBit( regs_type *rp, _pid_ )
+/* F$SchBit
+ * Input:   d0.w=bit number to start searching at
+ *          d1.w=number of bits needed
+ *          (a0)=bit map, (a1)=end of bit map (+1)
+ * Output:  d0.w=first bit of the run found, d1.w=how many bits that is
+ *
+ * "Searches the specified allocation bit map for a free block (cleared bits)
+ * of the required length, starting at the beginning bit number", returning
+ * "the offset of the first block found of the specified length" (page 1-47).
+ *
+ * THE FAILURE CASE IS NOT FULLY REPRESENTABLE HERE, and the manual is not of
+ * one mind about it either: the FUNCTION text says a failed search returns
+ * "with the carry set, beginning bit number, and size of the largest block
+ * found", while the same page's ERROR OUTPUT says d1.w holds an error code.
+ * They cannot both be true of d1. os9exec can only say the second: the
+ * dispatcher writes the error code into d1.w itself for any call that fails,
+ * so a handler cannot hand back carry-plus-data. What is done instead is the
+ * most of it that fits -- d0 gets the largest run's first bit, and the error
+ * is E$Full, the code RBF gives when its own allocation map has no room.
+ * Left for rdoggett: DECISIONS-68k.md. CONF68K t97 therefore asks only that
+ * the call is refused, which both readings agree on.
+ */
+{
+    uint32_t start= loword( rp->d[0] );
+    uint32_t need = loword( rp->d[1] );
+    byte*    map  = (byte*)FROM68K( rp->a[0] );
+    byte*    endP = (byte*)FROM68K( rp->a[1] );
+    uint32_t total, bit, run, runStart, bestStart, bestRun;
+
+    if (endP<=map)                                          return os9error(E_BPADDR);
+    if (!RANGE_IN_ARENA( map, (uint32_t)(endP-map) ))       return os9error(E_BPADDR);
+
+    /* A request for no bits is satisfied where it started: there is nothing
+       to find, and refusing it would make "allocate nothing" an error. The
+       page does not cover it. */
+    if (need==0) { retword(rp->d[0])= (ushort)start;
+                   retword(rp->d[1])= 0; return 0; }
+
+    total= (uint32_t)(endP-map) * 8;
+
+    bestStart= start; bestRun= 0;
+    run      = 0;     runStart= start;
+
+    for (bit=start; bit<total; bit++) {
+        if (bitmap_in_use( map,bit )) { run= 0; continue; }
+
+        if (run==0) runStart= bit;
+        run++;
+        if (run>bestRun) { bestRun= run; bestStart= runStart; }
+
+        if (run>=need) {
+            /* d1 is "number of bits found", and the search stops as soon as
+               there are enough, so what is reported is what was asked for --
+               never more. A free run may well be longer; saying so would
+               invite a caller to allocate past what it asked about, and the
+               page does not ask for it. */
+            retword(rp->d[0])= (ushort)runStart;
+            retword(rp->d[1])= (ushort)need;
+            return 0;
+        } /* if */
+    } /* for */
+
+    retword(rp->d[0])= (ushort)bestStart;
+    return os9error(E_FULL);
+} /* OS9_F_SchBit */
+
 os9err OS9_F_SetCRC( regs_type *rp, _pid_ )
 /* F$SetCRC
  * Input:   (a0)=Pointer to module image

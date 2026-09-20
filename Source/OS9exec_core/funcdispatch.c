@@ -262,9 +262,9 @@ const funcdispatch_entry fcalltable[NUMFCALLS] =
     { /* 0x0F */ OS9_F_PErr,   "F$PErr",   d_w(0)+d_w(1),        0      }, /* Print Error */
     { /* 0x10 */ OS9_F_PrsNam, "F$PrsNam", a_p(0),               d_b(0)+d_w(1)+a_l(0)+a_l(1) }, /* Parse Pathlist Name */
     { /* 0x11 */ OS9_F_CmpNam, "F$CmpNam", d_w(1)+a_p(0)+a_p(1), 0      }, /* Compare Two Name */
-    { /* 0x12 */ OS9_F_UnImp,  "F$SchBit", d_w(0),               d_w(1) }, /* Search Bit Map */
-    { /* 0x13 */ OS9_F_UnImp,  "F$AllBit", d_w(0),               d_w(1) }, /* Allocate in Bit Map */
-    { /* 0x14 */ OS9_F_UnImp,  "F$DelBit", d_w(0),               d_w(1) }, /* Deallocate in Bit Map */
+    { /* 0x12 */ OS9_F_SchBit, "F$SchBit", d_w(0),               d_w(1) }, /* Search Bit Map */
+    { /* 0x13 */ OS9_F_AllBit, "F$AllBit", d_w(0),               d_w(1) }, /* Allocate in Bit Map */
+    { /* 0x14 */ OS9_F_DelBit, "F$DelBit", d_w(0),               d_w(1) }, /* Deallocate in Bit Map */
     { /* 0x15 */ OS9_F_Time,   "F$Time",   d_w(0),               d_l(0)+d_l(1)+d_w(2)+d_l(3) }, /* Get Current Time */
     { /* 0x16 */ OS9_F_STime,  "F$STime",  d_l(0)+d_l(1),        0      }, /* Set Current Time */
     { /* 0x17 */ OS9_F_CRC,    "F$CRC",    d_l(0)+d_l(1)+a_l(0), d_l(1) }, /* Generate CRC */
