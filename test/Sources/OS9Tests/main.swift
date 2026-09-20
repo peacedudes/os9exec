@@ -9497,6 +9497,94 @@ if runTNShutdown && !containerized {
     }
 }
 
+// -- F$PErr with a TERMINAL as its error path --------------------------------
+// F$PErr searches the path it is given for the error's text. Handed a terminal
+// -- which the clean-room `load` does, calling prerr(2, errno) -- that search
+// read the terminal: with nothing typed the read PARKED the process and came
+// back empty, so the built-in message printed and the call returned while the
+// process was still parked. The dispatcher resumes a parked process by
+// re-running its call, so the message printed again, forever: about 850 times
+// in 20 seconds on a pty, and the keystrokes meant for the shell were eaten.
+// Found by the osk-freeware session, 2026-09-19. Needs a real pty: with output
+// piped the console read reports EOF instead of parking, and nothing loops.
+do {
+    let perrName = "f$perr: an error path that is a terminal prints once, and does not park"
+    if (filter.isEmpty || perrName.localizedCaseInsensitiveContains(filter)) && !containerized {
+        let perrAsm = [
+            "  use /dd/DEFS/oskdefs.d",
+            "",
+            "F$Exit   equ  $06",
+            "F$PErr   equ  $0F",
+            "I$WritLn equ  $8C",
+            "",
+            "  psect perrtst,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+            "",
+            "start:",
+            "  moveq   #2,d0",            // the error path: standard error, a terminal here
+            "  move.w  #221,d1",          // E$MNF, as load reports
+            "  OS9     F$PErr",
+            "  lea     done(pc),a0",
+            "  moveq   #donel,d1",
+            "  moveq   #1,d0",
+            "  OS9     I$WritLn",
+            "  moveq   #0,d1",
+            "  OS9     F$Exit",
+            "done:  dc.b \"PERRDONE\",$0D",
+            "donel  equ  *-done",
+            "",
+            "  ends",
+            ""
+        ].joined(separator: "\r")
+        try? perrAsm.write(toFile: scratchDisk + "/perrtst.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/perrtst.a -o=/h5/perrtst.r",
+                 "l68 /h5/perrtst.r -o=/h5/perrtst"], timeout: 30)
+
+        var text = ""
+        if let (master, slave, _) = makePTY() {
+            let process = Process()
+            process.executableURL     = execURL
+            process.arguments         = [shellArg]
+            process.environment       = ["OS9DISK": diskPath,
+                                         "OS9H\(scratchDev.dropFirst())": scratchDisk]
+            let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
+            process.standardInput  = slaveHandle
+            process.standardOutput = slaveHandle
+            process.standardError  = slaveHandle
+            var collected = [UInt8]()
+            if (try? process.run()) != nil {
+                usleep(1_500_000)
+                collected += drainNonBlocking(master)
+                var cmd = Array("/\(scratchDev)/perrtst\r".utf8)
+                _ = write(master, &cmd, cmd.count)
+                let deadline = Date().addingTimeInterval(20)
+                while Date() < deadline {
+                    collected += drainNonBlocking(master)
+                    if String(decoding: collected, as: UTF8.self).contains("PERRDONE") { break }
+                    usleep(100_000)
+                }
+                var quit = Array("\u{1B}\n\u{04}\n".utf8)
+                _ = write(master, &quit, quit.count)
+                usleep(300_000)
+                collected += drainNonBlocking(master)
+                if process.isRunning { process.terminate() }
+                process.waitUntilExit()
+            }
+            close(master); close(slave)
+            text = String(decoding: collected, as: UTF8.self)
+        }
+        let errors = text.components(separatedBy: "000:221").count - 1
+        if text.contains("PERRDONE") && errors == 1 {
+            print("PASS: \(perrName)"); passed += 1
+        } else {
+            print("FAIL: \(perrName)")
+            print("      [the message must print once and the program carry on; printed \(errors) times, finished=\(text.contains("PERRDONE"))]")
+            failed += 1
+        }
+        removeScratchItem("perrtst.a"); removeScratchItem("perrtst.r"); removeScratchItem("perrtst")
+    }
+}
+
 // -- XOFF halts output; input keeps being taken ------------------------------
 // ReadCharsFromTerminal used to return "not ready" whenever holdScreen was set,
 // so a terminal paused with ^S also stopped accepting typing: keystrokes piled
