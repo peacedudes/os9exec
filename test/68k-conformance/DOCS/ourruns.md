@@ -726,3 +726,29 @@ the old test failed about four times in a hundred.
 The emulator was never at fault here, and the claim is unchanged. What is worth keeping is the shape
 of the mistake: arithmetic on a packed OS-9 date or time is field arithmetic, and a borrow crosses
 into a field that means something else.
+
+## t95 and t96, 2026-09-20, and a build check that could not fail
+
+t96 (F$Link of an absent module reports E$MNF) passed first time. t95 (the SS_Size SetStat cuts a file
+to the size asked for) took three drafts, and what it found was in the test and the harness, not the
+emulator:
+
+- **Draft one created the file in write mode and then read it back.** A write-only path answers a read
+  with E$BMode, 203, so the size digit scored and the other two did not -- which reads exactly like an
+  emulator that records a size without truncating anything. A probe that reported the read's own error
+  code settled it in one run.
+- **Draft two used `moveq #208`.** The instruction takes -128..127, so the SKIP carried a sign-extended
+  0xFFFFFFD0 and printed as OVRFLW.
+- **Then the assembler refused draft three outright** -- a source saved with LF endings reads as one
+  enormous line -- and `tools/conformance.sh --build` SAID NOTHING, because it looked for `Errors: 0000n`
+  (a fatal never reaches an error count) and then checked only that CMDS/<name> exists and is non-empty.
+  CMDS/ ships prebuilt, so the previous module sat there and passed both tests. Twenty minutes went into
+  reading a stale module's verdict as a divergence.
+
+The build now fails on `fatal` in the log, and requires each module to be NEWER than its own source.
+Both checks were made to fail once before being believed: LF endings earn "assembler refused a source",
+and a touched source earns "t96linkmnf is older than SRC/t96linkmnf.a -- it did not rebuild". That is
+the fourth check in this codebase found unable to fail; the rule that caught it is in `.claude/CLAUDE.md`.
+
+t95 is the second test whose verdict differs by device (the first being the locking group): a host
+directory has no SS_Size SetStat and reports SKIP carrying E$UnkSvc, an RBF image PASSes with 111.

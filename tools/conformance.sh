@@ -54,7 +54,7 @@ MODULES=(t01open t02eof t03bmode t04mode0 t05mode0rd t06short t07extend
          t27shar t28exts t29self t30delo t31zrdr
          t32ticks t33ctrl t34julian t35cent t36crchi t37crclo t38wild t39host
          t40evpuls t41evwake t42evsigw t43evbusy t44evunlk t45seek t46pos t47break t48sas
-         t49load t50movesr t51mem t52memsp t53memgr t54sysid t55strap t56stack t57linea t58negoff t59rename t60gprdsc t61twopath t62linkmove t63mkdirex t64datmod t65prsnam t66sigdie t67sigwake t68waitnc t69sigq t70icptd0 t71sendid t72alset t73aldel t74alcyc t75aljul t76aldate t77dup t78linkty t79sseof t80linkcnt t81pipecef t82pipeopen t83pipeeof t84pipekeep t85sigio t86chain t87pipefull t88memround t89prior t90chgdir t91alpast t92sleepwk t93readln t94writln
+         t49load t50movesr t51mem t52memsp t53memgr t54sysid t55strap t56stack t57linea t58negoff t59rename t60gprdsc t61twopath t62linkmove t63mkdirex t64datmod t65prsnam t66sigdie t67sigwake t68waitnc t69sigq t70icptd0 t71sendid t72alset t73aldel t74alcyc t75aljul t76aldate t77dup t78linkty t79sseof t80linkcnt t81pipecef t82pipeopen t83pipeeof t84pipekeep t85sigio t86chain t87pipefull t88memround t89prior t90chgdir t91alpast t92sleepwk t93readln t94writln t95setsize t96linkmnf
          tally mark)
 
 # ------------------------------------------------------------- the `load` utility
@@ -243,9 +243,24 @@ build_68k() {
     if grep -aq 'Errors: 0000[1-9]' /tmp/conf68k-build.log; then
         echo "  assembly errors -- see /tmp/conf68k-build.log" >&2; return 1
     fi
+    # r68 also refuses a source outright, without ever reaching an error
+    # count: "r68 fatal: input line too long" is what a source saved with LF
+    # endings earns, and the whole file reads as one line. Caught 2026-09-20,
+    # having cost twenty minutes of reading a STALE module's verdict as a
+    # divergence.
+    if grep -aq 'fatal' /tmp/conf68k-build.log; then
+        echo "  assembler refused a source -- see /tmp/conf68k-build.log" >&2; return 1
+    fi
     rm -f "$dir"/SCRATCH/*.r
     for n in "${MODULES[@]}"; do
         [ -s "$dir/CMDS/$n" ] || { echo "  $n did not build" >&2; return 1; }
+        # Present is not the same as REBUILT. CMDS/ is committed prebuilt, so
+        # a module that failed to assemble leaves yesterday's copy sitting
+        # there, passing the test above and then reporting a verdict for
+        # source that no longer exists. Newer than its own source is the
+        # check that fails.
+        [ "$dir/CMDS/$n" -nt "$dir/SRC/$n.a" ] || {
+            echo "  $n is older than SRC/$n.a -- it did not rebuild" >&2; return 1; }
     done
     # l68 recreates these through the host filesystem as 0644, dropping the
     # execute bit.  That matters on the way OUT: the shipped tree is copied to
