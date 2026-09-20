@@ -284,6 +284,8 @@ Some real OS-9 binaries assume an RBF file system and use low-level disk calls w
 | `dhelp` | List all debug/stop mask bit values (same as `idbg` → `dh`) |
 | `stop` / `shutdown` | Exit os9exec cleanly. Requires super-user; set `OS9STOP=1` in the host environment to let any logged-in account exit (handy when a `tsmon`/`login` session isn't super). |
 | `rename` | Rename a file or directory |
+| `pwd` | Print the current data directory, the way OS-9's own `pd` does -- for when the fingers type the other system's name. `pd` itself is left alone: the system disk's Microware utility is the one that should answer it. |
+| `cd` | Change the current data directory, the way `chd` does. OS-9 has no `cd` because a forked program cannot move its caller's directory; os9exec is the kernel here, so this one can. `cd` with no argument prints where you are rather than going anywhere. |
 | `move` / `mv` | Move files or directories (replaces RBF-only real `mv`) |
 | `mount` / `unmount` | Mount, or create and mount, an RBF image or RAM disk at runtime |
 | `iterm` | Make a `/tN` terminal at runtime, the way `mount` makes an `/hX`: `iterm t3` allocates a pty and prints the `screen` command to attach to it, `iterm t3 /dev/ttys004` uses a terminal you already have, and `iterm` alone lists what is bound. Before it, a `/tN` could only be named in `OS9T<n>`, before os9exec started. |

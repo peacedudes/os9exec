@@ -9584,6 +9584,85 @@ do {
     }
 }
 
+// -- pwd and cd: the names from the other half of the world ------------------
+// rdoggett, 2026-09-20: "I'd be grateful to have pd/pwd programs and cd/chd
+// because I'm always typing the wrong one, but I know the cd/chd are not
+// possible". `cd` IS possible, but only because os9exec is the kernel: an
+// internal command is forked like any utility, so it moves its PARENT's data
+// directory, which no guest program could do. The claim is therefore about
+// what survives the command -- the shell must still be there AFTER the
+// process that moved it has exited, which the second `pwd` is asked from a
+// later fork entirely.
+do {
+    let name = "cd: moves the shell's data directory, and pwd reports it afterwards"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out  = os9(["pwd", "cd CMDS", "pwd", "cd ..", "pwd"])
+        let said = out.replacingOccurrences(of: "\r", with: "\n")
+                      .split(separator: "\n").map(String.init)
+                      .filter { $0.hasPrefix("/") && !$0.contains(" ") }
+
+        // Written against the SHAPE rather than the disk's name, so the test
+        // says the same thing on whatever device the suite is pointed at.
+        let ok = said.count == 3 && said[1] == said[0] + "/CMDS" && said[2] == said[0]
+
+        if ok {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [expected <dir>, <dir>/CMDS, <dir> from three separate forks]")
+            print("      got: \(said)")
+            failed += 1
+        }
+    }
+}
+
+// pwd must print the OS-9 pathlist, not the host path it is backed by. That is
+// the whole difference between a useful answer and a misleading one: the real
+// Microware `pd` prints "/dd/SYS", and a `pwd` that answered
+// "/Users/.../oskBoot/SYS" would be a different question's answer. /h5 is the
+// suite's own scratch device, so its OS-9 name is known here exactly.
+do {
+    let name = "pwd: names the device, not the host directory behind it"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9(["cd /h5", "pwd"])
+        let ok  = out.replacingOccurrences(of: "\r", with: "\n")
+                     .split(separator: "\n").map(String.init)
+                     .contains { $0 == "/h5" }
+
+        if ok {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [expected a line \"/h5\", the OS-9 name of the scratch device]")
+            print("      got: \(out.debugDescription.prefix(200))")
+            failed += 1
+        }
+    }
+}
+
+// `pd` is deliberately NOT an internal command: the system disk carries the
+// real Microware one, and an internal command of that name hides it, because
+// prepFork prefers a resident module and a disk utility is not resident until
+// something loads it. Measured when this was first written -- `pd` ran the
+// internal code and printed a host path. Whatever answers `pd`, it must never
+// be that: either Microware's utility runs, or nothing does.
+do {
+    let name = "pd: the disk's own pd is what runs, never an internal one"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9(["cd /h5", "pd"])
+        let ok  = !out.contains(scratchDisk) && !out.contains("/Users/")
+
+        if ok {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [a host path in pd's output means an internal pd shadowed the disk's]")
+            print("      got: \(out.debugDescription.prefix(200))")
+            failed += 1
+        }
+    }
+}
+
 // -- iterm: make a /tN from inside the running system ------------------------
 // On real OS-9 you load a device descriptor and the device is there. os9exec
 // has no descriptor machinery, but `mount` already makes an /hX at runtime and

@@ -1998,6 +1998,155 @@ os9err int_imakdir( ushort pid, int argc, char** argv )
 } /* int_imakdir */
 
 
+/* --------------------------------- pwd / cd -------------------------------
+   Two names from the other half of the world, which rdoggett asked for on
+   2026-09-20 ("I'm always typing the wrong one"): `pwd` beside OS-9's `pd`,
+   and `cd` beside OS-9's `chd`.
+
+   `pd` itself is deliberately NOT here. The system disk carries a real
+   Microware `pd`, and an internal command of that name would hide it:
+   prepFork prefers a RESIDENT module, but a disk utility is not resident
+   until something loads it, and a bare name never gives it the chance.
+   Measured, not assumed -- with `pd` in this table, `pd` ran this code while
+   `/dd/CMDS/pd` ran Microware's, and the two printed different things. `pwd`
+   and `cd` are names OS-9 does not use, which is what makes them free. */
+
+/* Render <host>, a host-side directory path, as the OS-9 pathlist that
+   reaches it: "/dd/SYS" rather than "/Users/.../oskBoot/SYS", which is what
+   the real `pd` prints and therefore what `pwd` has to print too.
+
+   A host directory is registered nowhere -- it is resolved fresh on every
+   path lookup, from OS9DISK, OS9Hx, or a directory beside the emulator
+   (`devs` says more about why) -- so the way back is to ask the same
+   resolver the same question. FindConfiguredDeviceRoot already does the hard
+   half and does it carefully: it keeps the INNERMOST root when device roots
+   nest, which they do (`mount -k` inside /h5's own directory), and its
+   prefix test refuses to match half a name. What is left here is naming the
+   device that root belongs to, and the test for that is EQUALITY with the
+   root just found -- not another prefix scan. HostPathDeviceName() looks
+   like the function for this and is not: it takes the FIRST device whose
+   root is a prefix, so for nested roots it answers with the outer device.
+
+   False when no configured device contains it, which is not an error: the
+   host path is then the only answer there is, and `pwd` prints that. */
+static Boolean os9_dirname( const char* host, char* out, size_t outsz )
+{
+    char   root[PATH_MAX];
+    char   tmp [OS9PATHLEN];
+    char   dname[3];
+    char*  hp;
+    char*  q;
+    size_t rootLen, n;
+    int    ii;
+
+    if (!FindConfiguredDeviceRoot( host, root )) return false;
+
+    for (ii=0; ii<=('z'-'a')+11; ii++) {
+        if      (ii==0)  strcpy  ( dname,"dd" );
+        else if (ii<=10) snprintf( dname,sizeof(dname), "h%d",  ii-1     );
+        else             snprintf( dname,sizeof(dname), "h%c", 'a'+ii-11 );
+
+        hp= NULL;
+        TwoCharDev( dname,&hp,tmp );
+        if (hp!=NULL && *hp!=NUL && strcmp( hp,root )==0) break;
+        if (ii==('z'-'a')+10) return false; /* a root nothing is named by */
+    } /* for */
+
+    rootLen= strlen( root );
+    snprintf( out,outsz, "%c%s%s", PSEP, dname, host+rootLen );
+
+    /* Host separators become OS-9 ones: the same character on Unix, and not
+       on the other two hosts this builds for. */
+    for (q=out; *q!=NUL; q++) if (*q==PATHDELIM) *q= PSEP;
+
+    /* No trailing separator: a chd to ".." at a device root leaves one
+       behind, and "/dd/" is not how OS-9 spells "/dd". */
+              n= strlen( out );
+    while (n>1 && out[n-1]==PSEP) out[--n]= NUL;
+    return true;
+} /* os9_dirname */
+
+/* The current data directory, as OS-9 sees it. */
+static void print_datadir( ushort pid )
+{
+    const process_typ* cp= &procs[pid];
+    char               os9[OS9PATHLEN];
+
+    /* An RBF device's path is already an OS-9 pathlist ("/h5/FOO"); only a
+       host directory carries a host path, and only it needs translating. */
+    if (cp->d.type!=fRBF && os9_dirname( cp->d.path, os9,sizeof(os9) ))
+         upo_printf( "%s\n", os9 );
+    else upo_printf( "%s\n", cp->d.path );
+} /* print_datadir */
+
+/* The process a `cd` has to move: the caller's PARENT, which is the shell.
+   An internal command is forked exactly as a disk utility is, so it runs as
+   its own process -- moving that one would move something already on its way
+   out, which is precisely why OS-9 has no `cd` and why `chd` has to be a
+   shell built-in. os9exec is the kernel here and holds both descriptors, so
+   it can do what a guest program cannot.
+
+   The parent id lives in the guest's process descriptor image, where it is
+   big-endian whatever the host is: hence os9_word, as every other reader of
+   _pid does. Falls back to the caller itself when there is no usable parent
+   -- `cd` given as os9exec's own boot program -- where there is nothing to
+   move and so nothing to get wrong.
+
+   Writing another process's descriptor from here is safe for a reason worth
+   stating: only NATIVE utilities are ever threaded (callcommand sets
+   asThread from cp->isNative), so a plain internal command runs inline, with
+   the emulation loop stopped and the parent parked in pWaiting for the
+   duration. A threaded command must not do this. */
+static ushort cd_target( ushort pid )
+{
+    ushort parent= os9_word( procs[pid].pd._pid );
+
+    if (parent==0 || parent>=MAXPROCESSES) return pid;
+    if (procs[parent].state==pUnused ||
+        procs[parent].state==pDead)        return pid;
+    return parent;
+} /* cd_target */
+
+/* `pwd`: what OS-9 calls `pd`. */
+static os9err int_pwd( _pid_, int argc, char** argv )
+{
+    if (argc>1) return _errmsg( 1,"%s takes no arguments\n", argv[0] );
+
+    print_datadir( cd_target( pid ) );
+    return 0;
+} /* int_pwd */
+
+/* `cd [<directory>]`: what `chd` does, under the name the other half of the
+   world uses. With no argument it says where it is rather than going
+   anywhere: there is no home directory here to go to, and a `cd` that did
+   something unasked when the path was forgotten would be worse than one that
+   answers the question. */
+static os9err int_cd( _pid_, int argc, char** argv )
+{
+    /* Read access plus the directory bit, spelled as I$ChgDir spells it
+       (icalls.c). The execute bit would move the EXECUTION directory
+       instead, which is what `chx` is for (I$ChgDir, page 2 - 3). */
+    const ushort mode  = 0x81;
+    ushort       target= cd_target( pid );
+    char         path[OS9PATHLEN];
+    ptype_typ    type;
+    os9err       err;
+
+    if (argc>2) return _errmsg( 1,"usage: %s [<directory>]\n", argv[0] );
+
+    if (argc<2) { print_datadir( target ); return 0; }
+
+    strncpy( path, argv[1], OS9PATHLEN-1 ); path[OS9PATHLEN-1]= NUL;
+
+        type= IO_Type( target, path, mode );
+    if (type==fNone) return _errmsg( E_BPNAM,"bad directory name \"%s\"\n", path );
+
+        err= change_dir( target, type, path, mode );
+    if (err) return _errmsg( err,"can't change to \"%s\"\n", path );
+    return 0;
+} /* int_cd */
+
+
 
 /* Command table */
 /* ------------- */
@@ -2019,6 +2168,8 @@ cmdtable_typ commandtable[] =
   { "move/mv",       int_move,       "moves files and directories" },
   { "icopy",         int_icopy,      "copies a file between any two devices" },
   { "imakdir",       int_imakdir,    "creates a directory" },
+  { "pwd",           int_pwd,        "prints the current data directory (OS-9 spells it pd)" },
+  { "cd",            int_cd,         "changes the current data directory, the way chd does" },
 
   #ifdef RBF_SUPPORT
   { "mount",         int_mount,      "mount   (RBF) device" },
