@@ -334,6 +334,20 @@ static os9err Alarm_AtJul( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTi
 
 
 
+Boolean A_NextDue( uint32_t* dueP )
+/* The tick the earliest alarm is due at, if there is one at all. The queue is
+ * kept sorted by A_Insert, so index 0 is that alarm. Used by the idle wait to
+ * decide how long it may sleep: an alarm nobody is awake to notice is exactly
+ * what DoWait() has to come back for. */
+{
+	alarm_typ* aa= alarm_queue[ 0 ];
+
+	if (aa==NULL) return false;
+	*dueP= aa->due;
+	return true;
+} /* A_NextDue */
+
+
 void CheckAlarms( void )
 /* Deliver the signal for the earliest-due alarm, if it's actually due.
  * alarm_queue is kept sorted by A_Insert, so index 0 is always the next one

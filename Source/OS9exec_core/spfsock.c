@@ -747,6 +747,30 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
 } /* pSspf */
 
 
+#if defined UNIX && !defined MINGW
+int spf_add_wait_fds( fd_set* rfds, int maxfd )
+/* Every socket armed with SS_SSig, for the same reason as the terminals: the
+ * idle wait polls them (spf_poll_signals) and can stop polling once it is
+ * watching them instead. A socket with no signal armed is not watched -- the
+ * process waiting on it is parked in a read, which is a different wait. */
+{
+    int k;
+
+    for (k=1; k<MAXSYSPATHS; k++) {
+        syspath_typ* sp= &syspaths[k];
+        int          fd;
+
+        if (sp->type!=fSPF || sp->signal_to_send==0) continue;
+        fd= SpfFd( sp );
+        if (fd<0) continue;
+        FD_SET( fd, rfds );
+        if (fd>maxfd) maxfd= fd;
+    } /* for */
+
+    return maxfd;
+} /* spf_add_wait_fds */
+#endif
+
 void spf_poll_signals( void )
 /* SS_SSig on a socket path: the signal goes out when data arrives. The arming
    call already sends it if data is there at that moment; after that, sockets

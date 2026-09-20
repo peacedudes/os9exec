@@ -22,6 +22,12 @@ Boolean hostterm_configured( int term_id );
 /* Is this device currently open on a host fd? */
 Boolean hostterm_bound    ( int term_id );
 
+/* Add every bound endpoint to an idle select set, returning the highest fd.
+   UNIX only: the wait it serves is the UNIX branch of DoWait(). */
+#if defined UNIX && !defined MINGW
+  int hostterm_add_wait_fds( fd_set* rfds, int maxfd );
+#endif
+
 /* The HOST endpoint this device is bound to ("/dev/ttys010", "pty" having been
    resolved to the slave it allocated), for reporting. Empty string when the id
    is out of range or nothing is bound. Stays valid while bound, which outlives

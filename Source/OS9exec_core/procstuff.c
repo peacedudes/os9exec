@@ -1097,13 +1097,108 @@ static void wait_for_signal( ushort pid )
 } /* wait_for_signal */
 
 
+
+#if defined UNIX && !defined MINGW
+  int hostterm_add_wait_fds( fd_set* rfds, int maxfd );   /* hostterm.c */
+  int spf_add_wait_fds     ( fd_set* rfds, int maxfd );   /* spfsock.c  */
+#endif
+
+/* MINGW defines UNIX and takes the UNIX branch of DoWait(), so this has to
+   exist there too -- it is the fd-set helpers above that do not, select()
+   being Winsock-only there. Guarding this with them put the call in without
+   the function and broke both Windows legs of `make warnings`; the host
+   compiler never sees the difference, which is what `make warnings` is for. */
+#ifdef UNIX
+
+/* How long the idle wait may sleep, in microseconds, before something the
+ * emulator promised comes due: the next baud-pacing drain, the next sleeper's
+ * wakeUpTick, the next alarm. ULONG_MAX when nothing at all is pending.
+ *
+ * Ticks are 10ms and GetSystemTick() reads a real clock (gettimeofday, see
+ * funcdispatch.c), so a deadline in ticks converts straight to microseconds
+ * and does not depend on how often the tick SIGNAL is delivered -- which is
+ * what makes it safe for this wait to block the tick while it sleeps. */
+static ulong idle_deadline_us( void )
+{
+    ulong    now  = GetSystemTick();
+    ulong    best = baud_next_wake_delay_us();
+    uint32_t due;
+    ushort   k;
+
+    for (k=1; k<MAXPROCESSES; k++) {
+        process_typ* cp= &procs[k];
+        ulong        us;
+
+        if (cp->state!=pSleeping)       continue;
+        if (cp->wakeUpTick>=MAX_SLEEP)  continue; /* sleeping until signalled */
+        /* Zero is not a deadline, it is a field nobody set: the kernel process
+           (pid 1) is parked in pSleeping for its whole life to be compliant
+           with real OS-9, and never had a wake time. Read as "due at tick 0"
+           it makes every idle wait return instantly -- measured, 94% of a core
+           where the old fixed nap cost 1.6%. */
+        if (cp->wakeUpTick==0)          continue;
+
+        us= (cp->wakeUpTick>now) ? (ulong)(cp->wakeUpTick-now)*10000UL : 0;
+        if (us<best) best= us;
+    } /* for */
+
+    if (A_NextDue( &due )) {
+        ulong us= (due>now) ? (ulong)(due-now)*10000UL : 0;
+        if (us<best) best= us;
+    } /* if */
+
+    return best;
+} /* idle_deadline_us */
+#endif
+
 void DoWait( void )
 {
   ulong ticks= GetSystemTick();
 
   #ifdef UNIX
-    ulong delay_us= baud_next_wake_delay_us();
-    long  delay_ns= (delay_us<1000000UL) ? (long)delay_us*1000L : 1000000L; /* cap idle nap at 1ms */
+    /* How long there is until the emulator owes somebody something. At 1ms --
+     * what this was before -- an idle emulator woke a thousand times a second
+     * and walked every ttydev slot each time, for 1.6% of a core measured.
+     * Waking only when something is actually due, and being woken by the host
+     * otherwise, costs 0.3%.
+     *
+     * The cap is one system tick, and is deliberately not longer. It bounds
+     * how late anything NOT in the select set below can be noticed, and 50ms
+     * was tried and rejected: the suite's "XOFF halts output but input is
+     * still taken" fails there, with the shell parked in pWaitWrite as the
+     * XOFF lands, where 1, 2, 5 and 10ms all pass. That is a real effect not
+     * yet explained, and a cap at the emulator's own scheduling granularity
+     * keeps this change to what it is for -- not polling when nothing is due
+     * -- rather than betting on how long the rest of the system can wait.
+     * The remaining step is on ROADMAP-68k.md with the evidence. */
+    #define IDLE_CAP_US  10000UL
+    ulong delay_us= idle_deadline_us();
+    ulong cap;
+    long  delay_ns;
+    /* Is anything actually WATCHING host input during the wait? Only the
+       select() below does, and only for an interactive stdin. MINGW has no
+       select over fd 0 at all (Winsock only), and with stdin a pipe -- the
+       test harness, any non-interactive driver -- select on it would return
+       readable at EOF forever. One source of truth for both decisions. */
+    Boolean watching= false;
+    #if !defined MINGW
+      watching= isatty( STDIN_FILENO );
+    #endif
+
+    /* A longer wait is only allowed where something is watching. Where
+       nothing is, the wait is a plain nap that looks at nothing, and how
+       often it wakes IS the input latency -- measured as a real failure when
+       it was let through: "XOFF halts output but input is still taken"
+       stopped seeing its typed command in time. */
+    cap= watching ? IDLE_CAP_US : 1000UL;
+    if (delay_us>cap) delay_us= cap;
+    /* Never shorter than the fixed nap this replaced. Something already due
+       makes the deadline zero, and the arbitration loop will service it the
+       moment this returns -- but if it ever could not, a zero wait would spin
+       the host at full tilt. With the floor, the worst this can do is exactly
+       what it did before: wake a thousand times a second. */
+    if (delay_us<1000UL)      delay_us= 1000UL;
+    delay_ns= (long)delay_us*1000L;
 
     /* Wait out the idle interval -- but on an interactive terminal, wake the
      * instant a keystroke arrives instead of napping the whole interval and
@@ -1123,14 +1218,22 @@ void DoWait( void )
      * sleepers/alarms/baud and is left as a follow-up (see ROADMAP). */
     Boolean waited= false;
     #if !defined MINGW
-      if (isatty( STDIN_FILENO )) {
+      if (watching) {
           fd_set         rfds;
           struct timeval tv;
           sigset_t       tick, before;
+          int            maxfd= STDIN_FILENO;
           FD_ZERO( &rfds );
           FD_SET ( STDIN_FILENO, &rfds );
-          tv.tv_sec =  0;
-          tv.tv_usec= delay_ns/1000L;
+          /* Every OTHER host source the millisecond poll used to ask about:
+           * the bound /tN endpoints and any socket armed with SS_SSig. The
+           * ttydev slots are deliberately not here -- their input arrives from
+           * another GUEST process writing into a pipe, and a guest that can
+           * run means this wait is not running at all. */
+          maxfd= hostterm_add_wait_fds( &rfds, maxfd );
+          maxfd= spf_add_wait_fds     ( &rfds, maxfd );
+          tv.tv_sec =  delay_ns/1000000000L;
+          tv.tv_usec= (delay_ns/1000L) % 1000000L;
 
           /* The system tick is installed with SA_RESTART (os9_tick.c), and
            * IRIX 6.5 restarts an interrupted select() with its WHOLE timeout:
@@ -1144,7 +1247,7 @@ void DoWait( void )
           sigemptyset( &tick );
           sigaddset  ( &tick, SIGALRM );
           sigprocmask( SIG_BLOCK, &tick, &before );
-          select( STDIN_FILENO+1, &rfds, NULL,NULL, &tv );
+          select( maxfd+1, &rfds, NULL,NULL, &tv );
           sigprocmask( SIG_SETMASK, &before, NULL );
           waited= true;
       }

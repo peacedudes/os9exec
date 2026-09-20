@@ -127,6 +127,29 @@ Boolean hostterm_bound( int term_id )
     return hostterms[ term_id ].open;
 } /* hostterm_bound */
 
+#if defined UNIX && !defined MINGW
+int hostterm_add_wait_fds( fd_set* rfds, int maxfd )
+/* Put every bound /tN endpoint into <rfds> and return the highest fd seen.
+ *
+ * The idle wait polls these once a millisecond (hostterm_poll, through
+ * CheckInputBuffers). Selecting on them instead is what lets that wait sleep
+ * longer than a millisecond without a keystroke on /t3 going unnoticed: a
+ * device that is watched does not need to be asked. */
+{
+    int ii;
+
+    for (ii=HOSTTERM_MIN; ii<=HOSTTERM_MAX; ii++) {
+        hostterm_typ* h= &hostterms[ ii ];
+
+        if (h->fd<0) continue;
+        FD_SET( h->fd, rfds );
+        if (h->fd>maxfd) maxfd= h->fd;
+    } /* for */
+
+    return maxfd;
+} /* hostterm_add_wait_fds */
+#endif
+
 const char* hostterm_endpoint( int term_id )
 {
     hostterm_init();

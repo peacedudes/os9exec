@@ -61,6 +61,7 @@ uint32_t A_Interval ( uint32_t aTime ); /* ticks, or 256ths of a second with bit
 
 os9err Alarm( ushort pid, uint32_t *aId, short aFunc, ushort aCode, uint32_t aTime, uint32_t aDate );
 
+Boolean A_NextDue( uint32_t* dueP );
 void CheckAlarms( void );
 
 /* eof */
