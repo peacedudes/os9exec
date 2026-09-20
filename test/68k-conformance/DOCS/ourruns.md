@@ -665,3 +665,64 @@ After:
 ```
 RESULT t91 PASS  obs=000011 exp=000011  an absolute alarm set for a time already past is still sent
 ```
+
+## os9exec, 2026-09-20: t92, a sleep a signal should have cut short
+
+A process that arms `A$Set` with S$Wake and then sleeps is its own sender: an
+alarm is delivered in the context of the process that armed it. `send_signal`
+discarded a self-directed S$Wake outright -- true enough for a process that is
+running, wrong for one lying in `pSleeping` -- so the sleep ran its full course,
+and an indefinite one would have run forever. That is the pattern F$Sleep's own
+page recommends for waiting on a signal. A process trace showed the wake
+arriving and being dropped:
+
+```
+# send signal=1 to pid=3 (pSleeping) from currentpid=3
+```
+
+The test took 5.09 s before the fix and 0.24 s after it. Before:
+
+```
+RESULT t92 FAIL  obs=000101 exp=001111  a sleep cut short reports the ticks left
+```
+
+After:
+
+```
+RESULT t92 PASS  obs=001111 exp=001111  a sleep cut short reports the ticks left
+```
+
+t93 and t94, added in the same batch, passed on their first run on both a host
+directory and an RBF image: I$ReadLn stops at the end-of-line character and
+counts it, and I$WritLn stops at the carriage return.
+
+## t91 was wrong about its own arithmetic, 2026-09-20 (a test defect, not a divergence)
+
+t91 asked for "ten seconds ago" by subtracting 10 from what F$Time returned. That is right for the
+Julian form, where the time is a plain count of seconds since midnight, and wrong for the Gregorian
+one: `00hhmmss` is three binary fields (F$Time, page 1 - 64), so when the seconds field is under 10
+the subtraction borrows. `00:12:04` less 10 became `00:11:250`, which converts to 186 seconds in the
+FUTURE -- and the test, which waits two seconds, reported the Gregorian half missing:
+
+```
+RESULT t91 FAIL  obs=000010 exp=000011  an absolute alarm set for a time already past is still sent
+```
+
+About one run in twenty-five, and it went unnoticed for a day because the suite's own runs happened
+to land on seconds above 10. Two instrumented traces pinned it without ambiguity -- the alarm that
+never fired had been armed 18,600 ticks ahead:
+
+```
+# OS9_F_Alarm: id=00000001 aFunc=3 sig=00000137 tim=00030BFA dat=07EA0914 err=0
+# AtDate: iDate=2461303 iTime=11524 aDate=2461303 aTime=11710 -> ticks=18600 err=0
+```
+
+The test now asks for midnight today in both forms: a time of zero needs no subtraction, no guard
+against a field underflowing, and no reading of the clock to decide whether the guard holds. Midnight
+is in the past for all but the first instant of a day, where it equals the current time -- which the
+manual's "greater than or equal" makes due as well. 100 consecutive runs pass at load 15 to 24, where
+the old test failed about four times in a hundred.
+
+The emulator was never at fault here, and the claim is unchanged. What is worth keeping is the shape
+of the mistake: arithmetic on a packed OS-9 date or time is field arithmetic, and a borrow crosses
+into a field that means something else.
