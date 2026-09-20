@@ -127,7 +127,7 @@ run "$E" -r -q"$L" idevs
 run env OS9H5="$L" "$E" -r idevs
 run env OS9H5="$WORK/$H" "$E" -r idevs
 run env OS9DISK="$WORK/$L" "$E" -r idevs
-run env OS9T="$L" "$E" -r idevs
+run env OS9T5="$L" "$E" -r "echo x >/t5" idevs
 
 echo "  $cases cases, $found with sanitizer reports"
 [ $found -eq 0 ] && echo "ASAN ARGS SWEEP OK -- no overflow from any over-long argument"

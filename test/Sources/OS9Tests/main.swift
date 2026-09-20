@@ -9112,34 +9112,34 @@ if runHostSpeedTmode && !containerized {
     }
 }
 
-// -- OS9T=pty: opt-in wildcard for any /tN not named individually -----------
-// Real OS-9 has no device without a descriptor -- an unconfigured /tN
-// staying E_UNIT is deliberate (see the very first hostterm test above), so
-// this wildcard exists to opt INTO auto-allocation, never to become the
-// default. /t5 is unconfigured by every other test in this file, so it is
-// free to use here without colliding with anything else's OS9T5.
-let hostWildcardName       = "hostterm: OS9T=pty serves an unconfigured /tN"
-let hostWildcardStrictName = "hostterm: an unconfigured /tN still refuses without OS9T=pty"
+// -- the retired OS9T wildcard, and the refusal it was bolted onto -----------
+// A bare "OS9T" once meant "any /tN not named individually", auto-allocating a
+// pty on first open. It was retired on 2026-09-20 (rdoggett) once `iterm`
+// could make a terminal from inside a running system, which is the case it
+// existed for: it CREATED a resource rather than discovering one, so it could
+// never fail and could never tell you that ">/t5" was a typo for ">/t4".
+// The first test below guards the retirement -- the variable must now do
+// nothing -- and the second guards the refusal that was always the default.
+// /t5 is unconfigured by every other test in this file.
+let hostWildcardName       = "hostterm: the retired OS9T wildcard no longer serves a /tN"
+let hostWildcardStrictName = "hostterm: an unconfigured /tN refuses with E$Unit"
 let runHostWildcard        = filter.isEmpty || hostWildcardName.localizedCaseInsensitiveContains(filter)
 let runHostWildcardStrict  = filter.isEmpty || hostWildcardStrictName.localizedCaseInsensitiveContains(filter)
 
 if runHostWildcard {
-    // `idevs` rather than an allocation announcement: the announcement was
-    // removed (it printed onto the guest's stderr path). E_UNIT is #000:240 --
-    // the wildcard failing to serve /t5 shows up as that error, so both halves
-    // still have to hold: a real endpoint row AND no refusal.
+    // Setting it must change nothing: /t5 stays E$Unit (#000:240) and no
+    // hostterm row appears for it. `idevs` is how a binding would show,
+    // the open-time announcement having been removed long since.
     let wild = os9(["echo x >/t5", "idevs"], env: ["OS9T": "pty"])
     let row  = wild.replacingOccurrences(of: "\r", with: "\n")
                    .split(separator: "\n")
                    .first { $0.hasPrefix("t5 ") && $0.contains("hostterm") }
-    let hasDev = row?.range(of: "/dev/(pts/[0-9]+|[a-z]*tty[a-zA-Z0-9/]+)",
-                            options: .regularExpression) != nil
 
-    if hasDev && !wild.contains("Error #000:240") {
+    if row == nil && wild.contains("Error #000:240") {
         print("PASS: \(hostWildcardName)"); passed += 1
     } else {
         print("FAIL: \(hostWildcardName)")
-        print("      [expected an idevs row \"t5 hostterm scf ... /dev/...\"]")
+        print("      [OS9T must no longer bind anything: expected E$Unit and no t5 row]")
         print("      row: \(row.map(String.init) ?? "none")")
         print("      got: \(wild.debugDescription.prefix(200))")
         failed += 1
@@ -9147,11 +9147,10 @@ if runHostWildcard {
 }
 
 if runHostWildcardStrict {
-    // Guards the DECISION, not the code: the default must keep refusing even
-    // though the wildcard now exists, because auto-allocation is opt-in. A
-    // later change that made it implicit would break this test, which is
-    // the point -- it is not redundant with the very first hostterm test,
-    // which predates the wildcard entirely.
+    // Guards the DECISION, not the code: a terminal nobody named and nobody
+    // declared does not exist, and saying so is the faithful answer -- real
+    // OS-9 has no device without a descriptor. A later change that made
+    // allocation implicit again would break this test, which is the point.
     let strict = os9(["echo x >/t5"])
 
     if strict.contains("Error #000:240 (E_UNIT)") {

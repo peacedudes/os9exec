@@ -76,18 +76,19 @@ Boolean hostterm_in_range( int term_id )
     return term_id>=HOSTTERM_MIN && term_id<=HOSTTERM_MAX;
 } /* hostterm_in_range */
 
-/* The OS9T<n> value for this device, or NULL.
+/* Endpoints declared at RUNTIME by `iterm`, which is how a /tN is made from
+   inside the running system: on real OS-9 you load a descriptor and the device
+   is there, and `mount` is the precedent one device class over. */
+static char* hostterm_runtime[ HOSTTERM_MAX+1 ];
+
+/* Where this device is meant to live -- a runtime declaration, else the
+   OS9T<n> environment variable -- or NULL if it was never named, which is what
+   makes it E_UNIT. A declaration wins over an inherited OS9T<n>.
    Plain getenv, not egetenv: egetenv resolves relative values against
    startPath, which is right for a DISK and wrong for an endpoint -- "pty" is
    not a path and must not become "<startPath>/pty". egetenv happens to pass
    non-OS9DISK names through verbatim today (os9main.c:302), but depending on
    that would silently couple us to a disk-path decision. */
-/* Endpoints declared at RUNTIME by `iterm`, which is how a /tN is made from
-   inside the running system: on real OS-9 you load a descriptor and the device
-   is there, and `mount` is the precedent one device class over. Checked before
-   the environment so a declaration wins over an inherited OS9T<n>. */
-static char* hostterm_runtime[ HOSTTERM_MAX+1 ];
-
 static char* hostterm_spec( int term_id )
 {
     char  name[16];
@@ -102,19 +103,15 @@ static char* hostterm_spec( int term_id )
 
     if (v!=NULL && *v==NUL) v= NULL; /* set-but-empty means unset */
 
-    /* Fall back to the bare OS9T wildcard: "any /tN not named individually".
-       Deliberately opt-in. Auto-allocating by default would turn a typo
-       (">/t5" for ">/t4") into a terminal nobody is attached to, silently --
-       and unlike /hx's fallback, which DISCOVERS a directory that already
-       exists, this CREATES a resource, so it can never fail to find anything
-       and can never tell you that you were wrong. Real OS-9 has no device
-       without a descriptor; E_UNIT stays the default because it is the
-       faithful answer. */
-    if (v==NULL) {
-        v= getenv( "OS9T" );
-        if (v!=NULL && *v==NUL) v= NULL;
-    }
-
+    /* There is no bare "OS9T" wildcard any more (retired 2026-09-20, rdoggett).
+       It meant "any /tN not named individually", and its weakness was built in:
+       unlike /hX's fallback, which DISCOVERS a directory that already exists,
+       it CREATED a resource, so it could never fail and could never tell you
+       that ">/t5" was a typo for ">/t4". It existed because a terminal could
+       otherwise only be named before start-up; `iterm` now makes one from
+       inside the running system, which is the case the wildcard was invented
+       for. Real OS-9 has no device without a descriptor, so E_UNIT is the
+       faithful answer for anything neither named nor declared. */
     return v;
 } /* hostterm_spec */
 

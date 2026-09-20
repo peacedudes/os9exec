@@ -156,7 +156,7 @@ You can also attach extra host directories as `/h1`, `/h2`, etc. (see [Devices](
 |--------|------------|-----------------|
 | `/dd`  | `OS9DISK=…` env var, or a `dd` file/dir next to the binary | Default drive - RBF image or host directory |
 | `/h0`–`/h9`, `/ha`–`/hz` | `OS9H0=…` through `OS9HZ=…`, or files/dirs named `h0`–`hz` next to the binary | RBF disk images or host directories |
-| `/t1`–`/t49` | `OS9T1=…` through `OS9T49=…`, or the wildcard `OS9T=…` for any `/tN` not named individually | Terminals. `pty` allocates one on first open, and `devs` reports the host device plus how to attach; a `/dev/…` path opens that terminal or serial port. Unset (and no wildcard) means the device does not exist. |
+| `/t1`–`/t49` | `OS9T1=…` through `OS9T49=…`, or `iterm` from inside the running system | Terminals. `pty` allocates one on first open, and `devs` reports the host device plus how to attach; a `/dev/…` path opens that terminal or serial port. Unset and undeclared means the device does not exist. |
 
 Files placed in a host directory appear immediately inside the emulator as OS-9 files, with no conversion needed for binary modules. Text files need OS-9 line endings (CR, `0x0D`) rather than Unix LF. Nothing is translated: `I$ReadLn` stops only at CR, so an LF file reads as one long line. Convert host-edited text with `flip -m`.
 
@@ -228,7 +228,7 @@ dsave -ive /h7
 
 The port also runs at the speed OS-9 thinks it does: a bound terminal takes its rate from the path's own baud setting, and `tmode baud=2400` retunes a live one. That is invisible on a pty, which stores a speed without honouring it, but it is what makes a real serial cable work at the rate both ends agreed on.
 
-There's also a bare `OS9T` wildcard, for when you want every `/tN` you haven't named individually to spring up as a pty on first use: `OS9T=pty ./os9exec shell` and `/t1`, `/t2`, and so on each allocate the moment something opens them, no per-device variable needed. It's deliberately opt-in. Without it the refusal above stands exactly as described - a typo like `/t5` for `/t4` still reports `E_UNIT` rather than silently handing you a terminal nobody is attached to - and a per-device `OS9Tn` always takes priority over the wildcard, including its failures: if you name a real serial port that turns out to be missing, you get that error, not a surprise pty. The two combine freely, e.g. `OS9T=pty OS9T1=/dev/cu.usbserial-1420` puts real hardware on `/t1` and lets every other terminal allocate on demand.
+A bare `OS9T` wildcard used to make every `/tN` you hadn't named spring up as a pty on first use. It was retired once `iterm` existed, because `iterm` is the case it was invented for and is better at it: the wildcard created a terminal rather than finding one, so it could never fail, and a typo like `/t5` for `/t4` silently handed you a terminal nobody was attached to. Now the refusal above always stands, and you make the extra terminal when you want it, by name.
 
 A binding lasts for the life of the emulator, not the life of the path that opened it, so the device you attached to stays the same device between commands - and the terminal is 8-bit transparent, which is what lets `kermit` move a binary across it intact.
 
@@ -286,7 +286,7 @@ Some real OS-9 binaries assume an RBF file system and use low-level disk calls w
 | `rename` | Rename a file or directory |
 | `move` / `mv` | Move files or directories (replaces RBF-only real `mv`) |
 | `mount` / `unmount` | Mount, or create and mount, an RBF image or RAM disk at runtime |
-| `iterm` | Make a `/tN` terminal at runtime, the way `mount` makes an `/hX`: `iterm t3` allocates a pty and prints the `screen` command to attach to it, `iterm t3 /dev/ttys004` uses a terminal you already have, and `iterm` alone lists what is bound. Until now a `/tN` had to be named in `OS9T<n>` before os9exec started. |
+| `iterm` | Make a `/tN` terminal at runtime, the way `mount` makes an `/hX`: `iterm t3` allocates a pty and prints the `screen` command to attach to it, `iterm t3 /dev/ttys004` uses a terminal you already have, and `iterm` alone lists what is bound. Before it, a `/tN` could only be named in `OS9T<n>`, before os9exec started. |
 
 **Tip:** Directory listing via `fopen()` is a known limitation - use `dir` for directory contents, or an `ls` from your own disk. A GNU `ls` built for OS-9/68k is in the companion `osk-freeware` collection.
 

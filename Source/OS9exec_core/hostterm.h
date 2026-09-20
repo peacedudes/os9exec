@@ -15,8 +15,8 @@
 /* Is <term_id> inside the host-backed range at all? */
 Boolean hostterm_in_range ( int term_id );
 
-/* Is an OS9T<n> environment variable set for this device?
-   Says nothing about whether it is currently open. */
+/* Is this device named at all -- by an OS9T<n> environment variable, or by an
+   `iterm` declaration? Says nothing about whether it is currently open. */
 Boolean hostterm_configured( int term_id );
 
 /* Is this device currently open on a host fd? */
