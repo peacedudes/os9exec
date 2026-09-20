@@ -124,10 +124,6 @@
 #include "os9exec_incl.h"
 _Static_assert(sizeof(((mod_exec*)0)->_mh._msize)==4, "modhcom._msize must be 32-bit for OS-9 binary layout");
 
-#ifdef NET_SUPPORT
-  #include "net_platform.h"
-#endif
-
 /* additional memory for all processes */
 ulong memplusall;
 
@@ -1701,13 +1697,10 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
         os9modules[mid].modulebase= theModuleP; /* re-enable entry */
 
          
-        /* special treatment for the "le0" and "inetdb" module: set internet address */
-        if (ustrcmp(realmodname,"le0"   )==0 ||
-            ustrcmp(realmodname,"inetdb")==0) {
-        	#ifdef NET_SUPPORT
-            err= MyInetAddr( &my_inetaddr, &dns1,&dns2, domainName ); /* assign my internet address */
-          #endif
-        } /* if */
+        /* "le0" and "inetdb" are adapted to my_inetaddr, which stays the
+           loopback address (os9exec_nt.c) unless something sets it. The ISP
+           stack asked the host for its real address here; it is retired, and
+           nothing that uses SPF has wanted anything but loopback. */
               
         if (ustrcmp(realmodname,"init"  )==0) adapt_init  ( theModuleP );
         if (ustrcmp(realmodname,"le0"   )==0) adapt_le0   ( theModuleP, my_inetaddr );

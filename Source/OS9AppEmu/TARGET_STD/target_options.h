@@ -32,7 +32,6 @@
 
 #define CON_SUPPORT          // console and TTYs
 #define PIP_SUPPORT          // pipes   and PTYs
-#define NET_SUPPORT          // TCP/IP sockets
 #define TERMINAL_CONSOLE     // can do single char I/O
 
 

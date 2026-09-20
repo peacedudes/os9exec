@@ -31,7 +31,6 @@ c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/int_move.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/int_rename.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/memstuff.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/modstuff.c
-c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/network.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/os9exec_nt.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/os9main.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9exec_core/pipefiles.c
@@ -51,7 +50,6 @@ c_SRC_OS9Linux+=${WD_OS9Linux}/OS9AppEmu/UAE68emulator/support.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9AppEmu/UAE68emulator/cpuemu.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/OS9AppEmu/UAE68emulator/fpp.c
 c_SRC_OS9Linux+=${WD_OS9Linux}/Platforms/LINUX/linuxfiles.c
-c_SRC_OS9Linux+=${WD_OS9Linux}/Platforms/LINUX/net_linux.c
 
 OBJS_OS9Linux+=$(c_SRC_OS9Linux:.c=.c.o)
 

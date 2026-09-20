@@ -176,7 +176,6 @@ void init_Dir ( fmgr_typ* f );
 void init_Pipe( fmgr_typ* f ); /* pipefiles */
 void init_PTY ( fmgr_typ* f );
 
-void init_Net ( fmgr_typ* f ); /* network */
 void init_SPF ( fmgr_typ* f ); /* spfsock: socket paths over host sockets */
 
 void init_RBF ( fmgr_typ* f ); /* file_rbf */
@@ -306,12 +305,6 @@ void init_fmgrs(void)
       conn_FMgr( fRBF, &fmgr_rbf,  init_RBF  ); /*    "    RBF              routines (file_rbf)   */
     #endif
     
-    #ifdef NET_SUPPORT /* network support */
-      conn_FMgr( fNET, &fmgr_net,  init_Net  ); /*    "    network          routines (network)    */
-    #endif
-
-    /* SPF socket paths are not behind NET_SUPPORT: that flag belongs to the
-       older ISP emulation in network.c, which is not in any build. */
     conn_FMgr  ( fSPF, &fmgr_spf,  init_SPF  ); /*    "    SPF sockets      routines (spfsock)    */
     
     #ifdef PRINTER_SUPPORT
@@ -434,7 +427,6 @@ void show_files( ushort pid )
                 case fPipe:
                 case fPTY :
                 case fRBF :
-                case fNET :
                 case fSPF : fsspec= false; nameflag=  true; break;
                 
                 case fFile:

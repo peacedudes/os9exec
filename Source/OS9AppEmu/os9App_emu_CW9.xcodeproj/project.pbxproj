@@ -62,7 +62,6 @@
 		477F46520A31C24F001898B3 /* alarms.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F45D30A31C24F001898B3 /* alarms.h */; };
 		477F46530A31C24F001898B3 /* printer.c in Sources */ = {isa = PBXBuildFile; fileRef = 477F46030A31C24F001898B3 /* printer.c */; };
 		477F46540A31C24F001898B3 /* printer.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F46020A31C24F001898B3 /* printer.h */; };
-		477F46550A31C24F001898B3 /* net_platform.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F460D0A31C24F001898B3 /* net_platform.h */; };
 		477F46560A31C24F001898B3 /* utilstuff.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F46080A31C24F001898B3 /* utilstuff.h */; };
 		477F46570A31C24F001898B3 /* telnetaccess.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F46060A31C24F001898B3 /* telnetaccess.h */; };
 		477F46580A31C24F001898B3 /* procstuff.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F46040A31C24F001898B3 /* procstuff.h */; };
@@ -91,7 +90,6 @@
 		477F466F0A31C24F001898B3 /* filescsi.c in Sources */ = {isa = PBXBuildFile; fileRef = 477F45E00A31C24F001898B3 /* filescsi.c */; };
 		477F46700A31C24F001898B3 /* filescsi.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F45DF0A31C24F001898B3 /* filescsi.h */; };
 		477F46710A31C24F001898B3 /* filescsi.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F45DF0A31C24F001898B3 /* filescsi.h */; };
-		477F46720A31C24F001898B3 /* network.c in Sources */ = {isa = PBXBuildFile; fileRef = 477F45F20A31C24F001898B3 /* network.c */; };
 		477F46730A31C24F001898B3 /* os9app.c in Sources */ = {isa = PBXBuildFile; fileRef = 477F45CA0A31C24F001898B3 /* os9app.c */; };
 		477F46740A31C24F001898B3 /* os9app_emu_CW9_mach.pch in Headers */ = {isa = PBXBuildFile; fileRef = 477F45CF0A31C24F001898B3 /* os9app_emu_CW9_mach.pch */; };
 		477F46750A31C24F001898B3 /* target_options.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F45D10A31C24F001898B3 /* target_options.h */; };
@@ -100,7 +98,6 @@
 		477F46780A31C24F001898B3 /* module.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F45F60A31C24F001898B3 /* module.h */; };
 		477F46790A31C24F001898B3 /* procid_adapted.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F45F70A31C24F001898B3 /* procid_adapted.h */; };
 		477F467A0A31C24F001898B3 /* linuxfiles.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F46140A31C24F001898B3 /* linuxfiles.h */; };
-		477F467B0A31C24F001898B3 /* net_linux.c in Sources */ = {isa = PBXBuildFile; fileRef = 477F46130A31C24F001898B3 /* net_linux.c */; };
 		477F467C0A31C24F001898B3 /* linuxfiles.c in Sources */ = {isa = PBXBuildFile; fileRef = 477F46150A31C24F001898B3 /* linuxfiles.c */; };
 		477F467F0A31C250001898B3 /* m68k.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F467E0A31C250001898B3 /* m68k.h */; };
 		477F46810A31C250001898B3 /* sysconfig.h in Headers */ = {isa = PBXBuildFile; fileRef = 477F46800A31C250001898B3 /* sysconfig.h */; };
@@ -183,7 +180,6 @@
 		477F45EF0A31C24F001898B3 /* memstuff.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = memstuff.c; path = ../OS9exec_core/memstuff.c; sourceTree = SOURCE_ROOT; };
 		477F45F00A31C24F001898B3 /* modstuff.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = modstuff.h; path = ../OS9exec_core/modstuff.h; sourceTree = SOURCE_ROOT; };
 		477F45F10A31C24F001898B3 /* modstuff.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = modstuff.c; path = ../OS9exec_core/modstuff.c; sourceTree = SOURCE_ROOT; };
-		477F45F20A31C24F001898B3 /* network.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = network.c; path = ../OS9exec_core/network.c; sourceTree = SOURCE_ROOT; };
 		477F45F30A31C24F001898B3 /* os9_ll.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = os9_ll.h; path = ../OS9exec_core/os9_ll.h; sourceTree = SOURCE_ROOT; };
 		477F45F50A31C24F001898B3 /* errno_adapted.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = errno_adapted.h; path = ../OS9exec_core/os9defs/errno_adapted.h; sourceTree = SOURCE_ROOT; };
 		477F45F60A31C24F001898B3 /* module.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = module.h; path = ../OS9exec_core/os9defs/module.h; sourceTree = SOURCE_ROOT; };
@@ -208,14 +204,11 @@
 		477F46090A31C24F001898B3 /* utilstuff.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = utilstuff.c; path = ../OS9exec_core/utilstuff.c; sourceTree = SOURCE_ROOT; };
 		477F460A0A31C24F001898B3 /* vmod.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = vmod.h; path = ../OS9exec_core/vmod.h; sourceTree = SOURCE_ROOT; };
 		477F460B0A31C24F001898B3 /* vmod.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = vmod.c; path = ../OS9exec_core/vmod.c; sourceTree = SOURCE_ROOT; };
-		477F460D0A31C24F001898B3 /* net_platform.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = net_platform.h; path = ../Platforms/net_platform.h; sourceTree = SOURCE_ROOT; };
 		477F460F0A31C24F001898B3 /* net_mac.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = net_mac.c; path = ../Platforms/MAC/net_mac.c; sourceTree = SOURCE_ROOT; };
 		477F46100A31C24F001898B3 /* macfiles.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = macfiles.h; path = ../Platforms/MAC/macfiles.h; sourceTree = SOURCE_ROOT; };
 		477F46110A31C24F001898B3 /* macfiles.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = macfiles.c; path = ../Platforms/MAC/macfiles.c; sourceTree = SOURCE_ROOT; };
-		477F46130A31C24F001898B3 /* net_linux.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = net_linux.c; path = ../Platforms/LINUX/net_linux.c; sourceTree = SOURCE_ROOT; };
 		477F46140A31C24F001898B3 /* linuxfiles.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = linuxfiles.h; path = ../Platforms/LINUX/linuxfiles.h; sourceTree = SOURCE_ROOT; };
 		477F46150A31C24F001898B3 /* linuxfiles.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = linuxfiles.c; path = ../Platforms/LINUX/linuxfiles.c; sourceTree = SOURCE_ROOT; };
-		477F46170A31C24F001898B3 /* net_windows.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = net_windows.c; path = ../Platforms/WIN32/net_windows.c; sourceTree = SOURCE_ROOT; };
 		477F46180A31C24F001898B3 /* wincmd.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = wincmd.c; path = ../Platforms/WIN32/wincmd.c; sourceTree = SOURCE_ROOT; };
 		477F461A0A31C24F001898B3 /* console.stubs.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = console.stubs.c; path = ../TermConsole/console.stubs.c; sourceTree = SOURCE_ROOT; };
 		477F461B0A31C24F001898B3 /* serialaccess.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = serialaccess.c; path = ../TermConsole/serialaccess.c; sourceTree = SOURCE_ROOT; };
@@ -416,7 +409,6 @@
 				477F45EF0A31C24F001898B3 /* memstuff.c */,
 				477F45F00A31C24F001898B3 /* modstuff.h */,
 				477F45F10A31C24F001898B3 /* modstuff.c */,
-				477F45F20A31C24F001898B3 /* network.c */,
 				477F45F30A31C24F001898B3 /* os9_ll.h */,
 				477F45F40A31C24F001898B3 /* os9defs */,
 				477F45F90A31C24F001898B3 /* os9exec_incl.h */,
@@ -456,7 +448,6 @@
 		477F460C0A31C24F001898B3 /* Platforms */ = {
 			isa = PBXGroup;
 			children = (
-				477F460D0A31C24F001898B3 /* net_platform.h */,
 				477F460E0A31C24F001898B3 /* MAC */,
 				477F46120A31C24F001898B3 /* LINUX */,
 				477F46160A31C24F001898B3 /* WIN32 */,
@@ -477,7 +468,6 @@
 		477F46120A31C24F001898B3 /* LINUX */ = {
 			isa = PBXGroup;
 			children = (
-				477F46130A31C24F001898B3 /* net_linux.c */,
 				477F46140A31C24F001898B3 /* linuxfiles.h */,
 				477F46150A31C24F001898B3 /* linuxfiles.c */,
 			);
@@ -487,7 +477,6 @@
 		477F46160A31C24F001898B3 /* WIN32 */ = {
 			isa = PBXGroup;
 			children = (
-				477F46170A31C24F001898B3 /* net_windows.c */,
 				477F46180A31C24F001898B3 /* wincmd.c */,
 			);
 			name = WIN32;
@@ -549,7 +538,6 @@
 				477F46500A31C24F001898B3 /* telnetaccess.h in Headers */,
 				477F46520A31C24F001898B3 /* alarms.h in Headers */,
 				477F46540A31C24F001898B3 /* printer.h in Headers */,
-				477F46550A31C24F001898B3 /* net_platform.h in Headers */,
 				477F46560A31C24F001898B3 /* utilstuff.h in Headers */,
 				477F46570A31C24F001898B3 /* telnetaccess.h in Headers */,
 				477F46580A31C24F001898B3 /* procstuff.h in Headers */,
@@ -693,9 +681,7 @@
 				477F466C0A31C24F001898B3 /* fpp.c in Sources */,
 				477F466E0A31C24F001898B3 /* vmod.c in Sources */,
 				477F466F0A31C24F001898B3 /* filescsi.c in Sources */,
-				477F46720A31C24F001898B3 /* network.c in Sources */,
 				477F46730A31C24F001898B3 /* os9app.c in Sources */,
-				477F467B0A31C24F001898B3 /* net_linux.c in Sources */,
 				477F467C0A31C24F001898B3 /* linuxfiles.c in Sources */,
 				4700A4260A337FE500A75463 /* cpuemu.c in Sources */,
 				4700A4270A337FEB00A75463 /* cpustbl.c in Sources */,

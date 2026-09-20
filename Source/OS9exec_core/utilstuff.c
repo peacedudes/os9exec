@@ -2548,8 +2548,6 @@ Boolean SCSI_Device( const char* os9path,
         if (ustrcmp( dvn,"vmod" )==0) *typeP= fVMod;
         return false; /* unconditional -- it just didn't look it */
     }
-    if     (ustrcmp( p,  "SOCKMAN" )==0 ||
-            ustrcmp( p,  "SFM"     )==0) { *typeP= fNET;  return false; }
     if     (ustrcmp( p,  "PKMAN"   )==0) { *typeP= fPTY;  return false; }
     
     return false;
@@ -3522,7 +3520,6 @@ char* TypeStr( ptype_typ type )
         case fPipe: nam="fPipe"; break;
         case fPTY : nam="fPTY";  break;
         case fRBF : nam="fRBF";  break;
-        case fNET : nam="fNET";  break;
         case fSPF : nam="fSPF";  break;
         default   : nam="unknown";
     }

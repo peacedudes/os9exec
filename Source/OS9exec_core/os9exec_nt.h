@@ -712,7 +712,7 @@ typedef enum { sysNonExisting=0, sysStdin=1, sysStdout=2,
 typedef enum { usrStdin=0, usrStdout=1, usrStderr=2 } usrpathEnum;
 
 typedef enum { fNone, fCons,fTTY,fNIL,fVMod,fSCF, fFile,fDir, 
-                      fPipe,fPTY, fRBF, fNET, fPrinter, fSPF, fARRSZ } ptype_typ;
+                      fPipe,fPTY, fRBF, fPrinter, fSPF, fARRSZ } ptype_typ;
 
 
 /* Identification sector (LSN 0) field offsets. The names here are os9exec's
@@ -933,64 +933,6 @@ typedef struct {
         } scsi_dev;
         
         
-#ifdef NET_SUPPORT
-  #ifdef MACOS9
-    typedef EndpointRef SOCKET;  /* make it a common type for all platforms */
-  #else
-    #if defined UNIX
-      typedef ulong     SOCKET;  /* make it visible for linux as std type */
-    #endif
-  
-    #define nil   0
-    typedef char* Ptr;
-    typedef int   OSStatus;
-  
-    struct  InetAddress
-    {
-      ushort  fAddressType;   // always AF_INET
-      ushort  fPort;          // Port number 
-      uint32_t fHost;         // Host address in net byte order
-      byte    fUnused[8];     // Traditional unused bytes
-    };
-
-    typedef struct InetAddress InetAddress;
-  #endif
-
-
-  #ifdef UNIX
-    #define kTransferBufferSize 256
-  #else
-    #define kTransferBufferSize 4096
-  #endif
-
-
-  /* variant for network objects */
-  typedef struct {
-              SOCKET      ep;             /* end point reference */
-              Ptr         transferBuffer; /* OpenTransport's network buffer */
-              Ptr         b_local;        /* local buffer */
-              ulong       bsize;          /* local buffer size */     
-              Ptr         bpos;           /* local buffer access */     
-              InetAddress ipAddress;      /* my  own    host's address */
-              InetAddress ipRemote;       /* the remote host's address */
-              ushort      fAddT;
-                
-              #ifdef MACOS9
-                TCall     call;
-              #endif
-            
-              #ifdef windows32
-                WSAEVENT  hEventObj;
-              #endif
-                
-              Boolean     bound;          /* true, if binding was successful  */
-              Boolean     accepted;       /* true, if connection is accepted  */
-              Boolean     connected;      /* true, if connection is connected */
-              Boolean     listen;         /* net listener */
-              Boolean     check;          /* check if ready */
-              Boolean     closeIt;        /* ready to be closed */
-          } net_typ;
-#endif
 
                     
 /* the system path descriptor itself */         
@@ -1058,9 +1000,6 @@ typedef struct {
        rbf_typ rbf;             /* RBF  file/dir object */
        scf_typ scf;             /* SCF           object */
          
-      #ifdef NET_SUPPORT
-        net_typ net;            /* Network       object */
-      #endif
         spf_typ spf;            /* SPF socket    object */
     } u;
 } syspath_typ;
@@ -1590,7 +1529,6 @@ extern  fmgr_typ    fmgr_none,
                     fmgr_pipe,
                     fmgr_pty,
                     fmgr_rbf,
-                    fmgr_net,
                     fmgr_printer,
                     fmgr_spf;
 

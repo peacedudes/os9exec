@@ -233,11 +233,6 @@ void       PutCharsToTTY( ushort pid, syspath_typ*, uint32_t *lenP, char* buffer
 void    CheckInBufferTTY( ttydev_typ* mco );
 
 
-/* external net    support routines */
-/* os9err        MyInetAddr( ulong *inetAddr, ulong *dns1Addr,
-                                           ulong *dns2Addr, char* domainName ); */
-os9err             pNask( ushort pid, syspath_typ* );
-
 /* eof */
 
 /* file_rbf.c: the identification sector a host-directory device answers a raw read with */

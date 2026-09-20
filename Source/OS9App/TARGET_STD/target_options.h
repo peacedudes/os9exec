@@ -36,7 +36,6 @@
 #define PIP_SUPPORT        // pipes   and PTYs
 
 #ifdef powerc
-  #define NET_SUPPORT      // TCP/IP sockets
 #endif
 
 #define TERMINAL_CONSOLE   // can do single char I/O

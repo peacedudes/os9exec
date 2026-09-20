@@ -32,7 +32,6 @@
   #define RAM_SUPPORT     // RAM disk                supported
   
   #ifdef powerc
-    #define NET_SUPPORT   // TCP/IP sockets          supported
   #endif
   
 //#define PRINTER_SUPPORT // LPT printers            supported

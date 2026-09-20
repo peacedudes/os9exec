@@ -325,12 +325,6 @@
   #endif
 #endif
 
-/* these platforms are supported to use TCP/IP sockets */
-//#ifdef NET_SUPPORT
-//  #if defined powerc || defined win_linux
-//    #define WITH_NETWORK 1
-//  #endif
-//#endif
 
 
 #ifdef windows32
@@ -472,10 +466,6 @@ typedef struct dirent dirent_typ;
         #include "IntEnv.h"
       #endif
       
-      #ifdef NET_SUPPORT
-        #include <OpenTransport.h>
-        #include <OpenTptInternet.h>
-      #endif
     #endif
   #endif
 

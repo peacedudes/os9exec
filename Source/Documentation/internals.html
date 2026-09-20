@@ -371,14 +371,14 @@
 
   <h2>Networking</h2>
 
-  <p>Networking over TCP/IP is supported if Microware's original
-  Internet Support Package (ISP) is installed.</p>
+  <p>Networking over TCP/IP works with Microware's own networking
+  software, which opens socket paths such as <tt>/ip0#1/tcp0</tt>.</p>
 
-  <p>All network access code is in <b>OS9exec_core/network.c</b>.
-  Comments give the <i>getstt/setstt</i> sequences needed for some
-  of the operations, but not close, which crashes. This crash
-  happens regardless of which end closes the connection: its an
-  unsolved bug.</p>
+  <p>All network access code is in <b>OS9exec_core/spfsock.c</b>, a
+  file manager for those paths backed by host sockets. It replaced an
+  older emulation of the Internet Support Package
+  (<b>network.c</b>), which was retired in September 2026 after years
+  in no build at all.</p>
 
   <p>The system can be used as multiple listener, so multiple
   telnet sessions can be opened in parallel. There are up to 100

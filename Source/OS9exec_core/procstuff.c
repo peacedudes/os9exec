@@ -1083,34 +1083,17 @@ void kill_processes()
 
 
 static void wait_for_signal( ushort pid )
-/* this routine looks for incoming data from any of the connected */
-/* network sockets */
+/* Let the host deliver whatever it has while <pid> waits.
+ *
+ * This polled every open ISP socket for incoming data and raised a signal for
+ * it (pNask) until 2026-09-20. That stack is retired, and SPF sockets do not
+ * want polling: a socket read parks the process and the answer arrives
+ * through the path itself. What is left is the host event pump, which is what
+ * makes a wait interruptible at all.
+ */
 {
-    #ifdef NET_SUPPORT
-    os9err       sig= 0;
-    #endif
-    syspath_typ* spP;
-    int          k, sp;
-    int          sv= currentpid;
-    process_typ* cp= &procs[pid]; /* ptr to procs descriptor */
-    
+    (void)pid;
     HandleEvent();
-    
-    currentpid= 0;/* switch off */
-    for (k=0; k<MAXUSRPATHS; k++) {
-            sp= cp->usrpaths[k];
-        if (sp>0 && sp<MAXSYSPATHS) {
-                spP= get_syspath( pid,sp );
-            if (spP!=NULL && 
-                spP->type==fNET) {
-                #ifdef NET_SUPPORT
-                      sig= pNask( pid, spP );
-                  if (sig) send_signal( pid,sig );
-                #endif
-            }
-        } /* if */
-    }
-    currentpid= sv;
 } /* wait_for_signal */
 
 

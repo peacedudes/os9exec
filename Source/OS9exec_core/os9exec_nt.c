@@ -566,7 +566,6 @@ fmgr_typ    fmgr_none,
             fmgr_pipe,
             fmgr_pty,
             fmgr_rbf,
-            fmgr_net,
             fmgr_printer,
             fmgr_spf;
 
