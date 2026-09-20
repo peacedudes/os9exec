@@ -147,6 +147,11 @@ gone, and paths already open keep reading and writing the unlinked data until
 they close. On Windows the host itself refuses (recorded in DECISIONS-68k.md,
 not re-measured here).
 
+I$Delete's page says the file "may not already be open", so the host answer is
+a divergence rather than a choice. CONF68K t99 pins both: it is recorded as
+PASS on an image and FAIL on a host directory, so the day either one changes,
+the suite says so.
+
 ### No user IDs
 
 Every file reports owner `0.0`, and nothing compares owners. Whichever OS-9

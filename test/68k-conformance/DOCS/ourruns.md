@@ -794,6 +794,10 @@ already gone (no 10), and the reopen did correctly report E$PNNF (the 1). So thi
 not three, and there is no stale-directory-cache problem behind it -- which the first draft of the test
 suggested only because it skipped its last check after the second delete failed.
 
+**This was already known**, and is written up in `docs/host-drives.md` under "Deleting an open file" --
+what t99 adds is a test that pins it, so a change in either direction becomes news instead of being
+noticed by somebody eventually.
+
 **Recorded, not fixed.** os9exec knows its own open paths and could refuse the unlink exactly as RBF
 does, which would be the faithful answer and would cost a guest nothing: no OS-9 program can rely on
 unlink-while-open, the real system having never allowed it. But it is a change to how file deletion
