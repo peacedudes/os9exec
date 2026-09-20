@@ -2834,6 +2834,20 @@ os9err OS9_F_PErr( regs_type *rp, ushort cpid )
 
     err=loword(rp->d[1]);
 
+    /* Only a path that can BE searched: "the path is searched for a text
+       description of the error" describes reading a file. A program that
+       passes its standard error instead (the clean-room `load` does: it calls
+       prerr(2, errno)) used to send this loop reading the TERMINAL. On a
+       terminal with nothing typed the read parks the process and comes back
+       with nothing, so the built-in text printed and the call returned while
+       the process was still parked -- and the dispatcher, resuming a parked
+       process by re-running its call, printed it again, forever. It also ate
+       the keystrokes the user meant for the shell. Found on a pty by the
+       osk-freeware session, 2026-09-19. */
+    { syspath_typ* errP= path!=0 ? get_syspath( cpid, procs[cpid].usrpaths[ path<MAXUSRPATHS ? path:0 ] ) : NULL;
+      if (errP==NULL || (errP->type!=fFile && errP->type!=fRBF)) path= 0;
+    }
+
     if (path!=0 && usrpath_seek( cpid, path, 0 )==0) {
         char     key [8];
         char     line[256];
