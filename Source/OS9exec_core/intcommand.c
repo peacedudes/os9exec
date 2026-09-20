@@ -713,6 +713,74 @@ static void devs_printf( syspath_typ* spP, char* driv, char* fmgr )
                devs_holder( spP->nr ) );
 } /* devs_printf */
 
+/* `iterm`: make a /tN from inside the running system.
+ *
+ *     iterm                  what is bound now (idevs says it in full)
+ *     iterm t3               declare /t3 as a new pty
+ *     iterm t3 pty           the same, said out loud
+ *     iterm t3 /dev/ttys004  declare /t3 as an existing host terminal
+ *
+ * rdoggett's point, 2026-09-12: on real OS-9 you load a device descriptor and
+ * use the device immediately -- no restart, nothing declared in advance.
+ * os9exec has no descriptor-module machinery, but `mount` is the precedent one
+ * device class over, making an /hX at runtime, and this is the terminal
+ * equivalent. The endpoint comes up at once, so `idevs` can name it and you can
+ * attach before anything opens the device.
+ *
+ * The `i` prefix is mandatory: OS-9 has no `term` utility to shadow, and every
+ * command here that is ours rather than Microware's carries it.
+ */
+static os9err int_iterm( _pid_, int argc, char** argv )
+{
+    #define ITERM_MAXARGS 2
+    int         nargc= 0, h;
+    char*       p;
+    char*       av[ ITERM_MAXARGS ];
+    const char* spec= "pty";
+    int         term_id, ii;
+    os9err      err;
+
+    for (h=1; h<argc; h++) {
+        p= argv[h];
+        if (*p=='-') return _errmsg( 1,"unknown option '%s' -- usage: iterm [tN [pty|<device>]]\n", p );
+        if (nargc>=ITERM_MAXARGS) return _errmsg( 1,"too many arguments\n" );
+        av[ nargc++ ]= p;
+    } /* for */
+
+    if (nargc==0) { /* what is bound now */
+        Boolean any= false;
+        for (ii=1; ii<=HOSTTERM_MAX; ii++) {
+            const char* endp= hostterm_endpoint( ii );
+            if (*endp==NUL) continue;
+            upo_printf( "/t%-3d %s\n", ii, endp );
+            any= true;
+        } /* for */
+        if (!any) upo_printf( "no host terminals\n" );
+        return 0;
+    } /* if */
+
+    p= av[0];
+    if (*p=='/') p++;                       /* "/t3" as well as "t3" */
+    if (*p=='t' || *p=='T') p++;            /* "t3" as well as "3"   */
+    term_id= atoi( p );
+    if (term_id<=0 || !hostterm_in_range( term_id ))
+        return _errmsg( E_UNIT,"no such terminal \"%s\"\n", av[0] );
+
+    if (nargc>1) spec= av[1];
+
+    err= hostterm_declare( term_id, spec );
+    if (err) {
+        if (err==os9error(E_DEVBSY) && hostterm_bound( term_id ))
+            return _errmsg( err,"/t%d is already %s\n", term_id, hostterm_endpoint( term_id ) );
+        return _errmsg( err,"can't make /t%d as \"%s\"\n", term_id, spec );
+    }
+
+    upo_printf( "/t%-3d %s\n", term_id, hostterm_endpoint( term_id ) );
+    upo_printf( "  attach with:  screen %s\n", hostterm_endpoint( term_id ) );
+    return 0;
+} /* int_iterm */
+
+
 static os9err int_devs( _pid_, int argc, char** argv )
 /* `devs` / `idevs`: OS9exec's devices. Holds the BARE name because
    Microware's devs reads a device table os9exec does not have and prints an
@@ -1973,6 +2041,7 @@ cmdtable_typ commandtable[] =
   #endif
     
   { "devs/idevs",    int_devs,       "shows OS9exec's devices" },
+  { "iterm",         int_iterm,      "makes a /tN terminal at runtime (like mount for /hX)" },
   { "idbg/debughalt",int_debughalt,  "sets debug options/enters OS9exec's debug menu" },
   { "icrash",        int_crash,      "accesses an invalid address: 0xCE00BEFO" },
   { "iquit",         int_quit,       "sets flag to quit directly" },

@@ -82,12 +82,20 @@ Boolean hostterm_in_range( int term_id )
    not a path and must not become "<startPath>/pty". egetenv happens to pass
    non-OS9DISK names through verbatim today (os9main.c:302), but depending on
    that would silently couple us to a disk-path decision. */
+/* Endpoints declared at RUNTIME by `iterm`, which is how a /tN is made from
+   inside the running system: on real OS-9 you load a descriptor and the device
+   is there, and `mount` is the precedent one device class over. Checked before
+   the environment so a declaration wins over an inherited OS9T<n>. */
+static char* hostterm_runtime[ HOSTTERM_MAX+1 ];
+
 static char* hostterm_spec( int term_id )
 {
     char  name[16];
     char* v;
 
     if (!hostterm_in_range( term_id )) return NULL;
+
+    if (hostterm_runtime[ term_id ]!=NULL) return hostterm_runtime[ term_id ];
 
     snprintf( name,sizeof(name), "OS9T%d", term_id );
     v= getenv( name );
@@ -188,17 +196,18 @@ static Boolean hostterm_raw( int fd )
     return tcsetattr( fd,TCSANOW, &t )==0;
 } /* hostterm_raw */
 
-os9err hostterm_open( int term_id, syspath_typ* spP )
+/* Allocate the host endpoint for this device: the pty or tty itself, with no
+   OS-9 path attached yet. Split out of hostterm_open so a device can be
+   brought up by a DECLARATION (`iterm`) as well as by the first open -- the
+   endpoint is the same either way, and `idevs` reports it as soon as it
+   exists. openCount stays 0 here: it counts OS-9 paths, and there are none. */
+static os9err hostterm_bind( int term_id )
 {
     hostterm_typ* h;
     char*         spec;
     int           fd;
 
-    hostterm_init();
-    if (!hostterm_in_range( term_id )) return os9error(E_UNIT);
-
     h= &hostterms[ term_id ];
-    if (h->open) { h->openCount++; h->dev.spP= spP; return 0; } /* another holder */
 
     spec= hostterm_spec( term_id );
     if (spec==NULL) return os9error(E_UNIT);
@@ -299,18 +308,61 @@ os9err hostterm_open( int term_id, syspath_typ* spP )
 
     h->fd       = fd;
     h->open     = true;
-    h->openCount=    1;
+    h->openCount=    0;
 
     h->dev.installed = true;
     h->dev.inBufUsed =     0;
     h->dev.holdScreen= false;
     h->dev.pid       =     0;
-    h->dev.spP       =   spP;
+    h->dev.spP       =  NULL;
 
     debugprintf( dbgTerminal,dbgNorm,
                  ( "# hostterm: /t%d -> %s (fd %d)\n", term_id, h->endpoint, fd ) );
     return 0;
+} /* hostterm_bind */
+
+os9err hostterm_open( int term_id, syspath_typ* spP )
+{
+    hostterm_typ* h;
+    os9err        err;
+
+    hostterm_init();
+    if (!hostterm_in_range( term_id )) return os9error(E_UNIT);
+
+    h= &hostterms[ term_id ];
+    if (!h->open) { err= hostterm_bind( term_id ); if (err) return err; }
+
+    h->openCount++;
+    h->dev.spP= spP;
+    return 0;
 } /* hostterm_open */
+
+/* `iterm`: declare /tN's endpoint now and bring it up, without a path being
+   opened on it. A device already bound is left alone and says so -- redeclaring
+   it would strand whoever is attached to the old endpoint. */
+os9err hostterm_declare( int term_id, const char* spec )
+{
+    hostterm_typ* h;
+    char*         copy;
+    os9err        err;
+
+    hostterm_init();
+    if (!hostterm_in_range( term_id )) return os9error(E_UNIT);
+
+    h= &hostterms[ term_id ];
+    if (h->open) return os9error(E_DEVBSY);
+
+    copy= (char*)malloc( strlen(spec)+1 );
+    if (copy==NULL) return os9error(E_NORAM);
+    strcpy( copy,spec );
+
+    if (hostterm_runtime[ term_id ]!=NULL) free( hostterm_runtime[ term_id ] );
+        hostterm_runtime[ term_id ]= copy;
+
+        err= hostterm_bind( term_id );
+    if (err) { free( copy ); hostterm_runtime[ term_id ]= NULL; }
+    return err;
+} /* hostterm_declare */
 
 void hostterm_close( int term_id )
 {
@@ -515,6 +567,13 @@ os9err hostterm_open( int term_id, syspath_typ* spP )
     (void)term_id;
     return os9error(E_UNIT);
 } /* hostterm_open */
+
+os9err hostterm_declare( int term_id, const char* spec )
+{
+    (void)term_id; (void)spec;
+    hostterm_init();
+    return os9error(E_UNIT); /* no host terminals on this platform */
+} /* hostterm_declare */
 
 void hostterm_close( int term_id ) { (void)term_id; }
 

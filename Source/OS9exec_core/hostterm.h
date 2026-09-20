@@ -37,6 +37,11 @@ int     hostterm_syspath  ( int term_id );
    unsupported, E_DEVBSY if the host refuses). */
 os9err  hostterm_open     ( int term_id, syspath_typ* spP );
 
+/* Declare a device's endpoint at runtime and bring it up: what `iterm` calls,
+   so a /tN can be made from inside the running system instead of being named
+   in the environment before start-up. E$DevBsy if it is already bound. */
+os9err  hostterm_declare  ( int term_id, const char* spec );
+
 /* Release one PATH on this device -- NOT the endpoint. Decrements the open
    count; the host fd (and a self-allocated pty's slave reference) deliberately
    stay open until the emulator exits, so the device a user attached to remains
