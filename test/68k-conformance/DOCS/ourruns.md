@@ -752,3 +752,27 @@ the fourth check in this codebase found unable to fail; the rule that caught it 
 
 t95 is the second test whose verdict differs by device (the first being the locking group): a host
 directory has no SS_Size SetStat and reports SKIP carrying E$UnkSvc, an RBF image PASSes with 111.
+
+## os9exec, 2026-09-20: F$SchBit, F$AllBit and F$DelBit were not implemented
+
+The three elementary allocation-bitmap operations answered E$UnkSvc to any caller. They are documented
+user-state calls -- "accessible to users because they are occasionally useful" (page 1 - 5) -- and pure
+computation: no device, no clock, nothing to emulate. t97 and t98 were written first and failed against
+the build as it stood:
+
+```
+RESULT t97 FAIL  obs=000208 exp=001111  F$SchBit finds a free run; F$AllBit and F$DelBit move it
+RESULT t98 FAIL  obs=000208 exp=000111  F$AllBit sets the bits it is given, F$DelBit clears them
+```
+
+Now implemented in fcalls.c, with bit 0 as the top bit of byte 0 -- the pages do not say which end of a
+byte the numbering starts at, so the evidence used is the disk format: RBF's own allocation map walks a
+mask from 0x80 down. Both tests then pass on a host directory and on an image alike, the calls having
+nothing to do with either.
+
+**One thing os9exec cannot say**, and it is the manual's own fault as much as the emulator's: F$SchBit's
+FUNCTION text says a failed search comes back with the carry set and "size of the largest block found"
+in d1, while the same page's ERROR OUTPUT says d1 holds an error code. The dispatcher writes the error
+code into d1 for any failing call, so carry-plus-data is not expressible without changing the most
+central path in the emulator. The first bit of the largest run is returned in d0, the error is E$Full,
+and the test asks only that the call is refused -- which both readings of the page agree on.
