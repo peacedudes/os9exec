@@ -796,7 +796,20 @@ os9err send_signal( ushort spid, ushort signal )
     return 0;
   } // if
 
-  if (signal==S_Wake && spid==currentpid) return 0; /* ignore this */
+  /* A process waking ITSELF is a no-op only while it is running: there is
+     nothing to wake, and the old unconditional test said just that. But an
+     alarm is delivered in the context of the process that armed it
+     (CheckAlarms -> send_signal, alarms.c), so a process that arms
+     A$Set with S$Wake and then sleeps IS its own sender -- and its wake was
+     being thrown away here while it lay in pSleeping. F$Sleep's page says
+     "the process is activated before the full time interval if a signal (in
+     particular S$Wake) is received" and recommends an indefinite sleep as
+     the way to wait for one (page 1 - 53), which is the pattern this broke:
+     the sleep ran its full course, or forever. Measured with a process trace:
+     "send signal=1 to pid=3 (pSleeping) from currentpid=3", dropped here.
+     CONF68K t92 is the regression. */
+  if (signal==S_Wake && spid==currentpid &&
+      sigp->state!=pSleeping) return 0; /* already awake: nothing to do */
    
 //if (sigp->isIntUtil) return 0; /* ignore this as well for the moment */
     
