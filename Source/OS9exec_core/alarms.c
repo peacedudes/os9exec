@@ -254,10 +254,38 @@ static os9err Alarm_Cycle( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTi
 
 
 
+/* How many ticks from now an absolute alarm is due, given the current Julian
+   time/date and the alarm's. A time ALREADY PAST is not an error: the manual
+   says the signal "is sent anytime the system date/time becomes greater than
+   or equal to the alarm time" (A$AtDate, page 1 - 3; A$AtJul, page 1 - 4),
+   which for a past time is already so, and the Guru describes the system
+   process firing any absolute alarm whose date and time "have been reached
+   (or exceeded)" -- naming the F$STime case, where alarms that have expired
+   "are immediately executed" (The OS-9 Guru, The Facts, 8.11, pages 176-177).
+   So a past alarm is due now (zero ticks) and fires at the next check; only a
+   date too far ahead to count in ticks is refused. os9exec returned E$Param
+   for anything in the past until 2026-09-20 (CONF68K t91). */
+static uint32_t A_Absolute( uint32_t iTime, uint32_t iDate,
+                            uint32_t aTime, uint32_t aDate, uint32_t mx, os9err* errP )
+{
+	int32_t days, secs;
+
+	*errP= 0;
+	if (aDate>iDate && aDate-iDate>=mx) { *errP= E_PARAM; return 0; } /* beyond a tick count */
+
+	days= (aDate>=iDate) ?  (int32_t)(aDate-iDate)
+	                     : -(int32_t)(iDate-aDate);
+	secs= days*(int32_t)SecsPerDay + (int32_t)aTime - (int32_t)iTime;
+	if (secs<=0) return 0;                       /* already due */
+	return (uint32_t)secs * TICKS_PER_SEC;
+} /* A_Absolute */
+
+
 static os9err Alarm_AtDate( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTime, uint32_t aDate )
 /* A$AtDate call: 3 */
 {
 	uint32_t iTime, iDate, aTicks;
+	os9err   err;
 	uint32_t gt_time, gt_date;
 	int      dayOfWk, currentTick;
 	uint32_t mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
@@ -280,13 +308,8 @@ static os9err Alarm_AtDate( ushort pid, uint32_t *aId, ushort aCode, uint32_t aT
     aDate= j_date(tc[3],tc[2], hiword( aDate ) );
 
 	
-	/* alarms in the past are not allowed */
-	if (aDate <iDate)       return E_PARAM; 
-	if (aDate==iDate &&
-		aTime <iTime)       return E_PARAM;
-	if (aDate -iDate >= mx) return E_PARAM;
-		
-	aTicks= ((aDate-iDate)*SecsPerDay + aTime-iTime)*TICKS_PER_SEC;
+	aTicks= A_Absolute( iTime,iDate, aTime,aDate, mx, &err );
+	if (err) return err;
 	return A_Make( pid, aId,aCode,aTicks, false );
 } /* Alarm_AtDate */
 
@@ -296,6 +319,7 @@ static os9err Alarm_AtJul( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTi
 /* A$AtJul call: 4 */
 {
 	uint32_t iTime, iDate, aTicks;
+	os9err   err;
 	uint32_t gt_time, gt_date;
 	int      dayOfWk, currentTick;
 	uint32_t mx= (0xffffffff-GetSystemTick())/SecsPerDay/TICKS_PER_SEC;
@@ -303,13 +327,8 @@ static os9err Alarm_AtJul( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTi
 	Get_Time( &gt_time,&gt_date, &dayOfWk,&currentTick, false,false );
 	iTime= gt_time;  iDate= gt_date;
 
-	/* alarms in the past are not allowed */
-	if (aDate <iDate)       return E_PARAM;
-	if (aDate==iDate &&
-		aTime <iTime)       return E_PARAM;
-	if (aDate -iDate >= mx) return E_PARAM;
-
-	aTicks= ((aDate-iDate)*SecsPerDay + aTime-iTime)*TICKS_PER_SEC;
+	aTicks= A_Absolute( iTime,iDate, aTime,aDate, mx, &err );
+	if (err) return err;
 	return A_Make( pid, aId,aCode,aTicks, false );
 } /* Alarm_AtJul */
 
