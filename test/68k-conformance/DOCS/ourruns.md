@@ -776,3 +776,26 @@ in d1, while the same page's ERROR OUTPUT says d1 holds an error code. The dispa
 code into d1 for any failing call, so carry-plus-data is not expressible without changing the most
 central path in the emulator. The first bit of the largest run is returned in d0, the error is E$Full,
 and the test asks only that the call is refused -- which both readings of the page agree on.
+
+## os9exec, 2026-09-20: a host directory deletes a file that is open (t99)
+
+I$Delete's page is explicit -- "the file may not already be open" -- and os9exec's RBF honours it: t99
+PASSes on an image, refusing the delete while the caller holds the path, allowing it once closed, and
+reporting E$PNNF for the reopen afterwards. **A host directory allows the delete**, because unlinking an
+open file is ordinary on the host and nothing in that path checks for an open path first:
+
+```
+host directory   RESULT t99 FAIL  obs=000001 exp=000111  a file that is open cannot be deleted
+RBF image        RESULT t99 PASS  obs=000111 exp=000111  a file that is open cannot be deleted
+```
+
+obs=1 reads: the delete was NOT refused (no 100), the second delete then failed because the file was
+already gone (no 10), and the reopen did correctly report E$PNNF (the 1). So this is one divergence and
+not three, and there is no stale-directory-cache problem behind it -- which the first draft of the test
+suggested only because it skipped its last check after the second delete failed.
+
+**Recorded, not fixed.** os9exec knows its own open paths and could refuse the unlink exactly as RBF
+does, which would be the faithful answer and would cost a guest nothing: no OS-9 program can rely on
+unlink-while-open, the real system having never allowed it. But it is a change to how file deletion
+behaves on host drives, and this file's job is to report what the system does. It is on ROADMAP-68k.md
+for rdoggett, alongside the other host-directory divergences in `docs/host-drives.md`.
