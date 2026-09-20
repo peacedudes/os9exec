@@ -9585,6 +9585,71 @@ do {
     }
 }
 
+// -- iterm: make a /tN from inside the running system ------------------------
+// On real OS-9 you load a device descriptor and the device is there. os9exec
+// has no descriptor machinery, but `mount` already makes an /hX at runtime and
+// `iterm` is the terminal equivalent (rdoggett, 2026-09-12). The device must be
+// usable at once, not merely listed: the guest writes to it and the bytes come
+// out of the host endpoint. Local only -- the endpoint is opened from the host
+// side, which is not the machine the emulator runs on under a container.
+do {
+    let name = "iterm: a /tN declared at runtime carries the guest's bytes to its endpoint"
+    if (filter.isEmpty || name.localizedCaseInsensitiveContains(filter)) && !containerized {
+        let process = Process()
+        let toEmu = Pipe(), fromEmu = Pipe()
+        process.executableURL  = execURL
+        process.arguments      = ["-r", shellArg]
+        process.environment    = ["OS9DISK": diskPath]
+        process.standardInput  = toEmu
+        process.standardOutput = fromEmu
+        process.standardError  = fromEmu
+        var said = "", endpoint = "", heard = ""
+        if (try? process.run()) != nil {
+            let out = fromEmu.fileHandleForReading
+            _ = fcntl(out.fileDescriptor, F_SETFL, fcntl(out.fileDescriptor, F_GETFL, 0) | O_NONBLOCK)
+            toEmu.fileHandleForWriting.write("iterm t4\n".data(using: .utf8)!)
+            // the endpoint it allocated, from iterm's own report
+            let deadline = Date().addingTimeInterval(15)
+            while Date() < deadline && endpoint.isEmpty {
+                var buf = [UInt8](repeating: 0, count: 4096)
+                let n = read(out.fileDescriptor, &buf, buf.count)
+                if n > 0 { said += String(decoding: buf[0..<n], as: UTF8.self) }
+                if let r = said.range(of: "/dev/tty[a-z0-9]+", options: .regularExpression) {
+                    endpoint = String(said[r])
+                }
+                if endpoint.isEmpty { usleep(100_000) }
+            }
+            if !endpoint.isEmpty {
+                let fd = open(endpoint, O_RDWR | O_NOCTTY | O_NONBLOCK)
+                toEmu.fileHandleForWriting.write("echo ITERMWORKS >/t4\n".data(using: .utf8)!)
+                if fd >= 0 {
+                    let stop = Date().addingTimeInterval(15)
+                    while Date() < stop && !heard.contains("ITERMWORKS") {
+                        var buf = [UInt8](repeating: 0, count: 4096)
+                        let n = read(fd, &buf, buf.count)
+                        if n > 0 { heard += String(decoding: buf[0..<n], as: UTF8.self) }
+                        else { usleep(100_000) }
+                    }
+                    close(fd)
+                }
+            }
+            toEmu.fileHandleForWriting.write("\u{1B}\n\u{04}\n".data(using: .utf8)!)
+            let quit = Date().addingTimeInterval(10)
+            while process.isRunning && Date() < quit { usleep(100_000) }
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+        if !endpoint.isEmpty && heard.contains("ITERMWORKS") {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [iterm must name the endpoint it made and the device must carry bytes to it]")
+            print("      endpoint: \(endpoint.isEmpty ? "(none reported)" : endpoint), heard: \(heard.isEmpty ? "(nothing)" : heard.trimmingCharacters(in: .whitespacesAndNewlines))")
+            failed += 1
+        }
+    }
+}
+
 // -- XOFF halts output; input keeps being taken ------------------------------
 // ReadCharsFromTerminal used to return "not ready" whenever holdScreen was set,
 // so a terminal paused with ^S also stopped accepting typing: keystrokes piled

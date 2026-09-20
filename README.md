@@ -224,7 +224,7 @@ dsave -ive /h7
 
 **Device-resolution order, if you're layering these:** for any `/hX` path, `os9exec` checks, in order: (1) the `OS9Hx` environment variable, if set; (2) a file/dir named `hX` next to the binary - what `mount -k` writes; (3) one directory level up from the binary (a legacy fallback). An explicit `mount <file> <name>` (or `mount -r=`) call takes priority over all three for as long as the process keeps running.
 
-**Terminals resolve directly, with no search.** Unlike `/hX` - which falls back through `OS9Hx`, then a file next to the binary, then one directory up - a terminal is bound only by its `OS9Tn` variable. Set means bound; unset means the device does not exist, and opening it returns `E_UNIT`. `OS9T1=pty` makes `os9exec` allocate a terminal; run `devs` to see the host device it landed on -- it prints the `screen` command to attach with. `OS9T1=/dev/cu.usbserial-1420` opens a real serial port. With `tsmon /t1` running inside OS-9, that terminal gets its own login prompt - one emulator, several independent sessions.
+**Terminals resolve directly, with no search.** Unlike `/hX` - which falls back through `OS9Hx`, then a file next to the binary, then one directory up - a terminal is bound only by its `OS9Tn` variable. Set means bound; unset means the device does not exist, and opening it returns `E_UNIT`. `OS9T1=pty` makes `os9exec` allocate a terminal; run `devs` to see the host device it landed on -- it prints the `screen` command to attach with. `OS9T1=/dev/cu.usbserial-1420` opens a real serial port. With `tsmon /t1` running inside OS-9, that terminal gets its own login prompt - one emulator, several independent sessions. You can also make one from inside a running system with `iterm t3`, the way `mount` makes an `/hX`; it prints the endpoint and the `screen` command straight away, so nothing has to be declared before start-up.
 
 The port also runs at the speed OS-9 thinks it does: a bound terminal takes its rate from the path's own baud setting, and `tmode baud=2400` retunes a live one. That is invisible on a pty, which stores a speed without honouring it, but it is what makes a real serial cable work at the rate both ends agreed on.
 
@@ -286,6 +286,7 @@ Some real OS-9 binaries assume an RBF file system and use low-level disk calls w
 | `rename` | Rename a file or directory |
 | `move` / `mv` | Move files or directories (replaces RBF-only real `mv`) |
 | `mount` / `unmount` | Mount, or create and mount, an RBF image or RAM disk at runtime |
+| `iterm` | Make a `/tN` terminal at runtime, the way `mount` makes an `/hX`: `iterm t3` allocates a pty and prints the `screen` command to attach to it, `iterm t3 /dev/ttys004` uses a terminal you already have, and `iterm` alone lists what is bound. Until now a `/tN` had to be named in `OS9T<n>` before os9exec started. |
 
 **Tip:** Directory listing via `fopen()` is a known limitation - use `dir` for directory contents, or an `ls` from your own disk. A GNU `ls` built for OS-9/68k is in the companion `osk-freeware` collection.
 
