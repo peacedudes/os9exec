@@ -648,3 +648,20 @@ After:
 ```
 RESULT t85 PASS  obs=000002 exp=000002  an alarm's keyboard abort ends a blocked read with error 2
 ```
+
+## os9exec, 2026-09-20: t91, an absolute alarm set for a time already past
+
+A$AtDate and A$AtJul refused any time earlier than now with E$Param ("alarms
+in the past are not allowed", alarms.c). Neither manual page says that, and
+the Guru describes the system process firing whatever has been "reached (or
+exceeded)". Such an alarm is now due at once. Before:
+
+```
+RESULT t91 FAIL  obs=000225 exp=000011  an absolute alarm set for a time already past is still sent
+```
+
+After:
+
+```
+RESULT t91 PASS  obs=000011 exp=000011  an absolute alarm set for a time already past is still sent
+```
