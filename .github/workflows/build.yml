@@ -57,6 +57,40 @@ jobs:
     - name: Run the 68k conformance suite on an RBF image
       run: ./tools/conformance.sh 68k --noshell --rbf
 
+    # The third mode: each test as its own boot program on a host directory,
+    # no shell anywhere. It is the mode conformance.sh falls back to when no
+    # system disk is present, so it is what a stranger cloning this repo runs
+    # by default -- and it was the one mode CI never exercised.
+    - name: Run the 68k conformance suite with no shell
+      run: ./tools/conformance.sh 68k --noshell
+
+    # The self-contained CONF68K disk, built and proved in CI rather than by
+    # hand. This image is the artifact a real OS-9/68k owner is asked to run
+    # (readme, "AS A SINGLE DISK"), which makes it the one thing here that has
+    # to still be good on the day somebody finally does. Until now it was only
+    # ever built on a developer's machine, and a stale one reached a gate run
+    # on 2026-09-21 and reported five MISMATCH lines that read as corruption.
+    #
+    # No Microware software is involved either: build-image.sh drives
+    # os9exec's own internal mount/imakdir/icopy, and verify-image.sh points
+    # OS9DISK at the image itself. verify-image.sh checks two separate things,
+    # every file copied back off the image byte for byte AND the whole suite
+    # run from it, because a disk that lists correctly and cannot run is the
+    # failure worth catching.
+    - name: Build and verify the self-contained CONF68K disk
+      run: |
+        ./tools/selfhost68k/build-image.sh
+        ./tools/selfhost68k/verify-image.sh
+
+    # Attached to releases below, so someone with real hardware downloads ONE
+    # file instead of cloning and building a toolchain they have no use for.
+    - name: Upload the CONF68K disk image
+      uses: actions/upload-artifact@v6
+      with:
+        name: conf68k-disk
+        path: build/selfhost68k/conf68k.dsk
+        retention-days: 30
+
   build:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -281,3 +315,4 @@ jobs:
           os9exec-linux-i386/os9exec-linux-i386
           os9exec-macos-arm64/os9exec-macos-arm64
           os9exec-windows-x64.exe/os9exec-windows-x64.exe
+          conf68k-disk/conf68k.dsk
