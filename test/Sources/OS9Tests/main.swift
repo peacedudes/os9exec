@@ -745,7 +745,19 @@ noError("load+unlink: echo",
     "load \(sdkCmds)/echo", "unlink echo")
 
 // sleep
-noError("sleep: zero seconds",   "sleep 0")
+//
+// `sleep 0` sleeps INDEFINITELY (F$Sleep, page 1 - 53), so a foreground one
+// never returns and the shell never reaches the terminator: this test used to
+// be a bare `sleep 0` whose only assertion was "no Error # appeared", which a
+// hung emulator satisfies. It passed by timing out -- 15s locally, 45s on the
+// Linux leg, every run -- and would have passed just as well if the sleep had
+// done nothing at all. Now it backgrounds the sleeper and asks two things
+// that are actually true of one: the shell stays usable while a process
+// sleeps forever, and the emulator can still be stopped with one there.
+// OS9STOP lets `stop` run without the guest being super-user.
+checkEnv("sleep: an indefinite sleeper leaves the shell usable",
+         contains: "alive", env: ["OS9STOP": "1"],
+         "sleep 0 &", "echo alive", "stop")
 
 // system info — extended
 check("events: lists events",    contains: "OS-9",    "events")
@@ -849,7 +861,13 @@ check("help: shows function",    contains: "Function",    "help")
 // Both background and foreground echo must produce output — tests the scheduler
 check("concurrent: fg runs",          contains: "fg_out",  "echo bg_out & echo fg_out")
 check("concurrent: bg runs",          contains: "bg_out",  "echo bg_out & echo fg_out")
-noError("concurrent: no crash",                            "sleep 0 & echo done")
+// Same shape, same reason: this was `sleep 0 & echo done` asserting only that
+// no error appeared, which the 45-second timeout underneath it guaranteed.
+// What is worth asking is that the foreground command runs at all while a
+// background process sleeps forever, and that the run then ends.
+checkEnv("concurrent: a foreground command runs beside an endless sleeper",
+         contains: "done", env: ["OS9STOP": "1"],
+         "sleep 0 &", "echo done", "stop")
 
 // chd: directory change persists for subsequent commands
 check("chd: changes working dir",     contains: "/dd/CMDS",
