@@ -803,3 +803,26 @@ does, which would be the faithful answer and would cost a guest nothing: no OS-9
 unlink-while-open, the real system having never allowed it. But it is a change to how file deletion
 behaves on host drives, and this file's job is to report what the system does. It is on ROADMAP-68k.md
 for rdoggett, alongside the other host-directory divergences in `docs/host-drives.md`.
+
+## os9exec, 2026-09-21: a host directory now refuses to delete an open file (t99)
+
+rdoggett's decision, on the evidence below. The entry above records the divergence as it stood; this
+records closing it.
+
+I$Delete's page requires it -- "the file may not already be open" -- RBF always honoured it, and Windows
+refuses at the host level, so a Unix host directory was the only device that took the delete. The harm
+is not academic: a guest could delete a file another program still held open, that program went on
+writing into an inode with no name, and everything it wrote vanished when it closed. Real OS-9 cannot
+reach that state, so nothing running here is written to survive it.
+
+What it cost, measured in a scratch tree before it was applied: OS9Tests 336 of 336, conformance 0
+failures in all three modes, RBF unchanged. The only behaviour that changed was the one in question:
+
+```
+before   RESULT t99 FAIL  obs=000001 exp=000111  a file that is open cannot be deleted
+after    RESULT t99 PASS  obs=000111 exp=000111  a file that is open cannot be deleted
+```
+
+The check compares RESOLVED paths, so one file reached by two spellings is recognised as itself; where
+the host cannot resolve a name the literal one is compared. That direction matters: a miss leaves the
+old behaviour rather than refusing a delete it should have allowed.

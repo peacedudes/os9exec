@@ -142,15 +142,22 @@ lock could only ever be half-true while host tools can change the file.
 
 ### Deleting an open file
 
-RBF refuses with `E$Share`. On a Unix host the delete succeeds: the name is
-gone, and paths already open keep reading and writing the unlinked data until
-they close. On Windows the host itself refuses (recorded in DECISIONS-68k.md,
-not re-measured here).
+Refused, on every device, since 2026-09-21. I$Delete's page says the file
+"may not already be open", RBF has always honoured that, and a host directory
+now does too: the emulator checks its own open paths before asking the host to
+unlink, and answers `E$Share` if it holds one.
 
-I$Delete's page says the file "may not already be open", so the host answer is
-a divergence rather than a choice. CONF68K t99 pins both: it is recorded as
-PASS on an image and FAIL on a host directory, so the day either one changes,
-the suite says so.
+Until then a Unix host took the delete -- the name went, and paths already open
+kept reading and writing the unlinked data until they closed, at which point
+everything written to it vanished. Real OS-9 cannot reach that state, so
+nothing running here is written to survive it. Windows refused at the host
+level already, so the platforms now agree.
+
+Files are matched by device and inode rather than by name, so a symlink or a
+second name for the same file is recognised; where the host cannot say, the
+names are compared, which can miss rather than refuse wrongly. What is checked
+is what the emulator itself holds open, not what other programs on the host
+have. CONF68K t99 pins it on both devices.
 
 ### No user IDs
 

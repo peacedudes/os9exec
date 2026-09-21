@@ -209,6 +209,42 @@ os9err pFreadln  ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
 os9err pFwrite   ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
 os9err pFwriteln ( ushort pid, syspath_typ*, uint32_t *n,      char* buffer );
 os9err pFseek    ( ushort pid, syspath_typ*, uint32_t  *posP );
+/* Do these two host paths name the same file?
+ *
+ * By st_dev + st_ino, not by spelling. That answers the question properly: a
+ * symlink, /var against /private/var, and a hard link are all the same file
+ * and all compare equal, which no amount of string matching achieves.
+ *
+ * It replaced a realpath() version that was worse than wrong -- realpath is
+ * not declared under this build's flags on glibc, so gcc gave it an implicit
+ * int return, the pointer was truncated, and the comparison ran on garbage.
+ * That passed on macOS, produced three warnings on the Linux leg, and broke
+ * `deldir` there. stat() is already used a few lines below and needs no
+ * feature macros.
+ *
+ * MINGW compares literally: its CRT reports st_ino as 0 for every file, so an
+ * inode test there would call every file the same file -- the one direction
+ * this must never fail in. Windows refuses to unlink an open file itself
+ * anyway.
+ *
+ * Where a stat fails, the literal names are compared: a miss leaves the
+ * caller's old behaviour rather than refusing something it should not. Used
+ * by pFdelete to honour I$Delete's "the file may not already be open"
+ * (page 2 - 7). */
+static Boolean same_host_file( const char* a, const char* b )
+{
+    #if defined MINGW || defined windows32
+        return ustrcmp( a,b )==0;
+    #else
+        struct stat sa, sb;
+
+        if (stat( a,&sa )==0 &&
+            stat( b,&sb )==0) return sa.st_dev==sb.st_dev &&
+                                     sa.st_ino==sb.st_ino;
+        return ustrcmp( a,b )==0;
+    #endif
+} /* same_host_file */
+
 os9err pFdelete  ( ushort pid, syspath_typ*, ushort   *modeP,  const char* pathname );
 
 os9err pFsize    ( ushort pid, syspath_typ*, uint32_t *sizeP );
@@ -1720,6 +1756,39 @@ os9err pFdelete( ushort pid, _spP_, ushort *modeP, const char* pathname )
         struct stat info;
         if (stat( pathname,&info )==0 && IsTrDir( info.st_mode ) && !IsDir( *modeP ))
             return E_FNA;
+      }
+
+      /* "The caller must have non-sharable write access to the file (the file
+       * may not already be open) or an error results" (I$Delete, page 2 - 7).
+       * RBF has always enforced that; a host directory did not, because the
+       * host will unlink a file somebody holds open and think nothing of it.
+       * The consequence is not academic: a guest could delete a file another
+       * program still had open, that program kept writing into an inode with
+       * no name, and everything it wrote vanished at close. Real OS-9 cannot
+       * reach that state, so nothing running here is written to survive it.
+       * Windows refuses at the host level already, so this also makes the two
+       * platforms agree. rdoggett's decision, 2026-09-21; CONF68K t99.
+       *
+       * What we can check is what this emulator itself holds open. Files are
+       * matched by identity rather than by spelling (same_host_file above),
+       * so a symlink or a second name for the same inode is recognised. A
+       * miss leaves the OLD behaviour rather than refusing something it
+       * should not -- the safe direction for a check that cannot be
+       * exhaustive: this sees our own open paths, not the host's. */
+      {
+        int sp;
+
+        for (sp=1; sp<MAXSYSPATHS; sp++) {
+            syspath_typ* op= &syspaths[ sp ];
+
+            if (op->type!=fFile && op->type!=fDir)   continue;
+            if (op->stream==NULL)                    continue;
+            if (!same_host_file( op->fullName, pathname )) continue;
+
+            debugprintf( dbgFiles,dbgNorm,
+                       ( "# delete refused: '%s' is open on syspath %d\n", pathname, sp ));
+            return os9error( E_SHARE );
+        } /* for */
       }
 
       #ifdef windows32
