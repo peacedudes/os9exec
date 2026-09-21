@@ -2768,6 +2768,14 @@ os9err OS9_F_SchBit( regs_type *rp, _pid_ )
 
     total= (uint32_t)(endP-map) * 8;
 
+    /* d0.w is 16 bits, so a bit number past 65535 cannot be reported back --
+       it would arrive truncated, and a wrong bit number is worse than finding
+       nothing. The scan therefore stops where the answer stops being tellable.
+       (start and need need no such guard: both came out of loword(), so
+       neither can exceed 65535 in the first place.) */
+    #define SCHBIT_MAX_BITS  65536UL
+    if (total>SCHBIT_MAX_BITS) total= SCHBIT_MAX_BITS;
+
     bestStart= start; bestRun= 0;
     run      = 0;     runStart= start;
 
