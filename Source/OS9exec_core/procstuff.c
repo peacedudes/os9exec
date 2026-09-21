@@ -1151,6 +1151,36 @@ static ulong idle_deadline_us( void )
 } /* idle_deadline_us */
 #endif
 
+/* Only the select() path calls this, and only UNIX-not-MINGW has one: left
+   unguarded it is a function nobody calls on the Windows legs, which is a
+   warning there and a clean compile here. -fsyntax-only does not show it --
+   -Wunused-function needs a real build -- so `make warnings` building every
+   leg rather than syntax-checking them is what caught it. */
+#if defined UNIX && !defined MINGW
+/* Something arrived from the host. Whoever is parked waiting to read or write
+   is exactly who it arrived for, so retry them on the NEXT arbitration pass
+   instead of making them wait out their rota.
+
+   do_arbitrate retries a pWaitRead/pWaitWrite process only every NewAge (30)
+   rounds. That rota was tuned for a loop that spun every millisecond, where it
+   meant a 30ms retry; once the idle wait sleeps until something is due, the
+   same 30 rounds can be a second or more, and a parked process's latency then
+   tracks how long the emulator chose to sleep rather than when its data came.
+   Measured: with a 50ms wait the suite's "XOFF halts output but input is still
+   taken" fails, the shell needing several retries inside the test's window.
+   Being woken by readiness and then still waiting out a rota is the worst of
+   both; this is what makes the two agree. */
+static void retry_parked_now( void )
+{
+    ushort k;
+
+    for (k=1; k<MAXPROCESSES; k++) {
+        process_typ* cp= &procs[k];
+        if (cp->state==pWaitRead || cp->state==pWaitWrite) cp->pW_age= 0;
+    } /* for */
+} /* retry_parked_now */
+#endif
+
 void DoWait( void )
 {
   ulong ticks= GetSystemTick();
@@ -1162,16 +1192,15 @@ void DoWait( void )
      * Waking only when something is actually due, and being woken by the host
      * otherwise, costs 0.3%.
      *
-     * The cap is one system tick, and is deliberately not longer. It bounds
-     * how late anything NOT in the select set below can be noticed, and 50ms
-     * was tried and rejected: the suite's "XOFF halts output but input is
-     * still taken" fails there, with the shell parked in pWaitWrite as the
-     * XOFF lands, where 1, 2, 5 and 10ms all pass. That is a real effect not
-     * yet explained, and a cap at the emulator's own scheduling granularity
-     * keeps this change to what it is for -- not polling when nothing is due
-     * -- rather than betting on how long the rest of the system can wait.
-     * The remaining step is on ROADMAP-68k.md with the evidence. */
-    #define IDLE_CAP_US  10000UL
+     * The cap is insurance, not the mechanism: it bounds how late anything NOT
+     * in the select set below could be noticed, at 50ms. It sat at one tick
+     * for a while because longer broke "XOFF halts output but input is still
+     * taken", and the reason turned out to be worth finding rather than
+     * capping around -- do_arbitrate retried a parked reader or writer only
+     * every NewAge rounds, a rota tuned for a loop that spun every
+     * millisecond. retry_parked_now() above is that fix; with it, a parked
+     * process's latency follows its data instead of this number. */
+    #define IDLE_CAP_US  50000UL
     ulong delay_us= idle_deadline_us();
     ulong cap;
     long  delay_ns;
@@ -1223,6 +1252,7 @@ void DoWait( void )
           struct timeval tv;
           sigset_t       tick, before;
           int            maxfd= STDIN_FILENO;
+          int            ready;
           FD_ZERO( &rfds );
           FD_SET ( STDIN_FILENO, &rfds );
           /* Every OTHER host source the millisecond poll used to ask about:
@@ -1247,8 +1277,9 @@ void DoWait( void )
           sigemptyset( &tick );
           sigaddset  ( &tick, SIGALRM );
           sigprocmask( SIG_BLOCK, &tick, &before );
-          select( maxfd+1, &rfds, NULL,NULL, &tv );
+          ready= select( maxfd+1, &rfds, NULL,NULL, &tv );
           sigprocmask( SIG_SETMASK, &before, NULL );
+          if (ready>0) retry_parked_now();
           waited= true;
       }
     #endif
