@@ -27,6 +27,24 @@ WORK="$OUT/readback"
 [ -f "$IMG" ]      || { echo "no image -- run tools/selfhost68k/build-image.sh" >&2; exit 2; }
 [ -f "$MANIFEST" ] || { echo "no manifest -- rebuild the image" >&2; exit 2; }
 
+# An image older than the suite is not a broken image, it is yesterday's
+# image, and the two fail in ways that look identical: adding CONF68K t103 on
+# 2026-09-21 produced five MISMATCH lines and "image contents are wrong",
+# which reads as corruption. Say which it is instead. The check names the
+# newest offender so the reason is visible, and it is the operator's move
+# rather than ours -- rebuilding here would hide a suite edit nobody meant to
+# make. (`find -newer` rather than a timestamp comparison: it needs no stat
+# format, which differs between BSD and GNU.)
+stale=$(find "$SUITE" -type f -newer "$IMG" \
+        -not -path "*/RESULTS/*" -not -path "*/SCRATCH/*" \
+        -not -path "*/REBUILT/*" -print 2>/dev/null | head -3)
+if [ -n "$stale" ]; then
+    echo "the image is OLDER than the suite -- it would be verified against files it does not contain:" >&2
+    echo "$stale" | sed "s|^$REPO/|  |" >&2
+    echo "run tools/selfhost68k/build-image.sh first" >&2
+    exit 2
+fi
+
 rm -rf "$WORK"; mkdir -p "$WORK"
 bad=0; n=0
 
