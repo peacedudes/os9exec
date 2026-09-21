@@ -1125,9 +1125,18 @@ static ulong idle_deadline_us( void )
     uint32_t due;
     ushort   k;
 
+    /* Ticks are 10ms, so a delta beyond IDLE_FAR_TICKS would overflow the
+       microsecond product on a 32-bit build -- `ulong` is pointer-width, which
+       is 32 bits on the i686 and linux32 legs. Anything that far off is not
+       the minimum we are looking for anyway (the caller caps at one tick), so
+       it is reported as "far" rather than multiplied. Found auditing the whole
+       push for size and endian errors, rdoggett's instruction, 2026-09-21. */
+    #define IDLE_FAR_US     1000000UL          /* a second is already "not soon" */
+    #define IDLE_FAR_TICKS  (IDLE_FAR_US/10000UL)
+
     for (k=1; k<MAXPROCESSES; k++) {
         process_typ* cp= &procs[k];
-        ulong        us;
+        ulong        us, ticks;
 
         if (cp->state!=pSleeping)       continue;
         if (cp->wakeUpTick>=MAX_SLEEP)  continue; /* sleeping until signalled */
@@ -1138,12 +1147,14 @@ static ulong idle_deadline_us( void )
            where the old fixed nap cost 1.6%. */
         if (cp->wakeUpTick==0)          continue;
 
-        us= (cp->wakeUpTick>now) ? (ulong)(cp->wakeUpTick-now)*10000UL : 0;
+        ticks= (cp->wakeUpTick>now) ? (ulong)(cp->wakeUpTick-now) : 0;
+        us   = (ticks>=IDLE_FAR_TICKS) ? IDLE_FAR_US : ticks*10000UL;
         if (us<best) best= us;
     } /* for */
 
     if (A_NextDue( &due )) {
-        ulong us= (due>now) ? (ulong)(due-now)*10000UL : 0;
+        ulong ticks= (due>now) ? (ulong)(due-now) : 0;
+        ulong us   = (ticks>=IDLE_FAR_TICKS) ? IDLE_FAR_US : ticks*10000UL;
         if (us<best) best= us;
     } /* if */
 
@@ -1222,7 +1233,7 @@ void DoWait( void )
        readable at EOF forever. One source of truth for both decisions. */
     Boolean watching= false;
     #if !defined MINGW
-      watching= isatty( STDIN_FILENO );
+      watching= (isatty( STDIN_FILENO )!=0);
     #endif
 
     /* A longer wait is only allowed where something is watching. Where

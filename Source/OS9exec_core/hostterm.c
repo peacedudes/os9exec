@@ -141,7 +141,9 @@ int hostterm_add_wait_fds( fd_set* rfds, int maxfd )
     for (ii=HOSTTERM_MIN; ii<=HOSTTERM_MAX; ii++) {
         hostterm_typ* h= &hostterms[ ii ];
 
-        if (h->fd<0) continue;
+        /* Past FD_SETSIZE, FD_SET would write outside the set; such a
+           device falls back to the poll (hostterm_poll) and is not lost. */
+        if (h->fd<0 || h->fd>=FD_SETSIZE) continue;
         FD_SET( h->fd, rfds );
         if (h->fd>maxfd) maxfd= h->fd;
     } /* for */

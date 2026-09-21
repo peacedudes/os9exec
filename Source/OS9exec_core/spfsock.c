@@ -762,7 +762,10 @@ int spf_add_wait_fds( fd_set* rfds, int maxfd )
 
         if (sp->type!=fSPF || sp->signal_to_send==0) continue;
         fd= SpfFd( sp );
-        if (fd<0) continue;
+        /* FD_SET past FD_SETSIZE writes off the end of the set -- host stack
+           corruption, not a missed wakeup. A host that hands out an fd that
+           high just goes back to being polled, which still works. */
+        if (fd<0 || fd>=FD_SETSIZE) continue;
         FD_SET( fd, rfds );
         if (fd>maxfd) maxfd= fd;
     } /* for */
