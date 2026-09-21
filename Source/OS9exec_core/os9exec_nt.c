@@ -1931,7 +1931,7 @@ static Boolean TCALL_or_Exception( process_typ* cp, regs_type* crp, ushort cpid 
 				   the handler re-faulted forever. */
 				crp->a[7]= crp->a[5];
 				if (debugcheck(dbgTrapHandler,dbgDetail)) {
-					upe_printf("Calling handler at $%08X, stack ptr=$%08X\n",
+					dbg_printf("Calling handler at $%08X, stack ptr=$%08X\n",
 								cp->ErrorTraps[vect-FIRSTEXCEPTION].handleraddr,
 								cp->ErrorTraps[vect-FIRSTEXCEPTION].handlerstack);
 					debug_halt( dbgTrapHandler );
@@ -2012,15 +2012,15 @@ static void debug_retsystask( regs_type* crp, ushort cpid )
   char*        errnam;
   char*        errdesc;
 	
-  uphe_printf("<<< Pid=%02d: OS9 %s returns (from sysTask!): ",cpid,fdeP->name);
+  dbgh_printf("<<< Pid=%02d: OS9 %s returns (from sysTask!): ",cpid,fdeP->name);
 	
   if (cp->oerr) {
     get_error_strings(cp->oerr, &errnam, &errdesc );
-    upe_printf( "#%03d:%03d - %s\n", cp->oerr>>8,cp->oerr &0xFF,errnam );
+    dbg_printf( "#%03d:%03d - %s\n", cp->oerr>>8,cp->oerr &0xFF,errnam );
   }
   else {
     show_maskedregs( crp, fdeP->outregs );
-    upe_printf( "\n" );
+    dbg_printf( "\n" );
   }
 } /* debug_retsystask */
 

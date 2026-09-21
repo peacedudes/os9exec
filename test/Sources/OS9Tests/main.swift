@@ -9606,6 +9606,41 @@ do {
     }
 }
 
+// -- tracing must not write into the traced program's own output -----------
+// -d output used to go through upe_printf, i.e. to the GUEST's stderr PATH, so
+// it followed wherever the guest had redirected its errors. `echo hi >>file`
+// under -d1 put 6,672 bytes of emulator trace INSIDE the guest's file, and a
+// program that dups a pipe onto its stderr and reads that pipe back never saw
+// EOF because the emulator kept feeding it trace -- an hour of a peer
+// session's time, looking like I$Dup hanging. An instrument may not change
+// what it measures. The operator's copy of the trace is checked too: a fix
+// that simply silenced tracing would pass the first half of this.
+do {
+    let name = "debug: -d tracing goes to the operator, not into the guest's file"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let witness = scratchDisk + "/dtrace"
+        try? FileManager.default.removeItem(atPath: witness)
+
+        // `>>` redirects the guest's STDERR, which is where the trace used to go.
+        let out  = os9(["echo hi >>\(scratch)/dtrace"], flags: ["-d1", "0x60A"])
+        let leak = (try? String(contentsOfFile: witness, encoding: .utf8)) ?? ""
+        let sawTrace = out.contains("OS9 F$") || out.contains("OS9 I$")
+
+        if leak.isEmpty && sawTrace {
+            print("PASS: \(name)"); passed += 1
+        } else if !sawTrace {
+            print("FAIL: \(name)")
+            print("      [the operator got no trace at all -- -d is supposed to still work]")
+            failed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [\(leak.count) bytes of emulator trace landed in the guest's own file]")
+            print("      got: \(leak.prefix(120).debugDescription)")
+            failed += 1
+        }
+    }
+}
+
 // -- pwd and cd: the names from the other half of the world ------------------
 // rdoggett, 2026-09-20: "I'd be grateful to have pd/pwd programs and cd/chd
 // because I'm always typing the wrong one, but I know the cd/chd are not

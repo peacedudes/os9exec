@@ -582,9 +582,9 @@ void debug_comein( regs_type* rp, ushort pid )
 
   /* (enclosed in another if to avoid get_syscall_name invocation */
   /* in nodebug case!) */
-  uphe_printf( ">>>%cPid=%02d: OS9 %s : ",msk ? '*':' ', pid,fdeP->name );
+  dbgh_printf( ">>>%cPid=%02d: OS9 %s : ",msk ? '*':' ', pid,fdeP->name );
   show_maskedregs( rp,fdeP->inregs );
-  upe_printf ( "\n" );
+  dbg_printf ( "\n" );
 } /* debug_comein */
 
 
@@ -609,12 +609,12 @@ void debug_return( regs_type* crp, ushort pid, Boolean cwti )
   if (!Dbg_SysCall( crp, pid )) return;
   
   if (cwti) {
-    uphe_printf( "<<<%cPid=%02d: OS9 INTERCEPT%s, state=%s, ", 
+    dbgh_printf( "<<<%cPid=%02d: OS9 INTERCEPT%s, state=%s, ", 
 						msk ? '*':' ',pid,
 						hdl ? "" :" (no handler)", PStateStr(cp) );
 							 
     show_maskedregs( &cp->os9regs, d_w(1)+a_l(6) );
-	upe_printf ( "\n" );
+	dbg_printf ( "\n" );
   }
   else {
     /* No pending entry means no call is returning, so there is nothing honest
@@ -653,17 +653,17 @@ void debug_return( regs_type* crp, ushort pid, Boolean cwti )
           strncat( item, " (native)", OS9NAMELEN-strlen(item)-1 );
       } // if
 
-      uphe_printf("<<<%cPid=%02d: OS9 %s %s",msk ? '*':' ',
+      dbgh_printf("<<<%cPid=%02d: OS9 %s %s",msk ? '*':' ',
                    pid, fdeP->name, strt ? item:"returns: " );
 
       if (cp->oerr) {
         get_error_strings(cp->oerr, &errnam,&errdesc);
         //  errnam= "XXX"; errdesc= "";
-        upe_printf( "#%03d:%03d - %s\n", cp->oerr>>8,cp->oerr &0xFF,errnam );
+        dbg_printf( "#%03d:%03d - %s\n", cp->oerr>>8,cp->oerr &0xFF,errnam );
       }
       else {
         show_maskedregs( &cp->os9regs,fdeP->outregs );
-        upe_printf( "\n" );
+        dbg_printf( "\n" );
       } // if
     } 
   } /* if (cwti) */

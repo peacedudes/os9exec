@@ -383,12 +383,12 @@ os9err pFread( _pid_, syspath_typ* spP, uint32_t *n, char* buffer )
   
     /* show read for debug */
     if (debugcheck(dbgFiles,dbgDetail)) {
-        uphe_printf("%08lX: ", cnt );
+        dbgh_printf("%08lX: ", cnt );
         for  (k=0; k<16 && k<cnt; k=k+2) {
-                         upe_printf( "%02X" , (byte)buffer[k  ] );
-            if (k+1<cnt) upe_printf( "%02X ", (byte)buffer[k+1] );
+                         dbg_printf( "%02X" , (byte)buffer[k  ] );
+            if (k+1<cnt) dbg_printf( "%02X ", (byte)buffer[k+1] );
         }
-        upe_printf("...\n");
+        dbg_printf("...\n");
     }
   
     /* ok, return # of chars read to caller */

@@ -138,6 +138,10 @@ void    upho_printf                              ( const char* format, ... ) PRI
 void     upe_printf                              ( const char* format, ... ) PRINTF_FMT( 1,2 );
 void    uphe_printf                              ( const char* format, ... ) PRINTF_FMT( 1,2 );
 void    main_printf                              ( const char* format, ... );
+/* -d tracing: the operator's console (or the -do path), never the guest's
+   stderr -- see the definition for what that cost when it was the guest's. */
+void     dbg_printf                              ( const char* format, ... ) PRINTF_FMT( 1,2 );
+void    dbgh_printf                              ( const char* format, ... ) PRINTF_FMT( 1,2 );
 void copyright();
 
 os9err syspath_read      ( ushort pid, ushort  sp, uint32_t *len, void* buffer, Boolean rdln );

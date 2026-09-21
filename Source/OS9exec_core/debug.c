@@ -291,7 +291,7 @@ void _debugprintf(char *format, ...)
      * passed. The printf() branch just above always had this right. */
     if (cp->isIntUtil &&
        !cp->isNative) printf( "%s", buffer );
-    else          upe_printf( "%s", buffer );
+    else          dbg_printf( "%s", buffer );
 
     /* look if also halt enabled for that class */
     debug_halt( tempmask );
@@ -957,14 +957,14 @@ void showonereg(uint32_t value, Boolean isa, ushort regnum, ushort lenspec)
                    or the guard above would hand printf an indeterminate char*. */
                 default: format="D%d.l=$%X "  ;                  break;
             }
-            upe_printf(format,     regnum,value);
+            dbg_printf(format,     regnum,value);
         }
         else {
             /* address register */
-            upe_printf("A%d=$%X ",regnum,value);
+            dbg_printf("A%d=$%X ",regnum,value);
             if (lenspec==2) { /* not all incoming strings are null terminated */
                 nullterm( (char*)&tmp,(char*)FROM68K(value), OS9PATHLEN );
-                upe_printf("\"%s\" ", tmp );
+                dbg_printf("\"%s\" ", tmp );
             }
         }
     }
@@ -976,10 +976,10 @@ void show_maskedregs(regs_type *rp, uint32_t regmask)
     ushort k;
     
     if (regmask & SEVENT_CALL) {
-        upe_printf("%s ",  get_ev_name(loword(rp->d[1])));
+        dbg_printf("%s ",  get_ev_name(loword(rp->d[1])));
     }
     if (regmask & SFUNC_STATCALL) {
-        upe_printf("%s ",get_stat_name(loword(rp->d[1])));
+        dbg_printf("%s ",get_stat_name(loword(rp->d[1])));
     }
     
     regmask &= REGMASK_REGBITS;

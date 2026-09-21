@@ -900,7 +900,7 @@ os9err parsepathext( ushort pid, char **inp, char *out, Boolean exedir, Boolean 
 
     if (debugcheck(dbgFiles,dbgNorm)) {
         nullterm( (char*)&tmp,*inp, OS9PATHLEN );
-        uphe_printf("parsepathext  Input: '%s'\n", tmp );
+        dbgh_printf("parsepathext  Input: '%s'\n", tmp );
     }
 
     #ifdef MACOS9
@@ -1549,33 +1549,33 @@ static void showbuff( syspath_typ* spP, byte* buffer, ulong len )
 
     /* avoid multiple calling */    
     in_recursion= true;
-    uphe_printf( "'%s' (%s)\n", spP->name, spP_TypeStr(spP) );
+    dbgh_printf( "'%s' (%s)\n", spP->name, spP_TypeStr(spP) );
     
     for (k=0; k<len; k++) {
         if ( k%16==0 ) {
-            uphe_printf( "%08x: ", k );
+            dbgh_printf( "%08x: ", k );
             sv= k;
         }
         
-        upe_printf( "%02x", buffer[k] );
-        if ( k% 2== 1 ) upe_printf( " " );
+        dbg_printf( "%02x", buffer[k] );
+        if ( k% 2== 1 ) dbg_printf( " " );
         
         if (k>=16 && k+1==len) {
             ii= k+1;
             while  ( ii%16!=0 ) { 
-                upe_printf( "  " );
-                if ( ii%2==1 ) upe_printf( " " );
+                dbg_printf( "  " );
+                if ( ii%2==1 ) dbg_printf( " " );
                 ii++;
             } /* while */
         }
         
         if ( k%16==15 || k+1==len ) {
-            upe_printf( " \"" );
+            dbg_printf( " \"" );
             for (ii= sv; ii<=k; ii++) {
                 c= buffer[ii] & 0x7f;
-                upe_printf( "%c", c<' ' ? '.' : c );
+                dbg_printf( "%c", c<' ' ? '.' : c );
             }
-            upe_printf( "\"\n" );
+            dbg_printf( "\"\n" );
         } /* if */
     }
 
@@ -1846,7 +1846,7 @@ os9err syspath_write( ushort pid,ushort spnum, uint32_t *len, void* buffer, Bool
     if (!err) os9_long_inc( &pd->_wbytes, *len ); /* for statistics*/
     if (!err && debugcheck(dbgSysCall,dbgDetail)) showbuff( spP, buffer,*len );
         
-    /* Must honour in_recursion: this very line is emitted through upe_printf ->
+    /* Must honour in_recursion: this very line is emitted through dbg_printf ->
      * usrpath_puts -> syspath_write, so tracing an emulator-internal write
      * re-enters here and traces itself, forever -- 5807 identical lines and
      * then a stack-overflow SIGSEGV, which is what `-d2 0x0200` used to do to
@@ -1977,6 +1977,57 @@ void uphe_printf( const char* format, ... )
     buffer[ 1 ]= ' ';
     usrpath_puts( currentpid,usrStderr,buffer, false );
 } /* uphe_printf */
+
+void dbg_printf( const char* format, ... )
+/* Operator DEBUG TRACING (-d), which goes to the EMULATOR's console or to the
+ * -do path, and never to the guest's own stderr.
+ *
+ * It used to go through upe_printf, i.e. to usrStderr -- the guest's path 2 --
+ * so the trace followed wherever the guest had redirected its errors. Tracing
+ * then changed what the traced program did, which is the one thing an
+ * instrument must not do:
+ *   `echo hi >>/h5/file` under -d1 put 6,672 bytes of emulator trace INSIDE
+ *   the guest's file;
+ *   a program that dups a pipe onto its own stderr and reads that pipe back
+ *   (the freeware `vis`) never saw EOF, because the emulator kept feeding
+ *   trace into the pipe it was reading, and sat at 100% of a core doing it.
+ * The second one cost the freeware session an hour and looked for all the
+ * world like I$Dup hanging.
+ *
+ * MAXUSRPATHS with direct=false is what routes it: past the user paths, and
+ * still honouring dbgOut so `-do=<file>` keeps working. This is deliberately
+ * NOT the same decision as the per-process notices (uphe_printf, e.g. an
+ * unimplemented syscall), which belong to that process's user by design --
+ * rdoggett, 2026-09-19. A -d flag is typed by the operator, so its output
+ * belongs to the operator. */
+{
+    char buffer[MAXPRINTFLEN];
+    va_list vp;
+    va_start    (vp,format);
+    vsnprintf(buffer,MAXPRINTFLEN,format,vp);
+    va_end                (vp);
+
+    usrpath_puts( currentpid,MAXUSRPATHS,buffer, false );
+} /* dbg_printf */
+
+void dbgh_printf( const char* format, ... )
+/* dbg_printf with the "# " that marks emulator narration. The syscall tracer
+   writes a line in two parts -- this one opens it, dbg_printf adds the fields
+   -- so both have to leave by the same door, or half a trace line lands in
+   the guest's output and half on the operator's console. */
+{
+    char  buffer[MAXPRINTFLEN];
+    char* b= &buffer[ 2 ];
+
+    va_list vp;
+    va_start    (vp,format);
+    vsnprintf(b,MAXPRINTFLEN-2,format,vp);
+    va_end                (vp);
+
+    buffer[ 0 ]= '#';
+    buffer[ 1 ]= ' ';
+    usrpath_puts( currentpid,MAXUSRPATHS,buffer, false );
+} /* dbgh_printf */
 
 void main_printf( const char* format, ... )
 /* main path error output printing */
