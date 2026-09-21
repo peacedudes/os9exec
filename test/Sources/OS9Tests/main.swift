@@ -6909,16 +6909,29 @@ do {
                 if listenFd >= 0 { close(listenFd) }
                 print("SKIP: \(name) (port \(port) is not available here)")
             } else {
-                // count what arrives, on a background thread, until the sender closes
+                // Count what arrives, on a background thread, until the sender
+                // closes. Every step records WHY it stopped: this test failed 3
+                // of 16 runs under load on 2026-09-18 and has not been seen
+                // since in 70+ runs, and "sent=N received=M" alone never said
+                // which end went wrong. A rare failure is only worth having if
+                // the one time it happens is decisive.
                 var received = 0
+                var accepted = false
+                var readErrno: Int32 = 0
+                var lastRead = 0
                 let done = DispatchSemaphore(value: 0)
                 DispatchQueue.global().async {
                     let conn = accept(listenFd, nil, nil)
                     if conn >= 0 {
+                        accepted = true
                         var buf = [UInt8](repeating: 0, count: 4096)
                         while true {
                             let got = read(conn, &buf, buf.count)
-                            if got <= 0 { break }
+                            if got <= 0 {
+                                lastRead = got
+                                if got < 0 { readErrno = errno }
+                                break
+                            }
                             received += got
                         }
                         close(conn)
@@ -6926,10 +6939,16 @@ do {
                     done.signal()
                 }
 
+                let began = Date()
                 let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
                                "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
                                "tcpsend localhost \(sendFile)"], timeout: 45)
-                _ = done.wait(timeout: .now() + 20)
+                let ranFor = Date().timeIntervalSince(began)
+                // .timedOut means the reader is STILL RUNNING, so `received` is
+                // being written as it is read here -- the count is not just
+                // short, it is unsynchronised, and a failure reported from it
+                // would be the harness's fault rather than the emulator's.
+                let drained = done.wait(timeout: .now() + 20) == .success
                 close(listenFd)
 
                 // tcpsend reports what it sent; the host must have got exactly that
@@ -6943,6 +6962,12 @@ do {
                 } else {
                     print("FAIL: \(name)")
                     print("      saw: sent=\(sent.map(String.init) ?? "-") received=\(received)")
+                    print("      how: accepted=\(accepted) drained=\(drained) " +
+                          "lastRead=\(lastRead)\(readErrno != 0 ? " errno=\(readErrno)" : "") " +
+                          "emulator ran \(String(format: "%.1f", ranFor))s of a 45s budget")
+                    if !drained {
+                        print("      NOTE: the reader had not finished, so received= is unsynchronised")
+                    }
                     let seen = out.split(whereSeparator: \.isNewline).filter {
                         $0.contains("socket") || $0.contains("Error") || $0.contains("sent")
                     }
