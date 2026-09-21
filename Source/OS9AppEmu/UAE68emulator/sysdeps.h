@@ -31,6 +31,16 @@
   #define __INTEL__
 #endif
 
+/* Same reason again for WebAssembly: emcc defines `unix`/`__unix__` but not
+   `linux`, so maccess.h's own `#ifdef linux` above never fires and
+   do_get_mem_long() and friends are never declared. wasm32 is little-endian,
+   so __INTEL__ is the right answer here as well as the necessary one.
+   Measured 2026-09-21: with this, the whole CONF68K suite runs under wasm and
+   reports what the native emulator reports. See tools/wasm-build.sh. */
+#if defined __EMSCRIPTEN__
+  #define __INTEL__
+#endif
+
 #ifndef _WIN32
 #ifndef __STDC__
 #error "Your compiler is not ANSI. Get a real one."

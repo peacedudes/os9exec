@@ -49,7 +49,22 @@ ulong        gNetActive        =    0;
 #endif
 
 
+#ifdef __EMSCRIPTEN__
+  extern char** environ;
+#endif
+
 int main(int argc,char **argv,char **envp)
-{    os9_main(argc,argv,envp);
+{
+     /* Emscripten calls main with TWO arguments, so the third parameter is
+        whatever happened to be in that slot. prepParams walks it as an
+        environment and reads off the end of linear memory -- a hard wasm trap
+        where a native host would merely read rubbish. The hosted C runtime's
+        own `environ` is the portable answer, and it is what every other
+        platform's entry point here already passes. */
+  #ifdef __EMSCRIPTEN__
+     (void)envp;
+     envp= environ;
+  #endif
+     os9_main(argc,argv,envp);
 }
 /* eof */

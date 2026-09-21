@@ -488,7 +488,7 @@ void eSpinCursor (short incr)
         #pragma unused(incr)
         // sleep(1);
         
-      #elif defined linux || defined MINGW
+      #elif defined linux || defined MINGW || defined __EMSCRIPTEN__
         // sleep(1);
 
       #else

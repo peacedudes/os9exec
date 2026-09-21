@@ -215,7 +215,14 @@
  * which is precisely why the bug hid here. Fall back to defining __INTEL__
  * when the compiler offers no byte-order macro at all, preserving the old
  * behaviour for anything too old to tell us. */
-#ifdef linux
+/* __EMSCRIPTEN__ alongside linux: emcc defines `unix`/`__unix__` but NOT
+   `linux`, so without this the flag never gets set, `Boolean` and `ulong` are
+   never typedef'd, and every one of the 41 sources fails with several hundred
+   errors -- which reads as "the code is not portable" when the whole of it is
+   one missing platform macro. Measured 2026-09-21: with this, all 41 compile.
+   Byte order is detected separately below and needs nothing here; wasm is
+   little-endian in any case. */
+#if defined linux || defined __EMSCRIPTEN__
   #define __INTEL__
 #endif
 
@@ -242,13 +249,16 @@
   #define OS9_HOST_BIG_ENDIAN
 #endif
 
-/* the UNIX systems */
-#if defined linux || defined MACOSX || defined MINGW
+/* the UNIX systems. Emscripten belongs here: it gives a POSIX sysroot with
+   dirent, stat, termios stubs and the rest, and without it the classic-Mac
+   Toolbox block further down (guarded on !UNIX) pulls in <Types.h>, which no
+   wasm sysroot has. */
+#if defined linux || defined MACOSX || defined MINGW || defined __EMSCRIPTEN__
   #define UNIX
 #endif
 
 /* either windows or linux (or macOS as a unix-like peer) */
-#if defined windows32 || defined linux || defined MACOSX || defined MINGW
+#if defined windows32 || defined linux || defined MACOSX || defined MINGW || defined __EMSCRIPTEN__
   #define win_linux
 #endif
 
