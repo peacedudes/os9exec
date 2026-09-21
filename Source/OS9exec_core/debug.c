@@ -145,7 +145,7 @@
 static void disasm_upe_out(const char *fmt, ...) {
     char buf[512]; va_list ap;
     va_start(ap, fmt); vsnprintf(buf, sizeof(buf), fmt, ap); va_end(ap);
-    upe_printf("%s", buf);
+    dbg_printf("%s", buf);
 }
 static void disasm_upo_out(const char *fmt, ...) {
     char buf[512]; va_list ap;
@@ -235,14 +235,14 @@ void regcheck(ushort pid,char *nam,uint32_t reg,ushort mode)
             /* check for unused data reg */
             if ((reg & 0xFFFFFFF0) == 0xDDDDDDD0) {
                 problem=true;
-                uphe_printf("regcheck: %s = $%08X seems to be uninitialized data reg (pid=%d)\n",nam,reg,pid);
+                dbgh_printf("regcheck: %s = $%08X seems to be uninitialized data reg (pid=%d)\n",nam,reg,pid);
             }
         }
         if (mode & RCHK_ARU) {
             /* check for unused addr reg */
             if ((reg & 0xFFFFFFF0) == 0xAAAAAAA0) {
                 problem=true;
-                uphe_printf("regcheck: %s = $%08X seems to be uninitialized address reg (pid=%d)\n",nam,reg,pid);
+                dbgh_printf("regcheck: %s = $%08X seems to be uninitialized address reg (pid=%d)\n",nam,reg,pid);
             }
         }
         if (mode & (RCHK_MEM+RCHK_MOD)) {
@@ -251,7 +251,7 @@ void regcheck(ushort pid,char *nam,uint32_t reg,ushort mode)
             if (RCHK_MEM && !out_of_mem(pid,reg)) { problem=false; goto ok; }
             if (RCHK_MOD && !out_of_mods(reg)) { problem=false; goto ok; }
         ok:
-            if (problem) uphe_printf("regcheck: %s = $%08X (pid=%d) is out of: %s %s\n",nam,reg,pid,mode & RCHK_MEM ? "[allocated memory]" : "",mode & RCHK_MOD ? "[all OS9 modules]" : "");
+            if (problem) dbgh_printf("regcheck: %s = $%08X (pid=%d) is out of: %s %s\n",nam,reg,pid,mode & RCHK_MEM ? "[allocated memory]" : "",mode & RCHK_MOD ? "[all OS9 modules]" : "");
         }
         if (problem) {
             debug_halt(dbgWarnings);
@@ -266,7 +266,7 @@ void trigcheck(char *message, char *name)
     if (triggername[0]!=0) {
         if (ustrncmp(name,triggername,strlen(triggername))==0) {
             /* triggered */
-            uphe_printf("trigcheck [%s]: triggered to '%s'\n",message,name);
+            dbgh_printf("trigcheck [%s]: triggered to '%s'\n",message,name);
             debugwait();
         }
     }
@@ -274,6 +274,21 @@ void trigcheck(char *message, char *name)
 
 /* debug printf */
 #ifndef NODEBUG
+/* Everything printed from this file is the OPERATOR's: the -d trace, the
+ * interactive debugger's banner, menu, prompts and dumps, and the disassembly.
+ * It all goes through dbg_printf/dbgh_printf (filestuff.c) rather than the
+ * guest's stderr path.
+ *
+ * The debugger settled the question by itself: it READS from the host's stdin
+ * (clearerr(stdin)/ConsGetc below), so with its output on the guest's path the
+ * two halves of one conversation pointed at different places. Entering it
+ * while the guest had redirected stderr put the banner -- "type ?<Enter> for
+ * hlp" -- into the guest's FILE and left the operator typing blind at a
+ * console showing nothing. Measured, 80 bytes, 2026-09-20.
+ *
+ * `idbg`'s command-line usage text is NOT here (intcommand.c) and is
+ * deliberately left alone: that is a command's own output, and following the
+ * guest's redirection is what a command should do. */
 void _debugprintf(char *format, ...)
 {
     char buffer[MAXPRINTFLEN];
@@ -587,20 +602,20 @@ void dumpregs(ushort pid)
           memset( &uaeStage, 0, sizeof(uaeStage) );
           memcpy( &uaeStage, &regs, sizeof(struct regstruct) );
           rp= &uaeStage; /* UAE */
-          uphe_printf("UAE current Register Dump:\n");
+          dbgh_printf("UAE current Register Dump:\n");
         #else
-          uphe_printf("No current process to show regs for\n");
+          dbgh_printf("No current process to show regs for\n");
           return;
         #endif
     }
     else {
         rp= &procs[pid].os9regs;
-        uphe_printf("OS-9 Register Dump for pid=%d:\n",pid);
+        dbgh_printf("OS-9 Register Dump for pid=%d:\n",pid);
     }
    
-    uphe_printf(" Dn="); for (k=0;k<8;k++) upe_printf("%08X ",rp->d[k]); upe_printf("\n");
-    uphe_printf(" An="); for (k=0;k<8;k++) upe_printf("%08X ",rp->a[k]); upe_printf("\n");
-    uphe_printf(" PC=%08X SR=%04X\n",rp->pc,rp->sr);
+    dbgh_printf(" Dn="); for (k=0;k<8;k++) dbg_printf("%08X ",rp->d[k]); dbg_printf("\n");
+    dbgh_printf(" An="); for (k=0;k<8;k++) dbg_printf("%08X ",rp->a[k]); dbg_printf("\n");
+    dbgh_printf(" PC=%08X SR=%04X\n",rp->pc,rp->sr);
 
     #ifdef USE_UAEMU
     if (pid < MAXPROCESSES && !procs[pid].isIntUtil) {
@@ -618,18 +633,18 @@ static void dumpmem(uint32_t *memptrP,int numlines)
     int k,i;
 
     for (k=0; k<numlines; k++) {
-        uphe_printf("%08X: ",*memptrP);
+        dbgh_printf("%08X: ",*memptrP);
         for (i=0;i<16;i++) {
             byte* hp= (byte*)FROM68K(*memptrP+i);
-            upe_printf("%02X ", hp ? *hp : 0xEE);
+            dbg_printf("%02X ", hp ? *hp : 0xEE);
         }
-        upe_printf(" ");
+        dbg_printf(" ");
         for (i=0;i<16;i++) {
             byte* hp= (byte*)FROM68K(*memptrP+i);
             char c= hp ? *hp : '?';
-            upe_printf("%c",isprint((unsigned char)c) ? c : '.');
+            dbg_printf("%c",isprint((unsigned char)c) ? c : '.');
         }
-        upe_printf("\n");
+        dbg_printf("\n");
         (*memptrP)+=16;
     }
 } /* dumpmem */
@@ -651,7 +666,7 @@ static void regs_in_debugger( regs_type *rp )
       #pragma unused(rp)
       #endif
     
-      uphe_printf("Non-Macintosh: No low level debugger\n");
+      dbgh_printf("Non-Macintosh: No low level debugger\n");
     #endif
 } /* regs_in_debugger */
 #endif /* MACOS9 */
@@ -667,7 +682,7 @@ static int disasm=0;
 static Boolean bad_addr(uint32_t addr)
 {
     if (emul_base + (uae_u32)addr >= emul_end) {
-        upe_printf("Address $%08X is outside the OS-9 memory space\n", addr);
+        dbg_printf("Address $%08X is outside the OS-9 memory space\n", addr);
         return true;
     }
     return false;
@@ -714,7 +729,7 @@ ushort debugwait( void )
     #endif
     
     do {
-        uphe_printf("Pid=%d%s: dbgmsk=$%04X,$%04X,$%04X stop=$%04X trigger='%s' (type ?<Enter> for hlp)\n",
+        dbgh_printf("Pid=%d%s: dbgmsk=$%04X,$%04X,$%04X stop=$%04X trigger='%s' (type ?<Enter> for hlp)\n",
                          currentpid, currentpid>=MAXPROCESSES ? " **NONE**" : "", debug[0],debug[1],debug[2], debughalt, triggername);
         clearerr(stdin); /* to make sure we don't get into an endless loop */
         
@@ -730,7 +745,7 @@ ushort debugwait( void )
                  as [G]o. This loop used to wait on it forever at full CPU --
                  `os9exec idbg <name>` from a script sat there for hours. */
               if (!devIsReady) {
-                  uphe_printf("debugger: no input left, continuing\n");
+                  dbgh_printf("debugger: no input left, continuing\n");
                   goto goon;
               }
               ConsPutcEdit(*cp, true);   /* do echo -- auto-LF follows the CR */
@@ -746,7 +761,7 @@ ushort debugwait( void )
             do {
                 n= read(0, &rc, 1);
                 if (n==0) {   /* end of input: nobody can answer, so [G]o */
-                    uphe_printf("debugger: no input left, continuing\n");
+                    dbgh_printf("debugger: no input left, continuing\n");
                     goto goon;
                 }
                 if (n<0) break;
@@ -829,7 +844,7 @@ ushort debugwait( void )
                           break;
 
             case 's' : if (sscanf(&inp[1],"%hx", &debughalt)<1) {
-                                uphe_printf("Error in hex number\n");
+                                dbgh_printf("Error in hex number\n");
                           }
                           break;
             case 'g' :
@@ -840,7 +855,7 @@ ushort debugwait( void )
               case 'i' : if (sscanf(&inp[1],"%x",&listbase)<1) {
                              if (currentpid<MAXPROCESSES && !procs[currentpid].isIntUtil)
                                  listbase= procs[currentpid].os9regs.pc;
-                             else { upe_printf("No process PC available\n"); break; }
+                             else { dbg_printf("No process PC available\n"); break; }
                          }
                          if (bad_addr(listbase)) break;
                          { int n; Boolean hit_term = false;
@@ -853,7 +868,7 @@ ushort debugwait( void )
                                if (bad_addr(listbase)) break;
                            }
                            if (hit_term && emul_base + (uae_u32)listbase < emul_end) {
-                               upe_printf("# (flow ends — bytes that follow, not necessarily code:)\n");
+                               dbg_printf("# (flow ends — bytes that follow, not necessarily code:)\n");
                                uint32_t peek = listbase;
                                dumpmem(&peek, 2);
                            }
@@ -872,7 +887,7 @@ ushort debugwait( void )
                                  if (bad_addr(listbase)) break;
                              }
                              if (hit_term && emul_base + (uae_u32)listbase < emul_end) {
-                                 upe_printf("# (flow ends — bytes that follow, not necessarily code:)\n");
+                                 dbg_printf("# (flow ends — bytes that follow, not necessarily code:)\n");
                                  uint32_t peek = listbase;
                                  dumpmem(&peek, 2);
                              }
@@ -913,22 +928,22 @@ ushort debugwait( void )
                            * the help used to promise B/T while pressing them just
                            * re-printed this help. Match the gate to the handlers. */
                           #ifdef MACOS9
-                            upe_printf("[X]extra-[G]o, [T]continue in debugger (mac context), [K[xx]] Kill process [xx], [Q]uit emulation\n");
-                            upe_printf("[B[xx|B]] Call MacsBug with OS9 regs [of pid=xx]/[B] directly, [R[xx]] Regs [of pid=xx]\n");
+                            dbg_printf("[X]extra-[G]o, [T]continue in debugger (mac context), [K[xx]] Kill process [xx], [Q]uit emulation\n");
+                            dbg_printf("[B[xx|B]] Call MacsBug with OS9 regs [of pid=xx]/[B] directly, [R[xx]] Regs [of pid=xx]\n");
                           #else
-                            upe_printf("[X]tra-[G]o, [K[xx]] Kill proc[xx], [Q]uit emulation\n");
-                            upe_printf("[R[U][xx]] Regs[of pid=xx][of UAE]\n");
+                            dbg_printf("[X]tra-[G]o, [K[xx]] Kill proc[xx], [Q]uit emulation\n");
+                            dbg_printf("[R[U][xx]] Regs[of pid=xx][of UAE]\n");
                           #endif
 
-                          upe_printf("[L[xxx]] list 8 memory lines from xxx, default=A7, [.] continue list/disasm\n");
+                          dbg_printf("[L[xxx]] list 8 memory lines from xxx, default=A7, [.] continue list/disasm\n");
 
                           #ifdef USE_UAEMU
-                            upe_printf("[I[xxx]] disassemble 10 instructions from xxx, default=PC\n");
+                            dbg_printf("[I[xxx]] disassemble 10 instructions from xxx, default=PC\n");
                           #endif
 
-                          upe_printf("[D]bg hlp, [D[y,]xx]] set dbg mask=xx (of level=y, def=0), [Sx] set stop mask=x\n");
-                          upe_printf("[M]odules, [P]rocs, [F[xx]]iles [of pid=xx], [V[xx]] memory [of pid=xx]\n");
-                          upe_printf("[O]ut (dbg hlp system path), [W]ithout pid dbg\n");
+                          dbg_printf("[D]bg hlp, [D[y,]xx]] set dbg mask=xx (of level=y, def=0), [Sx] set stop mask=x\n");
+                          dbg_printf("[M]odules, [P]rocs, [F[xx]]iles [of pid=xx], [V[xx]] memory [of pid=xx]\n");
+                          dbg_printf("[O]ut (dbg hlp system path), [W]ithout pid dbg\n");
                           break;
         }
     } while (true);

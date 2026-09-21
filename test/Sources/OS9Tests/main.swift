@@ -9641,6 +9641,38 @@ do {
     }
 }
 
+// The debugger is the same question as the trace above, and it answered it
+// itself: it READS from the host's stdin, so with its output on the guest's
+// stderr path the two halves of one conversation pointed at different places.
+// Entering it while the guest had redirected stderr put the banner into the
+// guest's FILE and left the operator typing blind. `idbg`'s command-line USAGE
+// text is deliberately not covered here -- that is a command's own output and
+// should follow a redirect like any other.
+do {
+    let name = "debug: the debugger talks to the operator, not into the guest's file"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let witness = scratchDisk + "/idbgbanner"
+        try? FileManager.default.removeItem(atPath: witness)
+
+        // Enter the debugger with stderr redirected, then [G]o straight out.
+        let out  = os9(["idbg >>\(scratch)/idbgbanner", "g"])
+        let leak = (try? String(contentsOfFile: witness, encoding: .utf8)) ?? ""
+        let sawBanner = out.contains("type ?<Enter>") || out.contains("dbgmsk=")
+
+        if leak.isEmpty && sawBanner {
+            print("PASS: \(name)"); passed += 1
+        } else if !sawBanner {
+            print("FAIL: \(name)")
+            print("      [the operator never saw the debugger's banner]")
+            failed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [\(leak.count) bytes of debugger output went into the guest's file]")
+            failed += 1
+        }
+    }
+}
+
 // -- pwd and cd: the names from the other half of the world ------------------
 // rdoggett, 2026-09-20: "I'd be grateful to have pd/pwd programs and cd/chd
 // because I'm always typing the wrong one, but I know the cd/chd are not
