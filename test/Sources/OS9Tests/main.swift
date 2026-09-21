@@ -79,6 +79,16 @@ let scratchDisk = URL(fileURLWithPath: NSTemporaryDirectory())
     .appendingPathComponent("os9test-scratch-\(ProcessInfo.processInfo.processIdentifier)").path
 let scratch     = "/\(scratchDev)"
 
+/// What a CHILD emulator must inherit even though every call site below
+/// REPLACES its environment wholesale. The sanitizers' options were already
+/// carried through os9(); LLVM_PROFILE_FILE joined them, and then the eight
+/// OTHER sites turned out to carry neither -- so a coverage run saw only the
+/// tests that go through os9(), and `iterm` read as never executed when it has
+/// had a test since 2026-09-12. Measured 2026-09-21.
+let inheritedByChildren = ProcessInfo.processInfo.environment.filter {
+    ["ASAN_OPTIONS", "UBSAN_OPTIONS", "LLVM_PROFILE_FILE"].contains($0.key)
+}
+
 // Created before the first os9exec starts; a stale one from a killed run is
 // cleared first so fixtures never survive into a later run.
 try? FileManager.default.removeItem(atPath: scratchDisk)
@@ -364,17 +374,9 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
         // under this harness can log its reports somewhere; without them the
         // reports went to the emulator's stderr, which is read and thrown away,
         // and an empty log directory looked like a clean run.
-        let sanitizers = ProcessInfo.processInfo.environment.filter {
-            // LLVM_PROFILE_FILE rides along for the same reason the sanitizer
-            // variables do: this assignment REPLACES the child environment, so
-            // anything not named here never reaches the emulator. Without it a
-            // coverage run recorded 8 processes out of ~380 and reported a
-            // plausible, meaningless number (tools/coverage.sh).
-            ["ASAN_OPTIONS", "UBSAN_OPTIONS", "LLVM_PROFILE_FILE"].contains($0.key)
-        }
         process.environment  = ["OS9DISK": disk,
                                 "OS9H\(scratchDev.dropFirst())": resolvedScratchDisk]
-                               .merging(sanitizers) { mine, _ in mine }
+                               .merging(inheritedByChildren) { mine, _ in mine }
                                .merging(env) { _, caller in caller }
     }
 
@@ -1155,7 +1157,7 @@ func rawEmulator( _ args: [String], cwd: String,
         for (k, v) in vars { env[k] = v }
         process.executableURL       = execURL
         process.arguments           = ["-r"] + args
-        process.environment         = env
+        process.environment         = env.merging(inheritedByChildren) { mine, _ in mine }
         process.currentDirectoryURL = URL(fileURLWithPath: cwd)
     }
     // stdin MUST be detached. Without this the emulator inherits the terminal
@@ -1688,7 +1690,7 @@ do {
         let pipe = Pipe()
         process.executableURL  = execURL
         process.arguments      = ["-r", String(repeating: "X", count: 450)]
-        process.environment    = ["OS9DISK": diskPath]
+        process.environment    = ["OS9DISK": diskPath].merging(inheritedByChildren) { mine, _ in mine }
         process.standardInput  = FileHandle.nullDevice
         process.standardOutput = pipe
         process.standardError  = pipe
@@ -1721,7 +1723,7 @@ do {
         let pipe = Pipe()
         process.executableURL  = execURL
         process.arguments      = ["-r", "idbg", "src"]
-        process.environment    = ["OS9DISK": diskPath]
+        process.environment    = ["OS9DISK": diskPath].merging(inheritedByChildren) { mine, _ in mine }
         process.standardInput  = FileHandle.nullDevice
         process.standardOutput = pipe
         process.standardError  = pipe
@@ -9687,7 +9689,7 @@ do {
             process.executableURL     = execURL
             process.arguments         = [shellArg]
             process.environment       = ["OS9DISK": diskPath,
-                                         "OS9H\(scratchDev.dropFirst())": scratchDisk]
+                                         "OS9H\(scratchDev.dropFirst())": scratchDisk].merging(inheritedByChildren) { mine, _ in mine }
             let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
             process.standardInput  = slaveHandle
             process.standardOutput = slaveHandle
@@ -9830,6 +9832,70 @@ do {
 // Microware `pd` prints "/dd/SYS", and a `pwd` that answered
 // "/Users/.../oskBoot/SYS" would be a different question's answer. /h5 is the
 // suite's own scratch device, so its OS-9 name is known here exactly.
+// -- the internal status commands ---------------------------------------------
+// Every one of these was never executed by any test until now: `ihelp`,
+// `iprocs`, `imdir`, `ipaths`, `imem`, `ihit` and `iunused` between them are
+// ~150 lines that a coverage run (tools/coverage.sh) showed at 0%. They are
+// the operator's whole view INTO a running emulator -- what is running, what
+// is loaded, which paths are open, where the memory went -- so one that
+// silently stopped reporting would be invisible, and the loss would only show
+// the day somebody needed it to debug something else.
+//
+// What is asserted is that each one produces its own report, identified by a
+// column heading no other command prints. Deliberately NOT the layout: column
+// widths and ordering are free to change, and a test that pinned them would
+// fail for reasons nobody cares about. `ihelp` is checked for a command that
+// is really in the table, because the thing worth catching there is an entry
+// quietly disappearing -- which has happened twice, to `pd` and to the bare
+// `OS9T` wildcard.
+do {
+    let name = "internal commands: every status report still reports"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        // command -> a string only THAT command's report contains
+        let reports = [("ihelp",   "internal commands:"),
+                       ("ihelp",   "iprocs"),
+                       ("iprocs",  "Last Syscall"),
+                       ("imdir",   "stacksiz"),
+                       ("ipaths",  "parID/refNum"),
+                       ("imem",    "End (+1)"),
+                       ("ihit",    "hash field hit rate"),
+                       ("iunused", "Block")]
+        var silent = [String]()
+        for (cmd, marker) in reports where !os9([cmd]).contains(marker) {
+            silent.append("\(cmd) (no \"\(marker)\")")
+        }
+        if silent.isEmpty {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [these printed no report: \(silent.joined(separator: ", "))]")
+            failed += 1
+        }
+    }
+}
+
+// -- an internal command given no arguments -----------------------------------
+// The usage text is the only thing standing between a typo and silence. Each
+// of these helpers was also at 0%: nothing had ever run one of these commands
+// wrong. A command that answered nothing at all would look exactly like one
+// that had worked.
+do {
+    let name = "internal commands: a missing argument earns a usage message"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        var quiet = [String]()
+        for cmd in ["icopy", "imakdir"] where !os9([cmd]).contains("Syntax:") {
+            quiet.append(cmd)
+        }
+        if quiet.isEmpty {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [no \"Syntax:\" line from: \(quiet.joined(separator: ", "))]")
+            failed += 1
+        }
+    }
+}
+
 do {
     let name = "pwd: names the device, not the host directory behind it"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
@@ -9886,7 +9952,7 @@ do {
         let toEmu = Pipe(), fromEmu = Pipe()
         process.executableURL  = execURL
         process.arguments      = ["-r", shellArg]
-        process.environment    = ["OS9DISK": diskPath]
+        process.environment    = ["OS9DISK": diskPath].merging(inheritedByChildren) { mine, _ in mine }
         process.standardInput  = toEmu
         process.standardOutput = fromEmu
         process.standardError  = fromEmu
@@ -9980,7 +10046,7 @@ if runXoffIntUtil && !containerized {
         process.executableURL       = execURL
         process.arguments           = [shellArg]        // NO -r: pacing is the point
         process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
-        process.environment         = ["OS9DISK": diskPath, "OS9STOP": "1"]
+        process.environment         = ["OS9DISK": diskPath, "OS9STOP": "1"].merging(inheritedByChildren) { mine, _ in mine }
         let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
         process.standardInput  = slaveHandle
         process.standardOutput = slaveHandle
@@ -10051,7 +10117,7 @@ if runXoffInput && !containerized {
         process.arguments           = ["-r", shellArg]
         process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
         process.environment         = ["OS9DISK": diskPath,
-                                       "OS9H\(scratchDev.dropFirst())": scratchDisk]
+                                       "OS9H\(scratchDev.dropFirst())": scratchDisk].merging(inheritedByChildren) { mine, _ in mine }
         let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
         process.standardInput  = slaveHandle
         process.standardOutput = slaveHandle
@@ -10138,7 +10204,7 @@ if runConsoleRaw && !containerized {
         let process = Process()
         process.executableURL     = execURL
         process.arguments         = ["-r", shellArg]
-        process.environment       = ["OS9DISK": diskPath]
+        process.environment       = ["OS9DISK": diskPath].merging(inheritedByChildren) { mine, _ in mine }
         process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
         let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
         process.standardInput  = slaveHandle
