@@ -544,7 +544,11 @@ check("copy: creates file",      contains: "t_echo",
 check("rename: new name present", contains: "t_echo2",
     "rename /h5/t_echo t_echo2", "dir /dd")
 check("rename: old name gone",   absent:   "t_echo ",  "dir /dd")
-noError("attr: shows attrs",     "attr /h5/t_echo2")
+// "wr" rather than the path: the harness sees the shell's command echo too,
+// and a `contains:` on the path would be satisfied by that alone (the same
+// trap the move tests further down explain). A file just created by a
+// redirect is readable and writable, so the attribute string says so.
+check("attr: shows attrs",       contains: "wr",          "attr /h5/t_echo2")
 
 // SS_Attr on a host-native DIRECTORY: the handler's first act is to check the
 // directory bit and return, because a directory's attributes cannot be changed
@@ -570,7 +574,7 @@ noError("del: file cleanup",     "del /h5/t_echo2")
 // so the echo that creates the file is never in the same output as the check
 noError("text fixture: create",                            "echo OS-9 test line >/h5/t_text")
 check("list: shows content",   contains: "OS-9 test line", "list /h5/t_text")
-noError("count: counts lines",                             "count /h5/t_text")
+check("count: counts lines",   contains: "1 lines",        "count /h5/t_text")
 check("grep: finds pattern",   contains: "OS-9 test line", "grep OS-9 /h5/t_text")
 check("grep: no match silent", absent:   "OS-9 test line", "grep ZZZNOTFOUND /h5/t_text")
 check("merge: combines files", contains: "OS-9 test line", "merge /h5/t_text /h5/t_text")
@@ -699,9 +703,9 @@ check("pr: formats output",      contains: "OS-9 test line", "pr /h5/t_text")
 
 // system info
 noError("date: runs",            "date")
-noError("mdir: runs",            "mdir")
+check("mdir: lists the module directory", contains: "Module Directory", "mdir")
 check("mdir: shell listed",      contains: "shell",   "mdir")
-noError("procs: runs",           "procs")
+check("procs: lists the running processes", contains: "shell", "procs")
 // `devs` is OS9exec's own now, not Microware's. This used to run the disk
 // binary and assert on "devices max" -- a string from that binary's header --
 // because it has a known post-list crash (bus error) and could not be checked
@@ -797,7 +801,7 @@ check("save: writes module file", contains: "echo",
 // commands requiring args (usage / graceful failure)
 check("tsmon: shows usage",      contains: "tsmon",       "tsmon")
 check("os9gen: no device",       contains: "os9gen",      "os9gen")
-noError("cfp: shows help",       "cfp")
+check("cfp: shows help",         contains: "Syntax:",      "cfp")
 
 // attr: show file attribute string
 // `save echo` creates a fresh file in the current data directory -- here the
