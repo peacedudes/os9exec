@@ -9832,6 +9832,104 @@ do {
 // Microware `pd` prints "/dd/SYS", and a `pwd` that answered
 // "/Users/.../oskBoot/SYS" would be a different question's answer. /h5 is the
 // suite's own scratch device, so its OS-9 name is known here exactly.
+// -- systime, the emulator's own timing report --------------------------------
+// About two hundred lines of funcdispatch.c -- int_systime, show_timing,
+// show_os9timers, show_syscalltimers, show_line, time_disp -- and a coverage
+// run put every one of them at 0%. Nothing had ever asked the emulator how
+// long it was spending in which system call, so the answer could have become
+// an empty table, or a table of the wrong calls, without anything noticing.
+//
+// The counts are what is checked, not the times: a run this small spends
+// under a tick almost everywhere, so the time columns are legitimately blank
+// and asserting on them would be asserting on the speed of the host.
+do {
+    let name = "systime: the timing report names the calls that were made"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        // -r arms the counters, the shell work makes calls, -f and -i ask for
+        // the two lists back. F$Fork and I$WritLn are unavoidable: the shell
+        // forks `echo`, and `echo` writes a line.
+        let out = os9(["systime -r", "echo hi", "systime -f", "systime -i"])
+        var wrong = [String]()
+        if !out.contains("F$XXX")    { wrong.append("no F$ table")   }
+        if !out.contains("I$XXX")    { wrong.append("no I$ table")   }
+        if !out.contains("F$Fork")   { wrong.append("F$Fork uncounted")  }
+        if !out.contains("I$WritLn") { wrong.append("I$WritLn uncounted") }
+
+        if wrong.isEmpty {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [\(wrong.joined(separator: ", "))]")
+            print("      [`systime -r` then -f/-i must report the calls a forked echo makes]")
+            failed += 1
+        }
+    }
+}
+
+do {
+    let name = "systime: measurement can be turned off and on again"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9(["systime -d", "systime -e", "systime -?"])
+        let ok  = out.contains("Disabled timing measurement")
+               && out.contains("Re-enabled timing measurement")
+               && out.contains("Usage:")
+        if ok {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [-d, -e and -? must each answer; got: " +
+                  "\(out.split(whereSeparator: \.isNewline).filter { $0.contains("timing") || $0.contains("Usage") }.prefix(3).joined(separator: " | "))]")
+            failed += 1
+        }
+    }
+}
+
+// -- what a -d trace actually SAYS --------------------------------------------
+// Two tests already prove -d output goes to the operator rather than into the
+// guest's file. Neither looks at what it says, and the formatters are the
+// bulk of debug.c: a coverage run put get_stat_name at 11% and debug_help at
+// 0%. A trace that printed `$0000` where it used to print `SS_Opt`, or a flag
+// list that stopped naming the flags, would still pass every routing test --
+// and -d is the tool anyone reaches for first when the emulator misbehaves,
+// so it failing quietly is expensive exactly when it is needed.
+do {
+    let name = "debug: a -d trace names the status call, not just its number"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        // dbgSysCall (0x0002). Even `echo` makes the shell ask its terminal
+        // for options, so this needs no particular utility to be installed.
+        let trace = os9(["echo hi"], flags: ["-d", "0x0002"])
+        if trace.contains("SS_Opt") && trace.contains("I$GetStt") {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [expected the trace to name I$GetStt and SS_Opt; a number in")
+            print("       their place means the name tables stopped being consulted]")
+            print("      saw: \(trace.split(whereSeparator: \.isNewline).filter { $0.contains("GetStt") }.prefix(2).joined(separator: " | "))")
+            failed += 1
+        }
+    }
+}
+
+do {
+    let name = "debug: dhelp lists the -d flags by name and by mask"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        // The only place the -d vocabulary is written down for a user. Both
+        // halves matter: the name is what a person reads, the mask is what
+        // they have to type.
+        let help = os9(["dhelp"])
+        let missing = [("dbgSysCall", "0x0002"), ("dbgModules", "0x0020")]
+            .filter { !(help.contains($0.0) && help.contains($0.1)) }
+            .map { $0.0 }
+        if missing.isEmpty {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [dhelp no longer documents: \(missing.joined(separator: ", "))]")
+            failed += 1
+        }
+    }
+}
+
 // -- the internal status commands ---------------------------------------------
 // Every one of these was never executed by any test until now: `ihelp`,
 // `iprocs`, `imdir`, `ipaths`, `imem`, `ihit` and `iunused` between them are
