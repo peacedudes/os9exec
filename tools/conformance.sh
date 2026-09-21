@@ -232,9 +232,26 @@ compare() {
 # guess about repository layout. Both the licensed disk and the freeware disk
 # have to stand alone (each carries its own termcap, SYS/errmsg and the rest),
 # so nothing here may assume WHICH one it is holding.
+# Every OS9* variable the OPERATOR happens to have exported, as `env -u` flags.
+#
+# A device that exists because of who ran the tool is not a device the suite
+# asked for. Measured: with OS9H3 exported in the shell, a run of this script
+# had an h3 in `idevs` -- the suite passed only because no test touches /h3,
+# which is luck rather than design. The freeware session found the same thing
+# on its own harnesses (five of them, inheriting every OS9H<n> into 871 cases)
+# when `idevs` listed a drive nobody had asked for.
+#
+# So each emulator below starts from a clean slate of OS9* and is handed back
+# exactly the ones it names. OS9DISK is named, because the operator choosing
+# the system disk is the one piece of environment this suite is SUPPOSED to
+# take (see the header above).
+os9_clean_env() {
+    env | sed -n 's/^\(OS9[A-Za-z0-9_]*\)=.*/-u \1/p' | tr '\n' ' '
+}
+
 os9exec_shell() {   # feed stdin to a throwaway os9exec shell
     local extra_h8="$1"; shift
-    (cd "${1:-$REPO}" && $TIMEOUT 300 env OS9STOP=1 \
+    (cd "${1:-$REPO}" && $TIMEOUT 300 env $(os9_clean_env) OS9STOP=1 \
         OS9DISK="${OS9DISK:-}" OS9H8="$extra_h8" "$REPO/os9exec" -r /dd/CMDS/shell 2>&1) \
         | tr '\r' '\n'
 }
@@ -325,7 +342,7 @@ build_rbf_image_noshell() {
         $TIMEOUT 60 env OS9H7="$img" "$REPO/os9exec" -r imakdir "/h7/$m" >/dev/null 2>&1
     done
     for m in "${MODULES[@]}" $(extra_cmds); do
-        $TIMEOUT 60 env OS9H7="$img" OS9H8="$dir" "$REPO/os9exec" \
+        $TIMEOUT 60 env $(os9_clean_env) OS9H7="$img" OS9H8="$dir" "$REPO/os9exec" \
             -r icopy "/h8/CMDS/$m" "/h7/CMDS/$m" >/dev/null 2>&1
     done
 
