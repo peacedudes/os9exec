@@ -1192,15 +1192,26 @@ void DoWait( void )
      * Waking only when something is actually due, and being woken by the host
      * otherwise, costs 0.3%.
      *
-     * The cap is insurance, not the mechanism: it bounds how late anything NOT
-     * in the select set below could be noticed, at 50ms. It sat at one tick
-     * for a while because longer broke "XOFF halts output but input is still
-     * taken", and the reason turned out to be worth finding rather than
-     * capping around -- do_arbitrate retried a parked reader or writer only
-     * every NewAge rounds, a rota tuned for a loop that spun every
-     * millisecond. retry_parked_now() above is that fix; with it, a parked
-     * process's latency follows its data instead of this number. */
-    #define IDLE_CAP_US  50000UL
+     * The cap is ONE SYSTEM TICK, and the history of that number is the point.
+     * It bounds how late anything NOT in the select set below can be noticed.
+     *
+     * Before retry_parked_now() existed, 50ms broke "XOFF halts output but
+     * input is still taken" every single time, and 1, 2, 5 and 10ms passed.
+     * That fix removed the deterministic failure, the single test went green,
+     * and the cap was raised to 50ms on the strength of it -- which was one
+     * run of one test standing in for repetition. At 50ms the full suite then
+     * failed about ONE RUN IN THREE; at one tick it is 0 in 10, measured with
+     * two suites running concurrently so the contention the failures preferred
+     * was present. The pre-change build is 0 in 3.
+     *
+     * So this is not evidence that 50ms is wrong in principle. It is evidence
+     * that at 50ms the emulator sits close enough to a latency cliff for a
+     * known-marginal test to fall off it, and that one tick does not. The rota
+     * fix keeps its own value either way; what was wrong was the parameter,
+     * chosen without repeating the measurement that would have shown it.
+     * A canary that fails one run in three looks exactly like a canary that
+     * passes, if you only ask it once. */
+    #define IDLE_CAP_US  10000UL
     ulong delay_us= idle_deadline_us();
     ulong cap;
     long  delay_ns;
