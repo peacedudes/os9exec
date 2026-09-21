@@ -365,7 +365,12 @@ func os9(_ commands: [String], timeout: TimeInterval = defaultTimeout, paced: Bo
         // reports went to the emulator's stderr, which is read and thrown away,
         // and an empty log directory looked like a clean run.
         let sanitizers = ProcessInfo.processInfo.environment.filter {
-            ["ASAN_OPTIONS", "UBSAN_OPTIONS"].contains($0.key)
+            // LLVM_PROFILE_FILE rides along for the same reason the sanitizer
+            // variables do: this assignment REPLACES the child environment, so
+            // anything not named here never reaches the emulator. Without it a
+            // coverage run recorded 8 processes out of ~380 and reported a
+            // plausible, meaningless number (tools/coverage.sh).
+            ["ASAN_OPTIONS", "UBSAN_OPTIONS", "LLVM_PROFILE_FILE"].contains($0.key)
         }
         process.environment  = ["OS9DISK": disk,
                                 "OS9H\(scratchDev.dropFirst())": resolvedScratchDisk]
