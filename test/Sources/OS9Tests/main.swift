@@ -6954,6 +6954,96 @@ do {
     }
 }
 
+// ── sockets: a peer that stops reading must not stop the EMULATOR ──
+// Every SPF socket is O_NONBLOCK (pSopen sets it so a read never blocks the
+// emulator), so a send() whose host buffer is full returns EAGAIN. pSwrite
+// used to retry that in place, which spun inside the syscall with the whole
+// emulator stopped: no other OS-9 process ran and no alarm came due until the
+// peer drained. A reader that stopped for good hung everything. consio.c had
+// made the same mistake for the console and fixed it by parking the writer.
+//
+// The check has to be careful not to be vacuous. The shell would reach the
+// marker long BEFORE tcpsend fills the buffer, so the marker would appear on
+// a frozen emulator too. The guest therefore sleeps first: the marker can only
+// be written if the emulator went on scheduling processes while the socket sat
+// unread, which is the whole property. The peer reads nothing for `stall`
+// seconds, watches for the marker, and only then drains so the run can end.
+do {
+    let name = "net: a socket write whose peer stops reading does not freeze the emulator"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(name) (the container cannot reach the host's loopback)")
+        } else {
+            let port: UInt16 = 27000     // tcpsend's own port, as the test above notes
+            let stall = 6.0, guestSleep = 2
+            let big    = scratchDisk + "/BIGSEND"
+            let marker = scratchDisk + "/SPFALIVE"
+            try? FileManager.default.removeItem(atPath: marker)
+            // larger than any plausible host send buffer, so a peer that does
+            // not read is guaranteed to make send() return EAGAIN partway
+            FileManager.default.createFile(atPath: big,
+                contents: Data(repeating: 0x78, count: 4 * 1024 * 1024))
+
+            let listenFd = socket(AF_INET, streamSocketType, 0)
+            var yes: Int32 = 1
+            setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = port.bigEndian
+            addr.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
+            let bound = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(listenFd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            if listenFd < 0 || bound != 0 || listen(listenFd, 1) != 0 {
+                if listenFd >= 0 { close(listenFd) }
+                print("SKIP: \(name) (port \(port) is not available here)")
+            } else {
+                var aliveAt: Double? = nil
+                let done = DispatchSemaphore(value: 0)
+                DispatchQueue.global().async {
+                    let conn = accept(listenFd, nil, nil)
+                    if conn >= 0 {
+                        let t0 = Date()
+                        while Date().timeIntervalSince(t0) < stall {
+                            if aliveAt == nil,
+                               FileManager.default.fileExists(atPath: marker) {
+                                aliveAt = Date().timeIntervalSince(t0)
+                            }
+                            usleep(20_000)
+                        }
+                        var buf = [UInt8](repeating: 0, count: 65536)
+                        while read(conn, &buf, buf.count) > 0 {}
+                        close(conn)
+                    }
+                    done.signal()
+                }
+
+                let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                         "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                         "tcpsend localhost \(scratch)/BIGSEND >/nil&",
+                         "sleep \(guestSleep)",
+                         "echo alive >\(scratch)/SPFALIVE"], timeout: 90)
+                _ = done.wait(timeout: .now() + stall + 30)
+                close(listenFd)
+
+                if aliveAt != nil {
+                    print("PASS: \(name)")
+                    passed += 1
+                } else {
+                    print("FAIL: \(name)")
+                    print("      the guest never reached its marker during a \(stall)s unread")
+                    print("      socket, so nothing else was scheduled while the write waited")
+                    print("      out: \(out.split(whereSeparator: \.isNewline).suffix(6).joined(separator: " | "))")
+                    failed += 1
+                }
+                try? FileManager.default.removeItem(atPath: big)
+            }
+        }
+    }
+}
+
 // ── sockets: a dropped connection is a write error, not the emulator's death ──
 // A write to a connection the far end has dropped raises SIGPIPE, whose default
 // action ended os9exec itself -- every OS-9 process with it, exit 141, from one

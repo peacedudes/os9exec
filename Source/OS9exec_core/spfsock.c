@@ -132,6 +132,7 @@ static os9err pSopen( _pid_, syspath_typ* spP, _modeP_, const char* pathname )
     spP->u.spf.connected  = false;
     spP->u.spf.connecting = false;
     spP->u.spf.bareIcmp   = false;
+    spP->u.spf.writeDone  = 0;
 
     while (*p!=NUL) p++;                    /* the protocol is the last element */
     while (p>pathname && *(p-1)!='/') p--;
@@ -149,6 +150,7 @@ static os9err pSclose( _pid_, syspath_typ* spP )
   #endif
     spP->u.spf.fdPlus1    = 0;
     spP->u.spf.acceptPlus1= 0;
+    spP->u.spf.writeDone  = 0;
     return 0;
 } /* pSclose */
 
@@ -186,19 +188,43 @@ static os9err pSread( ushort pid, syspath_typ* spP, uint32_t* lenP, char* buffer
 static os9err pSwrite( ushort pid, syspath_typ* spP, uint32_t* lenP, char* buffer )
 {
   #if defined UNIX && !defined MINGW
-    uint32_t done= 0;
+    /* Resuming a write that parked: those bytes are already on the wire.
+       The dispatcher re-runs the whole call, same buffer and same length, so
+       picking up at the recorded offset is what stops them going twice. */
+    uint32_t done= spP->u.spf.writeDone;
     int      fd  = SpfFd( spP );
 
-    if (fd<0) return os9error(E_NOTRDY);
+    SpfResume( pid );
+    if (fd<0) { spP->u.spf.writeDone= 0; return os9error(E_NOTRDY); }
+    if (done>*lenP) done= 0;          /* a different write: start over */
 
     while (done<*lenP) {
         ssize_t n= send( fd, buffer+done, *lenP-done, SPF_SENDFLAGS );
         if (n>0) { done+= (uint32_t)n; continue; }
 
-        if (n<0 && (errno==EAGAIN || errno==EINTR)) continue; /* see the read path */
+        /* EINTR put nothing on the wire, so an immediate retry duplicates
+           nothing. The 100Hz tick lands here often enough to matter. */
+        if (n<0 && errno==EINTR) continue;
+
+        /* EAGAIN is the host's send buffer full with the peer not draining
+           it. Every socket here is O_NONBLOCK (pSopen sets it so reads never
+           block the emulator), so this is reachable any time a reader is
+           slower than a writer -- and retrying in place spun inside the
+           syscall with the WHOLE emulator stopped: no other process ran, no
+           alarm came due, and a reader that stopped for good hung everything.
+           consio.c made this exact mistake for the console and fixed it this
+           way. Park instead, remembering how far we got, and let the
+           dispatcher bring the call back. The guest still sees one write that
+           completes in full, which is what SPF on real OS-9 gives it. */
+        if (n<0 && errno==EAGAIN) {
+            spP->u.spf.writeDone= done;
+            *lenP= 0;
+            return SpfPark( pid );
+        }
         break;                                  /* the connection is gone */
     }
 
+    spP->u.spf.writeDone= 0;
     if (done==0 && *lenP>0) { *lenP= 0; return os9error(E_WRITE); }
     *lenP= done;
     return 0;

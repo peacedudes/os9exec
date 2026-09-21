@@ -915,6 +915,10 @@ typedef struct {
             Boolean   bareIcmp;     /* host ICMP socket with no IP header on replies,
                                        and its own echo identifier (Linux) */
             byte      echoId[2];    /* the identifier the guest last sent, for those */
+            uint32_t  writeDone;    /* bytes of the CURRENT I$Write already sent, kept
+                                       across a park: the dispatcher resumes a parked
+                                       process by running its whole call again, so
+                                       without this the sent bytes would go twice */
         } spf_typ;
 
 
