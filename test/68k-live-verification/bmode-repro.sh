@@ -17,8 +17,7 @@ SCR=$(mktemp -d)
 trap 'rm -rf "$SCR"' EXIT
 TIMEOUT=$(command -v gtimeout || command -v timeout)
 
-cp "$(dirname "$0")/bmode.c" "$SCR/bmode.c"
-flip -m "$SCR/bmode.c"
+tr '\n' '\r' < "$(dirname "$0")/bmode.c" > "$SCR/bmode.c"   # OS-9 lines end in CR
 
 out=$( printf 'load /dd/CMDS/cpp /dd/CMDS/c68 /dd/CMDS/o68 /dd/CMDS/r68 /dd/CMDS/l68\nsetenv CLIB /dd/LIB\nsetenv CDEF /dd/DEFS\nchd /h5\ncc bmode.c -F=/h5/bmode\n/h5/bmode\nstop\n' \
        | "$TIMEOUT" 60 env OS9STOP=1 OS9DISK="$DISK" OS9H5="$SCR" "$OS9EXEC" -r /dd/CMDS/shell 2>&1 | tr '\r' '\n' )

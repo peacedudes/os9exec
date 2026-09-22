@@ -21,8 +21,7 @@ trap 'rm -rf "$SCR"' EXIT
 TIMEOUT=$(command -v gtimeout || command -v timeout)
 
 mkdir "$SCR/SUB"
-cp "$SRC" "$SCR/getwdfd.a"
-flip -m "$SCR/getwdfd.a"
+tr '\n' '\r' < "$SRC" > "$SCR/getwdfd.a"   # OS-9 lines end in CR
 
 # cd into the scratch dir so `mount -k`'s image lands there, not in the repo
 cd "$SCR"

@@ -21,8 +21,7 @@ SCR=$(mktemp -d)
 trap 'rm -rf "$SCR"' EXIT
 TIMEOUT=$(command -v gtimeout || command -v timeout)
 
-cp "$(dirname "$0")/pipe-abort-blk.c" "$SCR/blk.c"
-flip -m "$SCR/blk.c"
+tr '\n' '\r' < "$(dirname "$0")/pipe-abort-blk.c" > "$SCR/blk.c"   # OS-9 lines end in CR
 
 # Build the blocker into the scratch device (never the system disk).
 printf 'load /dd/CMDS/cpp /dd/CMDS/c68 /dd/CMDS/o68 /dd/CMDS/r68 /dd/CMDS/l68\nsetenv CLIB /dd/LIB\nsetenv CDEF /dd/DEFS\nchd /h5\ncc blk.c -F=/h5/blk\nstop\n' \
