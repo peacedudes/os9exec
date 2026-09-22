@@ -99,7 +99,7 @@ Boolean CaseSens( char* pathname, char* filename, Boolean *reduS )
     dirent_typ* dEnt;
 //  int  P_Len= strlen(".");
     char        tmp [OS9PATHLEN];
-    char        name[DIRNAMSZ];
+    char        name[DIRNAMSZ+1];  /* GetEntry writes up to DIRNAMSZ characters and a NUL */
     
     *reduS= false;
 
