@@ -12,7 +12,8 @@
 # Then serve build/web and open it:
 #   python3 -m http.server -d build/web 8000     ->  http://localhost:8000
 #
-# LICENSING: the disk is copied into build/web/os9exec.data. build/ is
+# LICENSING: the disk is copied into build/web (disk.gz, or os9exec.data
+# for a directory). build/ is
 # gitignored, so a licensed system disk stays on this machine -- but do not
 # publish a build/web made from one. The CONF68K image is ours to ship.
 #
@@ -29,8 +30,18 @@ BOOT=("$@"); [ ${#BOOT[@]} -gt 0 ] || BOOT=(shell)
 command -v emcc >/dev/null || { echo "no emcc -- brew install emscripten" >&2; exit 2; }
 [ -e "$DISK" ] || { echo "no disk at $DISK" >&2; exit 2; }
 
-mkdir -p "$OUT"
-if [ -d "$DISK" ]; then DD=/dd; else DD=/dd.img; fi
+rm -rf "$OUT"; mkdir -p "$OUT"   # no stale disk from an earlier build
+
+# An image goes out gzipped, as disk.gz, and the page inflates it
+# (DecompressionStream): one file, and a fraction of the download -- the
+# web-only freeware image is 119 MB, over GitHub's 100 MB file limit, and
+# 34 MB gzipped. A directory (a local system disk) is preloaded as is.
+if [ -d "$DISK" ]; then
+    DD=/dd;     PRELOAD=(--preload-file "$DISK@$DD")
+else
+    DD=/dd.img; PRELOAD=()
+    gzip -9 -c "$DISK" > "$OUT/disk.gz" || exit 1
+fi
 
 # The console goes to the page byte by byte: OS-9 ends lines in CR, and
 # Emscripten's default stdout only flushes on LF.
@@ -41,11 +52,23 @@ Module.preRun.push(function () {
   ENV.OS9H0   = '$DD';   // the freeware disk must also be /h0 (its GAMES and termcap say so)
   var out = function (c) { if (c !== null) Module.os9out(c); };
   FS.init(function () { return null; }, out, out);
+  if ('$DD' !== '/dd.img') return;
+  addRunDependency('disk.gz');   // main() waits until the disk is in place
+  fetch('disk.gz')
+    .then(function (r) {
+      if (!r.ok) throw new Error('disk.gz: HTTP ' + r.status);
+      return new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    })
+    .then(function (buf) {
+      FS.writeFile('$DD', new Uint8Array(buf));
+      removeRunDependency('disk.gz');
+    })
+    .catch(function (e) { Module.os9status('could not load the disk: ' + e.message); });
 });
 JS
 
 args='"-q"'; for a in "${BOOT[@]}"; do args="$args, \"$a\""; done
-sed -e "s|OS9_ARGUMENTS|[$args]|" -e "s|OS9_DISK|'$DD'|" \
+sed -e "s|OS9_ARGUMENTS|[$args]|" \
     "$REPO/tools/wasm-web/index.html" > "$OUT/index.html"
 
 SRCS=$(cd "$REPO" && make -n -B 2>/dev/null | grep -aoE '[A-Za-z0-9_./]+\.c' | sort -u)
@@ -60,7 +83,9 @@ SRCS=$(cd "$REPO" && make -n -B 2>/dev/null | grep -aoE '[A-Za-z0-9_./]+\.c' | s
     -sASYNCIFY -sALLOW_MEMORY_GROWTH -sEXIT_RUNTIME=1 \
     -sINITIAL_MEMORY=268435456 -sSTACK_SIZE=8388608 \
     -sEXPORTED_RUNTIME_METHODS=ENV,FS -sENVIRONMENT=web \
-    --pre-js "$OUT/pre.js" --preload-file "$DISK@$DD" ) || exit 1
+    --pre-js "$OUT/pre.js" "${PRELOAD[@]}" ) || exit 1
 
-echo "built $OUT ($(wc -c < "$OUT/os9exec.wasm") bytes of wasm, $(wc -c < "$OUT/os9exec.data") bytes of disk)"
+rm -f "$OUT/pre.js"
+disk=$(cat "$OUT/disk.gz" "$OUT/os9exec.data" 2>/dev/null | wc -c)
+echo "built $OUT ($(wc -c < "$OUT/os9exec.wasm") bytes of wasm, $disk bytes of disk)"
 echo "serve:  python3 -m http.server -d $OUT 8000   then open http://localhost:8000"

@@ -62,7 +62,6 @@
     // ?r=1 turns off the emulator's baud-rate pacing, which needs waits
     // shorter than a browser timer can give.
     arguments: (new URLSearchParams(location.search).get('r') ? ['-r'] : []).concat(OS9_ARGUMENTS),
-    os9disk: OS9_DISK,
     os9keys: [],
     // Collected and drawn once per frame: one terminal write per byte made
     // output arrive in visible stutters.
@@ -74,6 +73,7 @@
         flush();
       });
     },
+    os9status: (text) => { document.getElementById('status').textContent = 'OS9exec: ' + text; },
     onRuntimeInitialized: () => {
       document.getElementById('status').textContent = 'OS9exec: running. Click the terminal to type.';
     },
