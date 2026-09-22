@@ -9,7 +9,9 @@
 # invisible because running everything meant remembering everything.
 #
 #   tools/verify.sh            the local gates (macOS/host + docker)
-#   tools/verify.sh --vms      those, plus the UTM virtual machines
+#   tools/verify.sh --vms      those, plus the UTM virtual machines and the
+#                              emulated i386 and s390x containers
+#   tools/verify.sh --emulated the local gates plus only the i386/s390x legs
 #   tools/verify.sh --quick    skip the slow ones (no docker, no VMs)
 #
 # Every stage prints its own headline result, and the exit status is non-zero
@@ -24,10 +26,11 @@ set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
 
-want_docker=yes; want_vms=no
+want_docker=yes; want_vms=no; want_emu=no
 for a in "$@"; do
     case "$a" in
-        --vms)   want_vms=yes ;;
+        --vms)   want_vms=yes; want_emu=yes ;;
+        --emulated) want_emu=yes ;;
         --quick) want_docker=no ;;
         -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
         *) echo "verify: unknown option '$a'" >&2; exit 2 ;;
@@ -120,6 +123,21 @@ if [ "$want_docker" = yes ]; then
 else
     skip "integration suite on Linux (docker)" "--quick"
     skip "RBF integrity hammer on Linux (docker)" "--quick"
+fi
+
+# Our only 32-bit (sizeof(long)==4) and only big-endian hosts. Both had been
+# run against the suite only by hand (300/0 each, 2026-09-21), and the
+# endian/size audit's one arithmetic finding was reachable only on the first.
+if [ "$want_emu" = yes ]; then
+    echo "-- other architectures (emulated containers)"
+    if docker info >/dev/null 2>&1; then
+        stage "integration suite on i386, 32-bit (docker)" make test-linux32
+        stage "integration suite on s390x, big-endian (docker)" make test-s390x
+    else
+        skip "integration suite on i386 and s390x (docker)" "docker not running"
+    fi
+else
+    skip "i386 and s390x (emulated)" "pass --vms or --emulated to include"
 fi
 
 if [ "$want_vms" = yes ]; then

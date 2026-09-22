@@ -275,6 +275,17 @@ test-linux:
 	docker build -f docker/Dockerfile -t os9exec:linux .
 	DOCKER_IMAGE=os9exec:linux swift run --package-path test OS9Tests
 
+# The suite on our only 32-bit (i386, ILP32) and only big-endian (s390x) hosts.
+# Both run under emulation here -- minutes to build, seconds per test -- so they
+# are sweep legs (tools/verify.sh --vms), not part of every run.
+test-linux32:
+	docker build -f docker/Dockerfile.linux32 -t os9exec:linux32 .
+	DOCKER_IMAGE=os9exec:linux32 swift run --package-path test OS9Tests
+
+test-s390x:
+	docker build --platform linux/s390x -f docker/Dockerfile.s390x -t os9exec:s390x .
+	DOCKER_IMAGE=os9exec:s390x swift run --package-path test OS9Tests
+
 # Compile-only sweep across all four toolchains. Each one sees bugs the others
 # do not: mingw x86_64 (LLP64) catches host pointers truncated through 32-bit
 # ints, mingw i686 (ILP32) catches the mirror image -- a width hardcoded to 64
