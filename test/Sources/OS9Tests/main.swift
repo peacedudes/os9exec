@@ -4281,95 +4281,115 @@ do {
     }
 }
 
-// ── a failed allocation is reported once in the emulator's voice, not forever ──
-// os9exec's diagnostics go out on the CURRENT PROCESS's stderr. This one used to
-// go out bare, so it was indistinguishable from something the program had
-// printed -- an ABI mismatch in a guest library was read as an emulator fault
-// for three days across two sessions on that account -- and it went out once per
-// failure, so one runaway guest allocator buried the program's own output under
-// 439,689 copies of it.
+// ── a failed allocation is the program's error, and nobody else's business ──
+// OS-9 refuses a memory request silently: the caller gets E$NoRAM and decides.
+// os9exec used to narrate it too, on the program's own stderr -- a line from the
+// Mac original, where it meant the HOST had run out. In practice it announced a
+// program asking for nonsense, mixed into that program's output (one runaway
+// allocator: 439,689 copies).
 //
-// The module asks for a gigabyte forty times, which cannot be satisfied in a
-// 32 MB arena and does not depend on how much of the arena anything else has
-// taken. Three assertions, because each covers a different way to get this
-// wrong: the "# " proves the line is marked as os9exec speaking; the cap proves
-// the flood is bounded; the tally proves the suppressed ones are still counted
-// rather than quietly dropped. Verified to fail against the pre-fix binary,
-// which printed forty unmarked lines and no tally.
+// Two programs, because the two failures are different people's business:
+//   memflood asks for a gigabyte forty times. No -M could satisfy that, so it is
+//     purely the program's: the error comes back and NOTHING is printed.
+//   memfill takes the arena a megabyte at a time until it is gone. That one is
+//     the operator's -- the arena really is too small -- so os9exec says so ONCE,
+//     on its own console, naming -M, and never on the program's stderr (which is
+//     redirected into a file here to prove it).
+// Both exit with the last error they got, so the shell's "Error #000:237" is
+// the proof the program itself was told.
 do {
-    let floodAsm = [
-        "  use /dd/DEFS/oskdefs.d",
-        "",
-        "F$Exit   equ  $06",
-        "F$SRqMem equ  $28",
-        "",
-        "  psect memflood,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
-        "",
-        "start:",
-        "  moveq   #40,d2",
-        "askagain:",
-        "  move.l  #$40000000,d0",     // 1 GB: never satisfiable in a 32 MB arena
-        "  OS9     F$SRqMem",          // ignore the error on purpose
-        "  subq.l  #1,d2",
-        "  bne     askagain",
-        "  moveq   #0,d1",
-        "  OS9     F$Exit",
-        "",
-        "  ends",
-        ""
-    ].joined(separator: "\r")
+    func requester(_ name: String, bytes: String, times: Int) -> String {
+        [
+            "  use /dd/DEFS/oskdefs.d",
+            "",
+            "F$Exit   equ  $06",
+            "F$SRqMem equ  $28",
+            "",
+            "  psect \(name),(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+            "",
+            "start:",
+            "  moveq   #0,d4",
+            "  moveq   #\(times),d2",
+            "askagain:",
+            "  move.l  #\(bytes),d0",
+            "  OS9     F$SRqMem",
+            "  bcc     granted",
+            "  move.l  d1,d4",             // remember the refusal
+            "granted:",
+            "  subq.l  #1,d2",
+            "  bne     askagain",
+            "  move.l  d4,d1",
+            "  OS9     F$Exit",
+            "",
+            "  ends",
+            ""
+        ].joined(separator: "\r")
+    }
+    try? requester("memflood", bytes: "$40000000", times: 40)     // 1 GB: never satisfiable
+        .write(toFile: scratchDisk + "/memflood.a", atomically: true, encoding: .utf8)
+    try? requester("memfill", bytes: "$00100000", times: 60)      // 1 MB x 60: fills 32 MB
+        .write(toFile: scratchDisk + "/memfill.a", atomically: true, encoding: .utf8)
 
-    try? floodAsm.write(toFile: scratchDisk + "/memflood.a", atomically: true, encoding: .utf8)
-
-    let floodName = "memory: a failed allocation is announced a few times, then tallied"
-    if filter.isEmpty || floodName.localizedCaseInsensitiveContains(filter) {
-        let out = os9([
+    let floodName = "memory: a refused allocation is the program's error, and os9exec says nothing"
+    let fillName  = "memory: an exhausted arena is said once, to the operator, naming -M"
+    let wanted = [floodName, fillName].contains { filter.isEmpty || $0.localizedCaseInsensitiveContains(filter) }
+    if wanted {
+        let build = [
             "load /dd/CMDS/r68 /dd/CMDS/l68",
             "r68 /h5/memflood.a -o=/h5/memflood.r",
             "l68 /h5/memflood.r -o=/h5/memflood",
-            "/h5/memflood"
-        ], timeout: 30)
+            "r68 /h5/memfill.a -o=/h5/memfill.r",
+            "l68 /h5/memfill.r -o=/h5/memfill"
+        ]
+        func lines(_ out: String, _ needle: String) -> [Substring] {
+            // Split on CR as well as LF: OS-9 ends a line with CR.
+            out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n").filter { $0.contains(needle) }
+        }
+        let refused = "Error #000:237"
+        let hint    = "arena is full"
 
-        // Split on CR as well as LF: OS-9 ends a line with CR, so a run's guest
-        // output is one \n-delimited chunk and a naive split counts the whole
-        // flood as a single line -- which made this test pass against a binary
-        // that printed forty of them.
-        let lines   = out.replacingOccurrences(of: "\r", with: "\n")
-                         .split(separator: "\n").filter { $0.contains("No more memory") }
-        let marked   = lines.allSatisfy { $0.contains("#") }
-        let bounded  = lines.count <= 8
-        let tallied  = out.contains("40 allocation failures in total")
-        // The escalating line is what a program stuck in a failing loop shows:
-        // it never shuts the emulator down, so the total above never prints and
-        // silence would read as a hang rather than a fault.
-        let escalates = out.contains("10 allocation failures so far")
+        let errFile = scratchDisk + "/memfill.err"
+        let out     = os9(build + ["/h5/memflood", "/h5/memfill >>>/h5/memfill.err"], timeout: 30)
+        let guestErr = (try? String(contentsOfFile: errFile, encoding: .isoLatin1)) ?? "<missing>"
+        try? FileManager.default.removeItem(atPath: errFile)   // the shell will not redirect onto an existing file
+        let paced   = os9(["/h5/memflood", "/h5/memfill >>>/h5/memfill.err"], timeout: 60, paced: true)
 
-        // Under pacing -- the default a user runs with, and the one condition the
-        // run above (-r) cannot see -- the same forty requests must still count
-        // forty. Before a15a81c each warning line PARKED the process, and a parked
-        // process is resumed by re-running its whole call, so failing requests
-        // were executed and counted again: 47 at the default 19200 baud, with one
-        // of the five lines lost.
-        let pacedOut     = os9(["/h5/memflood"], timeout: 60, paced: true)
-        let pacedTallied = pacedOut.contains("40 allocation failures in total")
+        // memflood's own stretch of the run: from its command line to memfill's.
+        // (The build lines name memfill too, so slice on the command lines.)
+        let floodPart = out.components(separatedBy: "/h5/memflood\n").last?
+                           .components(separatedBy: "/h5/memfill >>>").first ?? ""
+        let floodSeen = floodPart.contains(refused)
+        let floodSilent = floodSeen && lines(floodPart, "memory").isEmpty && lines(floodPart, hint).isEmpty
+        let floodTold   = lines(out, refused).count == 2 && lines(paced, refused).count == 2
+        if filter.isEmpty || floodName.localizedCaseInsensitiveContains(filter) {
+            if floodSilent && floodTold {
+                print("PASS: \(floodName)"); passed += 1
+            } else {
+                print("FAIL: \(floodName)")
+                if !floodSilent { for l in lines(floodPart, "memory").prefix(3) { print("      printed: \(l)") } }
+                if !floodSeen { print("      could not find memflood's part of the run, so this proves nothing") }
+                if !floodTold { print("      expected two \(refused) (one per program), saw \(lines(out, refused).count)") }
+                failed += 1
+            }
+        }
 
-        if marked && bounded && tallied && escalates && pacedTallied {
-            print("PASS: \(floodName)")
-            passed += 1
-        } else {
-            print("FAIL: \(floodName)")
-            print("      saw \(lines.count) 'No more memory' line(s)")
-            for l in lines.prefix(3) { print("      | \(l.trimmingCharacters(in: .whitespacesAndNewlines))") }
-            if lines.isEmpty { print("      nothing was reported at all -- the request was satisfied, so this proves nothing") }
-            if !marked  { print("      a line went out unmarked, readable as the program's own output") }
-            if !bounded { print("      \(lines.count) lines: the flood is not bounded") }
-            if !tallied { print("      the suppressed failures were dropped, not counted") }
-            if !escalates { print("      no escalating line: a storming program that never exits stays silent") }
-            failed += 1
+        let saidOnce   = lines(out, hint).count == 1 && lines(paced, hint).count == 1
+        let namesM     = lines(out, hint).allSatisfy { $0.contains("-M") }
+        let notInGuest = guestErr != "<missing>" && !guestErr.contains(hint) && !guestErr.contains("memory")
+        if filter.isEmpty || fillName.localizedCaseInsensitiveContains(filter) {
+            if saidOnce && namesM && notInGuest {
+                print("PASS: \(fillName)"); passed += 1
+            } else {
+                print("FAIL: \(fillName)")
+                print("      hint lines: \(lines(out, hint).count) unpaced, \(lines(paced, hint).count) paced (want 1 each)")
+                if !namesM { print("      the hint does not name -M") }
+                if !notInGuest { print("      program's stderr file: \(guestErr.prefix(200))") }
+                failed += 1
+            }
         }
     }
 
-    for leftover in ["memflood.a", "memflood.r", "memflood"] {
+    for leftover in ["memflood.a", "memflood.r", "memflood", "memfill.a", "memfill.r", "memfill", "memfill.err"] {
         try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
     }
 }

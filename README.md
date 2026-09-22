@@ -220,7 +220,7 @@ chd /dd/USR/CLAUDE/doctest
 dsave -ive /h7
 ```
 
-> **One limit worth knowing:** both `mount -r` and `mount -k` allocate from the emulator's own 68k memory arena (32MB by default, `-M` to change it) - not host RAM. Requesting a size near or above that ceiling fails with "No more memory."
+> **One limit worth knowing:** both `mount -r` and `mount -k` allocate from the emulator's own 68k memory arena (32MB by default, `-M` to change it) - not host RAM. Requesting a size near or above that ceiling is refused with a message saying how much of the arena is left.
 
 **Device-resolution order, if you're layering these:** for any `/hX` path, `os9exec` checks, in order: (1) the `OS9Hx` environment variable, if set; (2) a file/dir named `hX` next to the binary - what `mount -k` writes; (3) one directory level up from the binary (a legacy fallback). An explicit `mount <file> <name>` (or `mount -r=`) call takes priority over all three for as long as the process keeps running.
 

@@ -109,9 +109,6 @@ ulong  largest_free_block( void );
 uint32_t free_block_map( uint32_t from, byte* buf, uint32_t bufsz,
                          uint32_t* totalFree, uint32_t* totalRam );
 
-/* Report the run's suppressed allocation failures, once, at shutdown. Silent
-   unless more failed than were announced -- see alloc_failed in memstuff.c. */
-void   report_mem_failures( void );
 void      free_mem( ushort pid     ); // release all memory of process
 
 void*   os9malloc ( ushort pid,                ulong memsz, os9err* whyP );

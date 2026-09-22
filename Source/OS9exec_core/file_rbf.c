@@ -1815,9 +1815,10 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
 
     /* Refuse what the arena cannot hold, naming the constraint. Without this
      * the request is accepted, get_mem fails deep inside BuildBlankImage, and
-     * the user sees a bare "No more memory !!!" -- the same line an exhausted
-     * memtable prints, and the same line the -M option's own bug produces, so
-     * three unrelated causes were indistinguishable. */
+     * the user saw a bare "No more memory !!!" -- the same line an exhausted
+     * memtable printed, and the same line the -M option's own bug produced, so
+     * three unrelated causes were indistinguishable. Now it would be just
+     * E$NoRAM, which says even less; this names the constraint. */
     {
         uint64_t need = (uint64_t)dev->totScts * dev->sctSize;
         ulong    avail= emul_arena_free();

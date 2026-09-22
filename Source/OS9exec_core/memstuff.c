@@ -761,60 +761,37 @@ void free_mem(ushort pid)
 
 
 
-/* Allocation failures: announce a few, then count. os9exec's diagnostics go out
-   on the CURRENT PROCESS's stderr, so an unbounded stream of them does not
-   merely fill a log -- it interleaves the emulator's voice with the program's
-   own output, and the program's real output is what the user came for. One
-   runaway guest allocator produced 439,689 copies of this single line.
+/* Allocation failures belong to the PROGRAM, which gets E$NoRAM or E$MemFul
+   exactly as on OS-9 and is told nothing else: real OS-9 refuses silently.
 
-   The line is emitted through uphe_printf, not upe_printf, so it carries the
-   "# " that marks everything os9exec says in its own voice: the bare form was
-   indistinguishable from something the program had printed, and was read as a
-   program fault for three days. It says only what os9exec knows -- the size
-   asked for and the state of the arena -- and diagnoses nothing: an ordinary
-   program that has genuinely run out of room reaches this same line. */
-#define MEMFAIL_ANNOUNCE 3          /* announce each of the first few in full */
-static uint32_t memFailures= 0;
-static uint32_t memFailNext= 10;    /* next count worth saying something at */
+   This used to print "No more memory" onto the current process's stderr. The
+   line dates from the Mac original, where get_mem asked the HOST for memory
+   (NewPtrClear), so a failure meant the emulator itself had run out -- a
+   classic Mac OS application partition set too small -- and only the operator
+   could act on it. It reached the guest's stderr in 2000, when "everything"
+   moved to the user-path printers. By then the arena was the emulator's own,
+   and in practice the line almost always announced a program asking for
+   nonsense (an unset register), interleaved with that program's output. One
+   runaway allocator printed it 439,689 times.
+
+   What is still the operator's is an ARENA too small for a sane request: that
+   one is said once per run, on the emulator's console (dbg_printf, never a
+   guest path), naming -M. A request larger than the whole arena is not that --
+   no -M would help -- and stays silent. Everything is in the -d 0x0040 trace. */
+static Boolean arenaFullSaid= false;
 
 static void alloc_failed( ulong memsz, const char* why )
-/* Announce the first few in full, then once per power of ten.
-   Neither extreme is usable. Printing every failure interleaved 439,689 lines
-   with one program's output. But printing only the first few, with the tally
-   held back until the emulator shuts down, is worse in the case that matters
-   most: a program stuck in a failing allocation loop NEVER shuts the emulator
-   down, so it went completely silent -- five minutes of nothing, which reads as
-   a hang rather than as a fault. Escalating keeps the evidence coming while the
-   volume stays logarithmic: that same storm now says something eight times
-   instead of 439,689, and says it while the program is still running. */
 {
-    memFailures++;
+    debugprintf(dbgMemory,dbgNorm,("# alloc_failed: %lu-byte request refused%s, %lu bytes free in a %lu-byte arena\n",
+                                    (unsigned long)memsz, why,
+                                    (unsigned long)emul_arena_free(), (unsigned long)emul_arena_size));
 
-    if (memFailures<=MEMFAIL_ANNOUNCE) {
-        uphe_printf( "No more memory: %lu-byte request refused%s, %lu bytes free in a %lu-byte arena\n",
-                     (unsigned long)memsz, why,
-                     (unsigned long)emul_arena_free(), (unsigned long)emul_arena_size );
-        return;
-    } /* if */
+    if (arenaFullSaid || memsz>emul_arena_size || memsz<=emul_arena_free()) return;
 
-    if (memFailures==memFailNext) {
-        uphe_printf( "No more memory: %lu allocation failures so far, still failing (latest %lu bytes)\n",
-                     (unsigned long)memFailures, (unsigned long)memsz );
-        memFailNext*= 10;
-    } /* if */
+    arenaFullSaid= true;
+    dbg_printf( "# os9exec: the %lu MB 68k memory arena is full; -M <size> makes it larger\n",
+                (unsigned long)(emul_arena_size/(1024*1024)) );
 } /* alloc_failed */
-
-
-void report_mem_failures( void )
-/* Called once as the emulator shuts down, so a run that ends normally states
-   its total. Silent when nothing failed, and silent when every failure was
-   already announced in full -- the escalating line above is what covers a run
-   that never reaches this point. */
-{
-    if (memFailures> MEMFAIL_ANNOUNCE)
-        upho_printf( "No more memory: %lu allocation failures in total\n",
-                     (unsigned long)memFailures );
-} /* report_mem_failures */
 
 
 void* get_mem( ulong memsz )
