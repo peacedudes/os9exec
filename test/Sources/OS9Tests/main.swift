@@ -1071,6 +1071,44 @@ run("rbf: mount -k image is dir/free/dcheck clean",
 // does not), and `mount -k` would otherwise be handed a file that already exists.
 try? FileManager.default.removeItem(atPath: scratchHostPath)
 
+// ── a name may be 1 to 28 characters, on either kind of device ──
+// "Rules for Constructing File Names" (Using Professional OS-9 v2.4) says 1 to
+// 28, and an RBF entry is 28 name bytes with the sign bit on the last. A full
+// 28 has no NUL after it -- the next byte is the entry's FD sector number:
+//   RBF: Fill_DirEntry strcpy'd the NUL into that sector number, which macOS's
+//        overflow check caught by killing the emulator on the spot (SIGTRAP);
+//   host directory: GetEntry cut every name to 27, so a 28-character file was
+//        listed as 27 and the listed name did not open.
+// Create, list, open, rename and delete, all at exactly 28.
+do {
+    let dirName  = "abcdefghijklmnopqrstuvwxyz28"
+    let fileName = "Fbcdefghijklmnopqrstuvwxyz28"
+    let newName  = "Gbcdefghijklmnopqrstuvwxyz28"
+    func roundTrip(_ dev: String) -> [String] {
+        ["makdir /\(dev)/\(dirName)", "chd /\(dev)/\(dirName)", "pwd", "chd /dd",
+         "echo twenty-eight >/\(dev)/\(fileName)", "list /\(dev)/\(fileName)",
+         "rename /\(dev)/\(fileName) \(newName)", "dir /\(dev)", "list /\(dev)/\(newName)",
+         "del /\(dev)/\(newName)", "deldir -q /\(dev)/\(dirName)"]
+    }
+    func whole(_ out: String) -> Bool {
+        // what the programs printed, without the harness's echoed "$ command" lines
+        let printed = out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+                         .filter { !$0.hasPrefix("$ ") }
+        return !out.contains("Error #")
+            && printed.contains { $0.hasSuffix("/\(dirName)") }                      // pwd
+            && printed.filter { $0.contains("twenty-eight") }.count == 2             // both lists
+            && printed.contains { $0.contains(newName) }                             // dir
+    }
+    removeScratchItem(scratchDevice)   // the mount test's image; a host delete is invisible to a container
+    run("rbf: a 28-character name round-trips (create, list, open, rename, delete)",
+        expectation: "no error; the full 28 characters listed and opened",
+        commands: ["mount -k=500K \(scratchDevice)"] + roundTrip(scratchDevice), check: whole)
+    removeScratchItem(scratchDevice)
+    run("fs: a 28-character name round-trips on a host directory",
+        expectation: "no error; the full 28 characters listed and opened",
+        commands: roundTrip("h5"), check: whole)
+}
+
 // A RAW device open ("/dd@") of a host-DIRECTORY device ANSWERS, with one
 // synthesized identification sector, and nothing past it (2026-09-10; it was
 // refused with E$Unit from 063f8d1 until then). The reason is stat(): Microware's

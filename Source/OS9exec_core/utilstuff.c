@@ -1146,6 +1146,24 @@ void LastCh_Bit7( char* name, Boolean setIt )
     else       *c= *c & 0x7f;
 } /* LastCh_Bit7 */
 
+void DirEntry_Name( const os9direntry_typ* entry, char* name )
+/* A directory entry's name as a C string, in <name>, which must hold
+   DIRNAMSZ+1 bytes. On disk the name is NOT a C string: it ends at the
+   character with bit 7 set, and a full-length name fills all DIRNAMSZ bytes
+   with no NUL after it -- the next byte is the top of the entry's FD sector
+   number. Reading the field with the str* functions ran into that number, and
+   worked only while its top byte happened to be zero. */
+{
+    int ii;
+    for (ii=0; ii<DIRNAMSZ; ii++) {
+        char c= entry->name[ ii ];
+        if (c==NUL) break;
+        name[ ii ]= c & 0x7f;
+        if (c & 0x80) { ii++; break; } /* the last character */
+    }
+    name[ ii ]= NUL;
+} /* DirEntry_Name */
+
 void Console_Name( int term_id, char* consname )
 {
     char    *p;
@@ -1766,10 +1784,11 @@ os9err Flush_Dir( ushort cpid, ushort* pathP, const char* nmS )
       err= usrpath_read( cpid, *pathP, &dir_size, &d, false ); if (err) break;
       
       if           ( d.name[ 0 ]!=NUL ) {
-        LastCh_Bit7( d.name, false );
+        char entryName[DIRNAMSZ+1];
+        DirEntry_Name( &d, entryName );
         
                     fullName[ oLen ]= NUL; // restore
-        strcat    ( fullName, d.name );        mP= NULL;
+        strcat    ( fullName, entryName );     mP= NULL;
         err= FD_ID( fullName, NULL, &fd_hash, &mP ); if (err) break;
       
       //if (mP->dirid!=0 &&
@@ -2662,23 +2681,21 @@ Boolean SCSI_Device( const char* os9path,
 
 #ifdef win_unix
   void GetEntry( dirent_typ* dEnt, char* name, Boolean do_2e_conv )
-  /* Get the <name> of dir entry <dEnt> */
+  /* Get the <name> of dir entry <dEnt>, as a C string of at most DIRNAMSZ
+     characters: <name> must hold DIRNAMSZ+1 bytes. Longer host names are cut. */
   /* Convert 2e string, if <do_2e_conv> is true */
   {
       char* q;
       const int L_Plen= strlen(L_P);
       
       /* strncpy does NOT terminate when the source is at least as long as the
-       * limit, and both callers pass exactly char[DIRNAMSZ]. A host filename of
-       * >=28 characters therefore filled `name` with no NUL at all, and every
-       * C-string operation below then ran off the end -- Valgrind reported 36
-       * "conditional jump depends on uninitialised value(s)" hits inside the
-       * strstr() below, reached from CaseSens/AdjustPath, i.e. on ordinary path
-       * resolution. Copy one fewer byte and terminate explicitly. 27 chars is
-       * the real ceiling here regardless: the caller turns this back into an
-       * OS-9 high-bit-terminated name via strlen(), which needs the NUL. */
-      strncpy( name, dEnt->d_name, DIRNAMSZ-1 );
-      name[DIRNAMSZ-1]= NUL;
+       * limit: a host filename of >=28 characters once filled a char[DIRNAMSZ]
+       * with no NUL at all, and every C-string operation below ran off the end
+       * (36 Valgrind hits on ordinary path resolution). That was then fixed by
+       * copying 27, which made a legal 28-character OS-9 name list as 27 and
+       * stop matching itself. The buffer is DIRNAMSZ+1 now; terminate it. */
+      strncpy( name, dEnt->d_name, DIRNAMSZ );
+      name[DIRNAMSZ]= NUL;
 
       if (ustrncmp( name,L_P, L_Plen )==0 && do_2e_conv) {
             /* memmove, not strcat: source and destination are the SAME buffer

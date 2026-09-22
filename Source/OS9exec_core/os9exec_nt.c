@@ -1478,6 +1478,7 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
     process_typ*    cp= &procs[ pid ];
     char            pathName[ OS9PATHLEN ];
     os9direntry_typ dEnt;
+    char            eName[DIRNAMSZ+1];
     char**          m;
     Boolean         cond;
     
@@ -1497,20 +1498,20 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
   
     while (true) {                    size= sizeof( dEnt );
       err= usrpath_read( pid,  path, &size, &dEnt,      false ); if (err) break;
-      LastCh_Bit7                          ( dEnt.name, false );
-    //upe_printf( "eName='%s'\n", dEnt.name );
-                     cond= DbgSuff( dEnt.name, suff );
+      DirEntry_Name                        ( &dEnt, eName );
+    //upe_printf( "eName='%s'\n", eName );
+                     cond= DbgSuff( eName, suff );
       if (!withDLLs) cond= !cond;
       
       if (cond                          &&
-         !SameBegin( dEnt.name,  "._" ) && // begins with "._" ?
-          SameEnd  ( dEnt.name,  suff )) {
-         if (avoidDup && OtherThere( dEnt.name, suff )) continue;
+         !SameBegin( eName,  "._" ) && // begins with "._" ?
+          SameEnd  ( eName,  suff )) {
+         if (avoidDup && OtherThere( eName, suff )) continue;
          
-      //upe_printf( "hello='%s'\n", dEnt.name );
+      //upe_printf( "hello='%s'\n", eName );
          m= &pluginList[ *i ].name;
-        *m= get_mem( strlen( dEnt.name )+1 );
-        strcpy         ( *m, dEnt.name );
+        *m= get_mem( strlen( eName )+1 );
+        strcpy         ( *m, eName );
         (*i)++;
       } // if
     } // while

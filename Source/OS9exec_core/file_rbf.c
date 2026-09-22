@@ -3777,9 +3777,14 @@ static void Fill_DirEntry( os9direntry_typ* dir_entry, char* name, ulong fd )
             *b= NUL; b++; /* Clear block */
         }
 
-        /* write it only if new entry */
-        strcpy     ( dir_entry->name, name );
-        LastCh_Bit7( dir_entry->name, true );
+        /* write it only if new entry. A full-length name fills the field and
+           has no NUL after it; strcpy put one in the FD sector number and
+           tripped the host's overflow check (a 28-character makdir killed
+           the emulator on macOS). */
+        size_t len= strlen( name );
+        if (len>DIRNAMSZ) len= DIRNAMSZ;
+        memcpy( dir_entry->name, name, len );
+        dir_entry->name[ len-1 ]|= 0x80;  /* the last character, OS-9 style */
                      dir_entry->fdsect= os9_long( fd );
     }
 } /* Fill_DirEntry */
@@ -3790,6 +3795,7 @@ static os9err Access_DirEntry( rbfdev_typ* dev, ulong dfd,  ulong fd,
     os9err          err, cer;
     uint32_t        dir_len;
     os9direntry_typ dir_entry;
+    char            entryName[DIRNAMSZ+1];
     ushort          sp;
     syspath_typ*    spP;
     Boolean         found;
@@ -3804,13 +3810,13 @@ static os9err Access_DirEntry( rbfdev_typ* dev, ulong dfd,  ulong fd,
     
     while (true) {               dir_len= DIRENTRYSZ; /* read 1 dir entry */
             err= DoAccess( spP, &dir_len, (char*)&dir_entry, false,false );
-                                     LastCh_Bit7( dir_entry.name,  false );
+                                     DirEntry_Name( &dir_entry, entryName );
         if (err) {
             if (err!=E_EOF)              break;
             if (deleteIt) { err= E_PNNF; break; } /* E_EOF for del: not found */
         }
         
-            found= (ustrcmp( cmp, dir_entry.name )==0);
+            found= (ustrcmp( cmp, entryName )==0);
         if (found)                       /* make something with the entry */
             spP->u.rbf.currPos= spP->u.rbf.currPos-dir_len;  /* seek back */
         
@@ -3920,6 +3926,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     ulong           sect, slim, size, totsize, pref;
     uint32_t        dir_len;
     os9direntry_typ dir_entry;
+    char            entryName[DIRNAMSZ+1];
     char            cmp_entry[OS9NAMELEN];
     int             root, isFileEntry;    
     char*           p;
@@ -4074,6 +4081,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     /* this is the recursion loop for directory entries */
     while (true) {               dir_len= DIRENTRYSZ; /* read 1 dir entry */
             err= DoAccess( spP, &dir_len, (char*)&dir_entry, false,false ); 
+        DirEntry_Name( &dir_entry, entryName );    /* normalized, for compare */
         if (err) {
             if (err==E_EOF) {           /* do not create new sub paths !! */
                 if (cre && strcmp( p,"" )==0) {            /* create it ? */
@@ -4094,10 +4102,9 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
         } /* if */
 
         debugprintf(dbgFiles,dbgDetail,("# RBF path : \"%s\" \"%s\"\n", 
-                                           cmp_entry,dir_entry.name ));
-        LastCh_Bit7(dir_entry.name,false );        /* normalize name, allow compare */
-        if (ustrcmp(dir_entry.name,cmp_entry)==0) { /* now the entry has been found */
-            debugprintf(dbgFiles,dbgNorm,("# RBF path found : \"%s\"\n", dir_entry.name ));
+                                           cmp_entry,entryName ));
+        if (ustrcmp(entryName,cmp_entry)==0) { /* now the entry has been found */
+            debugprintf(dbgFiles,dbgNorm,("# RBF path found : \"%s\"\n", entryName ));
             rbf->fddir= rbf->fd_nr;
             rbf->deptr= rbf->currPos-DIRENTRYSZ;
             rbf->currPos= 0;                      /* initialize position to 0 */
@@ -4119,7 +4126,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
             err= CutOS9Path( &p, (char*)&cmp_entry ); if (err) break;
 
             if (*cmp_entry==NUL) {                /* no more sub directories */
-                strcpy( spP->name, dir_entry.name );
+                strcpy( spP->name, entryName );
                 
                 if   (isFileEntry) {              /* if it is a file entry */
                   if (isFile) {

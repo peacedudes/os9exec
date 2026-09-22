@@ -267,7 +267,9 @@ os9err int_rename( ushort cpid, int argc, char **argv )
         
         do {
           err= usrpath_seek ( cpid, path, dcp );                  if (err) break;
-          LastCh_Bit7( newName, true );    len++; // write also NUL terminator
+          LastCh_Bit7( newName, true );
+          if (len<DIRNAMSZ) len++; // and a NUL, unless the name fills the field:
+                                   // the byte after it is the FD sector number
           err= usrpath_write( cpid, path, &len, newName, false ); if (err) break;
         } while (false);
         

@@ -2984,6 +2984,7 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
     
   ulong  cnt, nbytes;
   os9direntry_typ os9dirent;
+  char            entryName[DIRNAMSZ+1]= "";
   
   #ifdef win_unix
     dirent_typ*     dEnt;
@@ -3010,6 +3011,7 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
           
     #elif defined win_unix
       memset( &os9dirent, 0,DIRENTRYSZ ); /* clear before using */
+      entryName[ 0 ]= NUL;
           
       err= DirNthEntry( spP,index, &dEnt );
       #ifdef windows32
@@ -3046,7 +3048,7 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
       } // if
             
       if (dEnt!=NULL && dEnt->d_name[0]!=NUL) { /* an empty slot stays a zeroed entry */
-        GetEntry( dEnt, os9dirent.name, true );
+        GetEntry( dEnt, entryName, true );
         FD_ID          ( spP->fullName, dEnt, &fdpos, &mP );
 
         /* At a host-native device root, make the ".." entry point back at
@@ -3069,8 +3071,9 @@ os9err pDread( _pid_, syspath_typ *spP, uint32_t *n, char* buffer )
       }
       else if (dEnt==NULL) err= E_EOF;
           
-      if (!err && os9dirent.name[0]!=NUL) {
-        len= strlen( os9dirent.name );
+      if (!err && entryName[0]!=NUL) {
+        len= strlen( entryName );     /* up to DIRNAMSZ: a full name has no NUL */
+        memcpy( os9dirent.name, entryName, len );
         os9dirent.name[ len-1 ] |= 0x80; /* set old-style terminator */
         os9dirent.fdsect= os9_long( fdpos );
       } // if
@@ -3182,9 +3185,9 @@ static os9err EntryName( const byte* b, char* name )
 } /* EntryName */
 
 static Boolean SpeltByEntry( const char* host )
-/* GetEntry cuts host names to 27 characters and shows spaces as '_'. A name
-   like that is not what its entry says, and renaming it would change it. */
-{   return strlen( host )<=DIRNAMSZ-1 && strchr( host,' ' )==NULL;
+/* GetEntry cuts host names to DIRNAMSZ characters and shows spaces as '_'. A
+   name like that is not what its entry says, and renaming it would change it. */
+{   return strlen( host )<=DIRNAMSZ && strchr( host,' ' )==NULL;
 } /* SpeltByEntry */
 
 static void HostSpelling( const char* name, const char* like, char* host, size_t size )
@@ -3206,7 +3209,7 @@ static os9err NameTaken( const char* dir, const char* name, const char* host, co
 {
     DIR*        d;
     dirent_typ* dEnt;
-    char        nm[DIRNAMSZ];
+    char        nm[DIRNAMSZ+1];
     os9err      err= 0;
 
     if (!OpenTDir( dir, &d )) return os9error(E_FNA);
@@ -3382,7 +3385,7 @@ os9err pDwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
  * a new entry, a zeroed (deleted) one, another file's FD sector, a partial
  * write. The rest refuses rather than guess, because a host rename cannot be
  * undone by the program that asked for it:
- *  - a host name the entry does not spell exactly (GetEntry cuts names to 27
+ *  - a host name the entry does not spell exactly (GetEntry cuts names to 28
  *    characters and shows spaces as '_'), which the rename would shorten;
  *  - a name some other entry already answers to, compared the way OS-9 does,
  *    ignoring case. POSIX rename() replaces an existing target; here that
@@ -3408,6 +3411,7 @@ os9err pDwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
     dirtable_entry* mP= NULL;
     uint32_t        fdpos;
     os9direntry_typ cur;
+    char            curName[DIRNAMSZ+1];
     char            newName[DIRNAMSZ+1];
     char            srcHost[OS9PATHLEN];
     char            dstHost[OS9PATHLEN];
@@ -3436,9 +3440,10 @@ os9err pDwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
 
     /* the entry exactly as pDread shows it */
     memset  ( &cur,0,DIRENTRYSZ );
-    GetEntry( dEnt, cur.name, true );
+    GetEntry( dEnt, curName, true );
     FD_ID   ( spP->fullName, dEnt, &fdpos, &mP );
-    len= strlen( cur.name ); if (len==0)     return os9error(E_BMODE);
+    len= strlen( curName ); if (len==0)      return os9error(E_BMODE);
+    memcpy( cur.name, curName, len );
     cur.name[ len-1 ] |= 0x80;
     cur.fdsect= os9_long( fdpos );
 

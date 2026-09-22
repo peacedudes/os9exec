@@ -166,6 +166,7 @@ Boolean IsTrDir( ushort umode ); /* transparent file system: unix style */
 os9err  pSCFopt     ( ushort pid, syspath_typ*, byte* buffer );
 os9err  pRBFopt     ( ushort pid, syspath_typ*, byte* buffer );
 void    LastCh_Bit7 ( char* name, Boolean setIt);
+void    DirEntry_Name( const os9direntry_typ* entry, char* name );
 void    Console_Name( int term_id, char* consname );
 char*   OS9exec_Name( void );
 uint32_t Pipe_NReady ( pipechan_typ* p );
