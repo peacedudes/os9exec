@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OS9exec</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+<style>
+  :root { --bg: #101418; --fg: #d8dee4; --dim: #7d8590; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font: 14px -apple-system, system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; }
+  header { padding: 8px 16px; color: var(--dim); }
+  #term { flex: 1; padding: 0 16px 16px; min-height: 0; }
+  /* Visual bell, like Terminal's "flash screen": an even wash over the whole
+     terminal, the same however much text is showing. */
+  #term { position: relative; }
+  #term::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+                 background: #fff; opacity: 0; }
+  #term.bell::after { opacity: 0.125; }
+</style>
+</head>
+<body>
+<header id="status">OS9exec: loading the emulator and its disk...</header>
+<div id="term"></div>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+<script>
+  // The emulator reads keys from Module.os9keys (telnetaccess.c, HandleEvent)
+  // and writes the console byte by byte through Module.os9out (pre.js).
+  const term = new Terminal({ cursorBlink: true, cursorStyle: 'underline', fontSize: 14,
+                              theme: { background: '#101418' } });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(document.getElementById('term'));
+  fit.fit();
+  window.addEventListener('resize', () => fit.fit());
+  term.focus();
+
+  // BEL (Ctrl-G, and what OS-9 sends on a backspace at column zero): flash.
+  const termEl = document.getElementById('term');
+  term.onBell(() => {
+    termEl.classList.add('bell');
+    setTimeout(() => termEl.classList.remove('bell'), 120);
+  });
+
+  let pending = [];
+  const flush = () => { term.write(new Uint8Array(pending)); pending = []; };
+
+  // ?gaps=1: measure where output stalls. "from the emulator" counts pauses
+  // between bytes arriving; "on screen" counts frames that came late.
+  const gaps = new URLSearchParams(location.search).get('gaps') ? { emu: [], draw: [] } : null;
+  let lastByte = 0, lastFrame = 0;
+  const note = (list, t, last) => { if (last && t - last > 50 && t - last < 2000) list.push(Math.round(t - last)); };
+  if (gaps) setInterval(() => {
+    document.getElementById('status').textContent =
+      'pauses over 50 ms -- from the emulator: ' + gaps.emu.length + ' [' + gaps.emu.slice(-8).join(' ') + ']' +
+      '   on screen: ' + gaps.draw.length + ' [' + gaps.draw.slice(-8).join(' ') + ']';
+  }, 500);
+
+  var Module = {
+    // ?r=1 turns off the emulator's baud-rate pacing, which needs waits
+    // shorter than a browser timer can give.
+    arguments: (new URLSearchParams(location.search).get('r') ? ['-r'] : []).concat(OS9_ARGUMENTS),
+    os9disk: OS9_DISK,
+    os9keys: [],
+    // Collected and drawn once per frame: one terminal write per byte made
+    // output arrive in visible stutters.
+    os9out: (c) => {
+      if (gaps) { const t = performance.now(); note(gaps.emu, t, lastByte); lastByte = t; }
+      pending.push(c & 0xff);
+      if (pending.length === 1) requestAnimationFrame((t) => {
+        if (gaps) { note(gaps.draw, t, lastFrame); lastFrame = t; }
+        flush();
+      });
+    },
+    onRuntimeInitialized: () => {
+      document.getElementById('status').textContent = 'OS9exec: running. Click the terminal to type.';
+    },
+    onExit: (code) => {
+      document.getElementById('status').textContent = 'OS9exec: emulation ended (' + code + '). Reload to start again.';
+    },
+  };
+  // Send what a Unix terminal sends: Enter as LF, which the emulator's
+  // console swaps to OS-9's CR (consio.c), exactly as for a native terminal.
+  // Backspace as BS, where xterm sends DEL.
+  const KEYMAP = { 0x0d: 0x0a, 0x7f: 0x08 };
+  term.onData((data) => {
+    for (const ch of data) {
+      const c = ch.charCodeAt(0);
+      Module.os9keys.push(KEYMAP[c] ?? c);
+    }
+  });
+</script>
+<script src="os9exec.js"></script>
+</body>
+</html>

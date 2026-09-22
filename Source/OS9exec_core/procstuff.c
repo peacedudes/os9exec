@@ -214,6 +214,10 @@
 
 #include "os9exec_incl.h"
 
+#if defined __EMSCRIPTEN__
+  #include <emscripten.h>   /* emscripten_sleep: the browser's idle wait in DoWait() */
+#endif
+
 #if defined UNIX && !defined MINGW
   #include <sys/select.h>   /* select()/fd_set for the interactive idle wait in DoWait() */
   #include <signal.h>       /* sigprocmask(): the tick is held off around that select */
@@ -1181,7 +1185,7 @@ static ulong idle_deadline_us( void )
    taken" fails, the shell needing several retries inside the test's window.
    Being woken by readiness and then still waiting out a rota is the worst of
    both; this is what makes the two agree. */
-static void retry_parked_now( void )
+void retry_parked_now( void )
 {
     ushort k;
 
@@ -1232,7 +1236,9 @@ void DoWait( void )
        test harness, any non-interactive driver -- select on it would return
        readable at EOF forever. One source of truth for both decisions. */
     Boolean watching= false;
-    #if !defined MINGW
+    #if defined __EMSCRIPTEN__
+      watching= true;   /* the page queues keys while we sleep (see below) */
+    #elif !defined MINGW
       watching= (isatty( STDIN_FILENO )!=0);
     #endif
 
@@ -1268,7 +1274,14 @@ void DoWait( void )
      * nothing at all is pending -- needs a next-deadline scan across
      * sleepers/alarms/baud and is left as a follow-up (see ROADMAP). */
     Boolean waited= false;
-    #if !defined MINGW
+    #if defined __EMSCRIPTEN__
+      /* A browser: there is no select() on a keyboard, and blocking would
+       * freeze the page. Give the page its event loop for the interval
+       * (Asyncify); anything typed meanwhile is queued, and HandleEvent,
+       * via CheckInputBuffers below, takes it. */
+      emscripten_sleep( (unsigned int)(delay_us/1000UL) );
+      waited= true;
+    #elif !defined MINGW
       if (watching) {
           fd_set         rfds;
           struct timeval tv;

@@ -86,6 +86,11 @@ os9err sig_mask    ( ushort pid, int    level  );
 
 void do_arbitrate( ushort allowedIntUtil );
 void DoWait( void );
+#if defined UNIX && !defined MINGW
+/* Retry every process parked on a read or write at the next arbitration pass,
+   instead of after its NewAge rota: called when host input has arrived. */
+void retry_parked_now( void );
+#endif
 void AssignNewChild( ushort parentid, ushort pid );
 
 void stop_os9exec(void);

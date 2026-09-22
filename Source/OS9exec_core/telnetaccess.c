@@ -362,6 +362,19 @@ void HandleEvent( void )
 } /* empty implementation */
 #endif
 
+#if defined __EMSCRIPTEN__
+  #include <emscripten.h>
+
+  /* A browser has no stdin to poll. The page queues what is typed in
+     Module.os9keys; this takes the next byte, or -1 when there is none. */
+  EM_JS( int, web_next_key, (void), {
+      var q= Module.os9keys;
+      return (q && q.length) ? q.shift() : -1;
+  });
+
+  #define WEB_YIELD_MS 30.0  /* longest a busy guest may keep the page frozen */
+#endif
+
 #if defined UNIX && !defined MINGW
 void HandleEvent( void )
 /* Poll stdin for pending keystrokes and feed them through KeyToBuffer(),
@@ -415,6 +428,30 @@ void HandleEvent( void )
               if      (r==0) host_stdin_eof= true;   /* readable + 0 bytes = EOF */
               else if (r==1) KeyToBuffer( &main_mco, c );
           } // if
+      } // if
+
+    #elif defined __EMSCRIPTEN__
+      /* Keys enter here exactly as a host terminal's do above. This is also
+       * the one place a BUSY guest hands the page its event loop: the main
+       * loop calls it periodically, and without a yield a program that never
+       * waits would freeze the tab -- nothing drawn, no key taken, not even
+       * Ctrl-C. Asyncify unwinds from the emscripten_sleep. */
+      static double lastYield= 0;
+      int           key;
+      Boolean       typed= false;
+
+      while (main_mco.inBufUsed<INBUFSIZE-1 && (key= web_next_key())>=0) {
+          KeyToBuffer( &main_mco, (char)key );
+          typed= true;
+      } // while
+      /* A reader parked for this key is otherwise retried only after its
+         NewAge rota, ~250 ms in Safari: every typed character echoed late.
+         Natively select() sees the keystroke and does exactly this. */
+      if (typed) retry_parked_now();
+
+      if (emscripten_get_now()-lastYield>=WEB_YIELD_MS) {
+          emscripten_sleep( 0 );
+          lastYield= emscripten_get_now();
       } // if
     #endif
 } /* HandleEvent */
