@@ -2451,6 +2451,57 @@ os9err MountDev( ushort pid, char* name, char* mnt_dev, char* devCopy, short ada
     return err;
 } /* MountDev */
 
+static Boolean IsHDevice( const char* name )
+/* "h1" or "/h1": a letter /hX can name. */
+{
+    if (*name==PSEP) name++;
+    return tolower( (unsigned char)name[ 0 ] )=='h' && isalnum( (unsigned char)name[ 1 ] ) &&
+           name[ 2 ]==NUL;
+} /* IsHDevice */
+
+static os9err MountImageAs( ushort pid, char* image, char* devName, Boolean wProtect, int imgMode )
+/* `mount <image> hX`: attach an RBF image file as /hX while running.
+ *
+ * This form never worked: MountDev took the device name from the image's own
+ * path (`mount /h5/disk.dsk h1` became a device "h5" and then looked for
+ * disk.dsk INSIDE it), and a relative image was classed by the directory it sat
+ * in and opened as one (E$FNA). No test mounted an existing image, so nothing
+ * noticed. Rather than untangle DevInit, the image is attached the way OS9Hx
+ * attaches one at startup (TwoCharDev consults SetMountedImage first), and then
+ * opened through the ordinary device path, so -w still applies.
+ *
+ * <image> is an OS-9 path to a file on a host directory, or else a host path. */
+{
+    char        host[OS9PATHLEN];
+    char        devPath[4];
+    char        tmp [OS9PATHLEN];
+    char*       root= NULL;
+    char*       p   = image;
+    char        letter;
+    os9err      err;
+
+    if (*devName==PSEP) devName++;
+    letter= (char)tolower( (unsigned char)devName[ 1 ] );
+
+    if (parsepath( pid,&p,host,false )!=0 || !FileFound( host )) {
+        if (!FileFound( image )) return _errmsg( E_PNNF, "can't find the image \"%s\".\n", image );
+        snprintf( host,sizeof(host), "%s", image );
+    } // if
+
+    TwoCharDev( devName,&root,tmp );
+    if (root!=NULL) return _errmsg( E_DEVBSY, "/%s is already a device.\n", devName );
+
+    SetMountedImage( letter,host );
+    snprintf( devPath,sizeof(devPath), "/h%c", letter );
+    err= MountDev( pid, devPath, "", "", defSCSIAdaptNo, defSCSIBusNo, NO_SCSI, 0,
+                   0, 0, 1, wProtect, imgMode );
+    if (err) {
+        SetMountedImage( letter,NULL );
+        return _errmsg( err, "can't mount \"%s\" as /%s.\n", image, devName );
+    } // if
+    return 0;
+} /* MountImageAs */
+
 os9err int_mount( ushort pid, int argc, char** argv )
 /* mount an RBF image partition file */
 {
@@ -2631,6 +2682,9 @@ os9err int_mount( ushort pid, int argc, char** argv )
      * an ordinary mount would read as "the volume was renamed", which it was not. */
     if (*volName!=NUL)
       return _errmsg( E_BPNAM, "-v=<name> only applies with -k=<size>.\n" );
+
+    if (nargc==2 && scsiID==NO_SCSI && ramSize==0 && *devCopy==NUL && IsHDevice( nargv[ 1 ] ))
+        return MountImageAs( pid, nargv[ 0 ], nargv[ 1 ], wProtect, imgMode );
 
     if (nargc==0) {      /* no param is not really allowed: exception is ramDisk with */
       if (ramSize>0 || /* size>0 or <devCopy> defined */

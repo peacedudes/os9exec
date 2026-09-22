@@ -82,6 +82,8 @@ void   show_files        ( ushort pid );
 os9err parsepathext      ( ushort pid, char** inp, char* out, Boolean exedir, Boolean *ispath );
 os9err parsepath         ( ushort pid, char** inp, char* out, Boolean exedir );
 void   TwoCharDev        ( char* p, char** p3, char* tmp );
+void   SetMountedImage   ( char letter, const char* hostPath );
+const char* MountedImage ( char letter );
 void   TwoCharDevCached  ( char* p, char** p3, char* tmp );
 void   DevRootsBegin     ( void );
 Boolean DevRootsMayContain( const char* hostpath );

@@ -1109,6 +1109,37 @@ do {
         commands: roundTrip("h5"), check: whole)
 }
 
+// ── `mount <image> hX` attaches an existing image while running ──
+// It never worked: the device took its name from the image's own path
+// (`mount /h5/disk h1` became a device "h5" that then looked for "disk" inside
+// itself), and a relative image was opened as a directory. Nothing in the suite
+// mounted an EXISTING image, so nothing noticed. The browser build depends on it
+// to attach a disk the user brings.
+//
+// The image is made in one session and mounted by path in the next, as a user
+// would; -w must refuse a write, and a plain mount must take one.
+do {
+    removeScratchItem(scratchDevice)
+    _ = os9(["mount -k=500K \(scratchDevice)", "makdir /\(scratchDevice)/MARK"])
+    run("rbf: mount attaches an existing image as /hX while running",
+        expectation: "the image's MARK listed as /h1; the write lands; -w refuses one",
+        commands: ["mount /h5/\(scratchDevice) h1", "dir /h1", "makdir /h1/WROTE", "dir /h1",
+                   "mount -w /h5/\(scratchDevice) h2", "makdir /h2/NOPE"]) { out in
+        let printed = out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+                         .filter { !$0.hasPrefix("$ ") }
+        return printed.contains { $0.contains("MARK") }
+            && printed.contains { $0.contains("WROTE") }
+            && out.contains("can't make \"/h2/NOPE\"")
+            && !out.contains("can't mount")
+    }
+    run("rbf: mount refuses a device that already exists, and says which",
+        expectation: "a second mount as /h1 is refused, naming /h1",
+        commands: ["mount /h5/\(scratchDevice) h1", "mount /h5/\(scratchDevice) h1"]) {
+        $0.contains("/h1 is already a device")
+    }
+    removeScratchItem(scratchDevice)
+}
+
 // A RAW device open ("/dd@") of a host-DIRECTORY device ANSWERS, with one
 // synthesized identification sector, and nothing past it (2026-09-10; it was
 // refused with E$Unit from 063f8d1 until then). The reason is stat(): Microware's

@@ -700,6 +700,26 @@ static void AnnounceOverride( const char* dev, const char* chosen )
                     dev, dev[ 1 ], chosen, ambient );
 } /* AnnounceOverride */
 
+/* Images attached while running, by `mount <image> hX`: device letter to host
+   path. Consulted before OS9Hx, so a mounted image is found by exactly the
+   route an OS9Hx image is -- one way to reach an image, whichever way it came. */
+static char mountedImage[ 256 ][ OS9PATHLEN ];
+
+void SetMountedImage( char letter, const char* hostPath )
+/* Attach <hostPath> as /h<letter>, or detach it with NULL. */
+{
+    char* slot= mountedImage[ (unsigned char)tolower( (unsigned char)letter ) ];
+    if (hostPath==NULL) *slot= NUL;
+    else snprintf( slot,OS9PATHLEN, "%s", hostPath );
+} /* SetMountedImage */
+
+const char* MountedImage( char letter )
+/* The host path mounted as /h<letter>, or NULL. */
+{
+    const char* slot= mountedImage[ (unsigned char)tolower( (unsigned char)letter ) ];
+    return *slot==NUL ? NULL : slot;
+} /* MountedImage */
+
 void TwoCharDev( char* p, char** p3, char* tmp )
 /* --- two-char device name */
 {
@@ -718,8 +738,11 @@ void TwoCharDev( char* p, char** p3, char* tmp )
         strncat     ( envnam,(p+1),1 );
         *p3= egetenv( envnam ); /* get OS9Hx */
         if (*p3!=NULL && **p3==NUL) *p3= NULL; /* invalidate again */
-
-        if (*p3!=NULL) AnnounceOverride( p,*p3 ); /* explicit beats ambient */
+        if (MountedImage( p[ 1 ] )!=NULL) {    /* mounted while running */
+            strcpy( tmp,MountedImage( p[ 1 ] ) );
+            *p3= tmp;
+        }
+        else if (*p3!=NULL) AnnounceOverride( p,*p3 ); /* explicit beats ambient */
 
         if (*p3==NULL) {
             ambientScan= true;
@@ -848,7 +871,7 @@ void TwoCharDevCached( char* p, char** p3, char* tmp )
         strcpy ( envnam,"OS9H" );
         strncat( envnam,(p+1),1 );
             e= getenv( envnam );
-        if ((e==NULL || *e==NUL) && a->known) {
+        if ((e==NULL || *e==NUL) && MountedImage( p[ 1 ] )==NULL && a->known) {
             if (!a->found) { *p3= NULL; return; }
             strcpy( tmp,a->root );
             *p3= tmp;
