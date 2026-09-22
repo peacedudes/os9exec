@@ -1233,6 +1233,19 @@ static Boolean fifo_pop( baud_device_t* d, byte* c, ushort* owner )
 /* How long a paced device waits before offering a refused byte again. */
 #define BAUD_REFUSED_RETRY_US 10000UL
 
+/* A writer parked on a full queue is retried only every NewAge scheduler
+   rounds (do_arbitrate), and every round ends in an idle wait: ~30 ms
+   natively, but ~250 ms in Safari, whose timers are slower still -- output
+   ran, stopped for a quarter of a second, and ran again. A driver wakes its
+   writer when the buffer drains (SCF's low-water mark); this does the same,
+   once the queue is half empty. */
+static void wake_parked_writers( void )
+{
+    ushort k;
+    for (k=1; k<MAXPROCESSES; k++)
+        if (procs[ k ].state==pWaitWrite) procs[ k ].pW_age= 0;
+} /* wake_parked_writers */
+
 /* pop+display everything currently due, across all devices. Unpaced
    devices (us_per_char==0) always drain in full immediately -- they
    shouldn't normally accumulate a backlog, but drain fully if they ever do. */
@@ -1285,6 +1298,7 @@ void baud_drain_due( void )
             }
             fifo_pop( d,&c,&owner );
             d->next_due_us += d->us_per_char;
+            if (d->count==BAUD_FIFO_SIZE/2) wake_parked_writers(); /* low water */
         }
     }
     recompute_next_wake();
