@@ -3817,6 +3817,101 @@ do {
     }
 }
 
+// ── F$Event: Ev$Wait answers the value that satisfied it ──────────────────────
+// "returns with the value of the event causing the process to wake" (Microware,
+// OS-9 Intermediate training, _os9_ev_wait) -- the value BEFORE the wait
+// auto-increment, as the signal search already reported it for a queued
+// waiter. An event already in range answered the incremented value instead,
+// and TOP's os9lib takes a mutex with `while (_ev_wait(id,0,0) != 0)`: it got
+// 1, went round, and waited forever on the lock it had just taken
+// (osk-freeware, 2026-09-23: MNews hung in info_lock).
+do {
+    let evAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "F$Event  equ  $53",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect evpre,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "",
+        "start:",
+        "  lea     evname(pc),a0",
+        "  moveq   #0,d0",          // initial value 0: the lock is free
+        "  move.w  #2,d1",          // Ev$Creat
+        "  move.w  #1,d2",          // wait increment +1: waiting takes it
+        "  move.w  #-1,d3",         // signal increment -1: signalling frees it
+        "  OS9     F$Event",
+        "  bcs     done",
+        "  move.l  d0,d7",
+        "  move.w  #4,d1",          // Ev$Wait on [0,0], in range at once
+        "  moveq   #0,d2",
+        "  moveq   #0,d3",
+        "  OS9     F$Event",
+        "  bcs     done",
+        "  move.l  d1,d6",          // what it answered
+        "  move.l  d7,d0",
+        "  move.w  #6,d1",          // Ev$Read: the increment must still be applied
+        "  OS9     F$Event",
+        "  bcs     done",
+        "  tst.l   d6",
+        "  bne.s   after",
+        "  cmpi.l  #1,d1",
+        "  bne.s   after",
+        "  lea     mok(pc),a0",
+        "  moveq   #mokl,d1",
+        "  bra.s   say",
+        "after:",
+        "  lea     mbad(pc),a0",
+        "  moveq   #mbadl,d1",
+        "say:",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  move.l  d7,d0",
+        "  move.w  #1,d1",          // Ev$UnLnk, then Ev$Delet
+        "  OS9     F$Event",
+        "  lea     evname(pc),a0",
+        "  move.w  #3,d1",
+        "  OS9     F$Event",
+        "  moveq   #0,d1",
+        "done:",
+        "  OS9     F$Exit",
+        "evname: dc.b  \"EvPre\",0",
+        "mok:  dc.b  \"EVWAIT ANSWERED 0, EVENT NOW 1\",$0D",
+        "mokl  equ   *-mok",
+        "mbad:  dc.b  \"EVWAIT ANSWERED THE INCREMENTED VALUE\",$0D",
+        "mbadl  equ   *-mbad",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+
+    let name = "f$event: Ev$Wait answers the value that satisfied it, before the wait increment"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? evAsm.write(toFile: scratchDisk + "/evpre.a", atomically: true, encoding: .utf8)
+        let out = os9([
+            "load /dd/CMDS/r68 /dd/CMDS/l68",
+            "r68 /h5/evpre.a -o=/h5/evpre.r",
+            "l68 /h5/evpre.r -o=/h5/evpre",
+            "/h5/evpre"
+        ], timeout: 20)
+        if out.contains("EVWAIT ANSWERED 0, EVENT NOW 1") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let preview = out.split(separator: "\n")
+                .filter { $0.contains("EVWAIT") || $0.contains("Error") }
+                .prefix(4).joined(separator: " | ")
+            print("      output: \(preview)")
+            failed += 1
+        }
+        for leftover in ["evpre.a", "evpre.r", "evpre"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$Event: a bad event ID errors immediately instead of hanging forever ──────
 // evWait() (events.c) used to return E_EVNTID for BOTH "no such event" and
 // "value not yet in range" -- the exact same code the polling dispatch loop in
@@ -3900,6 +3995,9 @@ do {
 // Initial value is chosen already inside the wait range so this single process
 // never blocks: a genuinely-blocking wait (a second process signalling a first
 // process's parked wait) is a separate, harder test not attempted here.
+// Each wait answers the value that satisfied it, before its increment (see
+// "Ev$Wait answers the value that satisfied it"); this test expected the
+// incremented one until 2026-09-23, which was the emulator's answer, not OS-9's.
 do {
     let evAsm = [
         "  use /dd/DEFS/oskdefs.d",
@@ -3921,14 +4019,14 @@ do {
         "  lea     evId(pc),a1",
         "  move.l  d0,(a1)",
         "",
-        "  lea     evId(pc),a1",     // Ev_Wait #1: 5 is already in range -> value becomes 6
-        "  move.l  (a1),d0",
+        "  lea     evId(pc),a1",     // Ev_Wait #1: 5 is already in range -> answers 5,
+        "  move.l  (a1),d0",         // the value that satisfied it; the event becomes 6
         "  move.w  #4,d1",
         "  moveq   #1,d2",
         "  move.l  #999,d3",
         "  OS9     F$Event",
         "  bcs     fail",
-        "  cmp.l   #6,d1",
+        "  cmp.l   #5,d1",
         "  bne     fail",
         "",
         "  lea     evId(pc),a1",     // Ev_Signl: value 6+1=7
@@ -3937,14 +4035,14 @@ do {
         "  OS9     F$Event",
         "  bcs     fail",
         "",
-        "  lea     evId(pc),a1",     // Ev_Wait #2: 7 is in range -> value becomes 8
+        "  lea     evId(pc),a1",     // Ev_Wait #2: 7 is in range -> answers 7, becomes 8
         "  move.l  (a1),d0",
         "  move.w  #4,d1",
         "  moveq   #1,d2",
         "  move.l  #999,d3",
         "  OS9     F$Event",
         "  bcs     fail",
-        "  cmp.l   #8,d1",
+        "  cmp.l   #7,d1",
         "  bne     fail",
         "",
         "  lea     evId(pc),a1",     // Ev_UnLnk: the creator holds the one link

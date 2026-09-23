@@ -451,10 +451,19 @@ os9err evWait( uint32_t evId, int minV, int maxV, ushort pid, int *evValue )
     /* First time in: "the event variable is compared to the range specified
        in d2 and d3. If the value is not in range, the calling process is
        suspended in a FIFO event queue." */
+    /* The value answered is the one that satisfied the wait -- before its
+       auto-increment, as the signal search already reports it: "returns with
+       the value of the event causing the process to wake" (Microware, OS-9
+       Intermediate training, _os9_ev_wait), and a waiter a signal interrupts
+       gets one "not within the specified range" (Ev$Wait, page 1-22), which
+       is only a distinction if a normal wake answers one that is. TOP's
+       os9lib (1988) takes a mutex with `while (_ev_wait(id,0,0) != 0)`; this
+       used to answer the incremented 1 and send it round to wait on the lock
+       it had just taken, forever. */
     if (ev->value>=minV &&
         ev->value<=maxV) {
-        ev->value= evSatAdd( ev->value, ev->wInc );
         *evValue = ev->value;
+        ev->value= evSatAdd( ev->value, ev->wInc );
         return 0;
     } /* if */
 
