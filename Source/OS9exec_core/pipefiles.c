@@ -748,7 +748,7 @@ static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP,
             /* ...so wait for writing end of pipe to send more data */
           //if (cp->isIntUtil || procs[pid].isIntUtil) 
           //  printf( "ALARM 2\n" );
-            if (syW) printf( "ALARM double SysTask\n" );
+            if (syW) debugprintf(dbgAnomaly,dbgNorm,("# pReadSysTaskExe: pid=%d already in a system task\n", pid ));
             set_os9_state( pid, pSysTask, "pReadSysTaskExe" ); /* stay in (or enter) systask */
             cp->systask     = rd_func;
             cp->systaskdataP= (void*)spP;

@@ -696,11 +696,15 @@ void release_mem( void* membase )
     } /* for */
     
     #ifdef REUSE_MEM
-      if (memsz==0) { 
-        printf( "STRANGE BLOCK at %p\n", membase ); return;
+      /* Diagnostics for os9exec's own bookkeeping, so they go where -d output
+         goes. They were plain printf: a host pointer in the guest's output. */
+      if (memsz==0) {
+        debugprintf(dbgMemory,dbgNorm,("# release_mem: STRANGE BLOCK (size 0) at %p\n", membase ));
+        return;
       } // if
-      if (memsz==1) { 
-        printf( "UNUSED  BLOCK at %p\n", membase ); return;
+      if (memsz==1) {
+        debugprintf(dbgMemory,dbgNorm,("# release_mem: UNUSED BLOCK (not allocated) at %p\n", membase ));
+        return;
       } // if
       
       if (release_ok( membase,memsz )) {
@@ -814,6 +818,13 @@ static void* get_mem_once( ulong memsz )
     #endif
       
     memsz= (memsz+MBlk-1) & 0xFFFFFFC0; /* round up to next boundary */
+
+    /* A zero-byte request (F$SRqMem with d0=0 is one) still gets a block of
+       its own. Recorded at size 0 it could share its address with the next
+       allocation, and blocks are released by address -- releasing one could
+       then take the other's entry. The guest is still told what it asked for:
+       this is only how much of the arena stands behind it. */
+    if (memsz==0) memsz= MBlk;
     
     #ifdef REUSE_MEM
       for (k= MAX_MEMALLOC-1; k>=0; k--) { /* try to get it from the free list */

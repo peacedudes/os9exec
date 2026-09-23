@@ -5727,7 +5727,7 @@ do {
     let header = [
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit   equ $06", "F$Link   equ $00", "F$DatMod equ $25", "F$CCtl   equ $5A",
-        "F$UAcct  equ $59", "F$Protect equ $3B", "F$UnLink equ $02",
+        "F$UAcct  equ $59", "F$Protect equ $3B", "F$UnLink equ $02", "F$SRqMem equ $28", "F$SRtMem equ $29",
         "I$Open   equ $84", "I$GetStt equ $8D", "I$WritLn equ $8C"
     ]
     func say(_ label: String) -> [String] {
@@ -5818,8 +5818,27 @@ do {
         "sname: dc.b \"stkymod\",0"] + message("mskept", "STICKY KEPT AT 0 AND GONE AT -1") +
         message("msgone", "STICKY FREED AT 0") + message("msstay", "STICKY NEVER FREED") + ["  ends", ""]
 
+    // A zero-byte F$SRqMem is granted 0 bytes at an address of its own. It
+    // used to be recorded as a zero-size block, which the next request could
+    // share, and returning it printed "STRANGE BLOCK at <host pointer>" into
+    // the program's own output (osk-freeware, 2026-09-23, via _srqmem(0)).
+    let zeroBlock = header + [
+        "  psect mzero,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #0,d0", "  OS9 F$SRqMem", "  bcs.w fail",
+        "  movea.l a2,a3", "  move.l d0,d7",
+        "  moveq #16,d0", "  OS9 F$SRqMem", "  bcs.w fail",
+        "  cmpa.l a2,a3", "  beq.s shared"] + say("mapart") + [
+        "  moveq #16,d0", "  OS9 F$SRtMem",
+        "  move.l d7,d0", "  movea.l a3,a2", "  OS9 F$SRtMem",
+        "  bra.s done", "shared:"] + say("mshared") + [
+        "done:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit"] +
+        message("mapart", "ZERO BLOCK HAS ITS OWN ADDRESS") + message("mshared", "ZERO BLOCK SHARES AN ADDRESS") +
+        ["  ends", ""]
+
     let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl, "macct": acct,
-                   "mstky": sticky]
+                   "mstky": sticky, "mzero": zeroBlock]
     for (module, lines) in modules {
         try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
                                                   atomically: true, encoding: .utf8)
@@ -5842,7 +5861,9 @@ do {
         StatusCase(name: "system: F$UAcct answers E$UnkSvc quietly, F$Protect succeeds as F$Permit does",
                    module: "macct", want: ["UACCT UNKSVC PROTECT OK"], absent: ["unimplemented"]),
         StatusCase(name: "module: a sticky module stays at link count 0 and goes at -1",
-                   module: "mstky", want: ["STICKY KEPT AT 0 AND GONE AT -1"])
+                   module: "mstky", want: ["STICKY KEPT AT 0 AND GONE AT -1"]),
+        StatusCase(name: "memory: a zero-byte F$SRqMem gets an address of its own, and says nothing on return",
+                   module: "mzero", want: ["ZERO BLOCK HAS ITS OWN ADDRESS"], absent: ["BLOCK at"])
     ]
     let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
     if !chosen.isEmpty {
@@ -5862,7 +5883,7 @@ do {
             print("FAIL: \(testCase.name)")
             let lines = out.split(whereSeparator: \.isNewline).filter {
                 $0.contains("READY") || $0.contains("DATMOD") || $0.contains("CCTL") || $0.contains("Error") ||
-                $0.contains("UACCT") || $0.contains("unimplemented") || $0.contains("STICKY")
+                $0.contains("UACCT") || $0.contains("unimplemented") || $0.contains("STICKY") || $0.contains("BLOCK")
             }
             print("      saw: \(lines.joined(separator: " | "))")
             failed += 1
