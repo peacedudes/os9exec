@@ -377,13 +377,14 @@ void Update_MDir( void )
             set_hiword( b, (ushort)modK->linkcount );
 
             en->m1  = os9_long( TO68K(mod) );
-            /* The group pointer. A "module group" is several modules sharing one
-               allocation, so that unlinking frees the block once -- see F$VModul,
-               which takes the group base in d0. os9exec gives every module its own
-               get_mem, including each module of a multi-module file (the load loop
-               below), so each one IS its own group and pointing m2 at itself is the
-               truthful answer rather than a placeholder. */
-            en->m2  = en->m1;
+            /* The group pointer. A "module group" is the modules of one file,
+               loaded together and unlinked together -- see F$VModul, which takes
+               the group base in d0. os9exec gives every module its own get_mem,
+               but the load loop records the file's first module as each one's
+               group, so m2 points at that one; a module loaded alone is its own. */
+            {   mod_exec* base= os9mod( modK->group );
+                en->m2= base!=NULL ? os9_long( TO68K(base) ) : en->m1;
+            }
             en->size= mod->_mh._msize; /* big/little endian is already correct !!! */
             en->lnk = os9_long( b );
         }

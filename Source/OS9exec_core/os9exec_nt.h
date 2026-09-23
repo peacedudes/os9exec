@@ -652,7 +652,7 @@ typedef struct {
 /* a standard module directory entry — four 32-bit big-endian fields as the 68k expects */
 typedef struct {
             os9addr_t m1;    /* big-endian 68k module address */
-            os9addr_t m2;    /* big-endian 68k module address (group; mirrors m1 for now) */
+            os9addr_t m2;    /* big-endian 68k module address (its group's first module) */
             uint32_t  size;  /* big-endian module size */
             uint32_t  lnk;   /* big-endian link count */
          } mdir_entry;

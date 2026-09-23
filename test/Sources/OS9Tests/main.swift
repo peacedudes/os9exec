@@ -8007,7 +8007,67 @@ do {
             failed += 1
         }
     }
-    for item in ["mgrpa.a", "mgrpa.r", "mgrpa", "mgrpb.a", "mgrpb.r", "mgrpb", "mgrpab"] {
+
+    // The module directory's second word is the group pointer: "the module group
+    // base" (F$VModul takes it in d0). It pointed every module at itself, so the
+    // pair looked like two groups of one. The checker copies the directory with
+    // F$GModDr and wants exactly one entry whose group is another module, and
+    // that module in the directory too.
+    let groupName = "module: the module directory points a file's second module at its first as the group"
+    if filter.isEmpty || groupName.localizedCaseInsensitiveContains(filter) {
+        let checkAsm = [
+            "  use /dd/DEFS/oskdefs.d", "F$Exit equ $06", "F$GModDr equ $1A", "F$SRqMem equ $28",
+            "I$WritLn equ $8C",
+            "  psect mgrpchk,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+            "start:",
+            "  move.l #16384,d0", "  OS9 F$SRqMem", "  bcs.s bad", "  movea.l a2,a4",
+            "  movea.l a2,a0", "  move.l d0,d1", "  OS9 F$GModDr", "  bcs.s bad",
+            "  lsr.l #4,d1", "  beq.s bad",
+            "  moveq #0,d6", "  movea.l a4,a3", "  move.l d1,d7",
+            "scan:", "  move.l (a3),d2", "  beq.s next", "  cmp.l 4(a3),d2", "  beq.s next",
+            "  addq.l #1,d6", "  move.l 4(a3),d4",
+            "next:", "  lea 16(a3),a3", "  subq.l #1,d7", "  bne.s scan",
+            "  cmpi.l #1,d6", "  bne.s bad",
+            "  movea.l a4,a3", "  move.l d1,d7",
+            "find:", "  cmp.l (a3),d4", "  beq.s good", "  lea 16(a3),a3", "  subq.l #1,d7", "  bne.s find",
+            "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1", "  bra.s say",
+            "good:", "  lea mok(pc),a0", "  moveq #mokl,d1",
+            "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+            "mok:  dc.b \"GROUP POINTS AT THE FIRST\",$0D", "mokl equ *-mok",
+            "mbad: dc.b \"GROUP POINTER WRONG\",$0D", "mbadl equ *-mbad",
+            "  ends", ""
+        ].joined(separator: "\r")
+        try? checkAsm.write(toFile: scratchDisk + "/mgrpchk.a", atomically: true, encoding: .utf8)
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68",
+                     "r68 /h5/mgrpchk.a -o=/h5/mgrpchk.r", "l68 /h5/mgrpchk.r -o=/h5/mgrpchk"]
+        if !FileManager.default.fileExists(atPath: scratchDisk + "/mgrpab") {
+            for part in parts {
+                build += ["r68 /h5/\(part).a -o=/h5/\(part).r", "l68 /h5/\(part).r -o=/h5/\(part)"]
+            }
+        }
+        _ = os9(build, timeout: 60)
+        if !FileManager.default.fileExists(atPath: scratchDisk + "/mgrpab") {
+            var pair = Data()
+            for part in parts {
+                if let bytes = FileManager.default.contents(atPath: scratchDisk + "/" + part) {
+                    pair.append(bytes)
+                }
+            }
+            FileManager.default.createFile(atPath: scratchDisk + "/mgrpab", contents: pair)
+        }
+        let out = os9(["load /h5/mgrpab", "/h5/mgrpchk"], timeout: 30)
+        if out.contains("GROUP POINTS AT THE FIRST") {
+            print("PASS: \(groupName)")
+            passed += 1
+        } else {
+            print("FAIL: \(groupName)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("GROUP") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for item in ["mgrpa.a", "mgrpa.r", "mgrpa", "mgrpb.a", "mgrpb.r", "mgrpb", "mgrpab",
+                 "mgrpchk.a", "mgrpchk.r", "mgrpchk"] {
         try? FileManager.default.removeItem(atPath: scratchDisk + "/" + item)
     }
 }
