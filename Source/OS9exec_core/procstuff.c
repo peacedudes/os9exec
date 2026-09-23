@@ -643,6 +643,20 @@ os9err kill_process( ushort pid )
             debugprintf(dbgProcess,dbgNorm,("# kill_process: orphaned child pid=%d\n",k));
         }
     }
+
+    /* A child this process was debugging (F$DFork) is its to end, with
+       F$DExit; nobody else may. Left alone it slept forever, and it kept this
+       pid as its debugger -- so whoever was given this pid next passed the
+       parent checks of F$DExec and F$DExit and could drive it. It ends here,
+       as its debugger's own F$DExit would have ended it. */
+    for (k=0; k<MAXPROCESSES; k++) {
+        if (k!=pid && dbg_parent_pid[k]==pid && procs[k].state!=pUnused) {
+            dbg_parent_pid[k]  = 0;
+            dbg_step_pending[k]= 0;
+            if (procs[k].state!=pDead) kill_process( (ushort)k );
+            if (procs[k].state==pDead) set_os9_state( (ushort)k, pUnused, "kill_process (debugger gone)" );
+        }
+    }
     if (cp->state==pDead) return os9error(E_IPRCID); /* avoid killing again, because double close is not good */
     debugprintf(dbgProcess,dbgNorm,("# kill_process: set to unused\n" ));
 
@@ -1407,6 +1421,11 @@ static Boolean ShutdownDue( void )
         if (p->state==pSysTask && pipe_request_reads( (ushort)k )) continue;
         return false;
     }
+
+    /* A parked process with an alarm armed is not stuck: the alarm is how a
+       program aborts its own wait (F$Alarm's own example), and it comes from
+       inside. Ending before it is due left that process's work undone. */
+    { uint32_t due; if (A_NextDue( &due )) return false; }
     return true;
 } /* ShutdownDue */
 

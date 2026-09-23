@@ -555,8 +555,11 @@ static os9err CutOS9Path( char** p, char* cmp_entry )
     }
     
     while   (**p!=NUL) {
-        if  (n++>=OS9NAMELEN) { err= E_BPNAM; break; } /* avoid too long strings */
+        /* the separator first: counted first, a 28-character name -- the
+           longest RBF allows -- was refused E$BPNam on the '/' after it, so
+           it worked as a path's last element and nowhere else */
         if  (**p==PSEP) { (*p)++; break; };
+        if  (n++>=OS9NAMELEN) { err= E_BPNAM; break; } /* avoid too long strings */
         *c=  **p; 
         c++; (*p)++;
     }

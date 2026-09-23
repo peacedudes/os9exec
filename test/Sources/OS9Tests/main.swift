@@ -1717,7 +1717,7 @@ do {
             patched = true
         }
         let out = os9(["list /h9/seed"], timeout: 30)
-        if patched && out.contains("000:176") && !out.contains("seed\r") {
+        if patched && out.contains("000:176") && !out.split(whereSeparator: \.isNewline).contains("seed") {
             print("PASS: \(name)")
             passed += 1
         } else {
@@ -2082,6 +2082,34 @@ do {
             failed += 1
         }
         try? FileManager.default.removeItem(atPath: hostDir)
+    }
+}
+
+// ── RBF: a 28-character name works in the middle of a path, not only at its end ──
+// 28 characters is the longest name RBF allows, and it worked as the last
+// element of a path. In the middle, the name splitter counted the '/' after it
+// as a 29th character and refused the whole path E$BPNam: a directory with a
+// full-length name could be made but nothing could be made or found inside it.
+// Found while building a test for the pre-release review.
+do {
+    let name = "rbf: a 28-character directory name works in the middle of a path"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let comp = String(repeating: "q", count: 27) + "z"        // 28 characters
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        let out = os9(["mount -k=500K \(scratchDevice)",
+                       "makdir /h9/\(comp)", "makdir /h9/\(comp)/\(comp)",
+                       "echo DEEP >/h9/\(comp)/\(comp)/f", "list /h9/\(comp)/\(comp)/f"], timeout: 60)
+        // by line: "\r\n" is a single Character to Swift, so "DEEP\r" never matches
+        if out.split(whereSeparator: \.isNewline).contains("DEEP"), !out.contains("Error #") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("Error") }.prefix(3)
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
     }
 }
 
@@ -4430,6 +4458,142 @@ do {
             failed += 1
         }
         for leftover in ["mptyl.a", "mptyl.r", "mptyl"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
+// ── F$Alarm: an absolute alarm dated decades ago is sent at once ─────────────
+// A date in the past is already due. For one far enough back the day count
+// times 86400 overflowed 32 bits, undefined in C, and came out as an alarm
+// weeks in the future. Julian day 0, a signal to our own intercept routine,
+// and a short sleep: the signal must have arrived. Found by review.
+do {
+    let pastAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$Icpt equ $09", "F$Sleep equ $0A", "F$RTE equ $1E", "F$Alarm equ $56",
+        "I$WritLn equ $8C",
+        "  psect mpast,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "start:",
+        "  clr.b (a6)", "  lea handler(pc),a0", "  OS9 F$Icpt",
+        "  moveq #0,d0", "  move.w #4,d1", "  move.w #200,d2", "  moveq #0,d3", "  moveq #0,d4",
+        "  OS9 F$Alarm", "  bcs.s fail",
+        "  moveq #20,d0", "  OS9 F$Sleep",              // a fifth of a second is plenty
+        "  tst.b (a6)", "  beq.s notyet",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "notyet:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "handler:", "  move.b #1,(a6)", "  OS9 F$RTE",
+        "mok: dc.b \"PAST ALARM WAS SENT AT ONCE\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"PAST ALARM NOT SENT\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "f$alarm: an A$AtJul alarm for Julian day 0 is sent at once, not weeks later"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? pastAsm.write(toFile: scratchDisk + "/mpast.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mpast.a -o=/h5/mpast.r", "l68 /h5/mpast.r -o=/h5/mpast"], timeout: 60)
+        let out = os9(["/h5/mpast"], timeout: 15)
+        if out.contains("PAST ALARM WAS SENT AT ONCE") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("ALARM") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mpast.a", "mpast.r", "mpast"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
+// ── F$SetSys: os9exec's note about an unknown offset is not the program's output ─
+// An offset os9exec does not know answers 0, and says so -- but it said so with
+// upe_printf, which writes to the CALLING PROGRAM's stderr path. The program's
+// stderr is redirected to a file here (">>"), and that file must stay empty.
+// Found by review.
+do {
+    let ssAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$SetSys equ $27",
+        "  psect mssq,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "start:",
+        "  move.w #$7FF0,d0", "  move.l #$80000004,d1", "  OS9 F$SetSys",
+        "  moveq #0,d1", "  OS9 F$Exit",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "f$setsys: the note about an unknown offset stays out of the program's stderr"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? ssAsm.write(toFile: scratchDisk + "/mssq.a", atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/mssq.err")
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mssq.a -o=/h5/mssq.r", "l68 /h5/mssq.r -o=/h5/mssq"], timeout: 60)
+        _ = os9(["/h5/mssq >>/h5/mssq.err"], timeout: 20)
+        let err = (try? String(contentsOfFile: scratchDisk + "/mssq.err", encoding: .isoLatin1)) ?? "<none>"
+        if err.isEmpty {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      program's stderr: \(err.debugDescription.prefix(120))")
+            failed += 1
+        }
+        for leftover in ["mssq.a", "mssq.r", "mssq", "mssq.err"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
+// ── os9exec does not end while a waiting process has an alarm to come ────────
+// os9exec ends once the launch process is gone and every process left is only
+// waiting for input. A process with an alarm armed is not only waiting: the
+// alarm is how a program aborts its own wait. Here a background child blocks
+// reading an empty pipe with an alarm 30 ticks away whose handler writes a
+// marker file; the shell exits at once. Found by review.
+do {
+    let alarmAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$Icpt equ $09", "F$Alarm equ $56", "I$Dup equ $82", "I$Create equ $83",
+        "I$Open equ $84", "I$ReadLn equ $8B", "I$Close equ $8F",
+        "  psect mawait,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea handler(pc),a0", "  OS9 F$Icpt",
+        "  moveq #0,d0", "  moveq #1,d1", "  move.w #200,d2", "  moveq #30,d3", "  OS9 F$Alarm",
+        "  lea pipe(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.s fail",
+        "  move.w d0,d7", "  OS9 I$Dup",                             // a second holder: a writer
+        "  move.w d7,d0", "  lea (a6),a0", "  moveq #32,d1", "  OS9 I$ReadLn",  // nobody writes: parked
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "handler:",
+        "  lea mark(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.s out",
+        "  OS9 I$Close",
+        "out:", "  moveq #0,d1", "  OS9 F$Exit",
+        "pipe: dc.b \"/pipe\",0", "mark: dc.b \"/h5/alarmmark\",0",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "shutdown: os9exec waits for an alarm a parked process has armed"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? alarmAsm.write(toFile: scratchDisk + "/mawait.a", atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/alarmmark")
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mawait.a -o=/h5/mawait.r", "l68 /h5/mawait.r -o=/h5/mawait"], timeout: 60)
+        _ = os9(["/h5/mawait &"], timeout: 20)
+        let marked = FileManager.default.fileExists(atPath: scratchDisk + "/alarmmark")
+        if marked {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      the alarm's handler never ran: os9exec ended first")
+            failed += 1
+        }
+        for leftover in ["mawait.a", "mawait.r", "mawait", "alarmmark"] {
             try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
         }
     }
@@ -7462,6 +7626,58 @@ do {
         }
         for leftover in ["mfdiv.a", "mfdiv.r", "mfdiv"] {
             try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
+// ── F$DFork: a debugged child goes with its debugger ─────────────────────────
+// A debugger that exits without F$DExit left its child asleep for ever, and the
+// child kept the debugger's pid as its own: whoever got that pid next passed
+// F$DExec's and F$DExit's parent checks and could drive it. It now ends with
+// its debugger, as F$DExit would have ended it. Found by review.
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$DFork  equ $22",
+        "REGS     equ -32700"
+    ]
+    let child = header + [
+        "  psect mdgc,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:", "  moveq #0,d1", "  OS9 F$Exit", "  ends", ""]
+    let parent = header + [
+        "  psect mdgp,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea cname(pc),a0", "  lea cparm(pc),a1", "  lea REGS(a6),a2", "  moveq #0,d0", "  moveq #0,d1",
+        "  moveq #1,d2", "  moveq #3,d3", "  moveq #0,d4", "  OS9 F$DFork",
+        "  moveq #0,d1", "  OS9 F$Exit",                           // no F$DExit
+        "cname: dc.b \"/h5/mdgc\",0", "cparm: dc.b $0D", "  ends", ""]
+    let modules = ["mdgc": child, "mdgp": parent]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+    let name = "process: a child forked by F$DFork ends when its debugger exits without F$DExit"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for module in modules.keys.sorted() {
+            build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+        }
+        _ = os9(build, timeout: 60)
+        let out = os9(["/h5/mdgp", "procs"], timeout: 30)
+        let listed = out.split(whereSeparator: \.isNewline).contains { !$0.hasPrefix("$") && $0.contains("mdgc") }
+        if !listed && out.contains("procs") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("mdgc") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
         }
     }
 }

@@ -256,6 +256,10 @@ os9err int_rename( ushort cpid, int argc, char **argv )
         if      (sv >nmS) *sv= NUL;     /* cut the file name at the end */
         else strcpy( nmS, "." );        /* or take the current path */
         
+        /* each argument fits its buffer; the directory, a separator and the
+           new name together may not (a 250-character directory and a 28-
+           character name ran past nmD, on the stack) */
+        if (strlen( nmS )+1+len >= OS9PATHLEN) return _errmsg( E_BPNAM,"pathlist too long\n" );
         strcpy( nmD,nmS );
         strcat( nmD,PSEP_STR );
         strcat( nmD,newName );
@@ -297,6 +301,7 @@ os9err int_rename( ushort cpid, int argc, char **argv )
           qq=        newPath+strlen(newPath)-1;
           while  (qq>newPath && *qq!=PATHDELIM) qq--; /* cut the existing file name */
           *++qq= NUL;
+          if (strlen( newPath )+len >= OS9PATHLEN) return _errmsg( E_BPNAM,"pathlist too long\n" );
           strcat  ( newPath,newName );
           
                            qq=  newPath;

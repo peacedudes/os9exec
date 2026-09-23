@@ -1785,7 +1785,9 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
       case D_UserOpt : v= userOpt;          break; // -u option of OS9exec
       case D_IPAddr  : v= (ulong)g_ipAddr;  break; // -g option of OS9exec, no os9_long needed here
       
-      default        : v= 0; if (debug[dbgNorm] & dbgAnomaly) upe_printf( "F$SetSys: unimplemented %04X (size=%X)\n", offs,size );
+      /* os9exec's own note, so it goes where -d output goes: upe_printf writes
+         to the calling program's stderr, where it landed in its output */
+      default        : v= 0; debugprintf(dbgAnomaly,dbgNorm,("# F$SetSys: unimplemented %04X (size=%X)\n", offs,size)); break;
     } // switch
     
     debugprintf(dbgPartial,dbgNorm,("# F$SetSys: %04X %x %d\n", offs, size, (uint32_t)v));

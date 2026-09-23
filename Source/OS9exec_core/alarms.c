@@ -268,16 +268,21 @@ static os9err Alarm_Cycle( ushort pid, uint32_t *aId, ushort aCode, uint32_t aTi
 static uint32_t A_Absolute( uint32_t iTime, uint32_t iDate,
                             uint32_t aTime, uint32_t aDate, uint32_t mx, os9err* errP )
 {
-	int32_t days, secs;
+	int64_t  secs;
+	uint64_t ticks;
 
 	*errP= 0;
 	if (aDate>iDate && aDate-iDate>=mx) { *errP= E_PARAM; return 0; } /* beyond a tick count */
+	/* An earlier day is simply due, however long ago: a date decades back
+	   made days*SecsPerDay overflow 32 bits, which is undefined and came out
+	   as an alarm weeks in the future instead of now. */
+	if (aDate<iDate) return 0;
 
-	days= (aDate>=iDate) ?  (int32_t)(aDate-iDate)
-	                     : -(int32_t)(iDate-aDate);
-	secs= days*(int32_t)SecsPerDay + (int32_t)aTime - (int32_t)iTime;
+	secs= (int64_t)(aDate-iDate)*SecsPerDay + (int64_t)aTime - (int64_t)iTime;
 	if (secs<=0) return 0;                       /* already due */
-	return (uint32_t)secs * TICKS_PER_SEC;
+	ticks= (uint64_t)secs * TICKS_PER_SEC;
+	if (ticks>0xFFFFFFFFu) { *errP= E_PARAM; return 0; } /* the last day can still overshoot */
+	return (uint32_t)ticks;
 } /* A_Absolute */
 
 

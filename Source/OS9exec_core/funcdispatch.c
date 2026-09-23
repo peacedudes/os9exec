@@ -212,7 +212,7 @@ static os9err OS9_TCP_Select( regs_type *rp, _pid_ )
 /* OS9TCP specific select */
 /* currently not in use, because the only the ISP system is supported */
 {
-    upe_printf( "select\n" );
+    debugprintf(dbgSpecialIO,dbgNorm,("# select\n")); /* was printed into the guest's stderr */
  
     rp->d[0]= 0;
     rp->d[1]= 0;
@@ -407,7 +407,7 @@ const funcdispatch_entry* getfuncentry( ushort func )
             if (func==0x61) return &tcpselect; /* this is used as selector in OS9TCP */
                             /* %%% in real OS-9 this will be installed with a F$SSvc */
 
-            upe_printf( "function out of range: %x\n", func );
+            debugprintf(dbgAnomaly,dbgNorm,("# function out of range: %x\n", func)); /* not into the guest's stderr */
             return &invalidcall; /* any other: invalid call */
         }
     }
