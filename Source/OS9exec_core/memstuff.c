@@ -1102,12 +1102,15 @@ os9err os9resize( ushort pid, void* membase, ulong newsz )
         alloc_failed( need, ": the block above the data area is in use" ); return os9error(E_MEMFUL);
       #endif
     } /* else */
-    memset( end, 0, need );      /* a fresh piece of data area is clean, as at fork */
     LockMemRange( end, need );
     #ifdef win_linux
       totalMem+= need;
     #endif
   } /* else if */
+
+  /* Every byte the guest gains is clean, as at fork -- the arena slack an
+     earlier shrink kept included, which still holds what was written there. */
+  if (newsz > m->size) memset( (byte*)membase + m->size, 0, newsz - m->size );
 
   t->size= new64;
   m->size= newsz;

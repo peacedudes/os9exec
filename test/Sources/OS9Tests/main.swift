@@ -6661,8 +6661,30 @@ do {
         "mwdone:", "  moveq #0,d1", "  OS9 F$Exit"] +
         message("mwok", "FMEM HUGE REFUSED, AREA KEPT") + message("mwno", "FMEM HUGE MISHANDLED") + ["  ends", ""]
 
+    // F$Mem giving back 16 bytes and taking them again inside one 64-byte arena
+    // unit: the bytes never left the arena, and the growth handed them back
+    // holding what was written there (review, part 4). The data area gained is
+    // clean, as at fork. A is a multiple of 64 at least 32 below the size; the
+    // area goes to A+48, is marked, down to A+32 and back to A+48 -- all inside
+    // the unit ending at A+64. The long argument keeps the stack below A+32.
+    let memClean = header + [
+        "  psect mmemz,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #0,d0", "  OS9 F$Mem", "  bcs.s mzbad", "  move.l d0,d5",
+        "  subi.l #32,d5", "  andi.l #$FFFFFFC0,d5",
+        "  move.l d5,d0", "  addi.l #48,d0", "  OS9 F$Mem", "  bcs.s mzbad",
+        "  moveq #-1,d1", "  move.l d1,-4(a1)", "  move.l d1,-8(a1)", "  move.l d1,-12(a1)", "  move.l d1,-16(a1)",
+        "  move.l d5,d0", "  addi.l #32,d0", "  OS9 F$Mem", "  bcs.s mzbad",
+        "  move.l d5,d0", "  addi.l #48,d0", "  OS9 F$Mem", "  bcs.s mzbad",
+        "  move.l -4(a1),d1", "  or.l -8(a1),d1", "  or.l -12(a1),d1", "  or.l -16(a1),d1",
+        "  bne.s mzbad"] + say("mzok") + [
+        "  bra.s mzdone", "mzbad:"] + say("mzno") + [
+        "mzdone:", "  moveq #0,d1", "  OS9 F$Exit"] +
+        message("mzok", "FMEM REGROWN AREA CLEAN") + message("mzno", "FMEM REGROWN AREA STALE") + ["  ends", ""]
+
     let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl, "macct": acct,
-                   "mstky": sticky, "mzero": zeroBlock, "mperm": permLink, "mrevw": reviewFixes, "mmemw": memWrap]
+                   "mstky": sticky, "mzero": zeroBlock, "mperm": permLink, "mrevw": reviewFixes, "mmemw": memWrap,
+                   "mmemz": memClean]
     for (module, lines) in modules {
         try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
                                                   atomically: true, encoding: .utf8)
@@ -6672,6 +6694,7 @@ do {
         let module: String
         let want: [String]
         var absent: [String] = []
+        var args = ""
     }
     let cases = [
         StatusCase(name: "fs: GetStt SS_Ready on a host directory answers ready, d1=1",
@@ -6693,7 +6716,10 @@ do {
         StatusCase(name: "system: a 4 GB F$SRqMem, F$DExec of a stranger, FCMP of equal infinities",
                    module: "mrevw", want: ["REVIEW FIXES HOLD"]),
         StatusCase(name: "memory: F$Mem of nearly 4 GB is refused and leaves the data area alone",
-                   module: "mmemw", want: ["FMEM HUGE REFUSED, AREA KEPT"])
+                   module: "mmemw", want: ["FMEM HUGE REFUSED, AREA KEPT"]),
+        StatusCase(name: "memory: F$Mem hands back a shrunk-and-regrown data area clean",
+                   module: "mmemz", want: ["FMEM REGROWN AREA CLEAN"],
+                   args: String(repeating: "parameter-area-", count: 8))
     ]
     let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
     if !chosen.isEmpty {
@@ -6705,7 +6731,7 @@ do {
         _ = os9(build, timeout: 60)
     }
     for testCase in chosen {
-        let out = os9(["/h5/\(testCase.module)"], timeout: 30)
+        let out = os9(["/h5/\(testCase.module) \(testCase.args)"], timeout: 30)
         if testCase.want.allSatisfy({ out.contains($0) }) && !testCase.absent.contains(where: { out.contains($0) }) {
             print("PASS: \(testCase.name)")
             passed += 1
