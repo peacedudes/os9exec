@@ -126,6 +126,15 @@ static os9err pSopen( _pid_, syspath_typ* spP, _modeP_, const char* pathname )
 {
     const char* p= pathname;
 
+  #if defined __EMSCRIPTEN__
+    /* A browser page cannot open a TCP connection at all, so there is no
+       network behind these paths there. Refuse the open as a device that is
+       not present, which is what the callers already handle, rather than let
+       them ask a socket that can never answer. */
+    (void)p;
+    return os9error(E_UNIT);
+  #endif
+
     spP->u.spf.fdPlus1    = 0;
     spP->u.spf.acceptPlus1= 0;
     spP->u.spf.proto      = 0;

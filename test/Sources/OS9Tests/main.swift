@@ -534,6 +534,23 @@ check("pipe: I$ChgDir on a pipe reports E$UnkSvc, not a missing module",
 check("namedpipe: write+read", contains: "6162 630d",
     "echo abc >/pipe/t1", "dump </pipe/t1")
 
+// A named pipe is a file in /pipe until something drains it: it is listed
+// there, it has attributes, and it can be deleted unread. Only the write+read
+// path above was covered, so PIPEMAN's directory, attribute and delete entry
+// points were never entered.
+run("namedpipe: listed in /pipe with attributes, and deletable unread",
+    expectation: "dir /pipe shows it, attr says readable+writable, del removes it",
+    commands: ["echo abc >/pipe/t9", "dir /pipe", "attr /pipe/t9",
+               "del /pipe/t9", "dir /pipe"]) { out in
+    // the harness sees the command echo too, and every command here names t9
+    let printed = out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+                     .filter { !$0.hasPrefix("$ ") }
+    let listings = printed.filter { $0.contains("t9") }
+    return listings.count == 2                                   // the listing, then attr
+        && listings.contains { $0.contains("wr") }               // attributes
+        && !out.contains("Error #")
+}
+
 // directory ops
 check("dir: lists known file",   contains: "SHARE",    "dir /dd/CMDS")
 check("dir: root lists CMDS",    contains: "CMDS",     "dir /dd")
@@ -1722,6 +1739,28 @@ noError("move: -w wildcard leaves a non-matching file in place",
     "mount -r=200 /ram9", "makdir /ram9/dst",
     "echo f >/ram9/f.txt", "echo g >/ram9/g.dat",
     "move -w=/ram9/dst /ram9/*.txt", "list /ram9/g.dat", "unmount ram9")
+// The rest of move's options, none of which the suite reached: a RAM disk keeps
+// it on RBF, where move is a directory-entry rewrite rather than a copy.
+noError("move: -d moves a directory, entry and contents",
+    "mount -r=200 /ram9", "makdir /ram9/src", "echo x >/ram9/src/inside",
+    "move -d /ram9/src /ram9/dst", "list /ram9/dst/inside", "unmount ram9")
+run("move: an existing target is refused, and -r rewrites it",
+    expectation: "the first move says it already exists; -r then replaces the target's contents",
+    commands: ["mount -r=200 /ram9", "echo source >/ram9/a", "echo target >/ram9/b",
+               "move /ram9/a /ram9/b", "list /ram9/b",
+               "move -r /ram9/a /ram9/b", "list /ram9/b", "unmount ram9"]) { out in
+    let printed = out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+                     .filter { !$0.hasPrefix("$ ") }
+    return out.contains("already exists")
+        && printed.contains { $0.trimmingCharacters(in: .whitespaces) == "target" }   // refused: unchanged
+        && printed.contains { $0.trimmingCharacters(in: .whitespaces) == "source" }   // -r: replaced
+}
+run("move: -? prints its usage, and an unknown option is named",
+    expectation: "the syntax line and every option letter, then 'unknown option'",
+    commands: ["move -?", "move -q /h5/nosuch /h5/nor"]) {
+    $0.contains("Syntax:") && $0.contains("-w=<dir name>") && $0.contains("unknown option 'q'")
+}
+
 // A target name longer than a pathlist was concatenated into a 256-byte stack
 // buffer unchecked: the emulator died on the spot, with no output at all (found
 // by ASan: a 401-byte write). Now it is refused as a bad pathlist and the next
