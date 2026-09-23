@@ -2195,7 +2195,7 @@ cmdtable_typ commandtable[] =
   { "iterm",         int_iterm,      "makes a /tN terminal at runtime (like mount for /hX)" },
   { "idbg/debughalt",int_debughalt,  "sets debug options/enters OS9exec's debug menu" },
   { "icrash",        int_crash,      "accesses an invalid address: 0xCE00BEFO" },
-  { "iquit",         int_quit,       "sets flag to quit directly" },
+  { "iquit",         int_quit,       "quit at the next debugger entry (F$SysDbg)" },
   { "dch/diskcache", int_ignored,    "simply ignored, because not supported by OS9exec" },
 
   #ifdef MACOS9

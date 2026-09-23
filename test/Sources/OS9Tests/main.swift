@@ -4411,6 +4411,10 @@ do {
                    commands: ["echo done"]) { $0.contains("mount") && $0.contains("iprocs") },
         OptionCase(name: "options: -dh lists the debug masks", flags: ["-dh"],
                    commands: ["echo done"]) { $0.contains("dbgFiles") && $0.contains("0x0200") },
+        OptionCase(name: "internal: dch is accepted and does nothing", flags: [],
+                   commands: ["dch", "echo STILLHERE"]) {
+            $0.contains("STILLHERE") && !$0.contains("Error #") && !$0.contains("can't execute")
+        },
         OptionCase(name: "options: -p sets the first process's priority", flags: ["-p", "200"],
                    commands: ["procs"]) { out in
             // procs prints one row per process, priority in its own column
