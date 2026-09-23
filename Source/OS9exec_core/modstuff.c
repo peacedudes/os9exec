@@ -1051,7 +1051,12 @@ static void adapt_inetdb( mod_exec* mh, uint32_t inetAddr, uint32_t dns1, uint32
     bL= (char* ) mh + endOff;     /* end   of "hosts" */
   
                       size= bL-b0;
-    v0=      get_mem( size );
+        v0=  get_mem( size );
+    if (v0==NULL) {
+        debugprintf( dbgModules,dbgNorm,
+          ("# adapt_inetdb: no memory for a %u-byte copy of the hosts field, left alone\n", size) );
+        return;
+    }
     memcpy( v0,b0,    size );
     memset(    b0, 0, size ); /* clear the whole original field */
 
