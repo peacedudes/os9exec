@@ -307,7 +307,10 @@ const funcdispatch_entry fcalltable[NUMFCALLS] =
     { /* 0x38 */ OS9_F_UnImp,  "F$Move",   d_w(0),               d_w(1) }, /* Move Data */
     { /* 0x39 */ OS9_F_UnImp,  "F$AllRAM", d_w(0),               d_w(1) }, /* Allocate RAM blocks */
     { /* 0x3A */ OS9_F_Permit, "F$Permit", d_l(0)+d_b(1)+a_l(2), d_w(1) }, /* Protect access to RAM block */
-    { /* 0x3B */ OS9_F_UnImp,  "F$Protect",d_w(0),               d_w(1) }, /* Protect access of RAM block */
+    /* F$Protect undoes F$Permit, both SSM calls: a system has both or neither.
+       F$Permit succeeds here (every process reaches all memory anyway), so the
+       area it granted must be given back just as quietly. */
+    { /* 0x3B */ OS9_F_SDummy, "F$Protect",d_w(0),               d_w(1) }, /* Protect access of RAM block */
     { /* 0x3C */ OS9_F_UnImp,  "F$SetImg", d_w(0),               d_w(1) }, /* Set Process DAT Image */
     { /* 0x3D */ OS9_F_UnImp,  "F$FreeLB", d_w(0),               d_w(1) }, /* Get Free Low Block */
     { /* 0x3E */ OS9_F_UnImp,  "F$FreeHB", d_w(0),               d_w(1) }, /* Get Free High Block */
@@ -341,7 +344,10 @@ const funcdispatch_entry fcalltable[NUMFCALLS] =
                                            d_l(2)+d_l(3)+d_l(4), d_l(0) }, /* send alarm signal */
     { /* 0x57 */ OS9_F_Sigmask,"F$Sigmask",d_l(0)+d_l(1),        0      }, /* set signal mask */
     { /* 0x58 */ OS9_F_UnImp,  "F$ChkMem", d_w(0),               d_w(1) }, /* determine if user process may access memory area */
-    { /* 0x59 */ OS9_F_UnImp,  "F$UAcct",  d_w(0),               d_w(1) }, /* inform user accounting of process status */
+    /* F$UAcct is "a user-defined system call which may be installed by an
+       OS9P2 module" (page 1-67); with none installed, E$UnkSvc IS the answer,
+       so it is not an anomaly worth a console line. */
+    { /* 0x59 */ OS9_F_SUnImp, "F$UAcct",  d_w(0),               d_w(1) }, /* inform user accounting of process status */
     { /* 0x5A */ OS9_F_CCtl,   "F$CCtl",   d_l(0),               0      }, /* cache control */
     { /* 0x5B */ OS9_F_SUnImp, "F$GSPUMp", d_w(0),               d_w(1) }, /* get SPU map information for a process */
     { /* 0x5C */ OS9_F_SRqMem, "F$SRqCMem",d_l(0)+d_l(1),        d_l(0)+a_l(2) }, /* System Colored Memory Request */

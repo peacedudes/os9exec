@@ -5617,6 +5617,7 @@ do {
     let header = [
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit   equ $06", "F$Link   equ $00", "F$DatMod equ $25", "F$CCtl   equ $5A",
+        "F$UAcct  equ $59", "F$Protect equ $3B",
         "I$Open   equ $84", "I$GetStt equ $8D", "I$WritLn equ $8C"
     ]
     func say(_ label: String) -> [String] {
@@ -5672,7 +5673,21 @@ do {
         message("mref", "CCTL RESERVED REFUSED") + message("macc", "CCTL RESERVED ACCEPTED") +
         message("mflush", "CCTL FLUSH OK") + ["  ends", ""]
 
-    let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl]
+    // F$UAcct with no accounting module installed: E$UnkSvc, as on a stock
+    // system, and no anomaly line for it. F$Protect succeeds, as F$Permit does
+    // (osk-freeware, 2026-09-23: UAC_view makes both).
+    let acct = header + [
+        "  psect macct,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #3,d0", "  suba.l a0,a0", "  OS9 F$UAcct",
+        "  bcc.s wrong", "  cmpi.w #208,d1", "  bne.s wrong",
+        "  move.l #16,d0", "  lea start(pc),a2", "  OS9 F$Protect",
+        "  bcs.s wrong"] + say("mstock") + ["  bra.s done", "wrong:"] + say("mnot") + [
+        "done:", "  moveq #0,d1", "  OS9 F$Exit"] +
+        message("mstock", "UACCT UNKSVC PROTECT OK") + message("mnot", "UACCT OR PROTECT WRONG") +
+        ["  ends", ""]
+
+    let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl, "macct": acct]
     for (module, lines) in modules {
         try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
                                                   atomically: true, encoding: .utf8)
@@ -5681,6 +5696,7 @@ do {
         let name: String
         let module: String
         let want: [String]
+        var absent: [String] = []
     }
     let cases = [
         StatusCase(name: "fs: GetStt SS_Ready on a host directory answers ready, d1=1",
@@ -5690,7 +5706,9 @@ do {
         StatusCase(name: "module: F$DatMod makes a Data module when d2 bit 15 is clear, whatever d3 holds",
                    module: "mdmdat", want: ["DATMOD IS DATA"]),
         StatusCase(name: "cache: F$CCtl refuses reserved bits and still flushes on 0",
-                   module: "mcctl", want: ["CCTL RESERVED REFUSED", "CCTL FLUSH OK"])
+                   module: "mcctl", want: ["CCTL RESERVED REFUSED", "CCTL FLUSH OK"]),
+        StatusCase(name: "system: F$UAcct answers E$UnkSvc quietly, F$Protect succeeds as F$Permit does",
+                   module: "macct", want: ["UACCT UNKSVC PROTECT OK"], absent: ["unimplemented"])
     ]
     let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
     if !chosen.isEmpty {
@@ -5703,13 +5721,14 @@ do {
     }
     for testCase in chosen {
         let out = os9(["/h5/\(testCase.module)"], timeout: 30)
-        if testCase.want.allSatisfy({ out.contains($0) }) {
+        if testCase.want.allSatisfy({ out.contains($0) }) && !testCase.absent.contains(where: { out.contains($0) }) {
             print("PASS: \(testCase.name)")
             passed += 1
         } else {
             print("FAIL: \(testCase.name)")
             let lines = out.split(whereSeparator: \.isNewline).filter {
-                $0.contains("READY") || $0.contains("DATMOD") || $0.contains("CCTL") || $0.contains("Error")
+                $0.contains("READY") || $0.contains("DATMOD") || $0.contains("CCTL") || $0.contains("Error") ||
+                $0.contains("UACCT") || $0.contains("unimplemented")
             }
             print("      saw: \(lines.joined(separator: " | "))")
             failed += 1
