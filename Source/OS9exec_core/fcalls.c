@@ -1986,10 +1986,14 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
 //  #endif
     
     access= loword(rp->d[2]);    
-    /* "d3.w = desired type/language (optional)" (F$DatMod, page 1-12): used
-       when given, the data module type otherwise. It was always $0400, so a
-       later F$Link asking for the requested type got E$MNF. */
-    tylan = loword(rp->d[3])!=0 ? loword(rp->d[3]) : 0x0400;  
+    /* "d3.w = desired type/language (optional)" (F$DatMod, page 1-12). What
+       makes it optional is bit 15 of the permissions in d2: d3 and d4 are read
+       only when that bit is set, and otherwise the module is type Data,
+       language 0 (the OS-9 Guru, 11.5.4; the extension came with v2.3). The
+       C library's _mkdata_module never sets d3 at all, so reading it
+       regardless typed TOP's SysInfo module with whatever the caller had left
+       there, and every client linking it as Data got E$MNF. */
+    tylan = (access & 0x8000) && loword(rp->d[3])!=0 ? loword(rp->d[3]) : 0x0400;
     attrev= loword(rp->d[1]);
 
     FillTemplate (theModule,  access,tylan,attrev);           /* fill module body */

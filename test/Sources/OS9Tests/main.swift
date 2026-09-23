@@ -5605,7 +5605,12 @@ do {
 //  - "RBF devices always return carry clear, d1.l=1" (I$GetStt SS_Ready,
 //    p.2-13), but a host directory -- which reports itself as RBF -- said E$UnkSvc;
 //  - F$DatMod's "d3.w = desired type/language (optional)" (p.1-12) was ignored,
-//    always $0400, so F$Link by the requested type got E$MNF;
+//    always $0400, so F$Link by the requested type got E$MNF. It is optional
+//    because bit 15 of d2 asks for it (the OS-9 Guru, 11.5.4): with that bit
+//    clear the module is Data whatever d3 holds, which is what the C library's
+//    _mkdata_module relies on -- it never sets d3 (osk-freeware, 2026-09-23:
+//    TOP's SysInfo module typed with the caller's leftover d3, so MNews could
+//    not link it). Both halves are checked;
 //  - F$CCtl: "If any reserved bit is set, an E$Param error is returned" (p.1-6),
 //    but every value succeeded.
 do {
@@ -5634,13 +5639,26 @@ do {
     let datmod = header + [
         "  psect mdmtyp,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
         "start:",
-        "  lea mname(pc),a0", "  moveq #16,d0", "  move.w #$8000,d1", "  move.w #$0333,d2", "  move.w #$0401,d3",
+        "  lea mname(pc),a0", "  moveq #16,d0", "  move.w #$8000,d1", "  move.w #$8333,d2", "  move.w #$0401,d3",
         "  OS9 F$DatMod", "  bcs.w fail",
         "  lea mname(pc),a0", "  move.w #$0401,d0", "  OS9 F$Link",
         "  bcs.s lost"] + say("mkept") + ["  bra.s done", "lost:"] + say("mlost") + [
         "done:", "  moveq #0,d1",
         "fail:", "  OS9 F$Exit",
         "mname: dc.b \"dmtyp\",0"] + message("mkept", "DATMOD TYPE KEPT") + message("mlost", "DATMOD TYPE LOST") +
+        ["  ends", ""]
+    // Bit 15 clear, and d3 holding what a C caller leaves there: a Data module.
+    let datdefault = header + [
+        "  psect mdmdat,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea mname(pc),a0", "  moveq #16,d0", "  move.w #$8001,d1", "  move.w #$0333,d2", "  move.w #$0006,d3",
+        "  OS9 F$DatMod", "  bcs.w fail",
+        "  cmpi.w #$0400,d0", "  bne.s notdata",
+        "  lea mname(pc),a0", "  move.w #$0400,d0", "  OS9 F$Link",
+        "  bcs.s notdata"] + say("mdata") + ["  bra.s done", "notdata:"] + say("mnodata") + [
+        "done:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "mname: dc.b \"dmdat\",0"] + message("mdata", "DATMOD IS DATA") + message("mnodata", "DATMOD NOT DATA") +
         ["  ends", ""]
     let cctl = header + [
         "  psect mcctl,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
@@ -5654,7 +5672,7 @@ do {
         message("mref", "CCTL RESERVED REFUSED") + message("macc", "CCTL RESERVED ACCEPTED") +
         message("mflush", "CCTL FLUSH OK") + ["  ends", ""]
 
-    let modules = ["mhrdy": ready, "mdmtyp": datmod, "mcctl": cctl]
+    let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl]
     for (module, lines) in modules {
         try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
                                                   atomically: true, encoding: .utf8)
@@ -5667,8 +5685,10 @@ do {
     let cases = [
         StatusCase(name: "fs: GetStt SS_Ready on a host directory answers ready, d1=1",
                    module: "mhrdy", want: ["HOSTDIR READY 1"]),
-        StatusCase(name: "module: F$DatMod keeps the type/language asked for in d3",
+        StatusCase(name: "module: F$DatMod keeps the type/language asked for in d3 (d2 bit 15 set)",
                    module: "mdmtyp", want: ["DATMOD TYPE KEPT"]),
+        StatusCase(name: "module: F$DatMod makes a Data module when d2 bit 15 is clear, whatever d3 holds",
+                   module: "mdmdat", want: ["DATMOD IS DATA"]),
         StatusCase(name: "cache: F$CCtl refuses reserved bits and still flushes on 0",
                    module: "mcctl", want: ["CCTL RESERVED REFUSED", "CCTL FLUSH OK"])
     ]
