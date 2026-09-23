@@ -612,6 +612,7 @@ static void GetBuffers( _rbf_, syspath_typ* spP )
 } /* GetBuffers */
 
 static void Set_FDSize( syspath_typ* spP, ulong size ); /* defined with the other FD accessors */
+static ulong FDSize   ( syspath_typ* spP );             /* likewise */
 static void WakeOnFile( syspath_typ* spP );            /* defined with the other ring walkers */
 
 /* Paths open on the same file are linked into a ring, so each one can reach
@@ -640,6 +641,41 @@ static void RingLeave( syspath_typ* spP )
 
     spP->u.rbf.sameFile= spP->nr;
 } /* RingLeave */
+
+static void RingAdopt( syspath_typ* spP )
+/* take the ring's current view of the file on joining it. A path that opens
+ * a file others already have open reads the FD from the device, and a writer
+ * that has grown the file holds the new size in its <lastPos> only (see
+ * RingPublish for why its FD does not carry it yet) -- so the newcomer took
+ * the file to end where it ended before those writes, and read EOF with the
+ * bytes already there. Found by the skills session: a reader opened after a
+ * producer appended "A" read the old 11 bytes and stopped. The view adopted
+ * is the one that knows the file furthest along, exactly as RingPublish would
+ * have handed it over had this path been open at the time. */
+{
+    rbfdev_typ*  dev = &rbfdev[spP->u.rbf.devnr];
+    syspath_typ* best= NULL;
+    syspath_typ* spK;
+    ulong        size= spP->fd_sct!=NULL ? FDSize( spP ) : 0, sK;
+    ushort       k   = spP->u.rbf.sameFile;
+
+    if (spP->fd_sct==NULL) return;
+
+    while (k!=spP->nr && k!=0) {
+             spK= &syspaths[k];
+      if (   spK->fd_sct!=NULL) {
+             sK= FDSize( spK );
+         if (spK->u.rbf.lastPos>sK) sK= spK->u.rbf.lastPos;
+         if (sK>size) { size= sK; best= spK; }
+      } // if
+      k= spK->u.rbf.sameFile;
+    } // while
+
+    if (best==NULL) return;                  /* nobody knows more than the FD */
+    memcpy   ( spP->fd_sct, best->fd_sct, dev->sctSize );
+    Set_FDSize( spP, size );                 /* after the copy: it wins */
+    if (spP->u.rbf.lastPos<size) spP->u.rbf.lastPos= size;
+} /* RingAdopt */
 
 static void RingJoin( syspath_typ* spP )
 /* link into the ring of paths already open on this file (a ring of one when
@@ -680,6 +716,7 @@ static void RingJoin( syspath_typ* spP )
           spK->u.rbf.fd_nr==rbf->fd_nr) {
           rbf->sameFile      = spK->u.rbf.sameFile; /* splice in behind it */
           spK->u.rbf.sameFile= spP->nr;
+          RingAdopt( spP );
         return;
       } // if
     } // for
@@ -4058,13 +4095,11 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     rbf->wMode = IsWrite(*modeP);
     rbf->updMode= IsRW(*modeP); /* read+write: a read here locks what it read */
 
-    /* "As soon as the file is created, EOF lock is gained" -- ch.7. A file
-     * just created is empty, so its creator is standing at its end by
-     * definition, and this is what lets a spooler open the listing and wait
-     * before the assembler has written a single line. An ordinary open of an
-     * existing file takes nothing here: it gains the lock when an access
-     * actually lands at the end, which DoAccess decides. */
-    rbf->eofLock= cre && rbf->wMode;
+    /* Nothing held yet. A creator's EOF lock is taken at the end of pRopen,
+     * once the path is in its file's ring: set here, the RingJoin calls on
+     * the way (CreateNewFile's and pRopen's own) dropped it again as the lock
+     * of the directory the path had walked through. */
+    rbf->eofLock= false;
 //  printf( "GetBuffers %08X %08X\n", spP->fd_sct, spP->rw_sct );
     GetBuffers ( dev,spP ); /* get the internal buffer structures now */
     spP->rw_nr = 0;         /* undefined */
@@ -4253,7 +4288,17 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     if (!err && ShareConflict( spP, rbf->single || (rbf->att & 0x40)!=0 )) err= os9error( E_SHARE );
 
     if    (err) ReleaseBuffers( spP );
-    else        RingJoin      ( spP ); /* <fd_nr> is only final once open succeeds */
+    else {
+        RingJoin( spP ); /* <fd_nr> is only final once open succeeds */
+
+        /* "As soon as the file is created, EOF lock is gained" -- ch.7. A file
+         * just created is empty, so its creator is standing at its end by
+         * definition, and this is what lets a spooler open the listing and
+         * wait before the assembler has written a single line. An ordinary
+         * open of an existing file takes nothing here: it gains the lock when
+         * an access actually lands at the end, which DoAccess decides. */
+        rbf->eofLock= cre && rbf->wMode;
+    }
     return err;
 } /* pRopen */
 

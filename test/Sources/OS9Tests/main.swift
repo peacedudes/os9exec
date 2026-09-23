@@ -1589,6 +1589,107 @@ do {
     }
 }
 
+// ── RBF: a reader in another process follows a writer's end of file ──────────
+// Two things the Technical Manual says a reader following a writer sees, both
+// measured wrong by the skills session on an RBF image, writer and reader in
+// separate processes:
+//  1. "As soon as the file is created, EOF lock is gained, and no other process
+//     is able to pass the writer" (ch.7): a reader opening the file before the
+//     creator has written must wait for the write, not read EOF. The creator's
+//     lock was set, then dropped by the ring joins on the way out of the open.
+//  2. A reader that opens after a writer has appended must see those bytes: it
+//     read the size from the device, where a growing file's new end was not
+//     yet, and stopped at the old end.
+do {
+    let rbfHeader = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$Sleep equ $0A", "I$Create equ $83", "I$Open equ $84", "I$Seek equ $88",
+        "I$Read equ $89", "I$Write equ $8A", "I$WritLn equ $8C", "I$GetStt equ $8D", "I$Close equ $8F"
+    ]
+    func sleep(_ ticks: Int) -> [String] { ["  move.l #\(ticks),d0", "  OS9 F$Sleep"] }
+    func say(_ label: String) -> [String] {
+        ["  lea \(label)(pc),a0", "  moveq #\(label)l,d1", "  moveq #1,d0", "  OS9 I$WritLn"]
+    }
+    func message(_ label: String, _ text: String) -> [String] {
+        ["\(label): dc.b \"\(text)\",$0D", "\(label)l equ *-\(label)"]
+    }
+    // creates the file, holds it unwritten for a second, then writes "B"
+    let creator = rbfHeader + [
+        "  psect mlkcre,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #2,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.s done",
+        "  move.w d0,d7"] + sleep(100) + [
+        "  move.w d7,d0", "  lea bee(pc),a0", "  moveq #1,d1", "  OS9 I$Write"] + sleep(50) + [
+        "  move.w d7,d0", "  OS9 I$Close", "  moveq #0,d1",
+        "done:", "  OS9 F$Exit",
+        "fname: dc.b \"/h9/LK/new\",0", "bee: dc.b \"B\"", "  ends", ""]
+    // opens the existing 11-byte file, appends "A", holds it open a second
+    let appender = rbfHeader + [
+        "  psect mlkapp,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea aname(pc),a0", "  moveq #2,d0", "  OS9 I$Open", "  bcs.s done",
+        "  move.w d0,d7", "  moveq #11,d1", "  OS9 I$Seek",
+        "  move.w d7,d0", "  lea ay(pc),a0", "  moveq #1,d1", "  OS9 I$Write"] + sleep(100) + [
+        "  move.w d7,d0", "  OS9 I$Close", "  moveq #0,d1",
+        "done:", "  OS9 F$Exit",
+        "aname: dc.b \"/h9/LK/old\",0", "ay: dc.b \"A\"", "  ends", ""]
+    // reads the new file (must wait, then get B) and the appended one (12 bytes)
+    let reader = rbfHeader + [
+        "  psect mlkrd,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:"] + sleep(40) + [
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.w done",
+        "  lea (a6),a0", "  moveq #1,d1", "  OS9 I$Read", "  bcs.s notwait",
+        "  cmpi.b #'B',(a6)", "  bne.s notwait"] + say("mwait") + ["  bra.s second", "notwait:"] + say("mnowait") + [
+        "second:"] + sleep(10) + [
+        "  lea aname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.s done",
+        "  lea (a6),a0", "  moveq #64,d1", "  OS9 I$Read", "  bcs.s short",
+        "  cmpi.l #12,d1", "  bne.s short"] + say("mall") + ["  bra.s fin", "short:"] + say("mshort") + [
+        "fin:", "  moveq #0,d1",
+        "done:", "  OS9 F$Exit",
+        "fname: dc.b \"/h9/LK/new\",0", "aname: dc.b \"/h9/LK/old\",0"] +
+        message("mwait", "READER WAITED FOR THE CREATOR") + message("mnowait", "READER PASSED THE CREATOR") +
+        message("mall", "READER SAW THE APPENDED BYTE") + message("mshort", "READER MISSED THE APPENDED BYTE") +
+        ["  ends", ""]
+
+    let modules = ["mlkcre": creator, "mlkapp": appender, "mlkrd": reader]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+    let names = ["rbf: a reader in another process waits for a creator that has not yet written",
+                 "rbf: a reader that opens after a writer appended sees the appended bytes"]
+    if names.contains(where: { filter.isEmpty || $0.localizedCaseInsensitiveContains(filter) }) {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for module in modules.keys.sorted() {
+            build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+        }
+        _ = os9(build, timeout: 60)
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        let out = os9(["mount -k=500K \(scratchDevice)", "makdir /h9/LK",
+                       "echo 0123456789 >/h9/LK/old",
+                       "/h5/mlkcre &", "/h5/mlkapp &", "/h5/mlkrd", "sleep -s 2"], timeout: 45)
+        let outcomes = [("READER WAITED FOR THE CREATOR", names[0]), ("READER SAW THE APPENDED BYTE", names[1])]
+        for (want, name) in outcomes where filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+            if out.contains(want) {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                let seen = out.split(whereSeparator: \.isNewline)
+                    .filter { $0.contains("READER") || $0.contains("Error") }
+                print("      saw: \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+        }
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+    }
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // A dot-name on an RBF image is stored as a dot-name. The Linux build ran every
 // OS-9 pathname through the host-file rule that spells a leading "." as ":2e"
 // (netatalk's convention, from the 2002 sources), so on an IMAGE it wrote
