@@ -1781,8 +1781,10 @@ os9err pFdelete( ushort pid, _spP_, ushort *modeP, const char* pathname )
         for (sp=1; sp<MAXSYSPATHS; sp++) {
             syspath_typ* op= &syspaths[ sp ];
 
+            /* an open in mode 0 (no stream: attributes and status only) is
+               an open all the same */
             if (op->type!=fFile && op->type!=fDir)   continue;
-            if (op->stream==NULL)                    continue;
+            if (op->fullName[0]==NUL)                continue;
             if (!same_host_file( op->fullName, pathname )) continue;
 
             debugprintf( dbgFiles,dbgNorm,

@@ -7239,6 +7239,53 @@ do {
     }
 }
 
+// ── host dir: I$Delete refuses a file held open in mode 0 as well ──────────────
+// A host directory refuses to delete a file this emulator holds open (I$Delete:
+// "the file may not already be open"), but the check skipped opens without a
+// host stream -- mode 0, opened for its attributes or status only. Found by
+// review. The program holds the file in mode 0, deletes it by name (E$Share),
+// closes, and deletes it again (gone).
+do {
+    let lines = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Open equ $84", "I$Delete equ $87", "I$WritLn equ $8C", "I$Close equ $8F",
+        "  psect mzdel,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #0,d0", "  OS9 I$Open", "  bcs.s bad", "  move.w d0,d7",
+        "  lea fname(pc),a0", "  moveq #2,d0", "  OS9 I$Delete", "  bcc.s bad",
+        "  cmpi.w #253,d1", "  bne.s bad",
+        "  move.w d7,d0", "  OS9 I$Close",
+        "  lea fname(pc),a0", "  moveq #2,d0", "  OS9 I$Delete", "  bcs.s bad",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "fname: dc.b \"/h5/mzdelf\",0",
+        "mok: dc.b \"MODE 0 OPEN KEPT THE FILE\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"MODE 0 OPEN DID NOT COUNT\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ]
+    try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/mzdel.a", atomically: true, encoding: .utf8)
+    let name = "host dir: I$Delete refuses a file held open in mode 0, and deletes it once closed"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        FileManager.default.createFile(atPath: scratchDisk + "/mzdelf", contents: Data("held\r".utf8))
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/mzdel.a -o=/h5/mzdel.r", "l68 /h5/mzdel.r -o=/h5/mzdel",
+                       "/h5/mzdel"], timeout: 60)
+        if out.contains("MODE 0 OPEN KEPT THE FILE") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("MODE 0") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for leftover in ["mzdel.a", "mzdel.r", "mzdel", "mzdelf"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── module: F$SetCRC refuses an image whose size field is too small ───────────
 // "The module must have correct size and sync bytes; other parts of the module
 // are not checked." (Technical Manual, F$SetCRC, p.1-50), E$BMID. Only the sync
