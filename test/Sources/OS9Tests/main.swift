@@ -8301,6 +8301,44 @@ do {
     }
 }
 
+// ── F$Load: a header claiming nearly 4 GB ends the owner walk ─────────────────
+// Before entering any module of a file a user owns, F$Load walks every header to
+// check its owner, adding each module's size to the offset. A size the file
+// cannot hold wrapped that offset where ulong is 32 bits (i386, wasm32, mingw):
+// a second header claiming $FFFFFFE0 after a 32-byte first one brought it back to
+// 0, and the walk went round for ever. Neither header is a module, so the load is
+// refused either way; what matters is that it answers. Found by review.
+do {
+    let name = "module: F$Load of a file whose second header claims nearly 4 GB answers, not loops"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem("hq")
+        func header(size: UInt32) -> [UInt8] {
+            let sizeBytes = (0..<4).map { UInt8(truncatingIfNeeded: size >> (24 - 8 * $0)) }
+            // M$ID, M$SysRev, M$Size, M$Owner 1.7, then the rest of a 48-byte header
+            return [0x4A, 0xFC, 0x00, 0x01] + sizeBytes + [0x00, 0x01, 0x00, 0x07] + [UInt8](repeating: 0, count: 36)
+        }
+        let first = Array(header(size: 32).prefix(32))
+        let bytes = first + header(size: 0xFFFF_FFE0)
+        FileManager.default.createFile(atPath: scratchDisk + "/mwrapf", contents: Data(bytes))
+        let out = os9([
+            "mount -k=1M hq", "copy /h5/mwrapf /hq/wrapf", "chown 1.7 /hq/wrapf",
+            "load /hq/wrapf", "echo AFTER-WRAP-LOAD"
+        ], timeout: 30)
+        let answered = out.split(whereSeparator: \.isNewline).contains { $0.hasPrefix("AFTER-WRAP-LOAD") }
+        if answered && out.contains("Error") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("Error") || $0.contains("AFTER-") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        removeScratchItem("hq")
+    }
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/mwrapf")
+}
+
 // ── F$Sleep: a few 256ths of a second still sleep ──────────────────────────────
 // "If the high order bit of d0.l is set, the low 31 bits are converted from
 // 256ths of a second into ticks" (F$Sleep, p.1-58); F$Alarm, for the same

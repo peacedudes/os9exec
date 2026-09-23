@@ -1575,8 +1575,11 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
                 release_mem( theModuleP );
                 return os9error(E_PERMIT);
             }
-                msize= os9_long(m->_mh._msize);
-            if (msize==0) break;
+            /* A size the file cannot hold, or an odd one, ends the walk: off
+               would wrap where ulong is 32 bits, or land on a misaligned
+               header. The loop below judges such a module anyway. */
+            msize= os9_long(m->_mh._msize);
+            if (msize<sizeof(modhcom) || msize>dsize-off || (msize&1)) break;
             off+= msize;
         }
     }
