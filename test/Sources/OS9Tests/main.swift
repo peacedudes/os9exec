@@ -163,6 +163,14 @@ let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/dd/CMDS"
 /// against the locally built binary.
 let containerized = dockerImage != nil || containerImage != nil
 
+/// True when `dcheck`'s report in <out> finds nothing wrong. Its closing
+/// "file structure is intact" is not enough on its own: it prints that even
+/// after listing clusters allocated in the bitmap that no file owns.
+func dcheckClean(_ out: String) -> Bool {
+    out.contains("file structure is intact") && !out.contains("not in file structure") &&
+        !out.contains("not in bit map")
+}
+
 /// The link count `mdir -e` shows for <module>, or nil when it is not listed.
 /// Only the table's rows count: a shell echo such as "$ unlink binex" ends in
 /// the name too. Lnk is the column just before the name.
@@ -1836,7 +1844,7 @@ do {
                        "mount -k=500K \(scratchDevice)", "/h5/mcross", "dcheck /h9"], timeout: 60)
         // dcheck is the arbiter: a freed sector still in a file's segment list
         // is "not in bit map" whether or not the next file happens to take it
-        if out.contains("SECOND WRITER KEPT ITS SECTORS") && out.contains("file structure is intact") {
+        if out.contains("SECOND WRITER KEPT ITS SECTORS") && dcheckClean(out) {
             print("PASS: \(name)")
             passed += 1
         } else {
@@ -1924,7 +1932,7 @@ do {
         // not this fix; on the roadmap to run down
         let run = os9(["mount -k=500K \(scratchDevice)", "/h5/mlink"], timeout: 60)
         let out = run + os9(["dcheck /h9"], timeout: 60)
-        if out.contains("SECOND NAME STILL READS") && out.contains("file structure is intact") {
+        if out.contains("SECOND NAME STILL READS") && dcheckClean(out) {
             print("PASS: \(name)")
             passed += 1
         } else {
@@ -1936,6 +1944,53 @@ do {
             failed += 1
         }
         for leftover in ["mlink.a", "mlink.r", "mlink"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+    }
+}
+
+// ── RBF: a single allocation of 65536 sectors or more is recorded in full ─────
+// The routine that enters an allocation in the FD's segment list held its
+// sector count in 16 bits. SS_Size can ask for that much in one call, and on an
+// image with large clusters one search returns it: the count was cut, the FD
+// named a fraction of the sectors, and the rest stayed set in the bitmap with
+// no file owning them. Found by review. 17 MB on a 20 MB image with 64-sector
+// clusters is 66407 sectors in one allocation.
+do {
+    let bigAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Create equ $83", "I$SetStt equ $8E", "I$Close equ $8F",
+        "  psect mbig,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.s fail",
+        "  move.w d0,d7", "  move.l #17000000,d2", "  moveq #2,d1", "  OS9 I$SetStt", "  bcs.s fail",
+        "  move.w d7,d0", "  OS9 I$Close", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "fname: dc.b \"/h9/big\",0",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "rbf: an allocation of 65536 sectors or more is entered in the FD in full"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? bigAsm.write(toFile: scratchDisk + "/mbig.a", atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mbig.a -o=/h5/mbig.r", "l68 /h5/mbig.r -o=/h5/mbig"], timeout: 60)
+        let run = os9(["mount -k=20M -c=64 \(scratchDevice)", "/h5/mbig"], timeout: 60)
+        let out = run + os9(["dcheck /h9"], timeout: 120)
+        if dcheckClean(out) && !out.contains("Error #") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("Error") || $0.contains("not in") || $0.contains("intact") }
+                .prefix(4)
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mbig.a", "mbig.r", "mbig"] {
             try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
         }
         try? FileManager.default.removeItem(atPath: scratchHostPath)

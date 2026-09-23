@@ -3389,7 +3389,9 @@ static os9err AdaptAlloc_FD( syspath_typ* spP, ulong pos, ulong scs )
   ulong        prev_l= 0, blk, mx;
   ushort       psp;
   ulong       lpos= pos; /* treat them locally, because 'Get_Them' uses it also */
-  ushort      lscs= scs;
+  ulong       lscs= scs; /* a ushort cut a count of 65536 or more: one call can
+                            now be asked that many (SS_Size), and the bitmap bits
+                            of the difference were set with no FD naming them */
 
   for (ii=First; ii+SegSize <= dev->sctSize; ii+=SegSize) {
     if (GET_OS9W(spP->fd_sct, ii+3)==0) { /* zero is zero for big/little endian */
