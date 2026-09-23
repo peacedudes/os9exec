@@ -1909,6 +1909,8 @@ os9err load_OS9Boot( ushort pid )
 } // load_OS9Boot
 
 
+#define ATTR_STICKY 0x4000   /* M$Attr bit 6, as the high byte of the attr/rev word */
+
 void unlink_module( ushort mid )
 /* unlink a module by ID. "When several modules are loaded together as a group,
    modules are only removed when the link count of all modules in the group have
@@ -1922,6 +1924,19 @@ void unlink_module( ushort mid )
    
     if (os9modules[mid].linkcount>1) { /* still used by other processes */
         os9modules[mid].linkcount--; return;
+    }
+
+    /* "A sticky module is retained in memory when its link count becomes
+       zero. The module is removed from memory when its link count becomes -1
+       or memory is required for another use" (M$Attr bit 6, Technical Manual,
+       Module Header). So the last unlink leaves it in the directory at 0, and
+       one more removes it. The init module's M$Compat bit 2 ("ignore sticky
+       bit") is not read: os9exec does not take its compat flags from init. */
+    if (os9modules[mid].linkcount==1 &&
+        (os9_word( os9mod(mid)->_mh._mattrev ) & ATTR_STICKY)) {
+        os9modules[mid].linkcount= 0;
+        debugprintf(dbgModules,dbgNorm,("# unlink_module: mid=%d is sticky, kept at link count 0\n", mid));
+        return;
     }
     
     if (mid==0) debugprintf(dbgModules,dbgNorm,
@@ -1937,6 +1952,24 @@ void unlink_module( ushort mid )
     }
     release_module( mid,true );
 } /* unlink_module */
+
+
+int release_sticky_modules( void )
+/* Release every sticky module that no one has linked (link count 0) and
+   answer how many went. Called when memory is short, which is the manual's
+   other reason for one to go. */
+{
+    int k, n= 0;
+
+    for (k=1; k<MAXMODULES; k++) {
+        if (os9mod(k)!=NULL && os9modules[k].linkcount==0 &&
+            (os9_word( os9mod(k)->_mh._mattrev ) & ATTR_STICKY)) {
+            unlink_module( (ushort)k );
+            n++;
+        }
+    }
+    return n;
+} /* release_sticky_modules */
 
 
 void free_modules()

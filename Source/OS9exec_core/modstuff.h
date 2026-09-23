@@ -87,6 +87,7 @@ os9err    link_load   ( ushort pid,       char* name, ushort *midP );
 os9err    load_OS9Boot( ushort pid );
 void    unlink_module ( ushort mid );
 void      free_modules();
+int     release_sticky_modules( void );
 
 
 void init_exceptions  ( ushort pid );

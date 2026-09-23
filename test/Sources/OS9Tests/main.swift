@@ -163,6 +163,19 @@ let sdkCmds = ProcessInfo.processInfo.environment["OS9_SDK_CMDS"] ?? "/dd/CMDS"
 /// against the locally built binary.
 let containerized = dockerImage != nil || containerImage != nil
 
+/// The link count `mdir -e` shows for <module>, or nil when it is not listed.
+/// Only the table's rows count: a shell echo such as "$ unlink binex" ends in
+/// the name too. Lnk is the column just before the name.
+func mdirLinks(of module: String, in out: String) -> Int? {
+    for line in out.split(whereSeparator: \.isNewline) where !line.hasPrefix("$") {
+        let fields = line.split(separator: " ")
+        if fields.count >= 2, fields.last == Substring(module) {
+            return Int(fields[fields.count - 2])
+        }
+    }
+    return nil
+}
+
 /// Remove a scratch fixture in the namespace that will READ it next.
 ///
 /// A host-side delete of a bind-mounted path is not visible to the next
@@ -5516,12 +5529,11 @@ do {
         CallCase(name: "module: F$Link refused on type leaves the link count as it was", module: "mlrefu",
                  commands: ["load /dd/CMDS/binex", "/h5/mlrefu", "unlink binex", "mdir -e"],
                  timeout: 30) { out in
-            // one unlink after the load must remove binex: a leaked link keeps it
-            // listed. Only mdir's table rows count -- "$ unlink binex" ends in binex too.
-            let listed = out.split(whereSeparator: \.isNewline).contains {
-                !$0.hasPrefix("$") && $0.trimmingCharacters(in: .whitespaces).hasSuffix(" binex")
-            }
-            return out.contains("LINK REFUSED") && !out.contains("LINK ACCEPTED") && !listed
+            // one unlink after the load must bring binex's link count to 0: a
+            // leaked link leaves it at 1. binex is sticky (attr $C0), so at 0 it
+            // stays listed; mdir -e's Lnk column is the one before the name.
+            return out.contains("LINK REFUSED") && !out.contains("LINK ACCEPTED") &&
+                   mdirLinks(of: "binex", in: out) ?? 0 == 0
         },
         CallCase(name: "module: F$Link of an internal command hands back a real module", module: "mlint",
                  commands: ["/h5/mlint", "pwd"], timeout: 20) {
@@ -5715,7 +5727,7 @@ do {
     let header = [
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit   equ $06", "F$Link   equ $00", "F$DatMod equ $25", "F$CCtl   equ $5A",
-        "F$UAcct  equ $59", "F$Protect equ $3B",
+        "F$UAcct  equ $59", "F$Protect equ $3B", "F$UnLink equ $02",
         "I$Open   equ $84", "I$GetStt equ $8D", "I$WritLn equ $8C"
     ]
     func say(_ label: String) -> [String] {
@@ -5785,7 +5797,29 @@ do {
         message("mstock", "UACCT UNKSVC PROTECT OK") + message("mnot", "UACCT OR PROTECT WRONG") +
         ["  ends", ""]
 
-    let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl, "macct": acct]
+    // A sticky module "is retained in memory when its link count becomes zero"
+    // and removed "when its link count becomes -1" (M$Attr bit 6, Technical
+    // Manual, Module Header). Found by the skills session: it was freed at 0.
+    let sticky = header + [
+        "  psect mstky,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea sname(pc),a0", "  moveq #16,d0", "  move.w #$C001,d1", "  move.w #$0333,d2",
+        "  OS9 F$DatMod", "  bcs.w fail",
+        "  OS9 F$UnLink",                                  // link count 1 -> 0: kept
+        "  lea sname(pc),a0", "  moveq #0,d0", "  OS9 F$Link",
+        "  bcs.s gone"] + [                                 // must still be there
+        "  OS9 F$UnLink",                                  // 1 -> 0 again
+        "  OS9 F$UnLink",                                  // 0 -> -1: removed
+        "  lea sname(pc),a0", "  moveq #0,d0", "  OS9 F$Link",
+        "  bcc.s stayed", "  cmpi.w #221,d1", "  bne.s stayed"] + say("mskept") + ["  bra.s done", "gone:"] +
+        say("msgone") + ["  bra.s done", "stayed:"] + say("msstay") + [
+        "done:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "sname: dc.b \"stkymod\",0"] + message("mskept", "STICKY KEPT AT 0 AND GONE AT -1") +
+        message("msgone", "STICKY FREED AT 0") + message("msstay", "STICKY NEVER FREED") + ["  ends", ""]
+
+    let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl, "macct": acct,
+                   "mstky": sticky]
     for (module, lines) in modules {
         try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
                                                   atomically: true, encoding: .utf8)
@@ -5806,7 +5840,9 @@ do {
         StatusCase(name: "cache: F$CCtl refuses reserved bits and still flushes on 0",
                    module: "mcctl", want: ["CCTL RESERVED REFUSED", "CCTL FLUSH OK"]),
         StatusCase(name: "system: F$UAcct answers E$UnkSvc quietly, F$Protect succeeds as F$Permit does",
-                   module: "macct", want: ["UACCT UNKSVC PROTECT OK"], absent: ["unimplemented"])
+                   module: "macct", want: ["UACCT UNKSVC PROTECT OK"], absent: ["unimplemented"]),
+        StatusCase(name: "module: a sticky module stays at link count 0 and goes at -1",
+                   module: "mstky", want: ["STICKY KEPT AT 0 AND GONE AT -1"])
     ]
     let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
     if !chosen.isEmpty {
@@ -5826,7 +5862,7 @@ do {
             print("FAIL: \(testCase.name)")
             let lines = out.split(whereSeparator: \.isNewline).filter {
                 $0.contains("READY") || $0.contains("DATMOD") || $0.contains("CCTL") || $0.contains("Error") ||
-                $0.contains("UACCT") || $0.contains("unimplemented")
+                $0.contains("UACCT") || $0.contains("unimplemented") || $0.contains("STICKY")
             }
             print("      saw: \(lines.joined(separator: " | "))")
             failed += 1
@@ -7156,11 +7192,9 @@ do {
         _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
                  "r68 /h5/munload.a -o=/h5/munload.r", "l68 /h5/munload.r -o=/h5/munload"], timeout: 60)
         let out = os9(["load /dd/CMDS/binex", "/h5/munload", "mdir -e"], timeout: 30)
-        // mdir's table rows only: "$ load /dd/CMDS/binex" ends in binex too
-        let listed = out.split(whereSeparator: \.isNewline).contains {
-            !$0.hasPrefix("$") && $0.trimmingCharacters(in: .whitespaces).hasSuffix(" binex")
-        }
-        if out.contains("UNLOAD WRONG TYPE REFUSED") && out.contains("UNLOAD MATCHING TYPE DONE") && !listed {
+        // unloaded: gone, or -- binex being sticky -- kept with no links
+        let links = mdirLinks(of: "binex", in: out) ?? 0
+        if out.contains("UNLOAD WRONG TYPE REFUSED") && out.contains("UNLOAD MATCHING TYPE DONE") && links == 0 {
             print("PASS: \(name)")
             passed += 1
         } else {

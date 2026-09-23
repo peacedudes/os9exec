@@ -796,7 +796,7 @@ static void alloc_failed( ulong memsz, const char* why )
 } /* alloc_failed */
 
 
-void* get_mem( ulong memsz )
+static void* get_mem_once( ulong memsz )
 /* process independent part of memory allocation */
 {
     void* pp= NULL;
@@ -893,8 +893,20 @@ void* get_mem( ulong memsz )
         } /* for */
     } /* if */
     
-    alloc_failed( memsz, "" );
     return NULL;
+} /* get_mem_once */
+
+
+void* get_mem( ulong memsz )
+/* A block of <memsz> bytes, or NULL. Sticky modules kept at link count 0 are
+   the memory OS-9 gives back "when memory is required for another use" (M$Attr
+   bit 6), so a request that fails first releases them and tries once more. */
+{
+    void* pp= get_mem_once( memsz );
+
+    if (pp==NULL && release_sticky_modules()>0) pp= get_mem_once( memsz );
+    if (pp==NULL) alloc_failed( memsz, "" );
+    return pp;
 } /* get_mem */
 
 
