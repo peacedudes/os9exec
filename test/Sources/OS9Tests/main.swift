@@ -7700,6 +7700,62 @@ do {
     }
 }
 
+// ── 68881: a float stored as an integer rounds by FPCR and saturates ──────────
+// FMOVE to a byte, word or long was a C cast: it truncated whatever FPCR's
+// rounding mode said, and past the format's range was undefined behaviour (the
+// host decided what came out). The 68881 rounds by FPCR -- to nearest even by
+// default -- and stores the largest integer of the sign for a value it cannot
+// hold. Found by review. Words as in the FDIV test: fmove.d (a0),fp0 /
+// fmove.l fp0,d0 ($6000; .b is $7800) / fmove.l #n,fpcr.
+do {
+    func store(_ value: String, _ format: String = "$6000") -> [String] {
+        ["  lea \(value)(pc),a0", "  dc.w $F210,$5400", "  moveq #0,d0", "  dc.w $F200,\(format)"]
+    }
+    let fpuAsm = ([
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$WritLn equ $8C",
+        "  psect mfmovl,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:"] +
+        store("twoseven") + ["  cmpi.l #3,d0", "  bne.w wrong"] +             // nearest: 3
+        store("mtwohalf") + ["  cmpi.l #-2,d0", "  bne.w wrong"] +            // nearest even: -2
+        store("threeg") + ["  cmpi.l #$7FFFFFFF,d0", "  bne.w wrong"] +       // too big: largest
+        store("mthreeg") + ["  cmpi.l #$80000000,d0", "  bne.w wrong"] +      // too small: smallest
+        store("threehundred", "$7800") + ["  cmpi.b #$7F,d0", "  bne.w wrong"] + [ // byte: 127
+        "  dc.w $F23C,$9000", "  dc.l $00000010"] +                             // FPCR: toward zero
+        store("twoseven") + ["  cmpi.l #2,d0", "  bne.w wrong"] + [
+        "  dc.w $F23C,$9000", "  dc.l 0",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "wrong:", "  dc.w $F23C,$9000", "  dc.l 0", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "twoseven:     dc.l $40059999,$9999999A", "mtwohalf:     dc.l $C0040000,0",
+        "threeg:       dc.l $41E65A0B,$C0000000", "mthreeg:      dc.l $C1E65A0B,$C0000000",
+        "threehundred: dc.l $4072C000,0",
+        "mok:  dc.b \"FMOVE INTEGER ROUNDED\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"FMOVE INTEGER WRONG\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ]).joined(separator: "\r")
+
+    let name = "fpu: a 68881 float stored as an integer rounds by FPCR and saturates past the range"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? fpuAsm.write(toFile: scratchDisk + "/mfmovl.a", atomically: true, encoding: .utf8)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/mfmovl.a -o=/h5/mfmovl.r", "l68 /h5/mfmovl.r -o=/h5/mfmovl",
+                       "/h5/mfmovl"], timeout: 30)
+        if out.contains("FMOVE INTEGER ROUNDED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("FMOVE") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mfmovl.a", "mfmovl.r", "mfmovl"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$DFork: a debugged child goes with its debugger ─────────────────────────
 // A debugger that exits without F$DExit left its child asleep for ever, and the
 // child kept the debugger's pid as its own: whoever got that pid next passed

@@ -389,6 +389,29 @@ static __inline__ int get_fp_value (uae_u32 opcode, uae_u16 extra, double *src)
     return 1;
 }
 
+/* A float stored as an integer (FMOVE to a byte, word or long). The 68881
+   rounds by FPCR's mode -- RND, bits 5-4: to nearest, toward zero, toward
+   minus infinity, toward plus infinity -- and a value the format cannot hold
+   is an operand error that stores its largest integer of that sign; a NaN is
+   taken by its sign here. A C cast truncated whatever the mode, and past the
+   range was undefined behaviour. */
+static uae_s32 fpp_to_int (double value, double lo, double hi)
+{
+    double r;
+    if (isnan (value)) return (uae_s32) (signbit (value) ? lo : hi);
+    switch ((regs.fpcr >> 4) & 3) {
+    case 0:  r = nearbyint (value); break;
+    case 1:  r = trunc (value);     break;
+    case 2:  r = floor (value);     break;
+    default: r = ceil (value);      break;
+    }
+    return (uae_s32) (r < lo ? lo : r > hi ? hi : r);
+}
+
+#define FPP_BYTE(v) fpp_to_int ((v), -128.0, 127.0)
+#define FPP_WORD(v) fpp_to_int ((v), -32768.0, 32767.0)
+#define FPP_LONG(v) fpp_to_int ((v), -2147483648.0, 2147483647.0)
+
 static __inline__ int put_fp_value (double value, uae_u32 opcode, uae_u16 extra)
 {
     uae_u16 tmp;
@@ -414,15 +437,15 @@ static __inline__ int put_fp_value (double value, uae_u32 opcode, uae_u16 extra)
     case 0:
 	switch (size) {
 	case 6:
-	    m68k_dreg (regs, reg) = (((int) value & 0xff)
+	    m68k_dreg (regs, reg) = ((FPP_BYTE (value) & 0xff)
 				    | (m68k_dreg (regs, reg) & ~0xff));
 	    break;
 	case 4:
-	    m68k_dreg (regs, reg) = (((int) value & 0xffff)
+	    m68k_dreg (regs, reg) = ((FPP_WORD (value) & 0xffff)
 				    | (m68k_dreg (regs, reg) & ~0xffff));
 	    break;
 	case 0:
-	    m68k_dreg (regs, reg) = (int) value;
+	    m68k_dreg (regs, reg) = FPP_LONG (value);
 	    break;
 	case 1:
 	    m68k_dreg (regs, reg) = from_single(value);
@@ -477,7 +500,7 @@ static __inline__ int put_fp_value (double value, uae_u32 opcode, uae_u16 extra)
     }
     switch (size) {
     case 0:
-	put_long (ad, (uae_s32) value);
+	put_long (ad, FPP_LONG (value));
 	break;
     case 1:
 	put_long (ad, from_single(value));
@@ -505,7 +528,7 @@ static __inline__ int put_fp_value (double value, uae_u32 opcode, uae_u16 extra)
 	}
 	break;
     case 4:
-	put_word(ad, (uae_s16) value);
+	put_word(ad, (uae_s16) FPP_WORD (value));
 	break;
     case 5:{
 	    uae_u32 wrd1, wrd2;
@@ -516,7 +539,7 @@ static __inline__ int put_fp_value (double value, uae_u32 opcode, uae_u16 extra)
 	}
 	break;
     case 6:
-	put_byte(ad, (uae_s8) value);
+	put_byte(ad, (uae_s8) FPP_BYTE (value));
 	break;
     default:
 	return 0;
