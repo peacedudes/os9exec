@@ -919,6 +919,9 @@ typedef struct {
                                        across a park: the dispatcher resumes a parked
                                        process by running its whole call again, so
                                        without this the sent bytes would go twice */
+            Boolean   isp;          /* opened as "/socket": the older library, which
+                                       makes each socket call a setstat of its own
+                                       rather than an operation inside SS_SPF */
         } spf_typ;
 
 
@@ -1040,6 +1043,12 @@ typedef os9err (*pathop_buf_typ) ( ushort pid, syspath_typ*, uint32_t*, byte* );
 typedef os9err (*pathop_buf2_typ)( ushort pid, syspath_typ*, uint32_t*, uint32_t*, byte* );
 typedef os9err (*pathop_path_typ)( ushort pid, syspath_typ*, ushort*, const char* );
 
+/* A setstat taken with the caller's whole register set, for a manager whose
+   calls read a1 or d4, or answer in d1, beyond what the per-code entries pass.
+   It sets *taken false to leave a code to the usual dispatch. */
+typedef os9err (*pathop_regs_typ)( ushort pid, syspath_typ*, ushort func,
+                                   regs_type* rp, Boolean* taken );
+
                 
 /* system task function def */
 typedef os9err(*systaskfunc_typ)( ushort pid, void *dataptr, regs_type* rp );
@@ -1118,6 +1127,7 @@ typedef struct {
 
             gs_typ          gs;
             ss_typ          ss;
+            pathop_regs_typ regstat;   /* NULL unless the manager needs it */
         } fmgr_typ;
 
 

@@ -567,6 +567,14 @@ os9err OS9_I_SetStt( regs_type *rp, ushort cpid )
     ushort path= loword(d0);
     ushort func= loword(d1);
 
+    /* A manager that reads its calls straight from the registers is asked
+       first, and checks its own pointers: which registers carry one differs
+       per call there, and some calls legitimately pass a0 as 0. */
+    {   Boolean taken= false;
+        os9err  err  = usrpath_regstat( cpid,path,func, rp, &taken );
+        if (taken) return err;
+    }
+
     if (ss_uses_a0(func) && !IN_ARENA(FROM68K(rp->a[0]))) return os9error(E_BPADDR);
     os9err err= usrpath_setstat( cpid,path,func, &a0,&a1, &d0,&d1,&d2,&d3 );
     rp->d[0]= d0; rp->d[1]= d1; rp->d[2]= d2; rp->d[3]= d3; /* copy back results */

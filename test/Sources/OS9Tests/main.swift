@@ -8103,6 +8103,297 @@ do {
     }
 }
 
+// ── /socket: the older socket library's calls, one setstat per BSD call ──────
+// Programs built with the earlier Microware socket library (ttcp, the BIND 4.8.3
+// tools, WN's inetd) open plain "/socket" rather than an "/ip0" path, and make
+// each socket call a setstat of its own -- socket, bind, listen, connect and
+// accept -- where the SPF library puts an operation inside one SS_SPF block.
+// os9exec's original authors served those calls in network.c; it was retired in
+// 2026 as unused, and "/socket" then answered E$MNF, so every such program
+// stopped at its first socket call. spfsock.c serves them again over the same
+// host sockets. These programs make the calls directly, as that library does,
+// so the tests need nothing from any networking package.
+do {
+    /// A TCP socket on the host's loopback, bound to a port the host picked.
+    func loopbackSocket(listening: Bool) -> (fd: Int32, port: UInt16)? {
+        let sock = socket(AF_INET, streamSocketType, 0)
+        guard sock >= 0 else { return nil }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let bound = withUnsafeMutablePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(sock, $0, len) == 0 && getsockname(sock, $0, &len) == 0
+            }
+        }
+        guard bound, !listening || listen(sock, 1) == 0 else { close(sock); return nil }
+        return (sock, UInt16(bigEndian: addr.sin_port))
+    }
+
+    /// An assembler source whose `start:` is <body>, with the data every one of
+    /// these programs uses: the device name, socket()'s three arguments
+    /// (Internet, stream, default protocol) and 127.0.0.1:<port> laid out as a
+    /// BSD socket address.
+    func socketProgram(_ module: String, port: UInt16, _ body: [String]) -> String {
+        ([
+            "  use /dd/DEFS/oskdefs.d",
+            "",
+            "F$Exit   equ  $06",
+            "I$Open   equ  $84",
+            "I$Write  equ  $8A",
+            "I$SetStt equ  $8E",
+            "I$Close  equ  $8F",
+            "SSBind   equ  $6C",
+            "SSListen equ  $6D",
+            "SSConn   equ  $6E",
+            "SSResv   equ  $6F",
+            "SSAccept equ  $70",
+            "",
+            "  psect \(module),(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+            "",
+            "start:"
+        ] + body + [
+            "fail:",
+            "  OS9     F$Exit",
+            "triple:  dc.l  2,1,0",
+            "addr:    dc.w  2,\(port)",
+            "         dc.b  127,0,0,1",
+            "         dc.l  0,0",
+            "msg:     dc.b  \"FROM-OS9-SOCKET\"",
+            "msgl     equ   *-msg",
+            "sockdev: dc.b  \"/socket\",0",
+            "nildev:  dc.b  \"/nil\",0",
+            "",
+            "  ends",
+            ""
+        ]).joined(separator: "\r")
+    }
+
+    /// Opens "/socket" and asks it for a socket; the path is left in d7.
+    let openSocket = [
+        "  lea     sockdev(pc),a0",
+        "  moveq   #3,d0",
+        "  OS9     I$Open",
+        "  bcs     fail",
+        "  move.w  d0,d7",
+        "  lea     triple(pc),a0",
+        "  moveq   #12,d2",
+        "  move.w  #SSResv,d1",
+        "  OS9     I$SetStt",
+        "  bcs     fail"
+    ]
+    /// Connects the socket in d7 to `addr`, writes `msg` down it and closes it.
+    let connectAndSend = [
+        "  move.w  d7,d0",
+        "  lea     addr(pc),a0",
+        "  moveq   #16,d2",
+        "  move.w  #SSConn,d1",
+        "  OS9     I$SetStt",
+        "  bcs     fail",
+        "  move.w  d7,d0",
+        "  lea     msg(pc),a0",
+        "  moveq   #msgl,d1",
+        "  OS9     I$Write",
+        "  bcs     fail",
+        "  move.w  d7,d0",
+        "  OS9     I$Close",
+        "  moveq   #0,d1"
+    ]
+
+    /// Assembles <source> into /h5/<module>, runs it, and answers the output.
+    func buildAndRun(_ module: String, _ source: String, timeout: TimeInterval = 30) -> String {
+        try? source.write(toFile: scratchDisk + "/\(module).a", atomically: true, encoding: .utf8)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/\(module).a -o=/h5/\(module).r",
+                       "l68 /h5/\(module).r -o=/h5/\(module)",
+                       "/h5/\(module)",
+                       "echo \(module.uppercased())-END"], timeout: timeout)
+        for leftover in ["\(module).a", "\(module).r", module] { removeScratchItem(leftover) }
+        return out
+    }
+
+    /// The lines of <out> worth showing when a test fails.
+    func errorLines(_ out: String) -> String {
+        out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+            .filter { $0.contains("Error") || $0.contains("END") }
+            .prefix(4).joined(separator: " | ")
+    }
+
+    // A client: socket, connect, write. The host must receive what it wrote.
+    let clientName = "net: a /socket client (the older socket library) connects and sends"
+    if filter.isEmpty || clientName.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(clientName) (the container cannot reach the host's loopback)")
+        } else if let (listenFd, port) = loopbackSocket(listening: true) {
+            var received = [UInt8]()
+            let done = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                let conn = accept(listenFd, nil, nil)
+                if conn >= 0 {
+                    var buf = [UInt8](repeating: 0, count: 256)
+                    while case let got = read(conn, &buf, buf.count), got > 0 {
+                        received += buf[0..<got]
+                    }
+                    close(conn)
+                }
+                done.signal()
+            }
+            let out = buildAndRun("ispcli", socketProgram("ispcli", port: port, openSocket + connectAndSend))
+            let drained = done.wait(timeout: .now() + 10) == .success
+            if !drained { shutdown(listenFd, SHUT_RDWR) }   // releases the reader's accept
+            close(listenFd)
+            let text = String(bytes: received, encoding: .utf8) ?? "<not UTF-8>"
+            if drained && text == "FROM-OS9-SOCKET" && out.contains("ISPCLI-END") && !out.contains("Error #") {
+                print("PASS: \(clientName)")
+                passed += 1
+            } else {
+                print("FAIL: \(clientName)")
+                print("      host received: \"\(text)\" (drained=\(drained))")
+                print("      out: \(errorLines(out))")
+                failed += 1
+            }
+        } else {
+            print("SKIP: \(clientName) (no loopback port could be bound)")
+        }
+    }
+
+    // A server: socket, bind, listen, accept. The accepted connection comes back
+    // as a new path in d1; the host client must read what is written to it.
+    let serverName = "net: a /socket server binds, listens and accepts, the connection a path of its own"
+    if filter.isEmpty || serverName.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(serverName) (the container cannot reach the host's loopback)")
+        } else if let (probe, port) = loopbackSocket(listening: false) {
+            close(probe)                    // a port that was free a moment ago
+            var received = [UInt8]()
+            var connected = false
+            let done = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                // The server is not listening until the emulator has started and
+                // assembled it, so keep trying for as long as that can take.
+                let deadline = Date().addingTimeInterval(25)
+                while !connected && Date() < deadline {
+                    let client = socket(AF_INET, streamSocketType, 0)
+                    var addr = sockaddr_in()
+                    addr.sin_family = sa_family_t(AF_INET)
+                    addr.sin_port = port.bigEndian
+                    addr.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
+                    connected = withUnsafePointer(to: &addr) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            connect(client, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+                        }
+                    }
+                    if connected {
+                        var buf = [UInt8](repeating: 0, count: 256)
+                        while case let got = read(client, &buf, buf.count), got > 0 {
+                            received += buf[0..<got]
+                        }
+                    } else {
+                        usleep(100_000)
+                    }
+                    close(client)
+                }
+                done.signal()
+            }
+            let serve = [
+                "  move.w  d7,d0",
+                "  lea     addr(pc),a0",
+                "  moveq   #16,d2",
+                "  move.w  #SSBind,d1",
+                "  OS9     I$SetStt",
+                "  bcs     fail",
+                "  move.w  d7,d0",
+                "  suba.l  a0,a0",
+                "  moveq   #1,d2",
+                "  move.w  #SSListen,d1",
+                "  OS9     I$SetStt",
+                "  bcs     fail",
+                "  move.w  d7,d0",
+                "  suba.l  a0,a0",          // no peer address wanted
+                "  suba.l  a1,a1",
+                "  move.w  #SSAccept,d1",
+                "  OS9     I$SetStt",
+                "  bcs     fail",
+                "  move.w  d1,d6",          // the connection's own path
+                "  move.w  d6,d0",
+                "  lea     msg(pc),a0",
+                "  moveq   #msgl,d1",
+                "  OS9     I$Write",
+                "  bcs     fail",
+                "  move.w  d6,d0",
+                "  OS9     I$Close",
+                "  move.w  d7,d0",
+                "  OS9     I$Close",
+                "  moveq   #0,d1"
+            ]
+            let out = buildAndRun("ispsrv", socketProgram("ispsrv", port: port, openSocket + serve))
+            let drained = done.wait(timeout: .now() + 30) == .success
+            let text = String(bytes: received, encoding: .utf8) ?? "<not UTF-8>"
+            if drained && text == "FROM-OS9-SOCKET" && out.contains("ISPSRV-END") && !out.contains("Error #") {
+                print("PASS: \(serverName)")
+                passed += 1
+            } else {
+                print("FAIL: \(serverName)")
+                print("      host received: \"\(text)\" (connected=\(connected) drained=\(drained))")
+                print("      out: \(errorLines(out))")
+                failed += 1
+            }
+        } else {
+            print("SKIP: \(serverName) (no loopback port could be bound)")
+        }
+    }
+
+    // A refused connection is reported by the socket error a BSD caller prints
+    // (ECONNREFUSED, 007:026), not a generic device error. The port is found
+    // free and closed again, so nothing answers there; inside a container that
+    // is the container's own loopback, which refuses just the same.
+    let refusedName = "net: a refused /socket connect reports ECONNREFUSED"
+    if filter.isEmpty || refusedName.localizedCaseInsensitiveContains(filter) {
+        if let (probe, port) = loopbackSocket(listening: false) {
+            close(probe)
+            let out = buildAndRun("ispref", socketProgram("ispref", port: port, openSocket + connectAndSend))
+            if out.contains("Error #007:026") {
+                print("PASS: \(refusedName)")
+                passed += 1
+            } else {
+                print("FAIL: \(refusedName)")
+                print("      out: \(errorLines(out))")
+                failed += 1
+            }
+        } else {
+            print("SKIP: \(refusedName) (no loopback port could be bound)")
+        }
+    }
+
+    // SS_Resv on a path that is no socket: E$UnkSvc (208), where it used to
+    // answer success -- telling a caller it had a socket when nothing was made.
+    let resvName = "setstat: SS_Resv on a path that is not a socket answers E$UnkSvc"
+    if filter.isEmpty || resvName.localizedCaseInsensitiveContains(filter) {
+        let onNil = [
+            "  lea     nildev(pc),a0",
+            "  moveq   #3,d0",
+            "  OS9     I$Open",
+            "  bcs     fail",
+            "  lea     triple(pc),a0",
+            "  moveq   #12,d2",
+            "  move.w  #SSResv,d1",
+            "  OS9     I$SetStt",
+            "  bcs     fail",
+            "  moveq   #1,d1"               // success here is the defect
+        ]
+        let out = buildAndRun("ispnil", socketProgram("ispnil", port: 1, onNil))
+        if out.contains("Error #000:208") {
+            print("PASS: \(resvName)")
+            passed += 1
+        } else {
+            print("FAIL: \(resvName)")
+            print("      out: \(errorLines(out))")
+            failed += 1
+        }
+    }
+}
+
 // ── F$Alarm: a fired alarm interrupts an INDEFINITE F$Sleep(0) ─────────────────
 // Same bug, the other sleep variant: F$Sleep(0) (wakes only on signal, no
 // natural timeout at all) was likewise never interrupted by a due alarm

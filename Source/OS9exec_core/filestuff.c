@@ -264,6 +264,8 @@ void init_None( fmgr_typ* f )
     ss->_SS_LBlink = pUnimp_num; /* /L2 specific function */
     
     ss->_SS_Undef  = pUnimp_buf; /* any other setstat */
+
+    f->regstat     = NULL;       /* no setstat needs the whole register set */
 } /* init_None */
 
 /* --------------------------------------------------------- */
@@ -2282,7 +2284,11 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
         case SS_Bind   : err= s->_SS_Bind   ( pid,spP, d2,  *a ); break; /* $6C */
         case SS_Listen : err= s->_SS_Listen ( pid,spP, d2,  *a ); break; /* $6D */
         case SS_Connect: err= s->_SS_Connect( pid,spP, d2,  *a ); break; /* $6E */
-        case SS_Resv   : err=  0;    /* do nothing at the moment */               break; /* $6F */
+        /* Asks for a socket. A manager that makes one takes the call before
+           it gets here (regstat); anywhere else nothing was made, and saying
+           so is what lets the caller report it instead of carrying on with a
+           path that is not a socket. */
+        case SS_Resv   : err= os9error(E_UNKSVC);                         break; /* $6F */
         case SS_Accept : err= s->_SS_Accept ( pid,spP, d1,  *a ); break; /* $70 */
         case SS_Recv   : err= s->_SS_Recv   ( pid,spP, d1,d2,*a ); break; /* $71 */
         case SS_Send   : err= s->_SS_Send   ( pid,spP, d1,d2,*a ); break; /* $72 */
@@ -2324,6 +2330,26 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
 } /* syspath_setstat */
 
    
+/* SetStat from usrpath, for a manager that takes it from the registers */
+os9err usrpath_regstat( ushort pid, ushort up, ushort func,
+                        regs_type* rp, Boolean* taken )
+/* Offer the call to <up>'s manager, if that manager reads its setstats straight
+   from the caller's registers (fmgr_typ.regstat). <*taken> says whether it did;
+   when it did not, the call goes through usrpath_setstat as usual. */
+{
+    syspath_typ* spP;
+    fmgr_typ*    f;
+
+    *taken= false;
+    if (up>=MAXUSRPATHS) return 0;
+        spP= get_syspath( pid,procs[pid].usrpaths[up] );
+    if (spP==NULL) return 0;
+        f= fmgr_op[spP->type];
+    if (f->regstat==NULL) return 0;
+    return f->regstat( pid,spP,func, rp, taken );
+} /* usrpath_regstat */
+
+
 /* SetStat from usrpath */
 os9err usrpath_setstat(ushort pid,ushort up, ushort func,
                        ulong *a0, ulong *a1,

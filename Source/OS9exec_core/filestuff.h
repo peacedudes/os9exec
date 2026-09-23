@@ -164,6 +164,7 @@ os9err syspath_setstat   ( ushort pid, ushort  sp, ushort func, ulong *a0, ulong
                                                                 uint32_t *d0, uint32_t *d1, uint32_t *d2, uint32_t *d3 );
 os9err usrpath_setstat   ( ushort pid, ushort  up, ushort func, ulong *a0, ulong *a1,
                                                                 uint32_t *d0, uint32_t *d1, uint32_t *d2, uint32_t *d3 );
+os9err usrpath_regstat   ( ushort pid, ushort  up, ushort func, regs_type* rp, Boolean* taken );
 
 
 os9err get_locations     ( ushort pid, ptype_typ type, const char* pathname,
