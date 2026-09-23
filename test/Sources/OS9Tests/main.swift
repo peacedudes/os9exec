@@ -4389,6 +4389,48 @@ do {
     }
 }
 
+// ── the emulator's own options: -i, -ih, -dh, -p ──
+// Four of os9exec's command-line options, none of which any test passed. -i is
+// the one with teeth: it turns the internal commands off, so `pwd` (os9exec's
+// own, not OS-9's) stops being found -- the switch for a site that wants
+// nothing but real OS-9 modules. The other three only have to say something
+// true, but each one used to be a page of code no test entered.
+do {
+    struct OptionCase {
+        let name: String
+        let flags: [String]
+        let commands: [String]
+        let pass: (String) -> Bool
+    }
+    let cases = [
+        OptionCase(name: "options: internal commands run by default", flags: [],
+                   commands: ["pwd"]) { !$0.contains("can't execute") },
+        OptionCase(name: "options: -i turns the internal commands off", flags: ["-i"],
+                   commands: ["pwd"]) { $0.contains("can't execute \"pwd\"") },
+        OptionCase(name: "options: -ih lists the internal commands", flags: ["-ih"],
+                   commands: ["echo done"]) { $0.contains("mount") && $0.contains("iprocs") },
+        OptionCase(name: "options: -dh lists the debug masks", flags: ["-dh"],
+                   commands: ["echo done"]) { $0.contains("dbgFiles") && $0.contains("0x0200") },
+        OptionCase(name: "options: -p sets the first process's priority", flags: ["-p", "200"],
+                   commands: ["procs"]) { out in
+            // procs prints one row per process, priority in its own column
+            out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+               .contains { $0.contains(" shell ") && $0.contains("200") }
+        },
+    ]
+    for c in cases where filter.isEmpty || c.name.localizedCaseInsensitiveContains(filter) {
+        let out = os9(c.commands, flags: c.flags)
+        if c.pass(out) {
+            print("PASS: \(c.name)"); passed += 1
+        } else {
+            print("FAIL: \(c.name)")
+            for line in out.replacingOccurrences(of: "\r", with: "\n")
+                           .split(separator: "\n").prefix(6) { print("      | \(line)") }
+            failed += 1
+        }
+    }
+}
+
 // ── a failed allocation is the program's error, and nobody else's business ──
 // OS-9 refuses a memory request silently: the caller gets E$NoRAM and decides.
 // os9exec used to narrate it too, on the program's own stderr -- a line from the
