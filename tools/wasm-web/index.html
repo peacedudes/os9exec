@@ -151,6 +151,12 @@
     clearTimeout(quietTimer);
     quietTimer = setTimeout(typeRun, READY_QUIET_MS);
   }
+  function typeText(text) {
+    for (const ch of text) {
+      const c = ch.charCodeAt(0);
+      Module.os9keys.push(KEYMAP[c] ?? c);
+    }
+  }
   function typeRun() {
     if (typedRun) return;
     typedRun = true;
@@ -159,19 +165,26 @@
                        'Use "Open disk as /h1…" and it will run.');
       return;
     }
-    for (const ch of runCmd + '\r') {
-      const c = ch.charCodeAt(0);
-      Module.os9keys.push(KEYMAP[c] ?? c);
-    }
+    typeText(runCmd + '\r');
   }
 
   // Send what a Unix terminal sends: Enter as LF, which the emulator's
   // console swaps to OS-9's CR (consio.c), exactly as for a native terminal.
   // Backspace as BS, where xterm sends DEL.
   const KEYMAP = { 0x0d: 0x0a, 0x7f: 0x08 };
+
+  // Ctrl-A is OS-9's duplicate-last-line key (PD_DUP), and SCF answers it for a
+  // program that reads through the terminal's own line editing. bash does its
+  // own reading, so a command WE typed at startup could not be recalled that
+  // way. Here Ctrl-A types it again, unexecuted, exactly as the reader would
+  // have typed it -- but only until a line of their own has been entered, after
+  // which the key belongs to the guest again.
+  let ownLineEntered = false;
   term.onData((data) => {
     for (const ch of data) {
       const c = ch.charCodeAt(0);
+      if (c === 0x01 && typedRun && !ownLineEntered) { typeText(runCmd); continue; }
+      if (c === 0x0d) ownLineEntered = true;
       Module.os9keys.push(KEYMAP[c] ?? c);
     }
   });

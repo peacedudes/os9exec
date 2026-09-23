@@ -4389,6 +4389,77 @@ do {
     }
 }
 
+// ── PD_DUP replays the CALLER's buffer, whatever is in it ──
+// Technical I/O Manual v2.4, PD_DUP: "If this character is input, SCF
+// (I$ReadLn) duplicates whatever is in the input buffer through the first
+// PD_EOR character. Normally, this is the previous line typed." The hedge is
+// the whole point: the line is not kept anywhere private, so what comes back is
+// whatever THIS caller's buffer holds. A program that seeds its own buffer and
+// then reads a Ctrl-A gets its own text back, not the line typed at the shell
+// before it. Nothing tested this, and "fixing" the replay to use a buffer of
+// SCF's own would look tidier and would be wrong.
+do {
+    let dupAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "",
+        "F$Exit   equ  $06",
+        "I$ReadLn equ  $8B",
+        "I$WritLn equ  $8C",
+        "",
+        "  psect dupbuf,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "",
+        "start:",
+        "  sub.l   #64,a7",
+        "  movea.l a7,a4",            // our own buffer, on the stack
+        "  lea     seed(pc),a1",
+        "  movea.l a4,a0",
+        "  moveq   #8,d2",            // "DUPTEXT" and the CR
+        "seedloop:",
+        "  move.b  (a1)+,(a0)+",
+        "  subq.l  #1,d2",
+        "  bne.s   seedloop",
+        "  clr.b   (a0)",             // NUL right after the CR
+        "  movea.l a4,a0",
+        "  moveq   #32,d1",
+        "  moveq   #0,d0",            // path 0: the terminal
+        "  OS9     I$ReadLn",
+        "  bcs.s   failed",
+        "  movea.l a4,a0",            // d1 = what the read returned
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "  bra.s   done",
+        "failed:",
+        "  lea     msg(pc),a0",
+        "  moveq   #msgl,d1",
+        "  moveq   #1,d0",
+        "  OS9     I$WritLn",
+        "done:",
+        "  moveq   #0,d1",
+        "  OS9     F$Exit",
+        "",
+        "seed: dc.b \"DUPTEXT\",$0D",
+        "msg:  dc.b \"READ FAILED\",$0D",
+        "msgl  equ  *-msg",
+        "",
+        "  ends",
+        ""
+    ].joined(separator: "\r")
+    try? dupAsm.write(toFile: scratchDisk + "/dupbuf.a", atomically: true, encoding: .utf8)
+
+    run("scf: PD_DUP replays the caller's own buffer, not a line SCF kept",
+        expectation: "Ctrl-A gives back the text the program seeded, DUPTEXT",
+        commands: ["load /dd/CMDS/r68 /dd/CMDS/l68",
+                   "r68 /h5/dupbuf.a -o=/h5/dupbuf.r", "l68 /h5/dupbuf.r -o=/h5/dupbuf",
+                   "/h5/dupbuf", "\u{01}"], timeout: 30) { out in
+        let printed = out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+                         .filter { !$0.hasPrefix("$ ") }
+        return printed.contains { $0.contains("DUPTEXT") } && !out.contains("READ FAILED")
+    }
+    for leftover in ["dupbuf.a", "dupbuf.r", "dupbuf"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+}
+
 // ── the emulator's own options: -i, -ih, -dh, -p ──
 // Four of os9exec's command-line options, none of which any test passed. -i is
 // the one with teeth: it turns the internal commands off, so `pwd` (os9exec's
