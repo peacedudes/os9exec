@@ -890,6 +890,8 @@ typedef struct {
             uint32_t  waitUntil;    // host tick that wait expires at (0 = not waiting)
             ushort    ownPid;       // process that opened this path
             Boolean   updMode;      // opened for update: reads lock what they read
+            Boolean   sysPath;      // RBF's own path (OpenDir): shares the ring's
+                                    // sectors, never takes or waits on a lock
             Boolean   single;       // opened non-sharably (I$Open bit 6)
             uint32_t  lockBeg;      // record this path holds: first byte ...
             uint32_t  lockEnd;      // ... and one past the last (equal: none)

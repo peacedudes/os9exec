@@ -3482,7 +3482,7 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     /* A write has to be stopped BEFORE it happens -- it changes the file, and
      * its length is exactly what was asked for, so the range is known here.
      * A read is checked afterwards instead: see below. */
-    if (!spP->rawMode && wMode && *lenP>0) {
+    if (!spP->rawMode && !rbf->sysPath && wMode && *lenP>0) {
         syspath_typ* spH= LockHolder( spP, rbf->currPos, rbf->currPos+*lenP );
 
         /* The EOF lock stops a SECOND writer extending the file, and that is
@@ -3568,7 +3568,7 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
               /* nothing here yet -- but if another path holds the end of this
                * file, this is not the end of it, so wait for the next write
                * rather than reporting one */
-              if (!spP->rawMode) {
+              if (!spP->rawMode && !rbf->sysPath) {
                   ushort wpid= EofLockHolder( spP );
 
                   if (wpid!=0 && wpid==currentpid) {
@@ -3743,7 +3743,7 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
         rbf->eofLock= false;
         WakeOnFile( spP );
     }
-    else if (!spP->rawMode && !err) {
+    else if (!spP->rawMode && !rbf->sysPath && !err) {
       /* The EOF lock, per ch.7: gained by an access AT the end of the file,
        * kept until an access that is NOT at the end. Only a path that could
        * extend the file takes it; a reader merely waits on it. Evaluated for
@@ -3860,12 +3860,31 @@ static os9err OpenDir( rbfdev_typ* dev, ulong dfd, ushort *sp )
     rbf->devnr  = dev->nr;
     rbf->sas    = dev->sas;       /* PD_SAS starts as the device's (SS_Opt changes it) */
     rbf->fd_nr  = dfd;            /* the directory's sector */
+    /* RBF's own path: it adds and removes entries on the caller's behalf, as
+     * the file manager does on real OS-9, so it takes no record or EOF lock
+     * and waits on none -- a caller holding its own directory open for update
+     * would otherwise wait on itself. A reused slot's fields are cleared. */
+    rbf->sysPath= true;
+    rbf->updMode= false;
+    rbf->ownPid = currentpid;
+    rbf->lockBeg= 0;
+    rbf->lockEnd= 0;
+    rbf->eofLock= false;
+    rbf->waitPid= 0;
 
         err=   ReadFD        ( spP );            /* IMPORTANT !! */
-    if (err)   ReleaseBuffers( spP );
-    else rbf->lastPos= FDSize( spP );      /* get the file size  */
+    if (err) { ReleaseBuffers( spP ); return err; }
 
-    return err; 
+    /* Into the directory's ring, once its FD is read, like any other path on
+     * it: a user path may hold one of its sectors, clean or dirty, and this
+     * path adds and removes entries. Alone, it neither saw that path's unflushed
+     * copy nor dropped it, and the user path flushed its stale sector back over
+     * the entry written here -- the new file's name was gone and its FD and
+     * space owned by nothing. RingJoin also adopts a newer size from the ring.
+     * ReleaseBuffers (via close) leaves the ring again. */
+    RingJoin( spP );
+    rbf->lastPos= FDSize( spP );           /* get the file size  */
+    return 0;
 } /* OpenDir */
 
 static os9err CloseDir( ushort sp )
@@ -4083,6 +4102,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
     rbf->ownPid  = currentpid;
     rbf->single  = (*modeP & poSingle)!=0;
     rbf->updMode = false;
+    rbf->sysPath = false;
     rbf->lockBeg = 0;
     rbf->lockEnd = 0;
     rbf->eofLock = false;

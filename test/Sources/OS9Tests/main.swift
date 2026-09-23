@@ -1997,6 +1997,64 @@ do {
     }
 }
 
+// ── RBF: a directory held open does not flush a stale sector over a new entry ──
+// The path RBF adds and removes directory entries through was a ring of its
+// own, so a user path holding the same directory sector neither lost its copy
+// when the entry was written nor handed over its own. Rewriting an entry it had
+// read (as rename tools do) dirtied that stale copy, and its close wrote the
+// sector back without the new file's name. Found by review (older than v4.0.0).
+do {
+    let dirAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Create equ $83", "I$Open equ $84", "I$Seek equ $88", "I$Read equ $89",
+        "I$Write equ $8A", "I$WritLn equ $8C", "I$Close equ $8F",
+        "  psect mdirrc,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea dname(pc),a0", "  move.w #$83,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "  move.w d7,d0", "  lea (a6),a0", "  moveq #32,d1", "  OS9 I$Read", "  bcs.w fail",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w fail",
+        "  OS9 I$Close",
+        "  move.w d7,d0", "  moveq #0,d1", "  OS9 I$Seek", "  bcs.w fail",
+        "  move.w d7,d0", "  lea (a6),a0", "  moveq #32,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d7,d0", "  OS9 I$Close",
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.s lost",
+        "  OS9 I$Close",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "lost:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "dname: dc.b \"/h9\",0", "fname: dc.b \"/h9/fresh\",0",
+        "mok:  dc.b \"NEW ENTRY SURVIVED\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"NEW ENTRY WAS OVERWRITTEN\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "rbf: a directory held open does not flush a stale sector over a new entry"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? dirAsm.write(toFile: scratchDisk + "/mdirrc.a", atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mdirrc.a -o=/h5/mdirrc.r", "l68 /h5/mdirrc.r -o=/h5/mdirrc"], timeout: 60)
+        let run = os9(["mount -k=500K \(scratchDevice)", "/h5/mdirrc"], timeout: 60)
+        let out = run + os9(["dcheck /h9"], timeout: 60)
+        if out.contains("NEW ENTRY SURVIVED") && dcheckClean(out) {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("ENTRY") || $0.contains("Error") || $0.contains("not in") }
+                .prefix(4)
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mdirrc.a", "mdirrc.r", "mdirrc"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+    }
+}
+
 // A dot-name on an RBF image is stored as a dot-name. The Linux build ran every
 // OS-9 pathname through the host-file rule that spells a leading "." as ":2e"
 // (netatalk's convention, from the 2002 sources), so on an IMAGE it wrote
