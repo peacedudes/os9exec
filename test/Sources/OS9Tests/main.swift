@@ -5904,8 +5904,31 @@ do {
         message("mapart", "ZERO BLOCK HAS ITS OWN ADDRESS") + message("mshared", "ZERO BLOCK SHARES AN ADDRESS") +
         ["  ends", ""]
 
+    // "If the module's access word does not give the process read permission,
+    // the link call fails" (F$Link, page 1-41). The creator's own field is the
+    // one checked here -- the super-user group is checked the same way -- so a
+    // module made with no permissions at all is refused (E$Permit, 164) and one
+    // with owner-read links. os9exec never looked (found by the skills session).
+    let permLink = header + [
+        "  psect mperm,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea pnone(pc),a0", "  moveq #16,d0", "  move.w #$8001,d1", "  move.w #$0000,d2",
+        "  OS9 F$DatMod", "  bcs.w fail", "  movea.l a2,a3",
+        "  lea pnone(pc),a0", "  moveq #0,d0", "  OS9 F$Link",
+        "  bcc.s wrong", "  cmpi.w #164,d1", "  bne.s wrong",
+        "  lea pread(pc),a0", "  moveq #16,d0", "  move.w #$8001,d1", "  move.w #$0001,d2",
+        "  OS9 F$DatMod", "  bcs.w fail", "  movea.l a2,a4",
+        "  lea pread(pc),a0", "  moveq #0,d0", "  OS9 F$Link",
+        "  bcs.s wrong", "  OS9 F$UnLink"] + say("mpok") + [
+        "  movea.l a4,a2", "  OS9 F$UnLink", "  movea.l a3,a2", "  OS9 F$UnLink",
+        "  bra.s done", "wrong:"] + say("mpbad") + [
+        "done:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "pnone: dc.b \"permnone\",0", "pread: dc.b \"permread\",0"] +
+        message("mpok", "LINK NEEDS READ PERMISSION") + message("mpbad", "LINK IGNORED PERMISSION") + ["  ends", ""]
+
     let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl, "macct": acct,
-                   "mstky": sticky, "mzero": zeroBlock]
+                   "mstky": sticky, "mzero": zeroBlock, "mperm": permLink]
     for (module, lines) in modules {
         try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
                                                   atomically: true, encoding: .utf8)
@@ -5930,7 +5953,9 @@ do {
         StatusCase(name: "module: a sticky module stays at link count 0 and goes at -1",
                    module: "mstky", want: ["STICKY KEPT AT 0 AND GONE AT -1"]),
         StatusCase(name: "memory: a zero-byte F$SRqMem gets an address of its own, and says nothing on return",
-                   module: "mzero", want: ["ZERO BLOCK HAS ITS OWN ADDRESS"], absent: ["BLOCK at"])
+                   module: "mzero", want: ["ZERO BLOCK HAS ITS OWN ADDRESS"], absent: ["BLOCK at"]),
+        StatusCase(name: "module: F$Link refuses a module whose access word gives no read permission",
+                   module: "mperm", want: ["LINK NEEDS READ PERMISSION"])
     ]
     let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
     if !chosen.isEmpty {
@@ -5950,7 +5975,8 @@ do {
             print("FAIL: \(testCase.name)")
             let lines = out.split(whereSeparator: \.isNewline).filter {
                 $0.contains("READY") || $0.contains("DATMOD") || $0.contains("CCTL") || $0.contains("Error") ||
-                $0.contains("UACCT") || $0.contains("unimplemented") || $0.contains("STICKY") || $0.contains("BLOCK")
+                $0.contains("UACCT") || $0.contains("unimplemented") || $0.contains("STICKY") ||
+                $0.contains("BLOCK") || $0.contains("LINK ")
             }
             print("      saw: \(lines.joined(separator: " | "))")
             failed += 1

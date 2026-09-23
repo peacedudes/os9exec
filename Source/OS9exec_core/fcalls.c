@@ -297,6 +297,27 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
     return 0;
 } /* OS9_F_Load */
 
+static Boolean module_readable( ushort pid, const mod_exec* m )
+/* "If the module's access word does not give the process read permission, the
+   link call fails" (F$Link, page 1-41). Which of M$Accs's fields applies is the
+   OS-9 Guru's (3.2.4): the owner's for the creator -- and for the super-user
+   group, which is checked the same way rather than let through -- the group's
+   for the creator's group, and the public field for everyone else. Read is
+   bit 0 of each four-bit field (Module Header, M$Accs). */
+{
+    uint32_t owner= os9_long( m->_mh._mowner );
+    ushort   acc  = os9_word( m->_mh._maccess );
+    ushort   grp  = os9_word( procs[pid].pd._group );
+    ushort   usr  = os9_word( procs[pid].pd._user  );
+    ushort   field;
+
+    if      (grp==0 || (grp==(owner>>16) && usr==(owner & 0xFFFF))) field= acc;
+    else if (grp==(owner>>16))                                      field= acc>>4;
+    else                                                            field= acc>>8;
+    return (field & 0x1)!=0;
+} /* module_readable */
+
+
 os9err OS9_F_Link( regs_type *rp, ushort cpid )
 /* F$Link:
  * Input:   d0.w=desired type/language
@@ -381,6 +402,12 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
           unlink_module( mid );
           return os9error(E_MNF);
       }
+    }
+
+    /* no read permission: refused the way a wrong type is, the link given back */
+    if (!module_readable( cpid, theModule )) {
+        unlink_module( mid );
+        return os9error(E_PERMIT);
     }
         
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
@@ -1916,7 +1943,7 @@ os9err OS9_F_TLink( regs_type *rp, ushort cpid )
     return err;
 } /* OS9_F_TLink */
 
-os9err OS9_F_DatMod( regs_type *rp, _pid_ )
+os9err OS9_F_DatMod( regs_type *rp, ushort cpid )
 /* F$DatMod:
  * Input:   d0.l=size of data reuired (not including header or CRC)
  *          d1.w=desired attr/revision
@@ -1998,6 +2025,10 @@ os9err OS9_F_DatMod( regs_type *rp, _pid_ )
     attrev= loword(rp->d[1]);
 
     FillTemplate (theModule,  access,tylan,attrev);           /* fill module body */
+    /* M$Owner is "the user who created the module" (the OS-9 Guru, 3.2.4), which
+       is what F$Link's permission check reads; FillTemplate leaves it 0.0. */
+    theModule->_mh._mowner= os9_long( ((uint32_t)os9_word(procs[cpid].pd._group)<<16) |
+                                                 os9_word(procs[cpid].pd._user) );
     xpos= (ulong)&theModule->_mexcpt;
     usz = (ulong) theModule + msz;
 
