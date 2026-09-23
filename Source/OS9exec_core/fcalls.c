@@ -265,7 +265,8 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
                     in the high byte.  Reading the whole word made a $0200 in d0
                     look like a non-default, non-exec mode, so exedir came out false
                     and F$Load searched the DATA directory instead of the execution
-                    directory (F$Load must never use the data dir).  Same byte-mask
+                    directory (the data dir is for a mode naming Read_ alone, not for
+                    a caller that meant the default).  Same byte-mask
                     fix already applied to I$Open/I$Create in icalls.c. */
     Boolean  exedir= IsExec(mode) || (mode==0) || (mode==0x80);
                                                        /* mode=0 is a strange default, */
