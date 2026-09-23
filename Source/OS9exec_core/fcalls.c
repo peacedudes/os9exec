@@ -799,6 +799,18 @@ os9err OS9_F_STime( regs_type *rp, ushort cpid )
   return 0;
 } /* OS9_F_STime */
 
+static os9err event_name_ok( const char* p )
+/* Is there a whole event name at <p>, terminator included, inside the arena?
+   Only as many bytes as a name can have are looked at. */
+{
+    size_t room;
+    if (!IN_ARENA(p)) return os9error(E_BPADDR);
+    room= (size_t)(emul_end - (const unsigned char*)p);
+    if (room>OS9EVNAMELEN) room= OS9EVNAMELEN;
+    if (memchr( p, NUL, room )!=NULL) return 0;
+    return os9error( room==OS9EVNAMELEN ? E_BNAM : E_BPADDR );
+} /* event_name_ok */
+
 os9err OS9_F_Event( regs_type *rp, ushort cpid )
 {
     os9err       err   = 0;
@@ -833,7 +845,11 @@ os9err OS9_F_Event( regs_type *rp, ushort cpid )
        the switch's case list in a second place that nothing kept in sync, so a
        later name-using event added below could silently miss the guard. Keeping
        it local means a case is either guarded or visibly is not. */
-    #define EVENT_NAME_REQUIRED()  if (!IN_ARENA(p)) return os9error(E_BPADDR)
+    /* The whole name, not just its first byte: evLink and the others strlen
+       it, and a name running to the end of the arena was read past it. A
+       terminator further than OS9EVNAMELEN is a name too long, E$BNam, as the
+       callees answer; one cut off by the arena's end is a bad address. */
+    #define EVENT_NAME_REQUIRED()  do { err= event_name_ok( p ); if (err) return err; } while (0)
 
     switch (evCode) {
         case Ev_Link:   EVENT_NAME_REQUIRED();
@@ -1209,7 +1225,7 @@ os9err OS9_F_RTE( _rp_, ushort cpid )
             
                   /* but the process will be woken up after intercept !!! */
                 pds= os9_word(cp->pd._signal);
-            if (pds>0 && pds<=32) {
+            if (pds>0 && pds<32) { /* below S$Deadly (32), as the branch below */
                 cp->os9regs.d[1]= pds;
 			          cp->os9regs.sr |= CARRY;
                 set_os9_state( cpid, pActive, "OS9_F_RTE" );  /* only for some cases */
@@ -1225,7 +1241,7 @@ os9err OS9_F_RTE( _rp_, ushort cpid )
                the chapter's own example. The task used to resume instead and
                the read came back with a stale register as its "error". */
                 pds= os9_word(cp->pd._signal);
-            if (pds>0 && pds<=32 && pipe_abort_request( cpid )) {
+            if (pds>0 && pds<32 && pipe_abort_request( cpid )) {
                 cp->os9regs.d[1]= pds;
                 cp->os9regs.sr |= CARRY;
                 set_os9_state( cpid, pActive, "OS9_F_RTE (pipe request cut short)" );
@@ -3067,7 +3083,7 @@ os9err OS9_F_PErr( regs_type *rp, ushort cpid )
        process by re-running its call, printed it again, forever. It also ate
        the keystrokes the user meant for the shell. Found on a pty by the
        osk-freeware session, 2026-09-19. */
-    { syspath_typ* errP= path!=0 ? get_syspath( cpid, procs[cpid].usrpaths[ path<MAXUSRPATHS ? path:0 ] ) : NULL;
+    { syspath_typ* errP= path!=0 && path<MAXUSRPATHS ? get_syspath( cpid, procs[cpid].usrpaths[path] ) : NULL;
       if (errP==NULL || (errP->type!=fFile && errP->type!=fRBF)) path= 0;
     }
 

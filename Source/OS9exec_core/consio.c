@@ -689,8 +689,10 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
             }
 
             if (dupMode) {
+                /* the last slot has no byte after it to look at: with no slot
+                   reserved for the terminator it is the end of the buffer */
                 c=  *(buffer+cnt);
-                if (*(buffer+cnt+1)==NUL) dupMode= false;
+                if ((uint32_t)cnt+1 >= *maxlenP || *(buffer+cnt+1)==NUL) dupMode= false;
             }
             else if (!(edit && c!=NUL && c==ot->_sgs_bspch)) {
                 /* backspace is handled below by shortening the line in

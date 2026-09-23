@@ -2049,8 +2049,8 @@ static Boolean os9_dirname( const char* host, char* out, size_t outsz )
         hp= NULL;
         TwoCharDev( dname,&hp,tmp );
         if (hp!=NULL && *hp!=NUL && strcmp( hp,root )==0) break;
-        if (ii==('z'-'a')+10) return false; /* a root nothing is named by */
     } /* for */
+    if (ii>('z'-'a')+11) return false; /* a root nothing is named by */
 
     rootLen= strlen( root );
     snprintf( out,outsz, "%c%s%s", PSEP, dname, host+rootLen );

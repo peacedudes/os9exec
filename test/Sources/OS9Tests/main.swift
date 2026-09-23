@@ -1109,6 +1109,37 @@ run("rbf: mount -k image is dir/free/dcheck clean",
 // does not), and `mount -k` would otherwise be handed a file that already exists.
 try? FileManager.default.removeItem(atPath: scratchHostPath)
 
+// ── pwd names a directory under /hz, the last device letter ─────────────────────
+// pwd turns the host directory back into an OS-9 path by finding the device
+// whose root it is, trying /dd, /h0../h9 and /ha../hz. The loop gave up one
+// device early, so a directory under /hz came out as its host path. /hy is the
+// control: same setup, one letter earlier. Found by review.
+do {
+    let name = "pwd: a directory under /hz is named /hz, as one under /hy is /hy"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let hostScratch = URL(fileURLWithPath: scratchDisk).resolvingSymlinksInPath().path
+        let seen = containerized ? scratch : hostScratch
+        for dir in ["hzdir", "hydir"] {
+            try? FileManager.default.createDirectory(atPath: hostScratch + "/" + dir,
+                                                     withIntermediateDirectories: true)
+        }
+        let out = os9(["chd /hz", "pwd", "chd /hy", "pwd"], timeout: 30,
+                      env: ["OS9Hz": seen + "/hzdir", "OS9Hy": seen + "/hydir"])
+        let printed = out.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+        if printed.contains("/hz") && printed.contains("/hy") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      saw: \(printed.filter { !$0.hasPrefix("$") && !$0.isEmpty }.joined(separator: " | "))")
+            failed += 1
+        }
+        for dir in ["hzdir", "hydir"] {
+            try? FileManager.default.removeItem(atPath: hostScratch + "/" + dir)
+        }
+    }
+}
+
 // ── a name may be 1 to 28 characters, on either kind of device ──
 // "Rules for Constructing File Names" (Using Professional OS-9 v2.4) says 1 to
 // 28, and an RBF entry is 28 name bytes with the sign bit on the last. A full
