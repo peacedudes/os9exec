@@ -1690,6 +1690,258 @@ do {
     }
 }
 
+// ── RBF: an image that claims sectors bigger than os9exec reads is refused ────
+// An image's sector size is its own claim (the word at $68 of its sector 0),
+// as untrusted as the rest of it. It was checked for a RAM disk and SCSI but
+// not for an image, and every path's FD and data buffers are 2048 bytes: an
+// image saying 4096 had each sector read run 2048 bytes past its buffer, inside
+// the arena where no sanitizer sees it. Found by review.
+do {
+    let name = "rbf: an image claiming 4096-byte sectors is refused E$SectSize, not read past the buffers"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        _ = os9(["mount -k=512K \(scratchDevice)", "echo seed >/h9/seed"], timeout: 30)
+        var patched = false
+        if let handle = FileHandle(forUpdatingAtPath: scratchHostPath) {
+            handle.seek(toFileOffset: 0x68)
+            handle.write(Data([0x10, 0x00]))          // 4096, big-endian
+            handle.closeFile()
+            patched = true
+        }
+        let out = os9(["list /h9/seed"], timeout: 30)
+        if patched && out.contains("000:176") && !out.contains("seed\r") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("Error") || $0.contains("seed") }
+            print("      saw (patched=\(patched)): \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+    }
+}
+
+// ── RBF: a byte patched after a multi-sector write lands in the written data ──
+// A write of whole sectors goes to the device in one transfer, and the path's
+// one-sector cache was then labelled with the last sector written without
+// holding its bytes. Patching one byte there afterwards copied it into the
+// stale buffer, and closing flushed the stale sector back over the write.
+// Found by review (older than v4.0.0).
+do {
+    let patchAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Create equ $83", "I$Open equ $84", "I$Seek equ $88", "I$Read equ $89",
+        "I$Write equ $8A", "I$WritLn equ $8C", "I$Close equ $8F",
+        "  psect mpatch,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,2048,start",
+        "start:",
+        "  lea (a6),a0", "  move.w #511,d0",
+        "fill:", "  move.b #'Q',(a0)+", "  dbra d0,fill",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w fail",
+        "  move.w d0,d7",
+        "  move.w d7,d0", "  lea (a6),a0", "  move.l #512,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d7,d0", "  move.l #500,d1", "  OS9 I$Seek", "  bcs.w fail",
+        "  move.w d7,d0", "  lea zee(pc),a0", "  moveq #1,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d7,d0", "  OS9 I$Close",
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "  move.w d7,d0", "  lea 512(a6),a0", "  move.l #512,d1", "  OS9 I$Read", "  bcs.w fail",
+        "  lea 512(a6),a0", "  move.w #499,d0",
+        "c1:", "  cmpi.b #'Q',(a0)+", "  bne.s bad", "  dbra d0,c1",
+        "  cmpi.b #'Z',(a0)+", "  bne.s bad", "  moveq #10,d0",
+        "c2:", "  cmpi.b #'Q',(a0)+", "  bne.s bad", "  dbra d0,c2",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "fname: dc.b \"/h9/patched\",0", "zee: dc.b \"Z\"",
+        "mok:  dc.b \"PATCHED BYTE LANDED IN THE WRITTEN DATA\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"PATCH BROUGHT BACK A STALE SECTOR\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "rbf: a byte patched after a multi-sector write lands in the written data"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? patchAsm.write(toFile: scratchDisk + "/mpatch.a", atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/mpatch.a -o=/h5/mpatch.r", "l68 /h5/mpatch.r -o=/h5/mpatch",
+                       "mount -k=500K \(scratchDevice)", "/h5/mpatch"], timeout: 45)
+        if out.contains("PATCHED BYTE LANDED IN THE WRITTEN DATA") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("PATCH") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mpatch.a", "mpatch.r", "mpatch"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+    }
+}
+
+// ── RBF: closing one writer does not free sectors another is writing into ────
+// A write path closing at the end of the file trimmed it there and freed the
+// preallocated sectors past that point, although another path open on the
+// file had taken the same segment list and went on writing into them without
+// allocating. The next file created was given those sectors: two files on one
+// sector. Found by review; reachable since RingAdopt (ddefbe6) gave the second
+// path the first one's preallocation, which the old code then freed under it.
+do {
+    let crossAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Create equ $83", "I$Open equ $84", "I$Seek equ $88", "I$Read equ $89",
+        "I$Write equ $8A", "I$WritLn equ $8C", "I$Close equ $8F",
+        "  psect mcross,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,4096,start",
+        "start:",
+        "  lea (a6),a0", "  move.w #299,d0",
+        "fl:", "  move.b #'L',(a0)+", "  dbra d0,fl",
+        "  lea 512(a6),a0", "  move.w #1023,d0",
+        "fx:", "  move.b #'X',(a0)+", "  dbra d0,fx",
+        "  lea lname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w fail",
+        "  move.w d0,d7",
+        "  move.w d7,d0", "  lea ten(pc),a0", "  moveq #10,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  lea lname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d6",
+        "  move.w d7,d0", "  OS9 I$Close",                       // at its end: it used to trim here
+        "  move.w d6,d0", "  moveq #10,d1", "  OS9 I$Seek", "  bcs.w fail",
+        "  move.w d6,d0", "  lea (a6),a0", "  move.l #300,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d6,d0", "  OS9 I$Close",
+        "  lea oname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w fail",
+        "  move.w d0,d7",
+        "  move.w d7,d0", "  lea 512(a6),a0", "  move.l #1024,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d7,d0", "  OS9 I$Close",
+        "  lea lname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "  move.w d7,d0", "  moveq #10,d1", "  OS9 I$Seek", "  bcs.w fail",
+        "  move.w d7,d0", "  lea 2048(a6),a0", "  move.l #300,d1", "  OS9 I$Read", "  bcs.w fail",
+        "  lea 2048(a6),a0", "  move.w #299,d0",
+        "ck:", "  cmpi.b #'L',(a0)+", "  bne.s bad", "  dbra d0,ck",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "lname: dc.b \"/h9/log\",0", "oname: dc.b \"/h9/other\",0", "ten: dc.b \"0123456789\"",
+        "mok:  dc.b \"SECOND WRITER KEPT ITS SECTORS\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"ANOTHER FILE TOOK THE WRITER'S SECTORS\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "rbf: closing one writer does not free sectors another open path is writing into"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? crossAsm.write(toFile: scratchDisk + "/mcross.a", atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/mcross.a -o=/h5/mcross.r", "l68 /h5/mcross.r -o=/h5/mcross",
+                       "mount -k=500K \(scratchDevice)", "/h5/mcross", "dcheck /h9"], timeout: 60)
+        // dcheck is the arbiter: a freed sector still in a file's segment list
+        // is "not in bit map" whether or not the next file happens to take it
+        if out.contains("SECOND WRITER KEPT ITS SECTORS") && out.contains("file structure is intact") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("WRITER") || $0.contains("Error") || $0.contains("bit map") ||
+                          $0.contains("intact") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mcross.a", "mcross.r", "mcross"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+    }
+}
+
+// ── RBF: deleting one name of a file with two keeps the file ─────────────────
+// "Decrements link count in file descriptor. If the link count becomes zero,
+// all disk space associated with the file is returned ... If the link count is
+// non-zero, no disk space is returned" (Technical I/O Manual, RBF, I$Delete).
+// The space went back whatever the count, so a file linked under a second name
+// lost its FD and data under the surviving name (osk-freeware: C News's LOCK
+// file came back listing as a directory). The program makes the second name the
+// way period ln tools did -- a directory entry for the same FD, and FD_LNK
+// raised through the raw device -- deletes the first, and reads the second.
+do {
+    let linkAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Create equ $83", "I$Open equ $84", "I$Delete equ $87", "I$Seek equ $88",
+        "I$Read equ $89", "I$Write equ $8A", "I$WritLn equ $8C", "I$GetStt equ $8D", "I$Close equ $8F",
+        "  psect mlink,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,2048,start",
+        "start:",
+        "  lea aname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w fail",
+        "  move.w d0,d7", "  lea hello(pc),a0", "  moveq #5,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d7,d0", "  OS9 I$Close",
+        // find a's entry: 32-byte records, name's last byte has its top bit set
+        "  lea dname(pc),a0", "  move.w #$81,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "next:", "  move.w d7,d0", "  lea (a6),a0", "  moveq #32,d1", "  OS9 I$Read", "  bcs.w fail",
+        "  cmpi.b #$E1,(a6)", "  bne.s next",
+        "  moveq #0,d6", "  move.b 29(a6),d6", "  lsl.l #8,d6", "  move.b 30(a6),d6",
+        "  lsl.l #8,d6", "  move.b 31(a6),d6",                 // d6 = the FD's LSN
+        "  move.w d7,d0", "  OS9 I$Close",
+        // append an entry "b" for the same FD
+        "  lea dname(pc),a0", "  move.w #$83,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "  move.w d7,d0", "  moveq #2,d1", "  OS9 I$GetStt", "  bcs.w fail",   // SS_Size -> d2
+        "  move.w d7,d0", "  move.l d2,d1", "  OS9 I$Seek", "  bcs.w fail",
+        "  lea 64(a6),a0", "  moveq #31,d0",
+        "clr:", "  clr.b (a0)+", "  dbra d0,clr",
+        "  move.b #$E2,64(a6)", "  move.l d6,d0", "  move.b d0,95(a6)", "  lsr.l #8,d0",
+        "  move.b d0,94(a6)", "  lsr.l #8,d0", "  move.b d0,93(a6)",
+        "  move.w d7,d0", "  lea 64(a6),a0", "  moveq #32,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d7,d0", "  OS9 I$Close",
+        // FD_LNK (FD offset 8) = 2, through the raw device; 256-byte sectors
+        "  lea rname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
+        "  move.l d6,d1", "  lsl.l #8,d1", "  addq.l #8,d1", "  move.w d7,d0", "  OS9 I$Seek", "  bcs.w fail",
+        "  move.w d7,d0", "  lea two(pc),a0", "  moveq #1,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d7,d0", "  OS9 I$Close",
+        // delete a, read b
+        "  lea aname(pc),a0", "  moveq #2,d0", "  OS9 I$Delete", "  bcs.w fail",
+        "  lea bname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.s gone", "  move.w d0,d7",
+        "  move.w d7,d0", "  lea 128(a6),a0", "  moveq #5,d1", "  OS9 I$Read", "  bcs.s gone",
+        "  cmpi.l #'HELL',128(a6)", "  bne.s gone",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "gone:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "aname: dc.b \"/h9/a\",0", "bname: dc.b \"/h9/b\",0", "dname: dc.b \"/h9\",0",
+        "rname: dc.b \"/h9@\",0", "hello: dc.b \"HELLO\"", "two: dc.b 2",
+        "mok:  dc.b \"SECOND NAME STILL READS\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"SECOND NAME LOST ITS FILE\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "rbf: deleting one name of a file with two keeps its descriptor and space"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? linkAsm.write(toFile: scratchDisk + "/mlink.a", atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        // built in a call of its own: r68's listing plus dcheck's report at the
+        // paced console rate do not fit one call's budget
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mlink.a -o=/h5/mlink.r", "l68 /h5/mlink.r -o=/h5/mlink"], timeout: 60)
+        // dcheck in an emulator of its own: run in the same session after this
+        // program, with cio resident, it loops -- on the release build too, so
+        // not this fix; on the roadmap to run down
+        let run = os9(["mount -k=500K \(scratchDevice)", "/h5/mlink"], timeout: 60)
+        let out = run + os9(["dcheck /h9"], timeout: 60)
+        if out.contains("SECOND NAME STILL READS") && out.contains("file structure is intact") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("NAME") || $0.contains("Error") || $0.contains("bit map") ||
+                          $0.contains("intact") || $0.contains("dcheck:") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mlink.a", "mlink.r", "mlink"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+    }
+}
+
 // A dot-name on an RBF image is stored as a dot-name. The Linux build ran every
 // OS-9 pathname through the host-file rule that spells a leading "." as ":2e"
 // (netatalk's convention, from the 2002 sources), so on an IMAGE it wrote

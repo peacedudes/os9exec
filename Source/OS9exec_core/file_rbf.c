@@ -1292,7 +1292,11 @@ static os9err RootLSN( _pid_, rbfdev_typ* dev, syspath_typ* spP, Boolean ignore 
         debugprintf(dbgFiles,dbgNorm,("# RootLSN: sectorsize %d %s\n", dev->sctSize, cruz?"(cruz)":"" ));
         
         if (cruz) {
+            /* The image's own word, so as untrusted as the rest of it: every
+               path's FD and data buffers are sized to MIN_TMP_SCT_SIZE, and a
+               larger sector read into them ran past their ends. */
             sctSize= GET_OS9W(dev->tmp_sct, SECT_POS);
+            err= CheckSectorSize( sctSize ); if (err) return err;
         }
         else {
             if (dev->sctSize==0) sctSize= STD_SECTSIZE;
@@ -1813,6 +1817,9 @@ static os9err PrepareRAM( ushort pid, rbfdev_typ* dev, char* cmp )
       dev->clusterSize= GET_OS9W(dev->ramBase, BIT_POS);
       dev->sctSize    = GET_OS9W(dev->ramBase, SECT_POS);
                                             dev->sas        = DD__MINALLOC;
+      /* copied from an image, whose sector size is its own claim: checked as
+         RootLSN checks it, before any path's buffer is filled to that size */
+      if (dev->sctSize!=0) { err= CheckSectorSize( dev->sctSize ); if (err) return err; }
       return 0;
     } // if
 
@@ -3095,6 +3102,11 @@ static Boolean has_open_perm( ushort pid, byte att, ushort ownerWord, ushort mod
     return true;
 } /* has_open_perm */
 
+static byte FDLnk( syspath_typ* spP )
+/* the link count: how many directory entries name this file */
+{ return spP->fd_sct[8];
+} /* FDLnk */
+
 static void Set_FDLnk( syspath_typ* spP, byte lnk )
 /* set the link count */
 { spP->fd_sct[8]= lnk;
@@ -3684,7 +3696,16 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
               err= WriteSector( dev, sect,n, b ); if (err) break;
               { ulong w; /* whole sectors replaced: nobody's copy of them stands */
                 for (w=0; w<n; w++) RingInvalidate( spP, sect+w ); }
-              spP->rw_nr= sect + n0;
+              /* As the read above does: <rw_nr> may only name a sector whose
+                 bytes <rw_sct> really holds. It named the last one written
+                 while the buffer still held an older sector, so the next call
+                 landing there read old bytes, or patched them and flushed them
+                 back over the write. */
+              if (n>n0) {
+                memcpy( spP->rw_sct, b + n0*dev->sctSize, dev->sctSize );
+                spP->rw_nr= sect + n0;
+              }
+              else spP->rw_nr= 0;
               *mw= 0; /* already written */
             } // if
         }
@@ -4330,9 +4351,15 @@ os9err pRclose( ushort pid, syspath_typ* spP )
             err=       WriteFD( spP ); if (err) break;
         }
 
-        /* release remaining part, if pointer is not at the end of file */
+        /* release remaining part, if pointer is not at the end of file --
+         * and only when no other path is open on the file. Another path took
+         * this one's segment list (RingPublish/RingAdopt), preallocation
+         * included; it writes into those sectors without allocating them and
+         * writes its FD back at its own close. Freed here, the next allocation
+         * handed them to a second file: two files on the same sectors. The
+         * last path out trims, or the spare sectors simply stay with the file. */
         if (crp!=0 &&
-            crp==lsp) {
+            crp==lsp && !RingHasOther( spP )) {
             Set_FDSize        ( spP,crp ); /* new file size */        
             err= ReleaseBlocks( spP,crp );
         }
@@ -4468,6 +4495,21 @@ os9err pRdelete( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathna
 
     do {
       err= Delete_DirEntry ( dev, dfd, (char*)&spP->name ); if (err) break;
+
+      /* "Decrements link count in file descriptor. If the link count becomes
+         zero, all disk space associated with the file is returned ... If the
+         link count is non-zero, no disk space is returned" (Technical I/O
+         Manual, RBF, I$Delete). It was returned whatever the count, so a file
+         with a second name (clib link(), blarslib's ln) lost its FD and space
+         under the name that survived, and the next allocation reused them --
+         a LOCK file came back listing as a directory (found by osk-freeware). */
+      if (FDLnk( spP )>1) {
+          Set_FDLnk( spP, (byte)(FDLnk( spP )-1) );
+          err= WriteFD( spP ); if (err) break;
+          RingPublishFD( spP );
+          spP->u.rbf.currPos= 0;   /* as below: nothing to trim at close */
+          break;
+      }
       err= DeallocateBlocks( spP );                         if (err) break;
       
       #ifdef RBF_CACHE
