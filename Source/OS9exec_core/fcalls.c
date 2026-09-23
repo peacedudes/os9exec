@@ -2221,6 +2221,8 @@ extern int m68k_os9singlestep;
  *   0x46-0x47  fmt    (68010 exception vector word, zero for 68000/020)
  */
 #define DBG_REGFRAME_SZ 0x48   /* 72 bytes -- the R$ layout documented above */
+#define SR_TRACE        0x8000 /* T1: trace */
+#define SR_CCR          0x001F /* X N Z V C: all a user-state program may set */
 
 void save_debug_regs( ushort pid )
 {
@@ -2251,13 +2253,36 @@ void save_debug_regs( ushort pid )
         base[0x20+r*4]   = (v>>24)&0xFF; base[0x20+r*4+1] = (v>>16)&0xFF;
         base[0x20+r*4+2] = (v>> 8)&0xFF; base[0x20+r*4+3] =  v     &0xFF;
     }
-    { uint16_t v = rp->sr;
+    /* "The child process is created with the trace bit of its status register
+       set" (F$DFork, page 1-15), and that is the SR a debugger is shown. os9exec
+       steps the child without it (dbg_should_stop), so it is added to the
+       image here rather than to the process. */
+    { uint16_t v = (uint16_t)(rp->sr | SR_TRACE);
       base[0x40] = (v>>8)&0xFF; base[0x41] = v&0xFF; }
     { uint32_t v = rp->pc;
       base[0x42] = (v>>24)&0xFF; base[0x43] = (v>>16)&0xFF;
       base[0x44] = (v>> 8)&0xFF; base[0x45] =  v     &0xFF; }
     base[0x46] = 0; base[0x47] = 0;
 } /* save_debug_regs */
+
+static void load_debug_regs( ushort pid )
+/* F$DExec's input: "register buffer contains child register image" (page
+   1-16). Whatever the debugger changed there is what the child resumes with.
+   Only the condition codes of SR are taken: the rest is the system byte, which
+   a user-state debugger may not set for its child. */
+{
+    byte*      base = (byte*)FROM68K(dbg_regsave_addr[pid]);
+    regs_type* rp   = &procs[pid].os9regs;
+    int        r;
+
+    if (!RANGE_IN_ARENA( base, DBG_REGFRAME_SZ )) return;   /* see save_debug_regs */
+
+    for (r = 0; r < 8; r++) rp->d[r] = os9_get_l( base +        r*4 );
+    for (r = 0; r < 8; r++) rp->a[r] = os9_get_l( base + 0x20 + r*4 );
+    rp->sr = (uint16_t)( (rp->sr & ~SR_CCR) | (os9_get_w( base+0x40 ) & SR_CCR) );
+    rp->pc = os9_get_l( base+0x42 );
+} /* load_debug_regs */
+
 
 os9err OS9_F_DFork( regs_type *rp, ushort cpid )
 /* F$DFork: Fork a child process for debugging.
@@ -2353,6 +2378,7 @@ os9err OS9_F_DExec( regs_type *rp, ushort cpid )
     }
     dbg_remaining[childpid]  = (count == 0 || count == 0xFFFFFFFF) ? -1 : (long)count;
     dbg_exec_count[childpid] = 0;
+    load_debug_regs( childpid );   /* the child resumes from what the buffer says */
 
     /* Park the parent until execution stops; MAX_SLEEP prevents do_arbitrate false-wakeup */
     procs[cpid].wakeUpTick = MAX_SLEEP;

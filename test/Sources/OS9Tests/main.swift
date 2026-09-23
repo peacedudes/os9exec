@@ -6776,6 +6776,82 @@ do {
     }
 }
 
+// ── F$DExec takes the child's registers from the buffer ─────────────────────
+// F$DExec's input includes "register buffer contains child register image"
+// (p.1-16), so a register a debugger changes there is what the child runs with;
+// os9exec only ever wrote the buffer, so the child resumed with its own. And
+// F$DFork's child "is created with the trace bit of its status register set"
+// (p.1-15), which is the SR the image should show; it showed $0000. Both found
+// by the skills session. The child's first instruction copies d5 to d6: after
+// one step with d5 set to $12345678 in the buffer, d6 there must be the same.
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit   equ $06", "F$DFork  equ $22", "F$DExec  equ $23", "F$DExit  equ $24", "I$WritLn equ $8C",
+        "REGS     equ -32700"
+    ]
+    func say(_ label: String) -> [String] {
+        ["  lea \(label)(pc),a0", "  moveq #\(label)l,d1", "  moveq #1,d0", "  OS9 I$WritLn"]
+    }
+    func message(_ label: String, _ text: String) -> [String] {
+        ["\(label): dc.b \"\(text)\",$0D", "\(label)l equ *-\(label)"]
+    }
+    let child = header + [
+        "  psect mdrchd,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:", "  move.l d5,d6", "  moveq #0,d1", "  OS9 F$Exit", "  ends", ""]
+    let parent = header + [
+        "  psect mdrpar,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea cname(pc),a0", "  lea cparm(pc),a1", "  lea REGS(a6),a2", "  moveq #0,d0", "  moveq #0,d1",
+        "  moveq #1,d2", "  moveq #3,d3", "  moveq #0,d4", "  OS9 F$DFork", "  bcs.w fail",
+        "  moveq #0,d7", "  move.w d0,d7",
+        "  move.w REGS+$40(a6),d0", "  btst #15,d0", "  beq.s notrace"] + say("mtrace") + [
+        "  bra.s edit", "notrace:"] + say("mnotrace") + [
+        "edit:",
+        "  move.l #$12345678,REGS+$14(a6)",          // d5 in the buffer
+        "  move.l d7,d0", "  moveq #1,d1", "  moveq #0,d2", "  OS9 F$DExec", "  bcs.s regbad",
+        "  cmpi.l #$12345678,REGS+$18(a6)",          // d6 in the buffer
+        "  bne.s regbad"] + say("mregok") + ["  bra.s dexit", "regbad:"] + say("mregbad") + [
+        "dexit:",
+        "  move.l d7,d0", "  OS9 F$DExit",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "cname: dc.b \"/h5/mdrchd\",0", "cparm: dc.b $0D", "  align"] +
+        message("mtrace", "DFORK IMAGE HAS TRACE SET") + message("mnotrace", "DFORK IMAGE HAS NO TRACE") +
+        message("mregok", "DEXEC USED THE BUFFER") + message("mregbad", "DEXEC IGNORED THE BUFFER") + ["  ends", ""]
+
+    let modules = ["mdrchd": child, "mdrpar": parent]
+    for (module, lines) in modules {
+        try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                  atomically: true, encoding: .utf8)
+    }
+    let name = "process: F$DExec resumes the child from its register buffer, whose SR shows the trace bit"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for module in modules.keys.sorted() {
+            build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+        }
+        _ = os9(build, timeout: 60)
+        let out = os9(["/h5/mdrpar"], timeout: 30)
+        if out.contains("DFORK IMAGE HAS TRACE SET") && out.contains("DEXEC USED THE BUFFER") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let lines = out.split(whereSeparator: \.isNewline).filter {
+                $0.contains("DEXEC") || $0.contains("DFORK") || $0.contains("Error")
+            }
+            print("      saw: \(lines.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for module in modules.keys {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+}
+
 // ── F$SRqMem with -1 allocates the largest free block ─────────────────────────
 // "If -1 is passed in d0.l, the largest block of free memory is allocated to
 // the calling process" (p.1-56). os9exec granted a fixed 8 MB however much was
