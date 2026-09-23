@@ -24,4 +24,11 @@
 #
 # If the UAE UB is ever addressed (ROADMAP has the upstream-friendly fix), drop
 # this file rather than letting it hide new problems.
+#
+# The section header is what keeps this to UBSan. An entry outside any section
+# applies to EVERY sanitizer, so the same list passed to an ASan build (the
+# sweeps and the fuzzers do) switched ASan off for the whole UAE core too:
+# newcpu.o had no ASan checks at all. [undefined] is the UBSan group, and
+# alignment is part of it.
+[undefined]
 src:*/UAE68emulator/*

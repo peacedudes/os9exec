@@ -19,22 +19,27 @@
 #   tools/fuzz-rbf-image.sh 200
 #
 # Usage: tools/fuzz-rbf-image.sh [iterations]   (default 100)
+# Exits 1 when there is a finding, so a caller can tell.
+#
+# Everything happens in a directory of this run's own: the image is /hf, which
+# `mount` finds in the emulator's working directory, so two runs sharing one
+# directory (or the repo root, as this once did) mutated each other's image.
 set -u
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
-cd "$repo" || exit 1
+emu=$repo/os9exec
 iters=${1:-100}
-work=${TMPDIR:-/tmp}/os9fuzz
+work=$(mktemp -d "${TMPDIR:-/tmp}/os9fuzz.XXXXXX") || exit 1
 seed=$work/seed.img
+img=$work/hf
 crashes=$work/crashes
-
-rm -rf "$work"; mkdir -p "$work" "$crashes"
+mkdir -p "$crashes"
+cd "$work" || exit 1
 
 # A real, freshly formatted image to mutate. mount -k writes it relative to cwd.
-rm -f "$repo/hf"
-printf 'mount -k=500K /hf\n\033\n' | OS9DISK="${OS9DISK:-}" ./os9exec -r shell >/dev/null 2>&1
-[ -s "$repo/hf" ] || { echo "could not create a seed image"; exit 1; }
-cp "$repo/hf" "$seed"
+printf 'mount -k=500K /hf\n\033\n' | OS9DISK="${OS9DISK:-}" "$emu" -r shell >/dev/null 2>&1
+[ -s "$img" ] || { echo "could not create a seed image"; exit 1; }
+cp "$img" "$seed"
 echo "seed: $(wc -c <"$seed") bytes"
 
 found=0
@@ -45,7 +50,7 @@ while [ "$i" -lt "$iters" ]; do
     # Corrupt a handful of bytes, biased towards the metadata at the front:
     # sector 0 (identification), the allocation bitmap and the root directory
     # all live there, and that is the part the parser trusts most.
-    python3 - "$seed" "$repo/hf" <<'PY'
+    python3 - "$seed" "$img" <<'PY'
 import random, sys
 data = bytearray(open(sys.argv[1],'rb').read())
 meta  = min(len(data), 8*1024)
@@ -57,14 +62,14 @@ PY
 
     # A corrupt image must be REJECTED, not crash the emulator and not hang.
     out=$(printf 'mount /hf\ndir /hf\nfree /hf\ndcheck /hf\n\033\n' \
-          | OS9DISK="${OS9DISK:-}" ./os9exec -r shell 2>&1)
+          | OS9DISK="${OS9DISK:-}" "$emu" -r shell 2>&1)
     rc=$?
 
     # Signals (>=128) and any sanitizer report are real findings. An OS-9 level
     # "Error #" is the CORRECT answer to a corrupt image, so it is not.
     if [ "$rc" -ge 128 ] || printf '%s' "$out" | grep -q "Sanitizer"; then
         found=$((found+1))
-        cp "$repo/hf" "$crashes/crash-$i.img"
+        cp "$img" "$crashes/crash-$i.img"
         printf '%s\n' "$out" > "$crashes/crash-$i.log"
         echo "  [$i] FINDING rc=$rc -- image saved to $crashes/crash-$i.img"
     fi
@@ -92,7 +97,7 @@ done
 echo "targeted structural probes:"
 
 probe() {   # $1=label  $2=offset  $3=size  $4=value  $5=must-list (yes/no)
-    python3 - "$seed" "$repo/hf" "$2" "$3" "$4" <<'PYEOF'
+    python3 - "$seed" "$img" "$2" "$3" "$4" <<'PYEOF'
 import sys
 d = bytearray(open(sys.argv[1],'rb').read())
 off, size, val = int(sys.argv[3],0), int(sys.argv[4]), int(sys.argv[5],0)
@@ -100,7 +105,7 @@ if size: d[off:off+size] = val.to_bytes(size,'big')
 open(sys.argv[2],'wb').write(d)
 PYEOF
     out=$(printf 'mount /hf\ndir /hf\nfree /hf\n\033\n' \
-          | OS9DISK="${OS9DISK:-}" ./os9exec -r shell 2>&1)
+          | OS9DISK="${OS9DISK:-}" "$emu" -r shell 2>&1)
     rc=$?
     listed=no
     printf '%s' "$out" | grep -q "Directory of" && listed=yes
@@ -111,7 +116,10 @@ PYEOF
     else
         echo "  ok  $1 (listed=$listed)"
     fi
-    [ "$rc" -ge 128 ] && echo "  FINDING $1: died rc=$rc"
+    if [ "$rc" -ge 128 ]; then
+        found=$((found+1))
+        echo "  FINDING $1: died rc=$rc"
+    fi
 }
 
 # The CONTROL comes first and must LIST. It proves the oracle can tell the
@@ -125,6 +133,10 @@ probe dd_bit_zero  0x06 2 0x0000     no
 probe dd_tot_wild  0x00 3 0xFFFFFF   no
 probe dd_lsnsz_bad 0x68 2 0xFFFF     no
 
-rm -f "$repo/hf"
 echo "done: $iters images, $found findings"
-[ "$found" -eq 0 ] || echo "reproduce with: cp $crashes/crash-N.img $repo/hf && printf 'mount /hf\\ndir /hf\\n\\033\\n' | ./os9exec -r shell"
+if [ "$found" -eq 0 ]; then
+    cd / && rm -rf "$work"
+    exit 0
+fi
+printf '%s\n' "kept in $work; reproduce with: cd $work && cp crashes/crash-N.img hf && printf 'mount /hf\\ndir /hf\\n\\033\\n' | $emu -r shell"
+exit 1
