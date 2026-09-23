@@ -258,6 +258,7 @@ ln -s /any/host/dir h5      # now /h5 inside OS-9 is that directory
 | `-mm n[k\|M]` | Give all processes extra static storage |
 | `-p prio` | Run first process at priority `prio` (default 128) |
 | `-d[n] msk` | Set diagnostic trace mask (see `idbg` → `dh` for bit values) |
+| `-q[ms]` | Turn the 100Hz system tick off (`-q`), or retune it (`-q<ms>`) |
 | `-r` | Run terminal output at full speed (disable baud-rate pacing) |
 | `-h` | Full option list |
 
@@ -441,6 +442,33 @@ mkdir -p dd/CMDS
 cp /path/to/your/os9/CMDS/* dd/CMDS/
 OS9DISK=$(pwd)/dd ./os9exec /dd/CMDS/shell
 ```
+
+</details>
+
+<details>
+<summary>In a web browser (WebAssembly)</summary>
+
+os9exec builds to WebAssembly and runs in a browser, with a terminal in the
+page, from one disk image you supply:
+
+```sh
+brew install emscripten                       # or install emsdk yourself
+tools/wasm-web.sh /path/to/disk.dsk bash /dd/SYS/login
+python3 -m http.server -d build/web 8000      # then open http://localhost:8000
+```
+
+The disk is gzipped into `build/web` and inflated in the page, so a 328 MB
+image is a 49 MB download. The page can also open a second image of your own as
+`/h1` ("Open disk as /h1..."), which it keeps in the browser's own storage so it
+survives a reload, and "Save /h1" downloads it again. A file you open this way
+never leaves your machine: the page has no network code.
+
+`?run=<command>` types a command once the system has started, which is what a
+"try it" link uses.
+
+What this build does not have: sockets, so nothing networked runs (a browser
+cannot open TCP at all, and socket paths say so); host directories, so a disk
+must be an image; and the system tick, which is off.
 
 </details>
 

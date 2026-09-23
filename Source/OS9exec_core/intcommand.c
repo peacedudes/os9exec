@@ -2164,7 +2164,7 @@ cmdtable_typ commandtable[] =
   { "ihelp/icmds",   int_help,       "shows this help text" },
   { "dhelp",         debug_help,     "shows debug flag information" },
   { "stop/shutdown", int_stop,       "exit from OS9exec" },
-  { "rename",        int_rename,     "renames a file or directory (100% compatible)" },
+  { "rename",        int_rename,     "renames a file or directory" },
   { "move/mv",       int_move,       "moves files and directories" },
   { "icopy",         int_icopy,      "copies a file between any two devices" },
   { "imakdir",       int_imakdir,    "creates a directory" },
