@@ -78,6 +78,8 @@ Boolean RangeInAnyModule( void* p, ulong cnt ); // does [p,p+cnt) lie in a loade
 int        get_mid       ( void *modptr );
 
 int       find_mod_id             ( const char* name );
+int       find_mod_typed          ( const char* name, ushort tylan );
+void      module_entered          ( ushort mid );
 ushort    Mod_Revision           ( const mod_exec* mod );
 ushort    Mod_Type               ( const mod_exec* mod );
 int       link_mod_id                   ( char* name );

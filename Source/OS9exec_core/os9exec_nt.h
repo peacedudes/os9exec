@@ -646,6 +646,7 @@ typedef struct {
             Boolean isBuiltIn; /* set, if module compiled into code (such as 'OS9exec' module) */
             short   linkcount;
             ushort  group;     /* the first module of the file it came from; itself if alone */
+            uint32_t entered;  /* when it entered the directory: of equals, the lower is established */
          } module_typ;
 
 

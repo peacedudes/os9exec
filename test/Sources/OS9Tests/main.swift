@@ -8072,6 +8072,93 @@ do {
     }
 }
 
+// ── Module lookup: the established module wins a tie, and type is part of the name ─
+// "If a module with the same name and type exists, the one with the highest
+// revision level is retained in the module directory. Ties are broken in favor
+// of the established module" (F$Load). The search broke ties by LOWEST SLOT, and
+// slots are reused: with two slots freed below a resident module, a file loaded
+// next puts its second module -- same name, same revision -- below it, and that
+// one answered from then on. The search also ignored type, so a Data module made
+// with F$DatMod under a program's name answered F$Link for the program (E$MNF
+// from the type check), and F$UnLoad of the program found the Data module and
+// refused. Found by review.
+do {
+    func tinyProgram(_ name: String) -> String {
+        [
+            "  use /dd/DEFS/oskdefs.d", "F$Exit equ $06",
+            "  psect \(name),(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+            "start:", "  moveq #0,d1", "  OS9 F$Exit", "  ends", ""
+        ].joined(separator: "\r")
+    }
+    let tiny = ["mtfa", "mtfb", "mtfx", "mtie", "mshad"]
+    let checkAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Link equ $00", "F$Load equ $01", "F$UnLink equ $02", "F$Exit equ $06", "F$UnLoad equ $1D",
+        "F$DatMod equ $25", "I$WritLn equ $8C",
+        "  psect mlkchk,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        // two modules, then the one that will be established, then free the two slots below it
+        "  lea pa(pc),a0", "  moveq #0,d0", "  OS9 F$Load", "  bcs.w bad", "  movea.l a2,a5",
+        "  lea pb(pc),a0", "  moveq #0,d0", "  OS9 F$Load", "  bcs.w bad", "  movea.l a2,a4",
+        "  lea pt(pc),a0", "  moveq #0,d0", "  OS9 F$Load", "  bcs.w bad", "  move.l a2,d7",
+        "  movea.l a5,a2", "  OS9 F$UnLink", "  bcs.w bad",
+        "  movea.l a4,a2", "  OS9 F$UnLink", "  bcs.w bad",
+        // a file whose second module is mtie again, landing in a lower slot
+        "  lea pg(pc),a0", "  moveq #0,d0", "  OS9 F$Load", "  bcs.w bad",
+        "  lea nt(pc),a0", "  moveq #0,d0", "  OS9 F$Link", "  bcs.w bad",
+        "  cmp.l a2,d7", "  bne.w bad",
+        // a Data module under a program's name, then the program
+        "  lea ns(pc),a0", "  moveq #64,d0", "  moveq #0,d1", "  move.w #$0333,d2", "  OS9 F$DatMod",
+        "  bcs.w bad",
+        "  lea ps(pc),a0", "  moveq #0,d0", "  OS9 F$Load", "  bcs.w bad", "  move.l a2,d6",
+        "  lea ns(pc),a0", "  move.w #$0101,d0", "  OS9 F$Link", "  bcs.w bad",
+        "  cmp.l a2,d6", "  bne.w bad",
+        "  lea ns(pc),a0", "  move.w #$0100,d0", "  OS9 F$UnLoad", "  bcs.w bad",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "pa: dc.b \"/h5/mtfa\",0", "pb: dc.b \"/h5/mtfb\",0", "pt: dc.b \"/h5/mtie\",0",
+        "pg: dc.b \"/h5/mtgrp\",0", "ps: dc.b \"/h5/mshad\",0", "nt: dc.b \"mtie\",0", "ns: dc.b \"mshad\",0",
+        "mok:  dc.b \"LOOKUP KEEPS THE ESTABLISHED AND THE TYPE\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"LOOKUP FOUND THE WRONG MODULE\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "module: of equal revisions the established module answers, and only a module of the type asked"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for module in tiny + ["mlkchk"] {
+            let source = module == "mlkchk" ? checkAsm : tinyProgram(module)
+            try? source.write(toFile: scratchDisk + "/\(module).a", atomically: true, encoding: .utf8)
+            build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+        }
+        _ = os9(build, timeout: 90)
+        var group = Data()
+        for part in ["mtfx", "mtie"] {
+            if let bytes = FileManager.default.contents(atPath: scratchDisk + "/" + part) {
+                group.append(bytes)
+            }
+        }
+        FileManager.default.createFile(atPath: scratchDisk + "/mtgrp", contents: group)
+        let out = os9(["/h5/mlkchk"], timeout: 30)
+        if out.contains("LOOKUP KEEPS THE ESTABLISHED AND THE TYPE") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("LOOKUP") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+    }
+    for module in tiny + ["mlkchk"] {
+        for suffix in [".a", ".r", ""] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/\(module)" + suffix)
+        }
+    }
+    try? FileManager.default.removeItem(atPath: scratchDisk + "/mtgrp")
+}
+
 // ── RBF: SS_Size allocates the space it gives a file ───────────────────────────
 // "The SETSTAT call (SS_Size) explicitly allocates file space" (I$Create,
 // p.2-5). On an RBF image SS_Size only wrote the new size into the FD: no

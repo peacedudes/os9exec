@@ -711,24 +711,40 @@ ushort Mod_Type( const mod_exec* mod )
 } /* Mod_Type */
 
 
-int find_mod_id( const char* name )
-/* find module by name, return mid or MAXMODULES if not found.
+static uint32_t enteredCount= 0; /* ticks once per module entered in the directory */
+
+void module_entered( ushort mid )
+/* Stamp a module just entered in the directory with its place in the order of
+   arrival, which is what "the established module" means below. */
+{
+    os9modules[mid].entered= ++enteredCount;
+} /* module_entered */
+
+
+int find_mod_typed( const char* name, ushort tylan )
+/* find a module by name and type/language, return mid or MAXMODULES if not
+ * found. <tylan> is matched as F$Link matches it: type (high byte) and
+ * language (low byte) independently, each 0 meaning any.
  *
  * Where several modules share a name, this returns the one with the HIGHEST
  * REVISION -- the "memory search" half of the rule M$Revs states: "If two
  * modules with the same name and type are found in the memory search or
  * loaded into memory, only the module with the highest revision level is
  * kept. This enables easy substitution of modules for update or correction."
+ * The load half adds "Ties are broken in favor of the established module",
+ * so of equal revisions the one that arrived first answers. The slot does not
+ * say which that is: slots are reused, and a module of a file loaded later
+ * can land below the resident one.
  *
- * It used to return the first entry it came across, which is the same answer
- * only while no two modules share a name -- and load_module_local made sure
- * of that by throwing away every module it loaded whose name was already
- * taken, newer or not. Both halves had to change together; see the load path.
+ * The type matters as much as the name: a module of another type is another
+ * module, and must not shadow the one asked for (a Data module named like a
+ * program answered F$Link for the program, which then failed its type check).
  */
 {
     mod_exec *mod;
     int       best= MAXMODULES;
     ushort    bestRev= 0;
+    ushort    rTyp= tylan>>BpB, rLan= tylan & 0xFF;
     int       k;
 
     for (k=0; k<MAXMODULES; k++) {
@@ -736,15 +752,26 @@ int find_mod_id( const char* name )
         if (mod==NULL) continue; /* no module here, check next */
 
         if (ustrcmp( Mod_Name(mod),name )!=0) continue;   /* a different module */
+        if (rTyp!=MT_ANY && rTyp!=Mod_Type(mod)) continue;
+        if (rLan!=ML_ANY && rLan!=(os9_word( mod->_mh._mtylan ) & 0xFF)) continue;
 
-        if (best==MAXMODULES || Mod_Revision(mod)>bestRev) {
+        if (best==MAXMODULES || Mod_Revision(mod)>bestRev ||
+            (Mod_Revision(mod)==bestRev && os9modules[k].entered<os9modules[best].entered)) {
             best   = k;
             bestRev= Mod_Revision( mod );
         } /* if */
     } /* for */
 
     return best;
-} /* find_mod_id */     
+} /* find_mod_typed */
+
+
+int find_mod_id( const char* name )
+/* find a module of any type by name, return mid or MAXMODULES if not found;
+   see find_mod_typed for which of several it is. */
+{
+    return find_mod_typed( name, 0 );
+} /* find_mod_id */
     
 
 
@@ -1596,6 +1623,7 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
     while (true) {
         os9modules[mid].modulebase= theModuleP; /* enter pointer in free table entry */   
         os9modules[mid].isBuiltIn = isBuiltIn;
+        module_entered( mid );
         debugprintf(dbgModules,dbgNorm,
           ("# load_module: (found) mid=%d, theModuleP=%p, ^theModuleP=%08X\n",
               mid, (void*) theModuleP, GET_OS9L( (byte*)theModuleP, 0 )));
@@ -1707,19 +1735,19 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
          * revision, so the new module answers from here on. */
         os9modules[mid].modulebase=0; /* temporarily disable entry */
         
-            oldmid= find_mod_id( realmodname );
+        /* "same name AND type" -- a different type is a different module and
+           does not take part in the comparison, so only that type is searched:
+           the answer used to be whichever same-named module came first, and a
+           module of another type there hid a resident one of this type. */
+            oldmid= find_mod_typed( realmodname, (ushort)(Mod_Type( theModuleP )<<BpB) );
         if (oldmid<MAXMODULES) {
             mod_exec* oldMod= get_module_ptr( oldmid );
-
-            /* "same name AND type" -- a different type is a different module
-               and does not participate in the comparison at all. */
-            Boolean sameKind= Mod_Type( oldMod )==Mod_Type( theModuleP );
-            Boolean isNewer = Mod_Revision( theModuleP )>Mod_Revision( oldMod );
+            Boolean   isNewer= Mod_Revision( theModuleP )>Mod_Revision( oldMod );
 
             /* A later module of the file stays as it is, unlinked in its group:
                lookups still find the resident one, and releasing it here would
                free the rest of the file, which the loop reads next. */
-            if (sameKind && !isNewer && mid==mid0) {
+            if (!isNewer && mid==mid0) {
                 /* the resident one is as good or better: keep it, as before */
                 os9modules[oldmid].linkcount++; /* link the old one */
                 os9modules[mid].modulebase=theModuleP; /* re-enable entry */

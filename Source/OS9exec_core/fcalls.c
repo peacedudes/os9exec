@@ -377,8 +377,19 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
     }
     #endif
 
-    /* --- really link (that is, load without path, and always from exe dir) */
-    err= link_module( cpid,mname,&mid ); if (err) return err; /* link-style errors */
+    /* --- really link (that is, load without path, and always from exe dir).
+       A module of the type asked for is looked for first: link_module finds a
+       name, whatever its type, and a same-named module of another type would
+       then fail the check below although the one wanted is resident too. */
+    { int typed= tylan!=0 ? find_mod_typed( mname,tylan ) : MAXMODULES;
+      if (typed<MAXMODULES) {
+          mid= (ushort)typed;
+          os9modules[mid].linkcount++;
+      }
+      else {
+          err= link_module( cpid,mname,&mid ); if (err) return err; /* link-style errors */
+      }
+    }
 
     theModule= get_module_ptr(mid);
     retword(rp->d[0])=os9_word(theModule->_mh._mtylan);
@@ -452,19 +463,13 @@ os9err OS9_F_UnLoad( regs_type *rp, _pid_ )
     char  mname[OS9NAMELEN];
 
     char* p  = nullterm   ( mname,(char*)FROM68K(rp->a[0]),OS9NAMELEN );
-    int   mid= find_mod_id( mname );
-    if   (mid>=MAXMODULES) return os9error(E_MNF); /* module not found */
-
     /* "INPUT: d0.w = Module type/language" (F$UnLoad, page 1-70), matched as
        F$Link matches it: type and language independently, 0 meaning any. It
        was ignored, so a request for one kind of module unloaded another of
-       the same name. */
-    { ushort tylan= loword(rp->d[0]);
-      ushort act  = os9_word(get_module_ptr(mid)->_mh._mtylan);
-      ushort rTyp = tylan>>BpB, rLan= tylan & 0xFF;
-      if ((rTyp!=MT_ANY && rTyp!=act>>BpB) ||
-          (rLan!=ML_ANY && rLan!=(act & 0xFF))) return os9error(E_MNF);
-    }
+       the same name; then it was checked against whichever same-named module
+       was found first, so the one asked for could not be unloaded at all. */
+    int   mid= find_mod_typed( mname, loword(rp->d[0]) );
+    if   (mid>=MAXMODULES) return os9error(E_MNF); /* module not found */
 
     rp->a[0]= TO68K(p);
     unlink_module( mid );
@@ -2013,6 +2018,7 @@ os9err OS9_F_DatMod( regs_type *rp, ushort cpid )
       theModule= pp;
       os9modules[mid].modulebase= theModule;  /* enter pointer in free table entry */   
       os9modules[mid].isBuiltIn = false;
+      module_entered( mid );
 //  #endif
     
     access= loword(rp->d[2]) & 0x7FFF; /* bit 15 says "d3/d4 given", not a permission */
