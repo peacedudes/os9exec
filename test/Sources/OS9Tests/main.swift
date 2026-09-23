@@ -1091,7 +1091,7 @@ check("error: dir nonexistent path",    contains: "Error",    "dir /dd/no_such_d
 // file -- no pre-existing disk image required.
 let scratchDevice   = "h9"
 let scratchHostPath = scratchDisk + "/" + scratchDevice
-try? FileManager.default.removeItem(atPath: scratchHostPath) // in case a previous run left it behind
+removeScratchItem(scratchDevice) // in case a previous run left it behind
 
 // One session, not four: `mount -k` writes its image relative to the emulator's
 // own working directory, so the four steps used to depend on that scratch file
@@ -1107,7 +1107,7 @@ run("rbf: mount -k image is dir/free/dcheck clean",
 // Each of these mounts its own image, so clear the previous one: locally the
 // scratch image persists in the repo root between processes (in a container it
 // does not), and `mount -k` would otherwise be handed a file that already exists.
-try? FileManager.default.removeItem(atPath: scratchHostPath)
+removeScratchItem(scratchDevice)
 
 // ── pwd names a directory under /hz, the last device letter ─────────────────────
 // pwd turns the host directory back into an OS-9 path by finding the device
@@ -1258,7 +1258,7 @@ if !containerized {
         commands: ["mount -k=500K \(scratchDevice)"]) {
             $0.contains("created '\(resolvedScratch)/\(scratchDevice)'")
         }
-    try? FileManager.default.removeItem(atPath: scratchHostPath)
+    removeScratchItem(scratchDevice)
 }
 
 // Run the emulator DIRECTLY -- no shell, no system disk -- with a chosen
@@ -1488,7 +1488,7 @@ check  ("rbf: dsave -ive populates+verifies", contains: "6473 6176",
     "chd /dd", "dump /h9/f1",
     "del /h5/t_dsavesrc", "del /h5/t_dsavedir/f1", "deldir -q /h5/t_dsavedir")
 
-try? FileManager.default.removeItem(atPath: scratchHostPath)
+removeScratchItem(scratchDevice)
 
 // A pathlist climbs with runs of dots: a run of n dots is n-1 levels up, clamped
 // at the device root, and a climb may be spelled as any mix of runs -- `...`,
@@ -1506,7 +1506,7 @@ do {
                    "makdir /h9/A/B/C", "makdir /h9/SYS", "echo dotmark >/h9/SYS/f"]
 
     func climbs(_ label: String, from dir: String, _ commands: String...) {
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
         run("rbf: dots \(label)", expectation: "from \(dir): \(commands.joined(separator: "; ")) reads /h9/SYS/f",
             commands: tree + ["chd \(dir)"] + commands) { $0.contains(dotMark) }
     }
@@ -1527,7 +1527,7 @@ do {
     // level too far -- must NOT be what answers the second dump. rdoggett,
     // 2026-09-13: "./../.../...././file" should work.
     let sixUp = "7369 7875 700d"   // dump of "sixup\r"
-    try? FileManager.default.removeItem(atPath: scratchHostPath)
+    removeScratchItem(scratchDevice)
     run("rbf: dots every run length from depth 7",
         expectation: "./../.../...././SYS/g reads /h9/A/SYS/g, and the same climb does not reach /h9/SYS/f",
         commands: tree + ["makdir /h9/A/B/C/D", "makdir /h9/A/B/C/D/E", "makdir /h9/A/B/C/D/E/F",
@@ -1535,7 +1535,7 @@ do {
                           "chd /h9/A/B/C/D/E/F/G", "dump ./../.../...././SYS/g", "dump ./../.../...././SYS/f"]) {
         $0.contains(sixUp) && !$0.contains(dotMark)
     }
-    try? FileManager.default.removeItem(atPath: scratchHostPath)
+    removeScratchItem(scratchDevice)
 }
 
 // Two update paths on one file in one process must not deadlock each other at
@@ -1597,7 +1597,7 @@ do {
             ""
         ].joined(separator: "\r")
         try? asm.write(toFile: scratchDisk + "/eofdl.a", atomically: true, encoding: .utf8)
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
 
         let out = os9([
             "mount -k=500K \(scratchDevice)",
@@ -1624,7 +1624,7 @@ do {
         for leftover in ["eofdl.a", "eofdl.r", "eofdl"] {
             try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
         }
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
     }
 }
 
@@ -1703,7 +1703,7 @@ do {
             build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
         }
         _ = os9(build, timeout: 60)
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
         let out = os9(["mount -k=500K \(scratchDevice)", "makdir /h9/LK",
                        "echo 0123456789 >/h9/LK/old",
                        "/h5/mlkcre &", "/h5/mlkapp &", "/h5/mlkrd", "sleep -s 2"], timeout: 45)
@@ -1720,7 +1720,7 @@ do {
                 failed += 1
             }
         }
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
     }
     for module in modules.keys {
         for suffix in [".a", ".r", ""] {
@@ -1738,7 +1738,7 @@ do {
 do {
     let name = "rbf: an image claiming 4096-byte sectors is refused E$SectSize, not read past the buffers"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
         _ = os9(["mount -k=512K \(scratchDevice)", "echo seed >/h9/seed"], timeout: 30)
         var patched = false
         if let handle = FileHandle(forUpdatingAtPath: scratchHostPath) {
@@ -1757,7 +1757,7 @@ do {
             print("      saw (patched=\(patched)): \(seen.joined(separator: " | "))")
             failed += 1
         }
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
     }
 }
 
@@ -1801,7 +1801,7 @@ do {
     let name = "rbf: a byte patched after a multi-sector write lands in the written data"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         try? patchAsm.write(toFile: scratchDisk + "/mpatch.a", atomically: true, encoding: .utf8)
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
         let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
                        "r68 /h5/mpatch.a -o=/h5/mpatch.r", "l68 /h5/mpatch.r -o=/h5/mpatch",
                        "mount -k=500K \(scratchDevice)", "/h5/mpatch"], timeout: 45)
@@ -1817,7 +1817,7 @@ do {
         for leftover in ["mpatch.a", "mpatch.r", "mpatch"] {
             try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
         }
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
     }
 }
 
@@ -1869,7 +1869,7 @@ do {
     let name = "rbf: closing one writer does not free sectors another open path is writing into"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         try? crossAsm.write(toFile: scratchDisk + "/mcross.a", atomically: true, encoding: .utf8)
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
         let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
                        "r68 /h5/mcross.a -o=/h5/mcross.r", "l68 /h5/mcross.r -o=/h5/mcross",
                        "mount -k=500K \(scratchDevice)", "/h5/mcross", "dcheck /h9"], timeout: 60)
@@ -1889,7 +1889,7 @@ do {
         for leftover in ["mcross.a", "mcross.r", "mcross"] {
             try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
         }
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
     }
 }
 
@@ -1953,7 +1953,7 @@ do {
     let name = "rbf: deleting one name of a file with two keeps its descriptor and space"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         try? linkAsm.write(toFile: scratchDisk + "/mlink.a", atomically: true, encoding: .utf8)
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
         // built in a call of its own: r68's listing plus dcheck's report at the
         // paced console rate do not fit one call's budget
         _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
@@ -1977,7 +1977,7 @@ do {
         for leftover in ["mlink.a", "mlink.r", "mlink"] {
             try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
         }
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
     }
 }
 
@@ -2005,7 +2005,7 @@ do {
     let name = "rbf: an allocation of 65536 sectors or more is entered in the FD in full"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         try? bigAsm.write(toFile: scratchDisk + "/mbig.a", atomically: true, encoding: .utf8)
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
         _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
                  "r68 /h5/mbig.a -o=/h5/mbig.r", "l68 /h5/mbig.r -o=/h5/mbig"], timeout: 60)
         let run = os9(["mount -k=20M -c=64 \(scratchDevice)", "/h5/mbig"], timeout: 60)
@@ -2024,7 +2024,7 @@ do {
         for leftover in ["mbig.a", "mbig.r", "mbig"] {
             try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
         }
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
     }
 }
 
@@ -2060,7 +2060,7 @@ do {
     let name = "rbf: SS_Size that fills the disk part way hands its FD to the file's other paths"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         try? fullAsm.write(toFile: scratchDisk + "/mfull.a", atomically: true, encoding: .utf8)
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
         _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
                  "r68 /h5/mfull.a -o=/h5/mfull.r", "l68 /h5/mfull.r -o=/h5/mfull"], timeout: 60)
         let out = os9(["mount -k=300K \(scratchDevice)", "/h5/mfull"], timeout: 120)
@@ -2078,7 +2078,7 @@ do {
         for leftover in ["mfull.a", "mfull.r", "mfull"] {
             try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
         }
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
     }
 }
 
@@ -2117,7 +2117,7 @@ do {
     let name = "rbf: a directory held open does not flush a stale sector over a new entry"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         try? dirAsm.write(toFile: scratchDisk + "/mdirrc.a", atomically: true, encoding: .utf8)
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
         _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
                  "r68 /h5/mdirrc.a -o=/h5/mdirrc.r", "l68 /h5/mdirrc.r -o=/h5/mdirrc"], timeout: 60)
         let run = os9(["mount -k=500K \(scratchDevice)", "/h5/mdirrc"], timeout: 60)
@@ -2136,7 +2136,7 @@ do {
         for leftover in ["mdirrc.a", "mdirrc.r", "mdirrc"] {
             try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
         }
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
     }
 }
 
@@ -2180,7 +2180,7 @@ do {
     let name = "rbf: a 28-character directory name works in the middle of a path"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
         let comp = String(repeating: "q", count: 27) + "z"        // 28 characters
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
         let out = os9(["mount -k=500K \(scratchDevice)",
                        "makdir /h9/\(comp)", "makdir /h9/\(comp)/\(comp)",
                        "echo DEEP >/h9/\(comp)/\(comp)/f", "list /h9/\(comp)/\(comp)/f"], timeout: 60)
@@ -2194,7 +2194,7 @@ do {
             print("      saw: \(seen.joined(separator: " | "))")
             failed += 1
         }
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
     }
 }
 
@@ -2213,7 +2213,7 @@ do {
     if filter.isEmpty || dotName.localizedCaseInsensitiveContains(filter) {
         let listing = scratchDisk + "/dotlist"
         try? FileManager.default.removeItem(atPath: listing)
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
         _ = os9([
             "mount -k=500K \(scratchDevice)",
             "echo dotmark >/h9/.dotroot",
@@ -2230,7 +2230,7 @@ do {
             failed += 1
         }
         try? FileManager.default.removeItem(atPath: listing)
-        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        removeScratchItem(scratchDevice)
     }
 }
 
@@ -2282,7 +2282,7 @@ run("rbf: OS9Hx naming the image beside the emulator announces no override",
         $0.contains("2016 sectors") && !$0.contains("ignoring")
     }
 
-try? FileManager.default.removeItem(atPath: scratchHostPath)
+removeScratchItem(scratchDevice)
 try? FileManager.default.removeItem(atPath: awayHostPath)
 
 // ── RAM disk regression test ──────────────────────────────────────────────────
