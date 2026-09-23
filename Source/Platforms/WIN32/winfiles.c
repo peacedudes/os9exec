@@ -94,7 +94,7 @@ void Conv_to_2e( char* pathname, char** qP, char** qsP )
 
                   
 
-Boolean CaseSens( char* pathname, char* filename, Boolean *reduS )
+Boolean CaseSens( char* pathname, char* filename, Boolean *reduS, char* real, size_t realCap )
 /* Case sensitivity handling: Make it insensitive for OS-9 */
 {
     Boolean     ok= false; /* not yet found */
@@ -129,7 +129,11 @@ Boolean CaseSens( char* pathname, char* filename, Boolean *reduS )
     /* copy BEFORE closedir(): dEnt points into the DIR stream's buffer, which
      * closedir() frees -- reading dEnt->d_name afterwards is a use-after-free.
      * Same fix as linuxfiles.c CaseSens. */
-    if (ok) strcpy( filename,dEnt->d_name ); /* dEnt still valid here */
+    /* The matched host name goes to <real>, not over <filename>: a host name
+     * longer than the 28 characters it was matched by would overrun the rest
+     * of the path, which follows <filename> in the same buffer. AdjustPath
+     * splices it in, with room made for it. */
+    if (ok) { strncpy( real,dEnt->d_name, realCap-1 ); real[realCap-1]= NUL; }
     closedir( d );                           /* frees dEnt -- must come after */
     *(filename-1)= PATHDELIM; /* cut them together again */
     debugprintf( dbgFiles,dbgNorm,("# CaseSens: (out) '%s' %d\n", pathname,ok ));
@@ -148,6 +152,8 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
     int     len;
     Boolean fnd, reduS;
     char    *q, *qs, *qc;
+    char     real[OS9PATHLEN+1]; /* a matched host name, up to NAME_MAX */
+    Boolean  last;
     char    startRoot[PATH_MAX];
     Boolean hadRoot;
 
@@ -258,9 +264,28 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
         debugprintf( dbgFiles,dbgNorm,("# AdjustPath  =>  '%s'%s %p %p\n",
                      adname, creFile ?" cre":"", (void*)qc,(void*)qs ));
 
-        fnd= CaseSens( adname,q, &reduS );
-    
-        if (qc==qs) {           /* end of the string reached ? */
+        last= (qc==qs);         /* decided before the name below can move qs */
+        fnd = CaseSens( adname,q, &reduS, real,sizeof(real) );
+        if (fnd) {
+            size_t oldL= strlen( q ), newL= strlen( real );
+
+            if (newL>oldL && !reduS) {
+                /* The host's full name for a component matched by its 28-char
+                 * cut: the rest of the path -- NUL-separated pieces up to the
+                 * final NUL after <qs> -- moves up to make room, or the path is
+                 * too long for the buffer. It used to be strcpy'd over them. */
+                size_t used= (size_t)(qs+1-adname) + 1;
+                size_t grow= newL-oldL;
+
+                if (used+grow > OS9PATHLEN) { err= E_BPNAM; break; }
+                memmove( q+newL, q+oldL, (size_t)((qs+1)-(q+oldL)) + 1 );
+                memcpy ( q, real, newL );
+                qs+= grow;
+            }
+            else strcpy( q, real );   /* same length, or the :2e form (shorter) */
+        }
+
+        if (last) {             /* end of the string reached ? */
             debugprintf( dbgFiles,dbgNorm,("# AdjustPath (s)  '%s' fnd:%d\n",
                          adname, fnd ));
                          

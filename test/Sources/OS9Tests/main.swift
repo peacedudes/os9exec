@@ -2055,6 +2055,36 @@ do {
     }
 }
 
+// ── host dirs: a long host name matched by its 28-character cut, mid-path ────
+// A host directory can hold names longer than OS-9's 28 characters; they are
+// listed cut to 28, and a path naming the cut form is matched to the real name.
+// That name was strcpy'd over the path at the component's place, so as a MIDDLE
+// component it overwrote the components after it (and a long enough path ran
+// off the buffer): "/h5/<cut>/inner" looked for something else entirely.
+// Found by review.
+do {
+    let name = "fs: a long host directory name matched by its 28-character cut works mid-path"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let longDir = "abcdefghijklmnopqrstuvwxyz0123456789ABCD"          // 40 characters
+        let cut = String(longDir.prefix(28))
+        let hostDir = scratchDisk + "/" + longDir
+        try? FileManager.default.removeItem(atPath: hostDir)
+        try? FileManager.default.createDirectory(atPath: hostDir, withIntermediateDirectories: true)
+        try? "INNERDATA\r".write(toFile: hostDir + "/inner", atomically: true, encoding: .utf8)
+        let out = os9(["list /h5/\(cut)/inner"], timeout: 30)
+        if out.contains("INNERDATA") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("Error") || $0.contains("list") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        try? FileManager.default.removeItem(atPath: hostDir)
+    }
+}
+
 // A dot-name on an RBF image is stored as a dot-name. The Linux build ran every
 // OS-9 pathname through the host-file rule that spells a leading "." as ":2e"
 // (netatalk's convention, from the 2002 sources), so on an IMAGE it wrote
