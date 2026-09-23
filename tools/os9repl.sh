@@ -90,11 +90,16 @@ delta() {
     '
 }
 
-# Escape a literal string for tmux send-keys -l: even in literal mode, tmux's
-# own command parser still treats a bare ';' as a command separator (verified
-# empirically — '-l --' alone does NOT protect it), so it must be backslash-escaped.
+# Escape a literal string for tmux send-keys -l. tmux takes an argument that
+# ENDS in ';' as a command separator even in literal mode ('-l --' does not
+# protect it), so that one semicolon is backslash-escaped. Only that one: a
+# semicolon anywhere else arrives as typed, and escaping it too made
+# `echo a;echo b` arrive as `echo a\;echo b` (tmux 3.7c, measured 2026-09-23).
 tmux_escape() {
-    printf '%s' "${1//;/\\;}"
+    case "$1" in
+        *\;) printf '%s\\;' "${1%;}" ;;
+        *)    printf '%s' "$1" ;;
+    esac
 }
 
 # Send one key token — single character or named key — without Enter.
