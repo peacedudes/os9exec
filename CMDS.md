@@ -145,8 +145,14 @@ the os9exec arm64 emulator.
 
 ### Network tools
 
-These require the SPF network stack and TCP/IP daemons, which are not present
-in this emulated environment.  None will connect to anything.
+Programs that open socket paths reach the host's network through os9exec's
+socket manager, which serves both the SPF paths (`/ip0#1/tcp0` and siblings)
+and the older library's `/socket`. Measured working, each by a test in the
+suite: `telnet`, `telnetd`, `ftp`, `ftpd`, `ping`, `tcpsend`, `tftpd`,
+`msend`/`mrecv` and `rsort`/`sortd`. Several need Microware's `inetdb` and
+`netdb` modules loaded first (`/dd/CMDS/BOOTOBJS/SPF`). Programs that configure
+interfaces or the stack itself (`ifconfig`, `ipstart`, `arp` and the like) have
+nothing to configure here: the host owns its interfaces.
 
 | Command | What it does |
 |---------|-------------|
