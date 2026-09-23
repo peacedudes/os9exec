@@ -6497,7 +6497,7 @@ do {
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit   equ $06", "F$Link   equ $00", "F$DatMod equ $25", "F$CCtl   equ $5A",
         "F$UAcct  equ $59", "F$Protect equ $3B", "F$UnLink equ $02", "F$SRqMem equ $28", "F$SRtMem equ $29",
-        "F$ID equ $0C", "F$DExec equ $23",
+        "F$ID equ $0C", "F$DExec equ $23", "F$Mem equ $07",
         "I$Open   equ $84", "I$GetStt equ $8D", "I$WritLn equ $8C"
     ]
     func say(_ label: String) -> [String] {
@@ -6648,8 +6648,21 @@ do {
         "inf: dc.l $7FF00000,0"] +
         message("mrvok", "REVIEW FIXES HOLD") + message("mrvbad", "REVIEW FIX BROKEN") + ["  ends", ""]
 
+    // F$Mem of $FFFFFFE8: where ulong is 32 bits the rounding wrapped to 0 and
+    // freed the data area under the process (review, part 4). Must be E$NoRAM,
+    // and an information request after it must still see the area. Only a
+    // 32-bit host (the i386 leg) could fail this.
+    let memWrap = header + [
+        "  psect mmemw,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  move.l #$FFFFFFE8,d0", "  OS9 F$Mem", "  bcc.s mwbad", "  cmpi.w #237,d1", "  bne.s mwbad",
+        "  moveq #0,d0", "  OS9 F$Mem", "  bcs.s mwbad", "  tst.l d0", "  beq.s mwbad"] + say("mwok") + [
+        "  bra.s mwdone", "mwbad:"] + say("mwno") + [
+        "mwdone:", "  moveq #0,d1", "  OS9 F$Exit"] +
+        message("mwok", "FMEM HUGE REFUSED, AREA KEPT") + message("mwno", "FMEM HUGE MISHANDLED") + ["  ends", ""]
+
     let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl, "macct": acct,
-                   "mstky": sticky, "mzero": zeroBlock, "mperm": permLink, "mrevw": reviewFixes]
+                   "mstky": sticky, "mzero": zeroBlock, "mperm": permLink, "mrevw": reviewFixes, "mmemw": memWrap]
     for (module, lines) in modules {
         try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
                                                   atomically: true, encoding: .utf8)
@@ -6678,7 +6691,9 @@ do {
         StatusCase(name: "module: F$Link refuses a module whose access word gives no read permission",
                    module: "mperm", want: ["LINK NEEDS READ PERMISSION"]),
         StatusCase(name: "system: a 4 GB F$SRqMem, F$DExec of a stranger, FCMP of equal infinities",
-                   module: "mrevw", want: ["REVIEW FIXES HOLD"])
+                   module: "mrevw", want: ["REVIEW FIXES HOLD"]),
+        StatusCase(name: "memory: F$Mem of nearly 4 GB is refused and leaves the data area alone",
+                   module: "mmemw", want: ["FMEM HUGE REFUSED, AREA KEPT"])
     ]
     let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
     if !chosen.isEmpty {
@@ -6699,7 +6714,7 @@ do {
             let lines = out.split(whereSeparator: \.isNewline).filter {
                 $0.contains("READY") || $0.contains("DATMOD") || $0.contains("CCTL") || $0.contains("Error") ||
                 $0.contains("UACCT") || $0.contains("unimplemented") || $0.contains("STICKY") ||
-                $0.contains("BLOCK") || $0.contains("LINK ") || $0.contains("REVIEW")
+                $0.contains("BLOCK") || $0.contains("LINK ") || $0.contains("REVIEW") || $0.contains("FMEM")
             }
             print("      saw: \(lines.joined(separator: " | "))")
             failed += 1

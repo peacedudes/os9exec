@@ -1044,6 +1044,14 @@ os9err os9resize( ushort pid, void* membase, ulong newsz )
   for (k=0; k<MAX_MEMALLOC; k++) if (memtable[k].base==membase) { t= &memtable[k]; break; }
   if (m==NULL || t==NULL) return os9error(E_BPADDR); /* not a block of this process */
 
+  /* A size bigger than the whole arena can never fit, wherever the block
+     sits: that is the arena being exhausted, E$NoRAM, not E$MemFul.  Refusing
+     it here also keeps the rounding below from wrapping where ulong is 32 bits
+     (i386, wasm32, mingw): a size within a block of 4 GB rounded to 0, read
+     as a shrink, and put the whole data area on the free list while the
+     process still owned it. */
+  if (newsz > (ulong)(emul_end-emul_base)) return os9error(E_NORAM);
+
   old64= t->size;
   new64= (newsz+MBlk-1) & ~(ulong)(MBlk-1);
   end  = (byte*)membase + old64;
@@ -1067,7 +1075,7 @@ os9err os9resize( ushort pid, void* membase, ulong newsz )
   else if (new64 > old64) {      /* grow: only if the arena right above us is free */
     need= new64-old64;
     if (end==emul_next) {        /* we were the last block carved: carve on, if the arena has it */
-      if (end+need>emul_end) { alloc_failed( need, " above the data area" ); return os9error(E_NORAM); }
+      if (need > (ulong)(emul_end-end)) { alloc_failed( need, " above the data area" ); return os9error(E_NORAM); }
       emul_next= end+need;
     } /* if */
     else {
