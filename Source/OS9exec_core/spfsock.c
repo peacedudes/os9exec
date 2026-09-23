@@ -374,7 +374,12 @@ static os9err SpfSend( ushort pid, syspath_typ* spP, uint32_t* lenP, const byte*
     int      fd  = SpfFd( spP );
 
     *herr= 0;
-    if (done>*lenP) done= 0;          /* a different write: start over */
+    /* A different write starts over. Only the parked call itself -- same
+       process, same buffer -- resumes: a write abandoned by a signal, or one
+       from another process sharing the path, left its offset behind, and the
+       next write skipped that many bytes and reported them sent. */
+    if (done>*lenP || pid!=spP->u.spf.writePid ||
+        (const void*)buffer!=spP->u.spf.writeBuf) done= 0;
 
     while (done<*lenP) {
         ssize_t n= send( fd, buffer+done, *lenP-done, flags | SPF_SENDFLAGS );
@@ -396,6 +401,8 @@ static os9err SpfSend( ushort pid, syspath_typ* spP, uint32_t* lenP, const byte*
            completes in full, which is what a socket on real OS-9 gives it. */
         if (n<0 && errno==EAGAIN) {
             spP->u.spf.writeDone= done;
+            spP->u.spf.writePid = pid;
+            spP->u.spf.writeBuf = (void*)buffer;
             *lenP= 0;
             return SpfPark( pid );
         }
@@ -506,7 +513,13 @@ static int SpfSetOpt( syspath_typ* spP, uint32_t level, uint32_t name,
     *known= SpfOptName( level, name, &hl, &hn );
     if (!*known) return 0;
 
-    if (olen==4 && hl!=IPPROTO_IP) {             /* an int, big-endian in the guest */
+    if (olen==4 && hl==IPPROTO_IP && (hn==IP_MULTICAST_TTL || hn==IP_MULTICAST_LOOP)) {
+        /* given as an int, big-endian in the guest; the host takes these one
+           as a byte (macOS insists), so the value goes over, not the bytes */
+        unsigned char cv= (unsigned char)os9_get_l( val );
+        r= setsockopt( SpfFd( spP ), hl, hn, &cv, sizeof(cv) );
+    }
+    else if (olen==4 && hl!=IPPROTO_IP) {        /* an int, big-endian in the guest */
         int iv= (int)os9_get_l( val );
         r= setsockopt( SpfFd( spP ), hl, hn, &iv, sizeof(iv) );
     }
@@ -545,6 +558,8 @@ static os9err pSopen( _pid_, syspath_typ* spP, _modeP_, const char* pathname )
     spP->u.spf.connecting = false;
     spP->u.spf.bareIcmp   = false;
     spP->u.spf.writeDone  = 0;
+    spP->u.spf.writePid   = 0;
+    spP->u.spf.writeBuf   = NULL;
     spP->u.spf.isp        = ustrcmp( pathname,"/socket" )==0;
 
     while (*p!=NUL) p++;                    /* the protocol is the last element */
@@ -789,6 +804,8 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
 
             if (spP->u.spf.acceptPlus1<=0) return os9error(E_NOTRDY);
             if (id==0 || id>=MAXSYSPATHS)  return os9error(E_BPNUM);
+            if (id==spP->nr)               return os9error(E_BPNUM); /* would close
+                                                        its own listening socket */
             nsp= &syspaths[ id ];
             if (nsp->type!=fSPF)           return os9error(E_BPNUM);
 
@@ -796,6 +813,8 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             nsp->u.spf.fdPlus1    = spP->u.spf.acceptPlus1;
             nsp->u.spf.proto      = spP->u.spf.proto;
             nsp->u.spf.connected  = true;
+            nsp->u.spf.connecting = false;              /* a fresh connection */
+            nsp->u.spf.writeDone  = 0;
             spP->u.spf.acceptPlus1= 0;                  /* handed over */
 
             debugprintf( dbgSpecialIO,dbgNorm,("# SPF: attach connection -> sp=%d\n", id ));

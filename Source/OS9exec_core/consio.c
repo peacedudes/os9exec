@@ -814,7 +814,7 @@ os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, const char* name )
     } /* end exit part */
 
     spP->term_id= id;
-    strcpy( spP->name,&name[1] );
+    syspath_setname( spP,&name[1] );
 
     /* A /tN in the host-backed range is only a device if OS9T<n> names a
        WORKING endpoint. Unconfigured, or naming something the host refuses,
@@ -857,7 +857,7 @@ os9err pSopen( _pid_, syspath_typ* spP, _modeP_, const char* name )
     int k;
     os9err reply = 0;
     if (*name != NUL) {
-       	strcpy(spP->name, &name[1]);
+       	syspath_setname( spP, &name[1] );
     	k = link_mod_id( spP->name);
     	if (k!=MAXMODULES)  spP->mh = os9mod( k );
     } /* if */

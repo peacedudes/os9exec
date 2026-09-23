@@ -323,7 +323,7 @@ os9err pPrOpen(ushort pid, syspath_typ* spP, _modeP_, const char* name)
     if (id<0) return E_MNF; // does not exist
     
     spP->term_id= id; // use term-id for LPT port number, 0=default printer
-    strcpy( spP->name,&name[1] ); // copy the device name
+    syspath_setname( spP,&name[1] ); // copy the device name
 
     /* get the initialised path option table */
     err= pSCFopt( pid,spP, (byte*)&spP->opt ); /* no err returned */

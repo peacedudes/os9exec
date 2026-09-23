@@ -2178,7 +2178,24 @@ os9err syspath_getstat( ushort pid, ushort sp, ushort func,
     switch (func) {
         case SS_Size   : err= g->_SS_Size  ( pid,spP, d2          ); break;
         case SS_Opt    : err= g->_SS_Opt   ( pid,spP,        *a   ); break;
-        case SS_DevNm  : err= g->_SS_DevNm ( pid,spP, (char*)*a   ); break;
+        case SS_DevNm  : {
+            /* The caller's buffer is 32 bytes (the guest's range check sizes
+               it so), while a device's own name can be longer -- an RBF mount
+               name, a host volume. The handlers write into room of our own,
+               and the caller gets what fits, terminated. */
+            char   nm[ 512 ];
+            size_t n;
+
+            nm[0]= NUL;
+            err  = g->_SS_DevNm( pid,spP, nm );
+            if (!err) {
+                nm[ sizeof(nm)-1 ]= NUL;
+                n= strlen( nm ); if (n>31) n= 31;
+                memcpy( *a, nm, n );
+                (*a)[n]= NUL;
+            }
+            break;
+        }
         case SS_Pos    : err= g->_SS_Pos   ( pid,spP, d2          ); break;
         case SS_EOF    : err= g->_SS_EOF   ( pid,spP );    *d1= 0;  break;
         case SS_Ready  : err= g->_SS_Ready ( pid,spP, d1 ); arbitrate= true; break;
@@ -2330,6 +2347,17 @@ os9err syspath_setstat( ushort pid, ushort path, ushort func,
 } /* syspath_setstat */
 
    
+void syspath_setname( syspath_typ* spP, const char* name )
+/* Give <spP> the name <name>, cut to what spP->name holds. Opens used to
+   strcpy a caller's path element straight in: a host file name, a /tN or
+   /lp device name, can all be longer than an OS-9 name, and the excess ran
+   into the rest of the path table. */
+{
+    strncpy( spP->name, name, sizeof(spP->name)-1 );
+    spP->name[ sizeof(spP->name)-1 ]= NUL;
+} /* syspath_setname */
+
+
 /* SetStat from usrpath, for a manager that takes it from the registers */
 os9err usrpath_regstat( ushort pid, ushort up, ushort func,
                         regs_type* rp, Boolean* taken )

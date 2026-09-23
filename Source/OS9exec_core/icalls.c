@@ -527,25 +527,33 @@ os9err OS9_I_Seek( regs_type *rp, ushort cpid )
 
 
 
-/* True for the getstat/setstat function codes whose handler dereferences the a0
-   register as a host pointer (PD option table, device name, FD image, socket
-   address, protocol command, ...).  For those, a guest MUST supply a pointer
-   into the arena -- 0 or a wild address would crash the host.  The codes that
-   take their argument in d2/d3 instead leave a0 unused and legitimately pass 0,
-   so they are not listed.  Keep in sync with the "*a" cases of
-   syspath_getstat/syspath_setstat in filestuff.c.  (Internal callers pass real
-   host pointers for these same codes, but they call syspath_*stat directly and
-   never reach this guest entry point, so range-checking here is safe.) */
-static Boolean ss_uses_a0( ushort func )
+/* How many bytes at a0 the getstat/setstat handler for <func> reads or writes
+   through it as a host pointer, or 0 for a code that leaves a0 alone (those
+   take their argument in d2/d3 and legitimately pass a0 as 0). A guest must
+   supply that whole span inside the arena: 0 or a wild address would crash the
+   host, and checking only the first byte let SS_Opt write 128 bytes starting
+   at the arena's last one. The codes whose length travels in a register (SS_FD,
+   SS_FDInf, the socket calls) bound their own copies and are checked here for
+   one byte. Keep in sync with the "*a" cases of syspath_getstat/syspath_setstat
+   in filestuff.c. (Internal callers pass real host pointers for these same
+   codes, but they call syspath_*stat directly and never reach this guest entry
+   point, so range-checking here is safe.) */
+#define SS_DEVNM_LEN  32   /* SS_DevNm fills a 32-byte buffer (filestuff.c)  */
+#define SS_ETC_LEN    0x40 /* etc_path writes up to its "/dd/ETC" at $38      */
+
+static ulong ss_a0_len( ushort func )
 {
     switch (func) {
-        case SS_Opt:    case SS_WTrk:   case SS_DevNm:  case SS_FD:
-        case SS_FDInf:  case SS_Etc:    case SS_Bind:   case SS_Listen:
+        case SS_Opt:                                    return OPTSECTSIZE;
+        case SS_DevNm:                                  return SS_DEVNM_LEN;
+        case SS_Etc:                                    return SS_ETC_LEN;
+        case SS_WTrk:   case SS_FD:
+        case SS_FDInf:  case SS_Bind:   case SS_Listen:
         case SS_Connect:case SS_Accept: case SS_Recv:   case SS_Send:
-        case SS_GNam:   case SS_SendTo: case SS_PCmd:   return true;
-        default:                                        return false;
+        case SS_GNam:   case SS_SendTo: case SS_PCmd:   return 1;
+        default:                                        return 0;
     }
-} /* ss_uses_a0 */
+} /* ss_a0_len */
 
 os9err OS9_I_SetStt( regs_type *rp, ushort cpid )
 /* I$SetStt:
@@ -575,7 +583,8 @@ os9err OS9_I_SetStt( regs_type *rp, ushort cpid )
         if (taken) return err;
     }
 
-    if (ss_uses_a0(func) && !IN_ARENA(FROM68K(rp->a[0]))) return os9error(E_BPADDR);
+    if (ss_a0_len(func)>0 &&
+        !RANGE_IN_ARENA(FROM68K(rp->a[0]), ss_a0_len(func))) return os9error(E_BPADDR);
     os9err err= usrpath_setstat( cpid,path,func, &a0,&a1, &d0,&d1,&d2,&d3 );
     rp->d[0]= d0; rp->d[1]= d1; rp->d[2]= d2; rp->d[3]= d3; /* copy back results */
     return err;
@@ -601,7 +610,8 @@ os9err OS9_I_GetStt( regs_type *rp, ushort cpid )
     ushort path= loword(d0);
     ushort func= loword(d1);
 
-    if (ss_uses_a0(func) && !IN_ARENA(FROM68K(rp->a[0]))) return os9error(E_BPADDR);
+    if (ss_a0_len(func)>0 &&
+        !RANGE_IN_ARENA(FROM68K(rp->a[0]), ss_a0_len(func))) return os9error(E_BPADDR);
     /* perform getstat */
     os9err err= usrpath_getstat( cpid,path,func, &a0, &d0,&d1,&d2,&d3 );
     rp->d[0]= d0; rp->d[1]= d1; rp->d[2]= d2; rp->d[3]= d3; /* copy back results */
@@ -628,7 +638,8 @@ os9err OS9_I_SGetSt( regs_type *rp, ushort cpid )
     ushort path= loword(d0);
     ushort func= loword(d1);
 
-    if (ss_uses_a0(func) && !IN_ARENA(FROM68K(rp->a[0]))) return os9error(E_BPADDR);
+    if (ss_a0_len(func)>0 &&
+        !RANGE_IN_ARENA(FROM68K(rp->a[0]), ss_a0_len(func))) return os9error(E_BPADDR);
     /* perform getstat */
     os9err err= syspath_getstat( cpid,path,func, &a0, &d0,&d1,&d2,&d3 );
     rp->d[0]= d0; rp->d[1]= d1; rp->d[2]= d2; rp->d[3]= d3; /* copy back results */

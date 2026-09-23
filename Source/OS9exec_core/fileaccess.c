@@ -1544,7 +1544,7 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
     while (p>=ploc && *p!=PSEP) p--;
     p++;
     
-    strcpy( spP->name,p );
+    syspath_setname( spP,p );
     
     f->moddate_changed= false;
     #ifdef windows32
@@ -2833,7 +2833,7 @@ os9err pDopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
     while (p>=ploc && *p!=PSEP) p--;
     p++;
 
-    strcpy( spP->name,p );
+    syspath_setname( spP,p );
     return err;
 } /* pDopen */
 

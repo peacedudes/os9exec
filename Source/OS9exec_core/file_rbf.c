@@ -3991,7 +3991,7 @@ static os9err CreateNewFile( ushort pid, syspath_typ* spP, byte fileAtt, char* n
     } // if
     
            err= touchfile_RBF( spP,true );
-    if   (!err) strcpy( spP->name, name ); /* assign file name, if everything is ok */
+    if   (!err) syspath_setname( spP, name ); /* assign file name, if everything is ok */
     return err;
 } /* CreateNewFile */
 
@@ -4116,7 +4116,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
           } // if
 
                 spP->rawMode= true;
-          strcpy( spP->name,pathname ); if (cre) { err= E_CEF; break; }
+          syspath_setname( spP,pathname ); if (cre) { err= E_CEF; break; }
           return 0;
         } // if (IsRaw)
 
@@ -4143,7 +4143,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
             
             err= ReadFD( spP ); if (err) break;
             if (root) {
-                strcpy( spP->name,pathname+1 );
+                syspath_setname( spP,pathname+1 );
                 err= FD_Segment( spP, &attr,&size,&totsize,&sect,&slim, &pref ); if (err) break;
                 rbf->lastPos= size;                   /* last pos is the filesize */
                 rbf->att    = attr;                   /* save attributes */
@@ -4215,7 +4215,7 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
             err= CutOS9Path( &p, (char*)&cmp_entry ); if (err) break;
 
             if (*cmp_entry==NUL) {                /* no more sub directories */
-                strcpy( spP->name, entryName );
+                syspath_setname( spP, entryName );
                 
                 if   (isFileEntry) {              /* if it is a file entry */
                   if (isFile) {

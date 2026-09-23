@@ -3998,6 +3998,48 @@ do {
     }
 }
 
+// ── a pty pair name too long for a path's name is refused ─────────────────────
+// A /pty open copied its name into the path's 29-byte name, and then into a
+// 29-byte buffer on os9exec's own stack. "/pty1" followed by 60 more letters
+// is still a pty path by its prefix, and overran both. Found by review.
+do {
+    let ptyAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Open equ $84", "I$WritLn equ $8C",
+        "  psect mptyl,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea pname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcc.s wrong",
+        "  cmpi.w #215,d1", "  bne.s wrong",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "wrong:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "pname: dc.b \"/pty1" + String(repeating: "a", count: 60) + "\",0",
+        "mok:  dc.b \"LONG PTY NAME REFUSED\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"LONG PTY NAME ACCEPTED\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "pty: a pair name too long for a path is refused, not copied past its end"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? ptyAsm.write(toFile: scratchDisk + "/mptyl.a", atomically: true, encoding: .utf8)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/mptyl.a -o=/h5/mptyl.r", "l68 /h5/mptyl.r -o=/h5/mptyl",
+                       "/h5/mptyl"], timeout: 30)
+        if out.contains("LONG PTY NAME REFUSED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("PTY") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mptyl.a", "mptyl.r", "mptyl"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$Event: Ev$Wait answers the value that satisfied it ──────────────────────
 // "returns with the value of the event causing the process to wake" (Microware,
 // OS-9 Intermediate training, _os9_ev_wait) -- the value BEFORE the wait
@@ -8901,6 +8943,32 @@ do {
             }
         } else {
             print("SKIP: \(refusedName) (no loopback port could be bound)")
+        }
+    }
+
+    // A four-byte IP_MULTICAST_TTL (level 0, option 10) is the guest's
+    // big-endian int. It went to the host as raw bytes -- 1 read as $01000000
+    // on a little-endian host, which refused it -- so the option never took.
+    let ttlName = "net: a /socket multicast TTL given as an int reaches the host as its value"
+    if filter.isEmpty || ttlName.localizedCaseInsensitiveContains(filter) {
+        let udpTTL = [
+            "  lea     sockdev(pc),a0", "  moveq   #3,d0", "  OS9     I$Open", "  bcs     fail",
+            "  move.w  d0,d7",
+            "  lea     udp(pc),a0", "  moveq   #12,d2", "  move.w  #SSResv,d1", "  OS9     I$SetStt",
+            "  bcs     fail",
+            "  move.w  d7,d0", "  lea     ttl(pc),a0", "  moveq   #10,d2", "  moveq   #0,d3", "  moveq   #4,d4",
+            "  move.w  #$74,d1", "  OS9     I$SetStt", "  bcs     fail",
+            "  move.w  d7,d0", "  OS9     I$Close", "  moveq   #0,d1", "  bra     fail",
+            "udp:     dc.l  2,2,0", "ttl:     dc.l  1"
+        ]
+        let out = buildAndRun("ispttl", socketProgram("ispttl", port: 1, udpTTL))
+        if out.contains("ISPTTL-END") && !out.contains("Error #") {
+            print("PASS: \(ttlName)")
+            passed += 1
+        } else {
+            print("FAIL: \(ttlName)")
+            print("      out: \(errorLines(out))")
+            failed += 1
         }
     }
 

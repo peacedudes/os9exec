@@ -919,6 +919,9 @@ typedef struct {
                                        across a park: the dispatcher resumes a parked
                                        process by running its whole call again, so
                                        without this the sent bytes would go twice */
+            ushort    writePid;     /* whose write <writeDone> belongs to, and the */
+            void*     writeBuf;     /* buffer it was writing from: a resume is only */
+                                    /* that same call coming back */
             Boolean   isp;          /* opened as "/socket": the older library, which
                                        makes each socket call a setstat of its own
                                        rather than an operation inside SS_SPF */

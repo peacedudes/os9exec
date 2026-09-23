@@ -685,6 +685,9 @@ static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP,
        merely finished. */
     if (p->pathlost) {
         if (!syW) Reactivate( pid, cp, "Reactivate pReadSysTaskExe (SS_Break)" );
+        p->consumers--;  /* pPread counted us in before we got here; every
+                          * other way out gives it back, and a count left
+                          * behind makes pPdelete refuse the pipe E$Share */
         return os9error(E_PTHLOST);
     }
 
@@ -1127,6 +1130,9 @@ os9err pKopen( ushort pid, syspath_typ* spP, _modeP_, const char* pathname )
   //process_typ*  cp = &procs[pid];
   //printf( "pKopen='%s' %d\r\n", pathname, cp->cre_initsize );
         
+    /* a pair's name is matched against its other end's, so one cut to fit
+       could pair with a stranger: refused instead */
+    if (strlen( &pathname[1] )>=OS9NAMELEN) return os9error(E_BPNAM);
     strcpy( spP->name,&pathname[1] );
     strcpy( tty_cmp, spP->name );
             tty_cmp[0]= 't';
