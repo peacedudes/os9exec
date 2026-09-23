@@ -2013,7 +2013,7 @@ os9err OS9_F_DatMod( regs_type *rp, ushort cpid )
       os9modules[mid].isBuiltIn = false;
 //  #endif
     
-    access= loword(rp->d[2]);    
+    access= loword(rp->d[2]) & 0x7FFF; /* bit 15 says "d3/d4 given", not a permission */
     /* "d3.w = desired type/language (optional)" (F$DatMod, page 1-12). What
        makes it optional is bit 15 of the permissions in d2: d3 and d4 are read
        only when that bit is set, and otherwise the module is type Data,
@@ -2021,7 +2021,7 @@ os9err OS9_F_DatMod( regs_type *rp, ushort cpid )
        C library's _mkdata_module never sets d3 at all, so reading it
        regardless typed TOP's SysInfo module with whatever the caller had left
        there, and every client linking it as Data got E$MNF. */
-    tylan = (access & 0x8000) && loword(rp->d[3])!=0 ? loword(rp->d[3]) : 0x0400;
+    tylan = (loword(rp->d[2]) & 0x8000) && loword(rp->d[3])!=0 ? loword(rp->d[3]) : 0x0400;
     attrev= loword(rp->d[1]);
 
     FillTemplate (theModule,  access,tylan,attrev);           /* fill module body */
@@ -2365,6 +2365,9 @@ os9err OS9_F_DExec( regs_type *rp, ushort cpid )
     cp= &procs[childpid];
     if (cp->state == pUnused) return os9error(E_IPRCID);
     if (cp->state == pDead  ) return os9error(E_IPRCID);
+    /* only the debugger that forked it, as F$DExit already insists: the child's
+       registers are about to be loaded from that debugger's buffer */
+    if (dbg_parent_pid[childpid]!=cpid) return os9error(E_IPRCID);
 
     if (bkptcnt > 16) bkptcnt = 16;
     dbg_bkpt_count[childpid] = bkptcnt;

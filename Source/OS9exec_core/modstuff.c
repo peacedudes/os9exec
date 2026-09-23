@@ -1965,7 +1965,7 @@ int release_sticky_modules( void )
         if (os9mod(k)!=NULL && os9modules[k].linkcount==0 &&
             (os9_word( os9mod(k)->_mh._mattrev ) & ATTR_STICKY)) {
             unlink_module( (ushort)k );
-            n++;
+            if (os9mod(k)==NULL) n++;  /* a group member still linked keeps it */
         }
     }
     return n;

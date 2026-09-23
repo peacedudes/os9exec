@@ -1073,7 +1073,7 @@ static os9err IspAccept( ushort pid, syspath_typ* spP, regs_type* rp )
         err= usrpath_open( pid,&up, fSPF, "/socket", spP->mode );
     if (err) { close( nfd ); return err; }
     nsp= get_syspath( pid, procs[pid].usrpaths[up] );
-    if (nsp==NULL) { close( nfd ); return os9error(E_BPNUM); }
+    if (nsp==NULL) { close( nfd ); usrpath_close( pid, up ); return os9error(E_BPNUM); }
 
     nsp->u.spf.fdPlus1  = nfd+1;
     nsp->u.spf.proto    = spP->u.spf.proto;

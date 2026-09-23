@@ -1382,9 +1382,18 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x38:		/* FCMP */
+	    /* From the comparison, not from the difference: +inf - +inf is a
+	       NaN where the operands are equal, and two finite values whose
+	       difference overflows are not an infinity. */
 	    {
-		double tmp = regs.fp[reg] - src;
-		regs.fpsr = fpsr_cc (tmp);
+		double dst = regs.fp[reg];
+		if (isnan (dst) || isnan (src))
+		    regs.fpsr = 0x1000000;
+		else if (dst == src)
+		    regs.fpsr = 0x4000000 | (signbit (dst) && signbit (src) ? 0x8000000 : 0);
+		else
+		    regs.fpsr = (dst < src ? 0x8000000 : 0) |
+		                ((isinf (dst) || isinf (src)) ? 0x2000000 : 0);
 	    }
 	    break;
 	case 0x3a:		/* FTST */

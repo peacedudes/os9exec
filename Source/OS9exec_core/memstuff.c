@@ -817,6 +817,10 @@ static void* get_mem_once( ulong memsz )
       Boolean         cond;
     #endif
       
+    /* A size within a block of 4 GB would wrap to 0 below and be handed a
+       minimum block while the caller believes it has what it asked for.
+       Nothing that large fits a 68k address space anyway. */
+    if (memsz > 0xFFFFFFFFUL-(MBlk-1)) return NULL;
     memsz= (memsz+MBlk-1) & 0xFFFFFFC0; /* round up to next boundary */
 
     /* A zero-byte request (F$SRqMem with d0=0 is one) still gets a block of

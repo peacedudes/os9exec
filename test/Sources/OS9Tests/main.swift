@@ -5896,6 +5896,7 @@ do {
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit   equ $06", "F$Link   equ $00", "F$DatMod equ $25", "F$CCtl   equ $5A",
         "F$UAcct  equ $59", "F$Protect equ $3B", "F$UnLink equ $02", "F$SRqMem equ $28", "F$SRtMem equ $29",
+        "F$ID equ $0C", "F$DExec equ $23",
         "I$Open   equ $84", "I$GetStt equ $8D", "I$WritLn equ $8C"
     ]
     func say(_ label: String) -> [String] {
@@ -6028,8 +6029,26 @@ do {
         "pnone: dc.b \"permnone\",0", "pread: dc.b \"permread\",0"] +
         message("mpok", "LINK NEEDS READ PERMISSION") + message("mpbad", "LINK IGNORED PERMISSION") + ["  ends", ""]
 
+    // Found by review of the fixes above. A request within 64 bytes of 4 GB
+    // wrapped to 0 in the rounding and was granted a minimum block while the
+    // caller was told it had ~4 GB (E$NoRAM now). F$DExec on a process the
+    // caller did not F$DFork was carried out -- and would now load that
+    // process's registers from a stale buffer (E$IPrcID now, as F$DExit).
+    // FCMP of +inf with +inf took its flags from inf-inf, a NaN, not equal.
+    let reviewFixes = header + [
+        "  psect mrevw,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  move.l #$FFFFFFE0,d0", "  OS9 F$SRqMem", "  bcc.s wrong", "  cmpi.w #237,d1", "  bne.s wrong",
+        "  OS9 F$ID", "  moveq #1,d1", "  moveq #0,d2", "  OS9 F$DExec", "  bcc.s wrong",
+        "  cmpi.w #224,d1", "  bne.s wrong",
+        "  lea inf(pc),a0", "  dc.w $F210,$5400", "  dc.w $F210,$5438", "  dc.w $F200,$A800",
+        "  btst #26,d0", "  beq.s wrong"] + say("mrvok") + ["  bra.s done", "wrong:"] + say("mrvbad") + [
+        "done:", "  moveq #0,d1", "  OS9 F$Exit",
+        "inf: dc.l $7FF00000,0"] +
+        message("mrvok", "REVIEW FIXES HOLD") + message("mrvbad", "REVIEW FIX BROKEN") + ["  ends", ""]
+
     let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl, "macct": acct,
-                   "mstky": sticky, "mzero": zeroBlock, "mperm": permLink]
+                   "mstky": sticky, "mzero": zeroBlock, "mperm": permLink, "mrevw": reviewFixes]
     for (module, lines) in modules {
         try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
                                                   atomically: true, encoding: .utf8)
@@ -6056,7 +6075,9 @@ do {
         StatusCase(name: "memory: a zero-byte F$SRqMem gets an address of its own, and says nothing on return",
                    module: "mzero", want: ["ZERO BLOCK HAS ITS OWN ADDRESS"], absent: ["BLOCK at"]),
         StatusCase(name: "module: F$Link refuses a module whose access word gives no read permission",
-                   module: "mperm", want: ["LINK NEEDS READ PERMISSION"])
+                   module: "mperm", want: ["LINK NEEDS READ PERMISSION"]),
+        StatusCase(name: "system: a 4 GB F$SRqMem, F$DExec of a stranger, FCMP of equal infinities",
+                   module: "mrevw", want: ["REVIEW FIXES HOLD"])
     ]
     let chosen = cases.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
     if !chosen.isEmpty {
@@ -6077,7 +6098,7 @@ do {
             let lines = out.split(whereSeparator: \.isNewline).filter {
                 $0.contains("READY") || $0.contains("DATMOD") || $0.contains("CCTL") || $0.contains("Error") ||
                 $0.contains("UACCT") || $0.contains("unimplemented") || $0.contains("STICKY") ||
-                $0.contains("BLOCK") || $0.contains("LINK ")
+                $0.contains("BLOCK") || $0.contains("LINK ") || $0.contains("REVIEW")
             }
             print("      saw: \(lines.joined(separator: " | "))")
             failed += 1
