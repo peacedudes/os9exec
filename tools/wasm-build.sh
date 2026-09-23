@@ -83,5 +83,7 @@ for m in $(ls "$REPO/test/68k-conformance/CMDS" | grep -avE '^(tally|mark|load|c
     esac
 done
 echo "WASM CONF68K: PASS=$pass FAIL=$fail SKIP=$skip NO-RESULT=$none"
+# No test at all is not a pass: an empty CMDS (the suite not built) ran nothing.
+[ "$pass" -gt 0 ] || { echo "no conformance test ran -- is test/68k-conformance/CMDS built?"; exit 1; }
 [ "$fail" -eq 0 ] && [ "$none" -eq 0 ] || exit 1
 echo "WASM OK -- the emulator runs OS-9/68000 code in WebAssembly"

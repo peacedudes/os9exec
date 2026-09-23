@@ -37,9 +37,14 @@ def cpu(pid):
     return subprocess.run(['ps', '-o', 'time=', '-p', str(pid)],
                           capture_output=True, text=True).stdout.strip()
 
-def secs_of(t):                      # "0:00.42" / "1:02.30" -> seconds
-    mm, _, ss = t.partition(':')
-    return int(mm) * 60 + float(ss)
+def secs_of(t):
+    """ps's cumulative CPU time in seconds: macOS prints "0:00.42" (MM:SS.ss),
+    Linux "00:00:01" or "1-02:03:04" ([DD-]HH:MM:SS, whole seconds)."""
+    days, _, clock = t.strip().rpartition('-')
+    secs = 0.0
+    for part in clock.split(':'):
+        secs = secs * 60 + float(part)
+    return secs + int(days or 0) * 86400
 
 pid, fd = pty.fork()
 if pid == 0:

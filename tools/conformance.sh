@@ -72,10 +72,12 @@ MODULES=(t01open t02eof t03bmode t04mode0 t05mode0rd t06short t07extend
 # copy into the image from it.  Installing in one place therefore covers all
 # four combinations instead of four separate special cases.
 #
-# The tree is left as it was found.  remove_load runs on the way out of each
-# leg, so a repository never acquires an untracked binary from having run the
-# suite -- and the .gitignore entry is a belt for the interrupted run, not the
-# mechanism.
+# The tree is never touched: each leg runs from a private copy of the suite
+# (private_suite below), and `load` goes into that copy's CMDS, which goes
+# away with it.  Installing into the tree itself had concurrent runs delete
+# each other's `load` and cio mid-run (t49 then failed in one of them), and a
+# leg that returned early left the vendor's cio behind.  The .gitignore entries
+# stay as a belt for older checkouts.
 # `load` is built with cc -I, so stdio lives in the shared `cio` TRAP HANDLER
 # rather than being copied into the module -- 4216 bytes instead of 16848, which
 # is how OS-9's own utilities are built and the reason trap handlers exist.  The
@@ -101,8 +103,14 @@ install_load() {
     cp "$LOADTRAP" "$1/CMDS/cio"   && chmod 755 "$1/CMDS/cio"
 }
 
-remove_load() {
-    rm -f "$1/CMDS/load" "$1/CMDS/cio"
+# A copy of the suite for one leg to run in, echoed as a path; the caller
+# removes its parent directory when done.  The suite's RESULTS/report is
+# written by every run, so a shared one was as racy as `load`.
+private_suite() {
+    local base
+    base=$(mktemp -d) || return 1
+    cp -R "$REPO/test/68k-conformance" "$base/conf" || { rm -rf "$base"; return 1; }
+    echo "$base/conf"
 }
 
 # Extra CMDS names to put in an RBF image on top of the test modules.  Echoes
@@ -367,14 +375,16 @@ build_rbf_image_noshell() {
 }
 
 run_68k_noshell() {
-    local use_rbf="${1:-no}" dir="$REPO/test/68k-conformance" rc=0 m out
-    local disk="$dir" work="" img=""
+    local use_rbf="${1:-no}" dir rc=0 m out
+    local disk work="" img=""
 
+    dir=$(private_suite) || return 1
+    disk="$dir"
     install_load "$dir"
 
     if [ "$use_rbf" = yes ]; then
         work=$(mktemp -d)
-        img=$(build_rbf_image_noshell "$dir" "$work") || { rm -rf "$work"; return 1; }
+        img=$(build_rbf_image_noshell "$dir" "$work") || { rm -rf "$work" "$(dirname "$dir")"; return 1; }
         disk="$img"
     fi
 
@@ -413,13 +423,15 @@ run_68k_noshell() {
     compare "$dir" "$dir/RESULTS/report" \
         "$([ "$use_rbf" = yes ] && echo expected-rbf || echo expected)" || rc=1
     [ -n "$work" ] && rm -rf "$work"
-    remove_load "$dir"
+    rm -rf "$(dirname "$dir")"
     return $rc
 }
 
 run_68k() {
-    local use_rbf="$1" dir="$REPO/test/68k-conformance" rc=0
+    local use_rbf="$1" dir log rc=0
     echo "== CONF68K on os9exec ($([ "$use_rbf" = yes ] && echo 'RBF image' || echo 'host-native directory')) =="
+    dir=$(private_suite) || return 1
+    log="$(dirname "$dir")/run.log"
     rm -f "$dir/RESULTS/report"
 
     install_load "$dir"
@@ -440,22 +452,21 @@ run_68k() {
           # first -- which is the argument for the warning being there.
           echo "/dd/CMDS/copy -n /h7/RESULTS/report /h8/RESULTS/report"
           echo stop
-        } | os9exec_shell "$dir" "$work" > /tmp/conf68k-run.log
+        } | os9exec_shell "$dir" "$work" > "$log"
         rm -rf "$work"
     else
         printf 'chd /h8\nchx /h8/CMDS\nrunall\nstop\n' \
-            | os9exec_shell "$dir" > /tmp/conf68k-run.log
+            | os9exec_shell "$dir" > "$log"
     fi
 
-    grep -a 'CONF68K totals' /tmp/conf68k-run.log | sed 's/^/  /'
+    grep -a 'CONF68K totals' "$log" | sed 's/^/  /'
     if [ ! -s "$dir/RESULTS/report" ]; then
-        echo "  no RESULTS/report was produced -- see /tmp/conf68k-run.log" >&2
-        remove_load "$dir"
+        echo "  no RESULTS/report was produced -- see $log (kept)" >&2
         return 1
     fi
     compare "$dir" "$dir/RESULTS/report" \
         "$([ "$use_rbf" = yes ] && echo expected-rbf || echo expected)" || rc=1
-    remove_load "$dir"
+    rm -rf "$(dirname "$dir")"
     return $rc
 }
 
