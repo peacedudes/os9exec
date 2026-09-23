@@ -335,13 +335,21 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
          * or a bus error depending on what happens to live there. */
         if (isintcommand(mname, &isNative_, &modBase_) >= 0
             && find_mod_id(mname) >= MAXMODULES) {
-            /* Internal command: don't look up a real OS-9 module; return plausible
-             * register values so the shell proceeds to F$Fork, where we intercept. */
+            /* Internal command: there is no OS-9 module to find, but the shell
+             * links a command before forking it, and E$MNF here would make every
+             * internal command unrunnable from the shell. So it answers with the
+             * placeholder module os9exec keeps in the arena for this purpose.
+             * It used to answer with a NULL module pointer and entry point, which
+             * any caller that then READ what it was given walked into: `which pwd`
+             * died with a bus error, and the BASIC09 case above is the same fault
+             * one guard earlier. */
+            mod_exec* stub= (mod_exec*)intcmd_stub;
+            if (stub==NULL) return os9error(E_MNF);  /* no arena copy: nothing to point at */
             retword(rp->d[0])= tylan;  /* echo back requested type/lang */
-            retword(rp->d[1])= 0;
+            retword(rp->d[1])= os9_word(stub->_mh._mattrev);
             rp->a[0]= TO68K(p);
-            rp->a[1]= 0;
-            rp->a[2]= 0;
+            rp->a[2]= TO68K(stub);
+            rp->a[1]= TO68K(stub) + os9_long(stub->_mexec);
             return 0;
         }
     }

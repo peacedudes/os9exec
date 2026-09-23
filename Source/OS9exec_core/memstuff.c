@@ -309,6 +309,8 @@ void init_all_mem(void)
     if (mdirField==NULL)
         mdirField= (mdir_entry*)get_mem( MAXMODULES * sizeof(mdir_entry) );
 
+    init_intcmd_stub(); /* the module F$Link hands back for an internal command */
+
     /* allocate a zeroed I/O device table in the arena so D_DevTbl returns a valid 68k address */
     if (devtbl_arena==NULL)
         devtbl_arena= (byte*)get_mem( 0x0900 );

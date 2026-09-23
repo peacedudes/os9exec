@@ -192,12 +192,25 @@ const byte OS9exec_mod[] MODALIGN = {
     0xc9,0x72                                                                         //  lr
 };
 mod_exec* OS9exec_ptr= (mod_exec*)OS9exec_mod;   /* ptr to OS9exec module */
+
 #define sizeof_OS9exec_mod 162
 /* The size constant is hand-written and the array beside it is 100+ lines of
    hex; nothing tied the two together. A constant left behind by an edit
    would hand F$Link a length that does not match the module. */
 _Static_assert( sizeof(OS9exec_mod)==sizeof_OS9exec_mod,
                 "sizeof_OS9exec_mod does not match the array" );
+
+/* The same bytes, copied into the 68k arena at startup, as the module F$Link
+   answers with for an INTERNAL command (fcalls.c). The array above lives in
+   host memory, which has no 68k address, so it cannot be handed to a guest. */
+byte* intcmd_stub= NULL;
+
+void init_intcmd_stub( void )
+{
+    if (intcmd_stub!=NULL) return;
+    intcmd_stub= (byte*)get_mem( sizeof_OS9exec_mod );
+    if (intcmd_stub!=NULL) memcpy( intcmd_stub, OS9exec_mod, sizeof_OS9exec_mod );
+} /* init_intcmd_stub */
     
 
 

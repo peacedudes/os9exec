@@ -5222,7 +5222,30 @@ do {
         "fname: dc.b \"only5\",0"] +
         message("mdata", "DATA DIR CHANGED") + message("mexec", "EXEC DIR CHANGED") + ["  ends", ""]
 
-    let modules = ["mlrefu": linkRefused, "mpanic": panic, "msrqwr": srqmem, "mcdboth": chgdir]
+    // F$Link of an INTERNAL command name (os9exec's own `pwd`, not a module on
+    // any disk). The shell links a command before forking it, so this cannot
+    // answer E$MNF -- but it used to answer success with a NULL module pointer
+    // and entry point, and a caller that read them died: `which pwd` took a bus
+    // error. What comes back must be a real module: a2 and a1 set, and $4AFC
+    // (MODSYNC) at a2.
+    let linkInternal = header + [
+        "  psect mlint,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea iname(pc),a0", "  moveq #0,d0", "  OS9 F$Link", "  bcs.s refused",
+        "  move.l a2,d2", "  beq.s gavenull",
+        "  move.l a1,d3", "  beq.s gavenull",
+        "  movea.l a2,a0", "  cmpi.w #$4AFC,(a0)", "  bne.s notmod"] + say("mok") + [
+        "  bra.s done",
+        "gavenull:"] + say("mnull") + ["  bra.s done",
+        "notmod:"] + say("mbad") + ["  bra.s done",
+        "refused:"] + say("mref") + [
+        "done:", "  moveq #0,d1", "  OS9 F$Exit",
+        "iname: dc.b \"pwd\",0"] +
+        message("mok", "LINK GAVE A MODULE") + message("mnull", "LINK GAVE NULL") +
+        message("mbad", "LINK GAVE A NON-MODULE") + message("mref", "LINK REFUSED") + ["  ends", ""]
+
+    let modules = ["mlrefu": linkRefused, "mpanic": panic, "msrqwr": srqmem, "mcdboth": chgdir,
+                   "mlint": linkInternal]
     for (module, lines) in modules {
         try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
                                                   atomically: true, encoding: .utf8)
@@ -5245,6 +5268,12 @@ do {
                 !$0.hasPrefix("$") && $0.trimmingCharacters(in: .whitespaces).hasSuffix(" binex")
             }
             return out.contains("LINK REFUSED") && !out.contains("LINK ACCEPTED") && !listed
+        },
+        CallCase(name: "module: F$Link of an internal command hands back a real module", module: "mlint",
+                 commands: ["/h5/mlint", "pwd"], timeout: 20) {
+            // and the internal command still runs from the shell, which is why
+            // this cannot simply answer E$MNF
+            $0.contains("LINK GAVE A MODULE") && !$0.contains("can't execute")
         },
         CallCase(name: "module: F$Panic from a user program is refused, not the debugger", module: "mpanic",
                  commands: ["/h5/mpanic", "echo AFTER-PANIC"], timeout: 20) {

@@ -1428,6 +1428,8 @@ extern  module_typ  os9modules[MAXMODULES];
 extern  mod_exec*   init_module;
 extern  ulong       totalMem;
 extern  mdir_entry *mdirField;
+extern  byte*      intcmd_stub;   /* the module F$Link answers for an internal command */
+void    init_intcmd_stub( void );
 
 /* the system paths */
 extern  syspath_typ syspaths [MAXSYSPATHS];
