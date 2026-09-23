@@ -3830,6 +3830,73 @@ do {
     }
 }
 
+// ── F$SigMask: the level stops at 255 ────────────────────────────────────────
+// "The signal masking level is an eight bit quantity; the system takes steps to
+// insure that it does not wrap around in either direction" (Microware, OS-9
+// Intermediate training). os9exec counted up without limit, so after 300
+// increments 255 decrements still left the process masked (found by the skills
+// session). Here a signal sent to ourselves after 300 up and 255 down must reach
+// the intercept handler at once.
+do {
+    let maskAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$Send equ $08", "F$Icpt equ $09", "F$ID equ $0C", "F$RTE equ $1E",
+        "F$SigMask equ $57", "I$WritLn equ $8C",
+        "  psect mcap,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  clr.b   (a6)",
+        "  lea     handler(pc),a0",
+        "  OS9     F$Icpt",
+        "  move.w  #299,d4",
+        "up:",
+        "  moveq   #0,d0", "  moveq   #1,d1", "  OS9     F$SigMask", "  dbra    d4,up",
+        "  move.w  #254,d4",
+        "down:",
+        "  moveq   #0,d0", "  moveq   #-1,d1", "  OS9     F$SigMask", "  dbra    d4,down",
+        "  OS9     F$ID",
+        "  move.w  #200,d1",
+        "  OS9     F$Send",
+        "  OS9     F$ID",               // one more call, for delivery on the way out
+        "  tst.b   (a6)",
+        "  beq.s   masked",
+        "  lea     mok(pc),a0", "  moveq   #mokl,d1", "  bra.s   say",
+        "masked:",
+        "  lea     mbad(pc),a0", "  moveq   #mbadl,d1",
+        "say:",
+        "  moveq   #1,d0", "  OS9     I$WritLn",
+        "  moveq   #0,d0", "  moveq   #0,d1", "  OS9     F$SigMask",
+        "  moveq   #0,d1", "  OS9     F$Exit",
+        "handler:",
+        "  move.b  #1,(a6)",
+        "  OS9     F$RTE",
+        "mok:  dc.b  \"SIGMASK CAPPED AT 255\",$0D",
+        "mokl  equ   *-mok",
+        "mbad: dc.b  \"SIGMASK STILL MASKED\",$0D",
+        "mbadl equ   *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "f$sigmask: the mask level stops at 255, so 255 decrements undo any number of increments"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? maskAsm.write(toFile: scratchDisk + "/mcap.a", atomically: true, encoding: .utf8)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/mcap.a -o=/h5/mcap.r", "l68 /h5/mcap.r -o=/h5/mcap",
+                       "/h5/mcap"], timeout: 30)
+        if out.contains("SIGMASK CAPPED AT 255") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("SIGMASK") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mcap.a", "mcap.r", "mcap"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$Event: Ev$Wait answers the value that satisfied it ──────────────────────
 // "returns with the value of the event causing the process to wake" (Microware,
 // OS-9 Intermediate training, _os9_ev_wait) -- the value BEFORE the wait

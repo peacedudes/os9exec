@@ -1040,7 +1040,11 @@ os9err sig_mask( ushort cpid, int level )
 	    
     switch (level) {
         case  0 :  *plv= 0; break;
-        case  1 : (*plv)++; break;
+        /* "The signal masking level is an eight bit quantity; the system takes
+           steps to insure that it does not wrap around in either direction"
+           (Microware, OS-9 Intermediate training). Uncapped, 256 increments
+           took 256 decrements to undo where OS-9 needs 255. */
+        case  1 : if (*plv<255) (*plv)++; break;
         case -1 : (*plv)--; if (*plv<0) *plv= 0; break; // no mask levels below zero
     } /* switch */
 
