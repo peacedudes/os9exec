@@ -2028,6 +2028,60 @@ do {
     }
 }
 
+// ── RBF: SS_Size that fills the disk part way leaves the FD naming what it took ──
+// SS_Size allocates in as many pieces as the free space comes in. When the disk
+// ran out part way (E$Full) the pieces taken so far were written to the disk's
+// FD but not handed to the file's other paths, and the next of those to write
+// its FD (here with SS_Attr) put its own older copy back over them: set in the
+// bitmap, named by no FD. The program opens a second path, asks the first for
+// more than the image holds, sets the attributes through the second, and runs
+// dcheck with both still open. Found by review.
+do {
+    let fullAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Fork equ $03", "F$Wait equ $04", "F$Exit equ $06",
+        "I$Create equ $83", "I$Open equ $84", "I$SetStt equ $8E", "I$Close equ $8F",
+        "  psect mfull,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.s fail",
+        "  move.w d0,d7",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.s fail", "  move.w d0,d6",
+        "  move.w d7,d0", "  move.l #4000000,d2", "  moveq #2,d1", "  OS9 I$SetStt", "  bcc.s fail",
+        "  move.w d6,d0", "  moveq #$1B,d2", "  moveq #$1C,d1", "  OS9 I$SetStt", "  bcs.s fail",
+        "  lea cmd(pc),a0", "  lea parm(pc),a1", "  moveq #0,d0", "  moveq #0,d1", "  moveq #parml,d2",
+        "  moveq #3,d3", "  moveq #0,d4", "  OS9 F$Fork", "  bcs.s fail", "  OS9 F$Wait",
+        "  move.w d6,d0", "  OS9 I$Close", "  move.w d7,d0", "  OS9 I$Close", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "fname: dc.b \"/h9/filler\",0", "cmd: dc.b \"dcheck\",0",
+        "parm: dc.b \"/h9\",$0D", "parml equ *-parm",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "rbf: SS_Size that fills the disk part way hands its FD to the file's other paths"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? fullAsm.write(toFile: scratchDisk + "/mfull.a", atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mfull.a -o=/h5/mfull.r", "l68 /h5/mfull.r -o=/h5/mfull"], timeout: 60)
+        let out = os9(["mount -k=300K \(scratchDevice)", "/h5/mfull"], timeout: 120)
+        if dcheckClean(out) {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("Error") || $0.contains("not in") || $0.contains("intact") }
+                .prefix(4)
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mfull.a", "mfull.r", "mfull"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+        try? FileManager.default.removeItem(atPath: scratchHostPath)
+    }
+}
+
 // ── RBF: a directory held open does not flush a stale sector over a new entry ──
 // The path RBF adds and removes directory entries through was a ring of its
 // own, so a user path holding the same directory sector neither lost its copy

@@ -4901,12 +4901,19 @@ os9err pRsetsz( _pid_, syspath_typ* spP, uint32_t *size )
             req= ( *size-totsize-1 ) / dev->sctSize + 1;
             while (true) {
                 scs= Max( ma, req ); /* alloc size might be larger */
-                err= AllocateBlocks( spP,scs, &pos,&scs, pref ); if (err) return err;
-                err= AdaptAlloc_FD ( spP,      pos, scs       ); if (err) return err;
+                err= AllocateBlocks( spP,scs, &pos,&scs, pref ); if (err) break;
+                err= AdaptAlloc_FD ( spP,      pos, scs       ); if (err) break;
 
                 if (scs>=req) break;
                 req-= scs; /* still asking for some more sectors */
             } // loop
+
+            /* A disk that fills part way (E$Full, E$SLF) leaves the segments
+               allocated so far in the FD, which AdaptAlloc_FD has written.
+               The file's other paths must have them too: the next of those to
+               write its own FD put its older copy back over them, and the
+               bitmap then held sectors no FD named. The size stays as it was. */
+            if (err) { RingPublishFD( spP ); return err; }
         } // if
     } // if
 
