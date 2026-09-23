@@ -7645,6 +7645,61 @@ do {
     }
 }
 
+// ── 68881: FINT, FINTRZ, FMOD and FREM keep their results floating ────────────
+// All four went through a C (int): FINT(-2.3) truncated to -1 and FINT(2.5) came
+// out 3 where the 68881 rounds to nearest even (-2, 2); FINTRZ(1e10) and
+// FMOD(1e10,3) overflowed the int, which is undefined in C and a wrong answer on
+// every host; FREM(-7,2), whose quotient rounds to nearest (-4), gave -1 for 1.
+// Found by review. Written as words, like the FDIV test: fmove.d (a0),fp0 /
+// <op>.d (a1),fp0 / fmove.d fp0,(a2).
+do {
+    func apply(_ opword: String, _ dst: String, _ src: String, _ want: String) -> [String] {
+        ["  lea \(dst)(pc),a0", "  dc.w $F210,$5400", "  lea \(src)(pc),a1", "  dc.w $F211,\(opword)",
+         "  lea (a6),a2", "  dc.w $F212,$7400", "  lea \(want)(pc),a3",
+         "  cmpm.l (a3)+,(a2)+", "  bne.w wrong", "  cmpm.l (a3)+,(a2)+", "  bne.w wrong"]
+    }
+    let fpuAsm = ([
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$WritLn equ $8C",
+        "  psect mfint,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:"] +
+        apply("$5401", "one", "mtwo3", "mtwo") +      // FINT(-2.3)    = -2
+        apply("$5401", "one", "twohalf", "two") +     // FINT(2.5)     = 2
+        apply("$5403", "one", "e10", "e10") +         // FINTRZ(1e10)  = 1e10
+        apply("$5421", "e10", "three", "one") +       // FMOD(1e10,3)  = 1
+        apply("$5425", "mseven", "two", "one") + [    // FREM(-7,2)    = 1
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "wrong:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "one:     dc.l $3FF00000,0", "two:     dc.l $40000000,0", "mtwo:    dc.l $C0000000,0",
+        "mtwo3:   dc.l $C0026666,$66666666", "twohalf: dc.l $40040000,0",
+        "three:   dc.l $40080000,0", "mseven:  dc.l $C01C0000,0", "e10:     dc.l $4202A05F,$20000000",
+        "mok:  dc.b \"FINT FAMILY EXACT\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"FINT FAMILY WRONG\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ]).joined(separator: "\r")
+
+    let name = "fpu: 68881 FINT rounds to nearest even, and FINTRZ, FMOD and FREM stay exact past 2^31"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? fpuAsm.write(toFile: scratchDisk + "/mfint.a", atomically: true, encoding: .utf8)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/mfint.a -o=/h5/mfint.r", "l68 /h5/mfint.r -o=/h5/mfint",
+                       "/h5/mfint"], timeout: 30)
+        if out.contains("FINT FAMILY EXACT") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("FINT") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mfint.a", "mfint.r", "mfint"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$DFork: a debugged child goes with its debugger ─────────────────────────
 // A debugger that exits without F$DExit left its child asleep for ever, and the
 // child kept the debugger's pid as its own: whoever got that pid next passed

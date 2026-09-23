@@ -1220,8 +1220,16 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	//  MAKE_FPSR (regs.fp[reg]);
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
+	/* FINT, FINTRZ, FMOD and FREM went through an (int): wrong for a
+	   value past 2^31 (undefined behaviour, and a wrong answer on every
+	   host), for inf and NaN, and -- (int) truncating toward zero -- for
+	   rounding a negative value, FINT(-2.3) giving -1. The 68881 keeps
+	   the result a float: FINT rounds by FPCR's mode, whose default is
+	   to nearest (even), FINTRZ toward zero; FMOD's quotient is rounded
+	   toward zero, FREM's to nearest, which is C's fmod and remainder.
+	   FPCR's other rounding modes are not emulated anywhere here. */
 	case 0x01:		/* FINT */
-	    regs.fp[reg] = (int) (src + 0.5);
+	    regs.fp[reg] = nearbyint (src);
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x02:		/* FSINH */
@@ -1229,7 +1237,7 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x03:		/* FINTRZ */
-	    regs.fp[reg] = (int) src;
+	    regs.fp[reg] = trunc (src);
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x04:		/* FSQRT */
@@ -1336,8 +1344,7 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x21:		/* FMOD */
-	    regs.fp[reg] = regs.fp[reg] -
-		(double) ((int) (regs.fp[reg] / src)) * src;
+	    regs.fp[reg] = fmod (regs.fp[reg], src);
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x22:		/* FADD */
@@ -1353,8 +1360,7 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x25:		/* FREM */
-	    regs.fp[reg] = regs.fp[reg] -
-		(double) ((int) (regs.fp[reg] / src + 0.5)) * src;
+	    regs.fp[reg] = remainder (regs.fp[reg], src);
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x26:		/* FSCALE */
