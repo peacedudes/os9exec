@@ -70,11 +70,21 @@ Module.preRun.push(function () {
 // so what a program writes there outlives a reload. It is loaded before main()
 // and becomes /h1 as OS9H1 does natively; the page attaches, saves and detaches
 // it through Module.os9h1.
-var H1 = '/keep/h1.dsk', H1NAME = '/keep/h1.name', syncing = false;
+// A sync asked for while one is running is not dropped: it runs again when
+// that one ends, and every caller's <done> waits for the sync that covers its
+// own write -- attaching reloads the page from <done>, so answering early lost
+// the disk it had just been given.
+var H1 = '/keep/h1.dsk', H1NAME = '/keep/h1.name', syncing = false, again = false, waiters = [];
 function keepSync(done) {
-  if (syncing) { if (done) done(); return; }
+  if (done) waiters.push(done);
+  if (syncing) { again = true; return; }
   syncing = true;
-  FS.syncfs(false, function (err) { syncing = false; if (done) done(err); });
+  FS.syncfs(false, function (err) {
+    syncing = false;
+    if (again) { again = false; keepSync(); return; }
+    var ready = waiters; waiters = [];
+    ready.forEach(function (f) { f(err); });
+  });
 }
 Module.preRun.push(function () {
   FS.mkdir('/keep');
@@ -85,11 +95,18 @@ Module.preRun.push(function () {
     removeRunDependency('keep');
   });
   var last = 0;       // write /h1 back a few seconds after it changes
-  setInterval(function () {
+  function syncIfChanged() {
     if (!FS.analyzePath(H1).exists) return;
     var m = FS.stat(H1).mtime.getTime();
     if (m !== last) { last = m; keepSync(); }
-  }, 3000);
+  }
+  setInterval(syncIfChanged, 3000);
+  // and at once when the page is hidden or closed, rather than losing the
+  // last few seconds of writes (hidden is the one a phone reliably sends)
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') syncIfChanged();
+  });
+  window.addEventListener('pagehide', syncIfChanged);
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 });
 Module.os9h1 = {

@@ -464,7 +464,7 @@ survives a reload, and "Save /h1" downloads it again. A file you open this way
 never leaves your machine: the page has no network code.
 
 `?run=<command>` types a command once the system has started, which is what a
-"try it" link uses.
+"try it" link uses. It is typed, not run: the reader presses Enter.
 
 What this build does not have: sockets, so nothing networked runs (a browser
 cannot open TCP at all, and socket paths say so); host directories, so a disk

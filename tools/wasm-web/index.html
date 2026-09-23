@@ -111,8 +111,13 @@
     const file = $('pick').files[0];
     if (!file) return;
     // Attaching restarts the emulator, because /h1 is picked up at startup.
+    // The /h1 it replaces exists only in this browser, so say so.
+    const old = Module.os9h1.name();
     if (!confirm('Open ' + file.name + ' as /h1?\n\nIt is copied into this browser and stays on '
-                 + 'this machine. If you select OK, the emulator restarts to attach it, so anything '
+                 + 'this machine. '
+                 + (old ? 'It replaces the /h1 here now (' + old + '); save that first if you want '
+                        + 'to keep it. ' : '')
+                 + 'If you select OK, the emulator restarts to attach it, so anything '
                  + 'running now is lost.')) {
       $('pick').value = '';
       return;
@@ -139,13 +144,16 @@
   // ?run=<command>: type <command> for the reader once the system is ready --
   // the first time its output has been quiet for READY_QUIET_MS, which after
   // boot is the login prompt. It is typed where the reader can see it, exactly
-  // as a card shows it. &needs=h1: only once the reader's own OS-9 is attached
-  // as /h1; until then, say so. Attaching reloads this same address, so the
-  // command then runs.
+  // as a card shows it, and NOT entered: the reader presses Enter. A link is
+  // anybody's to write, and the reader's own /h1 is on the other end of it.
+  // For the same reason nothing in it below a space is typed, so it cannot
+  // carry an Enter of its own. &needs=h1: only once the reader's own OS-9 is
+  // attached as /h1; until then, say so. Attaching reloads this same address,
+  // so the command is then typed.
   const params = new URLSearchParams(location.search);
-  const runCmd = params.get('run');
+  const runCmd = params.get('run')?.replace(/[\x00-\x1f\x7f]/g, '') || null;
   const READY_QUIET_MS = 800;
-  let quietTimer = null, typedRun = false;
+  let quietTimer = null, typedRun = false, runWaiting = false;
   function armRun() {
     if (!runCmd || typedRun) return;
     clearTimeout(quietTimer);
@@ -165,7 +173,8 @@
                        'Use "Open disk as /h1…" and it will run.');
       return;
     }
-    typeText(runCmd + '\r');
+    typeText(runCmd);
+    runWaiting = true;
   }
 
   // Send what a Unix terminal sends: Enter as LF, which the emulator's
@@ -178,13 +187,14 @@
   // own reading, so a command WE typed at startup could not be recalled that
   // way. Here Ctrl-A types it again, unexecuted, exactly as the reader would
   // have typed it -- but only until a line of their own has been entered, after
-  // which the key belongs to the guest again.
+  // which the key belongs to the guest again. The Enter that runs the typed
+  // command is not a line of their own.
   let ownLineEntered = false;
   term.onData((data) => {
     for (const ch of data) {
       const c = ch.charCodeAt(0);
       if (c === 0x01 && typedRun && !ownLineEntered) { typeText(runCmd); continue; }
-      if (c === 0x0d) ownLineEntered = true;
+      if (c === 0x0d) { if (runWaiting) runWaiting = false; else ownLineEntered = true; }
       Module.os9keys.push(KEYMAP[c] ?? c);
     }
   });
