@@ -916,18 +916,33 @@ static void fill_s( char** b, const char* end, const char* s )
 
 
 
-static void go_thru_list( char* v0, char* b0, const char* bEnd, uint32_t inetAddr )
-/* adapt "localhost" at the "inetdb" module.
- * <bEnd> is one past the last writable byte of the module's hosts field, so the
- * host-supplied names below cannot be written past it -- see fill_s. */
+static const char* list_name_end( const char* v, const char* vEnd )
+/* One past the NUL that ends the name at <v>, or NULL when the name runs to
+ * <vEnd> without one. */
 {
-    char      *v, *b, *blk, *bBlk;
+    const char* nul= v<vEnd ? memchr( v, NUL, (size_t)(vEnd-v) ) : NULL;
+    return nul==NULL ? NULL : nul+1;
+} /* list_name_end */
+
+
+
+static void go_thru_list( const char* v0, const char* vEnd, char* b0, const char* bEnd, uint32_t inetAddr )
+/* adapt "localhost" at the "inetdb" module.
+ * <v0>..<vEnd> is a copy of the module's hosts field and <b0>..<bEnd> the field
+ * itself, which is rewritten from the copy only when "localhost" is found with
+ * another address. Otherwise the field is left exactly as loaded.
+ * Every count, jump and name in the copy comes out of the module, so none of
+ * them is trusted: a walk that would leave <vEnd> stops, and nothing is
+ * written at or past <bEnd> -- the host-supplied names included, see fill_s. */
+{
+    const char *v, *blk, *next;
+    char       *b, *bBlk;
     /* byte*, not uint32_t*: the 4-byte inetaddr lives at <blk>+2 (right after the
      * 2-byte jump field), so it is only ever 2-aligned -- dereferencing it as a
      * uint32_t* was a misaligned access, the same undefined behaviour fixed in
      * os9_ll.h's GET_OS9L/SET_OS9L. Read it out with memcpy into <ipaVal>
      * instead; the byte pointer is still what the memcpy below wants as source. */
-    byte      *ipa;
+    const byte *ipa;
     uint32_t   ipaVal;
     /* Counts and byte lengths, so UNSIGNED 16-bit. These were plain `short`:
        a block length of 0x8000 or more read back negative and `blk+=jump`
@@ -950,41 +965,48 @@ static void go_thru_list( char* v0, char* b0, const char* bEnd, uint32_t inetAdd
        gets a temporary rather than being used inline. */
     const uint32_t wantAddr= (uint32_t)os9_long( inetAddr );
 
+    const size_t head= sizeof(uint16_t)+sizeof(uint32_t); /* jump + inetaddr */
     Boolean lFound= false;
 
+    if (vEnd-v0 < (ptrdiff_t)sizeof(uint16_t)) return;
     n= GET_OS9W( v0, 0 );                    /* number of entries */
-    memcpy( b0, v0, sizeof(uint16_t) );      /* copied RAW: still 68k order */
-
     v0+= sizeof(uint16_t); /* skip the number of entries entry */
-    b0+= sizeof(uint16_t);
-    
+
     v= v0;
     for (i=0; i<n; i++) {
+        if (vEnd-v < (ptrdiff_t)head) return;
         blk= v;             v+= sizeof(uint16_t); jump= GET_OS9W( blk, 0 );
-        ipa= (byte*)v;      v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
+        ipa= (const byte*)v; v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
         memcpy( &ipaVal, ipa, sizeof(ipaVal) );
 
         while (true) {
+            next= list_name_end( v, vEnd );
+            if (next==NULL) return;          /* a name with no end: not a layout we know */
             if (ustrcmp( v,"localhost" )==0) {
                 lFound= true;
                 if (ipaVal==wantAddr) return; /* everything is perfect already */
             }
 
-            v= v+strlen(v)+1;
-            if (*v==NUL) break;
+            v= next;
+            if (v>=vEnd || *v==NUL) break;
         } /* while */
-        if (lFound) break;
-
-        blk+= jump;
-        v   = blk;
+        if (jump<head || jump>vEnd-blk) return;
+        v= blk+jump;
     } /* for */
     if (!lFound) return; /* probably not enough room to put "localhost" in */
 
+    /* Only now is the field rewritten, so the returns above leave it intact. */
+    memset( b0, 0, (size_t)(bEnd-b0) );
+    memcpy( b0, v0-sizeof(uint16_t), sizeof(uint16_t) ); /* copied RAW: still 68k order */
+    b= b0+sizeof(uint16_t);
+
     v= v0;
-    b= b0;
     for (i=0; i<n; i++) {
+        /* The walk above proved every entry of the copy; the field can still
+           run out when "localhost" is added, and then the rest is dropped. */
+        if (bEnd-b < (ptrdiff_t)head) return;
         blk =             v;  v+= sizeof(uint16_t); jump= GET_OS9W( blk, 0 );
-        ipa = (byte*)v;       v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
+        ipa = (const byte*)v; v+= sizeof(uint32_t); /* get the 4-byte inetaddr */
         memcpy( &ipaVal, ipa, sizeof(ipaVal) );
 
         bBlk=         b;       b+= sizeof(uint16_t);
@@ -996,11 +1018,10 @@ static void go_thru_list( char* v0, char* b0, const char* bEnd, uint32_t inetAdd
         if (ipaVal==wantAddr) fill_s( &b,bEnd, "localhost" );
         fill_s( &b,bEnd, ""         ); /* one additional NUL char */
         
-        if ((ulong)b%2==1) b++; /* make address even */
+        if ((uintptr_t)b%2==1 && b<bEnd) b++; /* make address even */
         SET_OS9W( bBlk, 0, (uint16_t)(b-bBlk) );
 
-        blk+= jump;
-        v   = blk; 
+        v= blk+jump;
     } /* for */
 } /* go_thru_list */
 
@@ -1057,10 +1078,9 @@ static void adapt_inetdb( mod_exec* mh, uint32_t inetAddr, uint32_t dns1, uint32
           ("# adapt_inetdb: no memory for a %u-byte copy of the hosts field, left alone\n", size) );
         return;
     }
-    memcpy( v0,b0,    size );
-    memset(    b0, 0, size ); /* clear the whole original field */
+    memcpy( v0,b0, size );
 
-    go_thru_list( v0,b0,bL, inetAddr );  /* rearrange the field */
+    go_thru_list( v0,v0+size, b0,bL, inetAddr );  /* rearrange the field */
 
     release_mem( v0 );
 
