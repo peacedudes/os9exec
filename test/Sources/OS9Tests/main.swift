@@ -6852,6 +6852,61 @@ do {
     }
 }
 
+// ── 68881: a double result is stored exactly, and x/0 is an infinity ──────────
+// The FPU emulation (UAE's fpp.c) rebuilt a double with frexp and "rounded" it by
+// adding half an ULP to a value that already had exactly 53 bits; that add rounded
+// to even, so every odd mantissa was stored one ULP high: 3/10 as ...334, 1/3 as
+// ...556. An infinity went through frexp as well and came out as garbage
+// ($3FFFFFFFFFFFFFFF, which BASIC09 under math881 printed as 2.). Found by the
+// skills session. The FPU instructions are written as words so that the test
+// does not depend on the assembler knowing them: fmove.d (a0),fp0 / fdiv.d
+// (a1),fp0 / fmove.d fp0,(a2).
+do {
+    func divide(_ num: String, _ den: String) -> [String] {
+        ["  lea \(num)(pc),a0", "  dc.w $F210,$5400", "  lea \(den)(pc),a1", "  dc.w $F211,$5420",
+         "  lea (a6),a2", "  dc.w $F212,$7400"]
+    }
+    let fpuAsm = ([
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$WritLn equ $8C",
+        "  psect mfdiv,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:"] + divide("three", "ten") + [
+        "  cmpi.l #$3FD33333,(a2)", "  bne.s wrong", "  cmpi.l #$33333333,4(a2)", "  bne.s wrong"] +
+        divide("one", "three") + [
+        "  cmpi.l #$3FD55555,(a2)", "  bne.s wrong", "  cmpi.l #$55555555,4(a2)", "  bne.s wrong"] +
+        divide("five", "zero") + [
+        "  cmpi.l #$7FF00000,(a2)", "  bne.s wrong", "  tst.l 4(a2)", "  bne.s wrong",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "wrong:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "one:   dc.l $3FF00000,0", "three: dc.l $40080000,0", "five:  dc.l $40140000,0",
+        "ten:   dc.l $40240000,0", "zero:  dc.l 0,0",
+        "mok:  dc.b \"FDIV STORED EXACTLY\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"FDIV STORED WRONG\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ]).joined(separator: "\r")
+
+    let name = "fpu: a 68881 double is stored exactly (3/10, 1/3) and 5/0 stores as an infinity"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? fpuAsm.write(toFile: scratchDisk + "/mfdiv.a", atomically: true, encoding: .utf8)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/mfdiv.a -o=/h5/mfdiv.r", "l68 /h5/mfdiv.r -o=/h5/mfdiv",
+                       "/h5/mfdiv"], timeout: 30)
+        if out.contains("FDIV STORED EXACTLY") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("FDIV") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mfdiv.a", "mfdiv.r", "mfdiv"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$SRqMem with -1 allocates the largest free block ─────────────────────────
 // "If -1 is passed in d0.l, the largest block of free memory is allocated to
 // the calling process" (p.1-56). os9exec granted a fixed 8 MB however much was
