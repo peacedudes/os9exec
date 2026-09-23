@@ -10,7 +10,12 @@
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
                font: 14px -apple-system, system-ui, sans-serif; }
   body { display: flex; flex-direction: column; }
-  header { padding: 8px 16px; color: var(--dim); }
+  header { padding: 8px 16px; color: var(--dim); display: flex; gap: 12px;
+           align-items: center; flex-wrap: wrap; }
+  #status { flex: 1; min-width: 12em; }
+  header button { font: inherit; color: var(--fg); background: #1f262d; border: 1px solid #30363d;
+                  border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  header button:disabled { opacity: 0.4; cursor: default; }
   #term { flex: 1; padding: 0 16px 16px; min-height: 0; }
   /* Visual bell, like Terminal's "flash screen": an even wash over the whole
      terminal, the same however much text is showing. */
@@ -21,7 +26,14 @@
 </style>
 </head>
 <body>
-<header id="status">OS9exec: loading the emulator and its disk...</header>
+<header>
+  <span id="status">OS9exec: loading the emulator and its disk...</span>
+  <span id="h1name"></span>
+  <button id="attach" disabled title="Open an RBF disk image from this computer as /h1. It is copied into this browser and stays on this machine; nothing is sent anywhere. Safari's own dialog says &quot;Upload&quot;, which it is not.">Open disk as /h1…</button>
+  <button id="save" disabled title="Download /h1 as it is now">Save /h1</button>
+  <button id="detach" disabled title="Remove /h1 from this browser">Detach /h1</button>
+  <input id="pick" type="file" hidden>
+</header>
 <div id="term"></div>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
@@ -66,6 +78,7 @@
     // Collected and drawn once per frame: one terminal write per byte made
     // output arrive in visible stutters.
     os9out: (c) => {
+      armRun();
       if (gaps) { const t = performance.now(); note(gaps.emu, t, lastByte); lastByte = t; }
       pending.push(c & 0xff);
       if (pending.length === 1) requestAnimationFrame((t) => {
@@ -76,11 +89,82 @@
     os9status: (text) => { document.getElementById('status').textContent = 'OS9exec: ' + text; },
     onRuntimeInitialized: () => {
       document.getElementById('status').textContent = 'OS9exec: running. Click the terminal to type.';
+      showH1();
     },
     onExit: (code) => {
       document.getElementById('status').textContent = 'OS9exec: emulation ended (' + code + '). Reload to start again.';
     },
   };
+  // /h1: a disk image of the user's, kept in this browser between visits (pre.js).
+  // Attaching or detaching restarts the emulator, which finds /h1 at startup.
+  const $ = (id) => document.getElementById(id);
+  function showH1() {
+    const name = Module.os9h1.name();
+    $('h1name').textContent = name ? '/h1: ' + name : '';
+    $('attach').disabled = false;
+    // No `accept` filter: an OS-9 image is any name at all, and a filter greys
+    // out the very file the reader saved from here.
+    $('save').disabled = $('detach').disabled = !name;
+  }
+  $('attach').onclick = () => $('pick').click();
+  $('pick').onchange = async () => {
+    const file = $('pick').files[0];
+    if (!file) return;
+    // Attaching restarts the emulator, because /h1 is picked up at startup.
+    if (!confirm('Open ' + file.name + ' as /h1?\n\nIt is copied into this browser and stays on '
+                 + 'this machine. If you select OK, the emulator restarts to attach it, so anything '
+                 + 'running now is lost.')) {
+      $('pick').value = '';
+      return;
+    }
+    Module.os9status('opening ' + file.name + ' into this browser (it stays on this machine)...');
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    Module.os9h1.attach(file.name, bytes, () => location.reload());
+  };
+  $('save').onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([Module.os9h1.image()]));
+    a.download = Module.os9h1.name();
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    term.focus();
+  };
+  $('detach').onclick = () => {
+    if (confirm('Remove /h1 (' + Module.os9h1.name() + ') from this browser?\n\nSave it first if you '
+                + 'want to keep it. If you select OK, the emulator restarts, so anything running now '
+                + 'is lost.'))
+      Module.os9h1.detach(() => location.reload());
+  };
+
+  // ?run=<command>: type <command> for the reader once the system is ready --
+  // the first time its output has been quiet for READY_QUIET_MS, which after
+  // boot is the login prompt. It is typed where the reader can see it, exactly
+  // as a card shows it. &needs=h1: only once the reader's own OS-9 is attached
+  // as /h1; until then, say so. Attaching reloads this same address, so the
+  // command then runs.
+  const params = new URLSearchParams(location.search);
+  const runCmd = params.get('run');
+  const READY_QUIET_MS = 800;
+  let quietTimer = null, typedRun = false;
+  function armRun() {
+    if (!runCmd || typedRun) return;
+    clearTimeout(quietTimer);
+    quietTimer = setTimeout(typeRun, READY_QUIET_MS);
+  }
+  function typeRun() {
+    if (typedRun) return;
+    typedRun = true;
+    if (params.get('needs') === 'h1' && !Module.os9h1.name()) {
+      Module.os9status('"' + runCmd + '" needs your own OS-9 system attached as /h1. ' +
+                       'Use "Open disk as /h1…" and it will run.');
+      return;
+    }
+    for (const ch of runCmd + '\r') {
+      const c = ch.charCodeAt(0);
+      Module.os9keys.push(KEYMAP[c] ?? c);
+    }
+  }
+
   // Send what a Unix terminal sends: Enter as LF, which the emulator's
   // console swaps to OS-9's CR (consio.c), exactly as for a native terminal.
   // Backspace as BS, where xterm sends DEL.

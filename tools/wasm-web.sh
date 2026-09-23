@@ -65,6 +65,48 @@ Module.preRun.push(function () {
     })
     .catch(function (e) { Module.os9status('could not load the disk: ' + e.message); });
 });
+
+// /h1 lives in the browser's own storage (IndexedDB, via Emscripten's IDBFS),
+// so what a program writes there outlives a reload. It is loaded before main()
+// and becomes /h1 as OS9H1 does natively; the page attaches, saves and detaches
+// it through Module.os9h1.
+var H1 = '/keep/h1.dsk', H1NAME = '/keep/h1.name', syncing = false;
+function keepSync(done) {
+  if (syncing) { if (done) done(); return; }
+  syncing = true;
+  FS.syncfs(false, function (err) { syncing = false; if (done) done(err); });
+}
+Module.preRun.push(function () {
+  FS.mkdir('/keep');
+  FS.mount(IDBFS, {}, '/keep');
+  addRunDependency('keep');
+  FS.syncfs(true, function () {
+    if (FS.analyzePath(H1).exists) ENV.OS9H1 = H1;
+    removeRunDependency('keep');
+  });
+  var last = 0;       // write /h1 back a few seconds after it changes
+  setInterval(function () {
+    if (!FS.analyzePath(H1).exists) return;
+    var m = FS.stat(H1).mtime.getTime();
+    if (m !== last) { last = m; keepSync(); }
+  }, 3000);
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+});
+Module.os9h1 = {
+  name: function () {
+    return FS.analyzePath(H1).exists
+      ? (FS.analyzePath(H1NAME).exists ? FS.readFile(H1NAME, { encoding: 'utf8' }) : 'h1.dsk') : null;
+  },
+  attach: function (name, bytes, done) {
+    FS.writeFile(H1, bytes); FS.writeFile(H1NAME, name); keepSync(done);
+  },
+  image: function () { return FS.readFile(H1); },
+  detach: function (done) {
+    if (FS.analyzePath(H1).exists) FS.unlink(H1);
+    if (FS.analyzePath(H1NAME).exists) FS.unlink(H1NAME);
+    keepSync(done);
+  },
+};
 JS
 
 args='"-q"'; for a in "${BOOT[@]}"; do args="$args, \"$a\""; done
@@ -82,7 +124,7 @@ SRCS=$(cd "$REPO" && make -n -B 2>/dev/null | grep -aoE '[A-Za-z0-9_./]+\.c' | s
     -ISource/OS9AppEmu/UAE68emulator -ISource/OS9AppEmu \
     -sASYNCIFY -sALLOW_MEMORY_GROWTH -sEXIT_RUNTIME=1 \
     -sINITIAL_MEMORY=268435456 -sSTACK_SIZE=8388608 \
-    -sEXPORTED_RUNTIME_METHODS=ENV,FS -sENVIRONMENT=web \
+    -sEXPORTED_RUNTIME_METHODS=ENV,FS -sENVIRONMENT=web -lidbfs.js \
     --pre-js "$OUT/pre.js" "${PRELOAD[@]}" ) || exit 1
 
 rm -f "$OUT/pre.js"
