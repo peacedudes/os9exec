@@ -289,6 +289,13 @@ build_68k() {
     if grep -aq 'fatal' /tmp/conf68k-build.log; then
         echo "  assembler refused a source -- see /tmp/conf68k-build.log" >&2; return 1
     fi
+    # The linker has errors of its own that r68's count never sees, and it
+    # still writes the module: "l68: error - operand size error" for a vsect
+    # offset used where only a byte displacement fits left a t69 that died at
+    # run time, reported as MISSING rather than as the build failure it was.
+    if grep -aq 'l68: error' /tmp/conf68k-build.log; then
+        echo "  the linker reported an error -- see /tmp/conf68k-build.log" >&2; return 1
+    fi
     rm -f "$dir"/SCRATCH/*.r
     for n in "${MODULES[@]}"; do
         [ -s "$dir/CMDS/$n" ] || { echo "  $n did not build" >&2; return 1; }
