@@ -119,6 +119,7 @@ void  os9_tick_stop (void);
 
 const funcdispatch_entry *getfuncentry(ushort func);
 
+void bank_user_ticks        ( ushort pid );
 void os9_to_xxx             ( ushort pid );
 void xxx_to_arb( ushort func, ushort pid );
 void arb_to_os9( Boolean last_arbitrate  );

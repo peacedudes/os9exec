@@ -435,6 +435,20 @@ static ulong DiffTick( void )
 
 
 
+void bank_user_ticks( ushort pid )
+/* The process's 68k code has just stopped running, for whatever reason. What
+   it ran since the last accounting point is its own user time. On the way to a
+   system call os9_to_xxx would find that anyway, but a process the system tick
+   pre-empts goes straight to arbitration, and arb_to_os9 then booked all of it
+   to arbitration: a program that computes without system calls saw clock()
+   stand still (Whetstone divided by zero). Banked here, it is added to the
+   process at its next system call, which is where anything can look. */
+{
+    procs[pid].upend+= DiffTick();
+} /* bank_user_ticks */
+
+
+
 void os9_to_xxx( ushort pid )
 /* Get systime ticks on the way from OS-9 to XXX command */
 {
@@ -443,10 +457,11 @@ void os9_to_xxx( ushort pid )
   mod_exec*    mod;
   st_typ       *s, *sj, *sj1;
   Boolean      eli= false; /* end of list */
-  ulong        a= DiffTick();
   process_typ* cp= &procs[ pid ];
+  ulong        a = DiffTick() + cp->upend; /* with what ran before a pre-emption */
   procid*      pd= &cp->pd;
-    
+
+  cp->upend= 0;
   /* try to measure ticks */
   os9_long_inc( &pd->_uticks, a ); /* info for F$GPrDsc */
 
@@ -915,6 +930,7 @@ void init_syscalltimers(void)
                                      cp->pd._uticks= 0;
                                      cp->fticks    = 0;       cp->pd._fcalls= 0; 
                                      cp->iticks    = 0;       cp->pd._icalls= 0;
+                                     cp->upend     = 0;
                                      cp->pd._sticks= os9_long(cp->fticks + cp->iticks); }
 
     for (k=0; k<MAX_OS9PROGS; k++) { strcpy( statistics[k].name,"" );

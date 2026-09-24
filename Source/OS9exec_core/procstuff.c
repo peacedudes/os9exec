@@ -427,6 +427,7 @@ os9err new_process(ushort parentid, ushort *newpid, ushort numpaths)
             cp->pd._uticks= 0;
             cp->fticks    = 0;
             cp->iticks    = 0;
+            cp->upend     = 0;
             cp->pd._sticks= os9_long(cp->fticks + cp->iticks);
             
             /* julian time and date */

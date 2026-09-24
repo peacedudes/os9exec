@@ -8755,6 +8755,63 @@ do {
     try? FileManager.default.removeItem(atPath: scratchDisk + "/mwrapf")
 }
 
+// ── accounting: a process that computes without system calls is charged for it ─
+// The C library's clock() reads the process's user ticks (P$UTicks, through
+// F$GPrDsc). They were counted only from one system call to the next, and a
+// process the system tick pre-empted had its time booked to the arbitrator, so
+// a program computing without calls saw clock() stand still: the Whetstone
+// benchmark divided by zero. Found by the osk-freeware session. The program
+// reads P$UTicks and the wall clock around a loop with no calls in it; its own
+// ticks must be at least half of the wall ticks, and some.
+do {
+    let ticksAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$ID equ $0C", "F$Exit equ $06", "F$Time equ $15", "F$GPrDsc equ $18", "I$WritLn equ $8C",
+        "  psect mutick,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,8192,start",
+        "start:",
+        "  bsr.s uticks", "  move.l d0,d6", "  bsr.w now", "  move.l d4,d7",
+        "  move.l #30000000,d5",
+        "spin:", "  subq.l #1,d5", "  bne.s spin",
+        "  bsr.s uticks", "  sub.l d6,d0", "  move.l d0,d6", "  bsr.w now", "  sub.l d7,d4",
+        "  cmpi.l #10,d4", "  blt.s bad",       // the loop must have taken some time
+        "  add.l d6,d6", "  cmp.l d4,d6", "  blt.s bad",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        // d0 = this process's P$UTicks
+        "uticks:", "  OS9 F$ID", "  move.w #$800,d1", "  lea (a6),a0", "  OS9 F$GPrDsc",
+        "  move.l $2B4(a6),d0", "  rts",
+        // d4 = seconds since midnight * 100 + current tick
+        "now:", "  moveq #3,d0", "  OS9 F$Time",
+        "  move.l d0,d4", "  move.l d0,d5", "  move.l d0,d1",
+        "  lsl.l #6,d4", "  lsl.l #5,d5", "  lsl.l #2,d1", "  add.l d5,d4", "  add.l d1,d4",
+        "  moveq #0,d5", "  move.w d3,d5", "  add.l d5,d4", "  rts",
+        "mok:  dc.b \"USER TICKS COUNTED\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"USER TICKS MISSING\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "accounting: a process computing without system calls gets its user ticks (clock())"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? ticksAsm.write(toFile: scratchDisk + "/mutick.a", atomically: true, encoding: .utf8)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/mutick.a -o=/h5/mutick.r", "l68 /h5/mutick.r -o=/h5/mutick",
+                       "/h5/mutick"], timeout: 120)
+        if out.contains("USER TICKS COUNTED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("TICKS") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mutick.a", "mutick.r", "mutick"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$Sleep: a few 256ths of a second still sleep ──────────────────────────────
 // "If the high order bit of d0.l is set, the low 31 bits are converted from
 // 256ths of a second into ticks" (F$Sleep, p.1-58); F$Alarm, for the same
@@ -9010,63 +9067,6 @@ do {
     }
 }
 
-// ── sockets: a dropped connection is a write error, not the emulator's death ──
-// A write to a connection the far end has dropped raises SIGPIPE, whose default
-// action ended os9exec itself -- every OS-9 process with it, exit 141, from one
-// tcpsend. The listener here accepts and at once resets the connection, so
-// tcpsend's first write meets a dead socket; it must get a write error and the
-// shell must still be there to run the next command.
-do {
-    let name = "net: a write to a dropped connection fails in the guest, the emulator lives"
-    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
-        if containerized {
-            print("SKIP: \(name) (the container cannot reach the host's loopback)")
-        } else {
-            let port: UInt16 = 27000          // the port tcpsend connects to
-            let listenFd = socket(AF_INET, streamSocketType, 0)
-            var yes: Int32 = 1
-            setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
-            var addr = sockaddr_in()
-            addr.sin_family = sa_family_t(AF_INET)
-            addr.sin_port = port.bigEndian
-            addr.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
-            let bound = withUnsafePointer(to: &addr) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    bind(listenFd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
-            }
-            if listenFd < 0 || bound != 0 || listen(listenFd, 1) != 0 {
-                if listenFd >= 0 { close(listenFd) }
-                print("SKIP: \(name) (port \(port) is not available here)")
-            } else {
-                // accept, then reset: a close that sends RST instead of FIN
-                let done = DispatchSemaphore(value: 0)
-                DispatchQueue.global().async {
-                    let conn = accept(listenFd, nil, nil)
-                    if conn >= 0 {
-                        var hard = linger(l_onoff: 1, l_linger: 0)
-                        setsockopt(conn, SOL_SOCKET, SO_LINGER, &hard, socklen_t(MemoryLayout<linger>.size))
-                        close(conn)
-                    }
-                    done.signal()
-                }
-
-                let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
-                               "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
-                               "tcpsend localhost /dd/SYS/errmsg",
-                               "echo EMULATOR-STILL-HERE"], timeout: 30)
-                _ = done.wait(timeout: .now() + 10)
-                close(listenFd)
-
-                if out.contains("EMULATOR-STILL-HERE") {
-                    print("PASS: \(name)")
-                    passed += 1
-                } else {
-                    print("FAIL: \(name)")
-                    let seen = out.split(whereSeparator: \.isNewline).filter {
-                        $0.contains("tcpsend") || $0.contains("rror") || $0.contains("Sending")
-                    }
-                    print("      out: \(seen.joined(separator: " | "))")
 // ── sockets: a listening socket is ready when a connection is waiting ─────────
 // A server may poll its listening path with SS_Ready before accepting, as boa
 // (the OSK web server, written for ISP) does. The answer was always E$NotRdy on
@@ -9154,6 +9154,63 @@ do {
     }
 }
 
+// ── sockets: a dropped connection is a write error, not the emulator's death ──
+// A write to a connection the far end has dropped raises SIGPIPE, whose default
+// action ended os9exec itself -- every OS-9 process with it, exit 141, from one
+// tcpsend. The listener here accepts and at once resets the connection, so
+// tcpsend's first write meets a dead socket; it must get a write error and the
+// shell must still be there to run the next command.
+do {
+    let name = "net: a write to a dropped connection fails in the guest, the emulator lives"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(name) (the container cannot reach the host's loopback)")
+        } else {
+            let port: UInt16 = 27000          // the port tcpsend connects to
+            let listenFd = socket(AF_INET, streamSocketType, 0)
+            var yes: Int32 = 1
+            setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = port.bigEndian
+            addr.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
+            let bound = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(listenFd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            if listenFd < 0 || bound != 0 || listen(listenFd, 1) != 0 {
+                if listenFd >= 0 { close(listenFd) }
+                print("SKIP: \(name) (port \(port) is not available here)")
+            } else {
+                // accept, then reset: a close that sends RST instead of FIN
+                let done = DispatchSemaphore(value: 0)
+                DispatchQueue.global().async {
+                    let conn = accept(listenFd, nil, nil)
+                    if conn >= 0 {
+                        var hard = linger(l_onoff: 1, l_linger: 0)
+                        setsockopt(conn, SOL_SOCKET, SO_LINGER, &hard, socklen_t(MemoryLayout<linger>.size))
+                        close(conn)
+                    }
+                    done.signal()
+                }
+
+                let out = os9(["load /dd/CMDS/BOOTOBJS/SPF/inetdb",
+                               "load /dd/CMDS/BOOTOBJS/SPF/netdb_local",
+                               "tcpsend localhost /dd/SYS/errmsg",
+                               "echo EMULATOR-STILL-HERE"], timeout: 30)
+                _ = done.wait(timeout: .now() + 10)
+                close(listenFd)
+
+                if out.contains("EMULATOR-STILL-HERE") {
+                    print("PASS: \(name)")
+                    passed += 1
+                } else {
+                    print("FAIL: \(name)")
+                    let seen = out.split(whereSeparator: \.isNewline).filter {
+                        $0.contains("tcpsend") || $0.contains("rror") || $0.contains("Sending")
+                    }
+                    print("      out: \(seen.joined(separator: " | "))")
                     failed += 1
                 }
             }

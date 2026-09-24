@@ -2280,6 +2280,8 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
           #endif
           // and close it again
 
+          if (logtiming) bank_user_ticks( cpid ); /* its own time, however it stopped */
+
           // --- and now exec syscall
           cp->vector= hiword(resL);
           cp->func  = loword(resL);
