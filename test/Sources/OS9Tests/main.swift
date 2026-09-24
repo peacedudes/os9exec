@@ -8840,6 +8840,70 @@ do {
     }
 }
 
+// ── accounting: another process sees a computing process's ticks as they grow ──
+// The ticks a process runs before the system tick pre-empts it were held back
+// until its next system call. A process that computes without calls then never
+// had its P$UTicks move, so anything reading its descriptor from outside (procs,
+// a profiler) saw no CPU time at all. Found reviewing the fix above. A child
+// spins with no calls; its parent sleeps a second, reads the child's P$UTicks
+// through F$GPrDsc and must see at least 10, then kills it. Needs the tick: with
+// it off nothing pre-empts the child and the parent never runs again.
+do {
+    let spinAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "  psect mspin,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "start:", "spin:", "  bra.s spin", "  ends", ""
+    ].joined(separator: "\r")
+    let watchAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Fork equ $03", "F$Wait equ $04", "F$Exit equ $06", "F$Send equ $08", "F$Sleep equ $0A",
+        "F$GPrDsc equ $18", "I$WritLn equ $8C",
+        "  psect mwatch,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,8192,start",
+        "start:",
+        "  lea child(pc),a0", "  lea parm(pc),a1", "  moveq #0,d0", "  moveq #0,d1", "  moveq #1,d2",
+        "  moveq #3,d3", "  moveq #0,d4", "  OS9 F$Fork", "  bcs.s bad", "  move.w d0,d7",
+        "  moveq #100,d0", "  OS9 F$Sleep",
+        "  move.w d7,d0", "  move.w #$800,d1", "  lea (a6),a0", "  OS9 F$GPrDsc", "  bcs.s bad",
+        "  move.l $2B4(a6),d6",
+        "  move.w d7,d0", "  moveq #0,d1", "  OS9 F$Send", "  OS9 F$Wait",
+        "  cmpi.l #10,d6", "  blt.s bad",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "child: dc.b \"/h5/mspin\",0", "parm: dc.b $0D",
+        "mok:  dc.b \"OBSERVER SEES THE TICKS\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"OBSERVER SEES NO TICKS\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "accounting: another process reads a computing process's user ticks as they grow"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if (ProcessInfo.processInfo.environment["OS9_FLAGS"] ?? "").contains("-q") {
+            print("SKIP: \(name) (the system tick is off, so nothing pre-empts the child)")
+        } else {
+            try? spinAsm.write(toFile: scratchDisk + "/mspin.a", atomically: true, encoding: .utf8)
+            try? watchAsm.write(toFile: scratchDisk + "/mwatch.a", atomically: true, encoding: .utf8)
+            let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                           "r68 /h5/mspin.a -o=/h5/mspin.r", "l68 /h5/mspin.r -o=/h5/mspin",
+                           "r68 /h5/mwatch.a -o=/h5/mwatch.r", "l68 /h5/mwatch.r -o=/h5/mwatch",
+                           "/h5/mwatch"], timeout: 60)
+            if out.contains("OBSERVER SEES THE TICKS") {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                let seen = out.split(whereSeparator: \.isNewline)
+                    .filter { $0.contains("OBSERVER") || $0.contains("Error") }
+                print("      saw: \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+        }
+        for leftover in ["mspin.a", "mspin.r", "mspin", "mwatch.a", "mwatch.r", "mwatch"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$Sleep: a few 256ths of a second still sleep ──────────────────────────────
 // "If the high order bit of d0.l is set, the low 31 bits are converted from
 // 256ths of a second into ticks" (F$Sleep, p.1-58); F$Alarm, for the same

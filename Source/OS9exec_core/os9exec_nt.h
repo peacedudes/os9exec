@@ -1308,8 +1308,8 @@ typedef struct {
                 /* statistics */
                 ulong            fticks;    /* number of ticks at fcalls */
                 ulong            iticks;    /* number of ticks at icalls */
-                ulong            upend;     /* user ticks run since its last system call,
-                                               banked when the system tick pre-empted it */
+                ulong            upend;     /* user ticks since its last system call, already
+                                               in P$UTicks, still owed to systime's statistics */
                                   
                 /* memory */
                 os9addr_t memstart;         /* the process' static storage start addr (68k arena offset) */

@@ -441,10 +441,14 @@ void bank_user_ticks( ushort pid )
    system call os9_to_xxx would find that anyway, but a process the system tick
    pre-empts goes straight to arbitration, and arb_to_os9 then booked all of it
    to arbitration: a program that computes without system calls saw clock()
-   stand still (Whetstone divided by zero). Banked here, it is added to the
-   process at its next system call, which is where anything can look. */
+   stand still (Whetstone divided by zero). Charged here, at once: another
+   process reading this one's descriptor (procs, a profiler) must see it too,
+   and a process computing without calls would otherwise never be charged. The
+   systime statistics take it at the process's next system call. */
 {
-    procs[pid].upend+= DiffTick();
+    ulong a= DiffTick();
+    os9_long_inc( &procs[pid].pd._uticks, a ); /* info for F$GPrDsc */
+    procs[pid].upend+= a;
 } /* bank_user_ticks */
 
 
@@ -458,12 +462,13 @@ void os9_to_xxx( ushort pid )
   st_typ       *s, *sj, *sj1;
   Boolean      eli= false; /* end of list */
   process_typ* cp= &procs[ pid ];
-  ulong        a = DiffTick() + cp->upend; /* with what ran before a pre-emption */
+  ulong        a = DiffTick();
   procid*      pd= &cp->pd;
 
-  cp->upend= 0;
   /* try to measure ticks */
   os9_long_inc( &pd->_uticks, a ); /* info for F$GPrDsc */
+  a+= cp->upend; /* the statistics also get what ran before a pre-emption, */
+  cp->upend= 0;  /* which bank_user_ticks has charged to P$UTicks already  */
 
       mid=     cp->mid;    
       mod= os9mod( mid );
