@@ -224,7 +224,8 @@ compare() {
     [ "$nskip" -gt 0 ] && printf '  %d skipped -- this device cannot exercise those claims\n' "$nskip"
     for id in $ids_got; do
         grep -qx "$id" <<<"$ids_exp" || {
-            printf '  EXTRA   %s  reported but not in DOCS/expected\n' "$id"; rc=1; }
+            printf '  EXTRA   %s  reported but not in DOCS/expected:\n          %s\n' "$id" \
+                   "$(awk -v i="$id" '$2==i' "$n_got")"; rc=1; }
     done
 
     printf '  %d of %d tests reported; %s\n' \
