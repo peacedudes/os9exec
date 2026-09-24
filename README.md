@@ -4,9 +4,9 @@ An OS-9/68k emulator: a 68020 emulator, plus a reimplementation of the OS-9
 kernel's system calls, so that unmodified OS-9 binaries run on macOS, Linux or
 Windows.
 
-The last release was V3.39, in 2007, when 32-bit hosts were still the ordinary
-case. The purpose of this update is to support 64-bit hosts as well. It builds
-and runs on 32- and 64-bit machines, big-endian and little-endian alike.
+The original authors' last release was V3.39, in 2007, when 32-bit hosts were
+still the ordinary case. V4.0.0 (2026) brought it to 64-bit hosts: it builds and
+runs on 32- and 64-bit machines, big-endian and little-endian alike.
 
 **The current release is V4.1.0**: OS-9 networking programs reach the real
 network, os9exec runs in a web browser, and a long list of fixes brings it
@@ -92,6 +92,9 @@ A binary you built yourself is not quarantined.
 ---
 
 ## What else changed
+
+Since V3.39, as V4.0.0 released it; what V4.1.0 adds is in its
+[release notes](docs/release-notes-v4.1.0.md).
 
 Parts of OS-9 that were missing or approximated, and are now implemented:
 
@@ -595,7 +598,7 @@ Their final release: **V3.39**, 11 May 2007 - archived at <https://sourceforge.n
 This continuation: <https://github.com/peacedudes/os9exec> - Robert Doggett, with Claude (Anthropic)  
 License: GNU General Public License v2 or later (see source file headers)
 
-Work in this fork: ports to Apple Silicon, modern Linux and native Windows; verification on riscv64 and on big-endian s390x and sparc64; a 68k conformance suite run against the published manuals; and fixes across the syscall surface, RBF record locking, terminal I/O and the scheduler. Roughly 800 commits on top of V3.39 - see [What else changed](#what-else-changed).
+Work in this fork: ports to Apple Silicon, modern Linux and native Windows; verification on riscv64 and on big-endian s390x and sparc64; a 68k conformance suite run against the published manuals; and fixes across the syscall surface, RBF record locking, terminal I/O and the scheduler. About 1,160 commits on top of V3.39 - see [What else changed](#what-else-changed) and the [V4.1.0 release notes](docs/release-notes-v4.1.0.md).
 
 ### Reference
 
