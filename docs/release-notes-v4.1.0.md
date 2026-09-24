@@ -27,8 +27,8 @@ directories. See the README.
 
 **Idle is idle.** An os9exec whose processes are all waiting now sleeps until something is due
 instead of polling: about 0.1% of a core, down from about 1.6%. A waiting reader or writer
-resumes when its data arrives. One exception remains, as in v4.0.0: a process waiting to write
-into a full pipe keeps a core busy until its reader catches up.
+resumes when its data arrives, and a writer waiting on a full pipe no longer keeps a core busy
+(in v4.0.0 it spun until its reader caught up).
 
 **Built-in commands.** New: `pwd` and `cd`, and `iterm`, which makes a `/tN` terminal at runtime
 the way `mount` makes an `/hX` disk. `devs` now lists host directories as well, says who is using
