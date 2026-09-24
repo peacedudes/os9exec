@@ -1561,7 +1561,7 @@ do {
             "I$Read   equ  $89",
             "I$Close  equ  $8F",
             "",
-            "  psect eofdl,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+            "  psect eofdl,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "  vsect", "scr: ds.b 4096", "  ends",
             "",
             "start:",
             "  lea     fname(pc),a0",
@@ -1578,7 +1578,7 @@ do {
             "  moveq   #3,d0",
             "  OS9     I$Open",
             "  bcs     fail",
-            "  lea     (a6),a0",
+            "  lea     scr(a6),a0",
             "  moveq   #16,d1",
             "  OS9     I$Read",
             "  bcc     wrong",
@@ -1654,7 +1654,7 @@ do {
     }
     // creates the file, holds it unwritten for a second, then writes "B"
     let creator = rbfHeader + [
-        "  psect mlkcre,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  psect mlkcre,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:",
         "  lea fname(pc),a0", "  moveq #2,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.s done",
         "  move.w d0,d7"] + sleep(100) + [
@@ -1664,7 +1664,7 @@ do {
         "fname: dc.b \"/h9/LK/new\",0", "bee: dc.b \"B\"", "  ends", ""]
     // opens the existing 11-byte file, appends "A", holds it open a second
     let appender = rbfHeader + [
-        "  psect mlkapp,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  psect mlkapp,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:",
         "  lea aname(pc),a0", "  moveq #2,d0", "  OS9 I$Open", "  bcs.s done",
         "  move.w d0,d7", "  moveq #11,d1", "  OS9 I$Seek",
@@ -1674,14 +1674,14 @@ do {
         "aname: dc.b \"/h9/LK/old\",0", "ay: dc.b \"A\"", "  ends", ""]
     // reads the new file (must wait, then get B) and the appended one (12 bytes)
     let reader = rbfHeader + [
-        "  psect mlkrd,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  psect mlkrd,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:"] + sleep(40) + [
         "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.w done",
-        "  lea (a6),a0", "  moveq #1,d1", "  OS9 I$Read", "  bcs.s notwait",
-        "  cmpi.b #'B',(a6)", "  bne.s notwait"] + say("mwait") + ["  bra.s second", "notwait:"] + say("mnowait") + [
+        "  lea scr(a6),a0", "  moveq #1,d1", "  OS9 I$Read", "  bcs.s notwait",
+        "  cmpi.b #'B',scr(a6)", "  bne.s notwait"] + say("mwait") + ["  bra.s second", "notwait:"] + say("mnowait") + [
         "second:"] + sleep(10) + [
         "  lea aname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.s done",
-        "  lea (a6),a0", "  moveq #64,d1", "  OS9 I$Read", "  bcs.s short",
+        "  lea scr(a6),a0", "  moveq #64,d1", "  OS9 I$Read", "  bcs.s short",
         "  cmpi.l #12,d1", "  bne.s short"] + say("mall") + ["  bra.s fin", "short:"] + say("mshort") + [
         "fin:", "  moveq #0,d1",
         "done:", "  OS9 F$Exit",
@@ -1805,19 +1805,19 @@ do {
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit equ $06", "I$Create equ $83", "I$Open equ $84", "I$Seek equ $88", "I$Read equ $89",
         "I$Write equ $8A", "I$WritLn equ $8C", "I$Close equ $8F",
-        "  psect mpatch,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,2048,start",
+        "  psect mpatch,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,2048,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:",
-        "  lea (a6),a0", "  move.w #511,d0",
+        "  lea scr(a6),a0", "  move.w #511,d0",
         "fill:", "  move.b #'Q',(a0)+", "  dbra d0,fill",
         "  lea fname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w fail",
         "  move.w d0,d7",
-        "  move.w d7,d0", "  lea (a6),a0", "  move.l #512,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d7,d0", "  lea scr(a6),a0", "  move.l #512,d1", "  OS9 I$Write", "  bcs.w fail",
         "  move.w d7,d0", "  move.l #500,d1", "  OS9 I$Seek", "  bcs.w fail",
         "  move.w d7,d0", "  lea zee(pc),a0", "  moveq #1,d1", "  OS9 I$Write", "  bcs.w fail",
         "  move.w d7,d0", "  OS9 I$Close",
         "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
-        "  move.w d7,d0", "  lea 512(a6),a0", "  move.l #512,d1", "  OS9 I$Read", "  bcs.w fail",
-        "  lea 512(a6),a0", "  move.w #499,d0",
+        "  move.w d7,d0", "  lea scr+512(a6),a0", "  move.l #512,d1", "  OS9 I$Read", "  bcs.w fail",
+        "  lea scr+512(a6),a0", "  move.w #499,d0",
         "c1:", "  cmpi.b #'Q',(a0)+", "  bne.s bad", "  dbra d0,c1",
         "  cmpi.b #'Z',(a0)+", "  bne.s bad", "  moveq #10,d0",
         "c2:", "  cmpi.b #'Q',(a0)+", "  bne.s bad", "  dbra d0,c2",
@@ -1866,11 +1866,11 @@ do {
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit equ $06", "I$Create equ $83", "I$Open equ $84", "I$Seek equ $88", "I$Read equ $89",
         "I$Write equ $8A", "I$WritLn equ $8C", "I$Close equ $8F",
-        "  psect mcross,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,4096,start",
+        "  psect mcross,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,4096,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:",
-        "  lea (a6),a0", "  move.w #299,d0",
+        "  lea scr(a6),a0", "  move.w #299,d0",
         "fl:", "  move.b #'L',(a0)+", "  dbra d0,fl",
-        "  lea 512(a6),a0", "  move.w #1023,d0",
+        "  lea scr+512(a6),a0", "  move.w #1023,d0",
         "fx:", "  move.b #'X',(a0)+", "  dbra d0,fx",
         "  lea lname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w fail",
         "  move.w d0,d7",
@@ -1878,16 +1878,16 @@ do {
         "  lea lname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d6",
         "  move.w d7,d0", "  OS9 I$Close",                       // at its end: it used to trim here
         "  move.w d6,d0", "  moveq #10,d1", "  OS9 I$Seek", "  bcs.w fail",
-        "  move.w d6,d0", "  lea (a6),a0", "  move.l #300,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d6,d0", "  lea scr(a6),a0", "  move.l #300,d1", "  OS9 I$Write", "  bcs.w fail",
         "  move.w d6,d0", "  OS9 I$Close",
         "  lea oname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w fail",
         "  move.w d0,d7",
-        "  move.w d7,d0", "  lea 512(a6),a0", "  move.l #1024,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d7,d0", "  lea scr+512(a6),a0", "  move.l #1024,d1", "  OS9 I$Write", "  bcs.w fail",
         "  move.w d7,d0", "  OS9 I$Close",
         "  lea lname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
         "  move.w d7,d0", "  moveq #10,d1", "  OS9 I$Seek", "  bcs.w fail",
-        "  move.w d7,d0", "  lea 2048(a6),a0", "  move.l #300,d1", "  OS9 I$Read", "  bcs.w fail",
-        "  lea 2048(a6),a0", "  move.w #299,d0",
+        "  move.w d7,d0", "  lea scr+2048(a6),a0", "  move.l #300,d1", "  OS9 I$Read", "  bcs.w fail",
+        "  lea scr+2048(a6),a0", "  move.w #299,d0",
         "ck:", "  cmpi.b #'L',(a0)+", "  bne.s bad", "  dbra d0,ck",
         "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
         "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
@@ -1940,27 +1940,27 @@ do {
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit equ $06", "I$Create equ $83", "I$Open equ $84", "I$Delete equ $87", "I$Seek equ $88",
         "I$Read equ $89", "I$Write equ $8A", "I$WritLn equ $8C", "I$GetStt equ $8D", "I$Close equ $8F",
-        "  psect mlink,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,2048,start",
+        "  psect mlink,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,2048,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:",
         "  lea aname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w fail",
         "  move.w d0,d7", "  lea hello(pc),a0", "  moveq #5,d1", "  OS9 I$Write", "  bcs.w fail",
         "  move.w d7,d0", "  OS9 I$Close",
         // find a's entry: 32-byte records, name's last byte has its top bit set
         "  lea dname(pc),a0", "  move.w #$81,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
-        "next:", "  move.w d7,d0", "  lea (a6),a0", "  moveq #32,d1", "  OS9 I$Read", "  bcs.w fail",
-        "  cmpi.b #$E1,(a6)", "  bne.s next",
-        "  moveq #0,d6", "  move.b 29(a6),d6", "  lsl.l #8,d6", "  move.b 30(a6),d6",
-        "  lsl.l #8,d6", "  move.b 31(a6),d6",                 // d6 = the FD's LSN
+        "next:", "  move.w d7,d0", "  lea scr(a6),a0", "  moveq #32,d1", "  OS9 I$Read", "  bcs.w fail",
+        "  cmpi.b #$E1,scr(a6)", "  bne.s next",
+        "  moveq #0,d6", "  move.b scr+29(a6),d6", "  lsl.l #8,d6", "  move.b scr+30(a6),d6",
+        "  lsl.l #8,d6", "  move.b scr+31(a6),d6",                 // d6 = the FD's LSN
         "  move.w d7,d0", "  OS9 I$Close",
         // append an entry "b" for the same FD
         "  lea dname(pc),a0", "  move.w #$83,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
         "  move.w d7,d0", "  moveq #2,d1", "  OS9 I$GetStt", "  bcs.w fail",   // SS_Size -> d2
         "  move.w d7,d0", "  move.l d2,d1", "  OS9 I$Seek", "  bcs.w fail",
-        "  lea 64(a6),a0", "  moveq #31,d0",
+        "  lea scr+64(a6),a0", "  moveq #31,d0",
         "clr:", "  clr.b (a0)+", "  dbra d0,clr",
-        "  move.b #$E2,64(a6)", "  move.l d6,d0", "  move.b d0,95(a6)", "  lsr.l #8,d0",
-        "  move.b d0,94(a6)", "  lsr.l #8,d0", "  move.b d0,93(a6)",
-        "  move.w d7,d0", "  lea 64(a6),a0", "  moveq #32,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.b #$E2,scr+64(a6)", "  move.l d6,d0", "  move.b d0,scr+95(a6)", "  lsr.l #8,d0",
+        "  move.b d0,scr+94(a6)", "  lsr.l #8,d0", "  move.b d0,scr+93(a6)",
+        "  move.w d7,d0", "  lea scr+64(a6),a0", "  moveq #32,d1", "  OS9 I$Write", "  bcs.w fail",
         "  move.w d7,d0", "  OS9 I$Close",
         // FD_LNK (FD offset 8) = 2, through the raw device; 256-byte sectors
         "  lea rname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
@@ -1970,8 +1970,8 @@ do {
         // delete a, read b
         "  lea aname(pc),a0", "  moveq #2,d0", "  OS9 I$Delete", "  bcs.w fail",
         "  lea bname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.s gone", "  move.w d0,d7",
-        "  move.w d7,d0", "  lea 128(a6),a0", "  moveq #5,d1", "  OS9 I$Read", "  bcs.s gone",
-        "  cmpi.l #'HELL',128(a6)", "  bne.s gone",
+        "  move.w d7,d0", "  lea scr+128(a6),a0", "  moveq #5,d1", "  OS9 I$Read", "  bcs.s gone",
+        "  cmpi.l #'HELL',scr+128(a6)", "  bne.s gone",
         "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
         "gone:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
         "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1",
@@ -1991,11 +1991,11 @@ do {
         // paced console rate do not fit one call's budget
         _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
                  "r68 /h5/mlink.a -o=/h5/mlink.r", "l68 /h5/mlink.r -o=/h5/mlink"], timeout: 60)
-        // dcheck in an emulator of its own: run in the same session after this
-        // program, with cio resident, it loops -- on the release build too, so
-        // not this fix; on the roadmap to run down
-        let run = os9(["mount -k=500K \(scratchDevice)", "/h5/mlink"], timeout: 60)
-        let out = run + os9(["dcheck /h9"], timeout: 60)
+        // dcheck in the same session, after modules are loaded (os9() loads
+        // math and cio first): this once made dcheck loop, because mlink used
+        // plain (a6) as its buffer -- a6 points $8000 into the data area, so
+        // that wrote 28K past it, into the resident csl library dcheck runs.
+        let out = os9(["mount -k=500K \(scratchDevice)", "/h5/mlink", "dcheck /h9"], timeout: 60)
         if out.contains("SECOND NAME STILL READS") && dcheckClean(out) {
             print("PASS: \(name)")
             passed += 1
@@ -2126,14 +2126,14 @@ do {
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit equ $06", "I$Create equ $83", "I$Open equ $84", "I$Seek equ $88", "I$Read equ $89",
         "I$Write equ $8A", "I$WritLn equ $8C", "I$Close equ $8F",
-        "  psect mdirrc,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  psect mdirrc,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:",
         "  lea dname(pc),a0", "  move.w #$83,d0", "  OS9 I$Open", "  bcs.w fail", "  move.w d0,d7",
-        "  move.w d7,d0", "  lea (a6),a0", "  moveq #32,d1", "  OS9 I$Read", "  bcs.w fail",
+        "  move.w d7,d0", "  lea scr(a6),a0", "  moveq #32,d1", "  OS9 I$Read", "  bcs.w fail",
         "  lea fname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w fail",
         "  OS9 I$Close",
         "  move.w d7,d0", "  moveq #0,d1", "  OS9 I$Seek", "  bcs.w fail",
-        "  move.w d7,d0", "  lea (a6),a0", "  moveq #32,d1", "  OS9 I$Write", "  bcs.w fail",
+        "  move.w d7,d0", "  lea scr(a6),a0", "  moveq #32,d1", "  OS9 I$Write", "  bcs.w fail",
         "  move.w d7,d0", "  OS9 I$Close",
         "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.s lost",
         "  OS9 I$Close",
@@ -4484,9 +4484,9 @@ do {
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit equ $06", "F$Send equ $08", "F$Icpt equ $09", "F$ID equ $0C", "F$RTE equ $1E",
         "F$SigMask equ $57", "I$WritLn equ $8C",
-        "  psect mcap,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  psect mcap,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:",
-        "  clr.b   (a6)",
+        "  clr.b   scr(a6)",
         "  lea     handler(pc),a0",
         "  OS9     F$Icpt",
         "  move.w  #299,d4",
@@ -4499,7 +4499,7 @@ do {
         "  move.w  #200,d1",
         "  OS9     F$Send",
         "  OS9     F$ID",               // one more call, for delivery on the way out
-        "  tst.b   (a6)",
+        "  tst.b   scr(a6)",
         "  beq.s   masked",
         "  lea     mok(pc),a0", "  moveq   #mokl,d1", "  bra.s   say",
         "masked:",
@@ -4509,7 +4509,7 @@ do {
         "  moveq   #0,d0", "  moveq   #0,d1", "  OS9     F$SigMask",
         "  moveq   #0,d1", "  OS9     F$Exit",
         "handler:",
-        "  move.b  #1,(a6)",
+        "  move.b  #1,scr(a6)",
         "  OS9     F$RTE",
         "mok:  dc.b  \"SIGMASK CAPPED AT 255\",$0D",
         "mokl  equ   *-mok",
@@ -4591,18 +4591,18 @@ do {
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit equ $06", "F$Icpt equ $09", "F$Sleep equ $0A", "F$RTE equ $1E", "F$Alarm equ $56",
         "I$WritLn equ $8C",
-        "  psect mpast,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "  psect mpast,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:",
-        "  clr.b (a6)", "  lea handler(pc),a0", "  OS9 F$Icpt",
+        "  clr.b scr(a6)", "  lea handler(pc),a0", "  OS9 F$Icpt",
         "  moveq #0,d0", "  move.w #4,d1", "  move.w #200,d2", "  moveq #0,d3", "  moveq #0,d4",
         "  OS9 F$Alarm", "  bcs.s fail",
         "  moveq #20,d0", "  OS9 F$Sleep",              // a fifth of a second is plenty
-        "  tst.b (a6)", "  beq.s notyet",
+        "  tst.b scr(a6)", "  beq.s notyet",
         "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
         "notyet:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
         "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1",
         "fail:", "  OS9 F$Exit",
-        "handler:", "  move.b #1,(a6)", "  OS9 F$RTE",
+        "handler:", "  move.b #1,scr(a6)", "  OS9 F$RTE",
         "mok: dc.b \"PAST ALARM WAS SENT AT ONCE\",$0D", "mokl equ *-mok",
         "mbad: dc.b \"PAST ALARM NOT SENT\",$0D", "mbadl equ *-mbad",
         "  ends", ""
@@ -4678,13 +4678,13 @@ do {
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit equ $06", "F$Icpt equ $09", "F$Alarm equ $56", "I$Dup equ $82", "I$Create equ $83",
         "I$Open equ $84", "I$ReadLn equ $8B", "I$Close equ $8F",
-        "  psect mawait,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  psect mawait,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:",
         "  lea handler(pc),a0", "  OS9 F$Icpt",
         "  moveq #0,d0", "  moveq #1,d1", "  move.w #200,d2", "  moveq #30,d3", "  OS9 F$Alarm",
         "  lea pipe(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.s fail",
         "  move.w d0,d7", "  OS9 I$Dup",                             // a second holder: a writer
-        "  move.w d7,d0", "  lea (a6),a0", "  moveq #32,d1", "  OS9 I$ReadLn",  // nobody writes: parked
+        "  move.w d7,d0", "  lea scr(a6),a0", "  moveq #32,d1", "  OS9 I$ReadLn",  // nobody writes: parked
         "  moveq #0,d1",
         "fail:", "  OS9 F$Exit",
         "handler:",
@@ -7793,12 +7793,12 @@ do {
 do {
     func divide(_ num: String, _ den: String) -> [String] {
         ["  lea \(num)(pc),a0", "  dc.w $F210,$5400", "  lea \(den)(pc),a1", "  dc.w $F211,$5420",
-         "  lea (a6),a2", "  dc.w $F212,$7400"]
+         "  lea scr(a6),a2", "  dc.w $F212,$7400"]
     }
     let fpuAsm = ([
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit equ $06", "I$WritLn equ $8C",
-        "  psect mfdiv,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  psect mfdiv,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:"] + divide("three", "ten") + [
         "  cmpi.l #$3FD33333,(a2)", "  bne.s wrong", "  cmpi.l #$33333333,4(a2)", "  bne.s wrong"] +
         divide("one", "three") + [
@@ -7846,13 +7846,13 @@ do {
 do {
     func apply(_ opword: String, _ dst: String, _ src: String, _ want: String) -> [String] {
         ["  lea \(dst)(pc),a0", "  dc.w $F210,$5400", "  lea \(src)(pc),a1", "  dc.w $F211,\(opword)",
-         "  lea (a6),a2", "  dc.w $F212,$7400", "  lea \(want)(pc),a3",
+         "  lea scr(a6),a2", "  dc.w $F212,$7400", "  lea \(want)(pc),a3",
          "  cmpm.l (a3)+,(a2)+", "  bne.w wrong", "  cmpm.l (a3)+,(a2)+", "  bne.w wrong"]
     }
     let fpuAsm = ([
         "  use /dd/DEFS/oskdefs.d",
         "F$Exit equ $06", "I$WritLn equ $8C",
-        "  psect mfint,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  psect mfint,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:"] +
         apply("$5401", "one", "mtwo3", "mtwo") +      // FINT(-2.3)    = -2
         apply("$5401", "one", "twohalf", "two") +     // FINT(2.5)     = 2
@@ -8801,7 +8801,7 @@ do {
     let ticksAsm = [
         "  use /dd/DEFS/oskdefs.d",
         "F$ID equ $0C", "F$Exit equ $06", "F$GPrDsc equ $18", "I$WritLn equ $8C",
-        "  psect mutick,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,8192,start",
+        "  psect mutick,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,8192,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:",
         "  bsr.s uticks", "  move.l d0,d6",
         "  move.l #30000000,d5",
@@ -8812,8 +8812,8 @@ do {
         "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
         "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
         // d0 = this process's P$UTicks
-        "uticks:", "  OS9 F$ID", "  move.w #$800,d1", "  lea (a6),a0", "  OS9 F$GPrDsc",
-        "  move.l $2B4(a6),d0", "  rts",
+        "uticks:", "  OS9 F$ID", "  move.w #$800,d1", "  lea scr(a6),a0", "  OS9 F$GPrDsc",
+        "  move.l scr+$2B4(a6),d0", "  rts",
         "mok:  dc.b \"USER TICKS COUNTED\",$0D", "mokl equ *-mok",
         "mbad: dc.b \"USER TICKS MISSING\",$0D", "mbadl equ *-mbad",
         "  ends", ""
@@ -8851,20 +8851,20 @@ do {
 do {
     let spinAsm = [
         "  use /dd/DEFS/oskdefs.d",
-        "  psect mspin,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start",
+        "  psect mspin,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,512,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:", "spin:", "  bra.s spin", "  ends", ""
     ].joined(separator: "\r")
     let watchAsm = [
         "  use /dd/DEFS/oskdefs.d",
         "F$Fork equ $03", "F$Wait equ $04", "F$Exit equ $06", "F$Send equ $08", "F$Sleep equ $0A",
         "F$GPrDsc equ $18", "I$WritLn equ $8C",
-        "  psect mwatch,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,8192,start",
+        "  psect mwatch,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,8192,start", "  vsect", "scr: ds.b 4096", "  ends",
         "start:",
         "  lea child(pc),a0", "  lea parm(pc),a1", "  moveq #0,d0", "  moveq #0,d1", "  moveq #1,d2",
         "  moveq #3,d3", "  moveq #0,d4", "  OS9 F$Fork", "  bcs.s bad", "  move.w d0,d7",
         "  moveq #100,d0", "  OS9 F$Sleep",
-        "  move.w d7,d0", "  move.w #$800,d1", "  lea (a6),a0", "  OS9 F$GPrDsc", "  bcs.s bad",
-        "  move.l $2B4(a6),d6",
+        "  move.w d7,d0", "  move.w #$800,d1", "  lea scr(a6),a0", "  OS9 F$GPrDsc", "  bcs.s bad",
+        "  move.l scr+$2B4(a6),d6",
         "  move.w d7,d0", "  moveq #0,d1", "  OS9 F$Send", "  OS9 F$Wait",
         "  cmpi.l #10,d6", "  blt.s bad",
         "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
