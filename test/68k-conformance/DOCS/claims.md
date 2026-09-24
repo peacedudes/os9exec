@@ -132,6 +132,7 @@ table, not with our emulator's behaviour.
 | t107 | M68000 Family Programmer's Reference, FDIV; IEEE 754 default results. | With the divide-by-zero exception disabled (the FPU's reset state), a finite value divided by zero delivers an infinity of the right sign and sets condition code I. Two digits: the stored double is +infinity; FPSR bit 25 is set. A system with no FPU and no FPU emulation reports SKIP. |
 | t108 | M68000 Family Programmer's Reference, FINT, FINTRZ, FMOD, FREM. | FINT rounds by the FPCR mode (to nearest, ties to even, at reset), FINTRZ toward zero; FMOD's quotient is rounded toward zero, FREM's to nearest. Five digits: FINT(-2.3)=-2, FINT(2.5)=2, FINTRZ(1e10)=1e10, FMOD(1e10,3)=1, FREM(-7,2)=1. |
 | t109 | M68000 Family Programmer's Reference, FMOVE to an integer format. | The value is rounded by the FPCR mode; one too large for the format is an operand error. Six digits: 2.7->3, -2.5->-2, 3e9->$7FFFFFFF, -3e9->$80000000, 300.0 as a byte->$7F, and under round-toward-zero 2.7->2. The saturated values are an INFERENCE (what is stored with the operand-error trap disabled is our reading); a real FPU that stores something else shows it here. |
+| t110 | I$SetStt: SS_Size (Technical Manual; page not checked). | An INFERENCE: the page names no access mode the path must have, so a path opened for reading only is not refused. obs is 0 when the call is accepted, else its error code; a real system answering E$BMode (203) says our reading is wrong. |
 
 ## Claims deliberately not tested here
 

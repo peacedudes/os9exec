@@ -107,7 +107,7 @@ Files and devices:
 os9exec is built from the manuals, and where the manuals leave room it has had to make a
 reading. The conformance suite, CONF68K, turns those readings into tests with the manual's
 words beside each, and it runs on real OS-9 as well as here. This release attaches it as
-a single disk image, `conf68k.dsk`: 109 standalone tests, hand-written assembly, no Microware
+a single disk image, `conf68k.dsk`: 110 standalone tests, hand-written assembly, no Microware
 software on it. Put it on a disk device, `chd` to it and type `runall`; each test prints one
 line with what it observed and what the manual led us to expect. Where a claim is our inference
 rather than the manual's plain statement, the claim says so. If your hardware disagrees with
