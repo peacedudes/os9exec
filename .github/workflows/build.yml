@@ -305,11 +305,16 @@ jobs:
     permissions:
       contents: write
     steps:
+    # The release text is docs/release-notes-<tag>.md from the tagged tree,
+    # so what a release says is reviewed in a PR like everything else. Without
+    # it the release page carried the files and no words at all.
+    - uses: actions/checkout@v5
     - uses: actions/download-artifact@v8
 
     - name: Create Release
       uses: softprops/action-gh-release@v3
       with:
+        body_path: docs/release-notes-${{ github.ref_name }}.md
         files: |
           os9exec-linux-x64/os9exec-linux-x64
           os9exec-linux-i386/os9exec-linux-i386
