@@ -3753,7 +3753,11 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
        * reads too, so that seeking back into the middle and reading drops it,
        * which is what "a read or write that is not at the end" says. */
       if (rbf->wMode) {
-          Boolean atEnd= (rbf->currPos >= FDSize( spP ));
+          /* The end as this path knows it: a growing file's new end is in
+             lastPos until the FD is flushed, and against the FD's older size
+             a write back at offset 10 of a 100-byte file still looked like a
+             write at the end, so it kept the lock (CONF68K t106). */
+          Boolean atEnd= (rbf->currPos >= Max( FDSize( spP ), rbf->lastPos ));
 
           if (atEnd!=rbf->eofLock) {
               rbf->eofLock= atEnd;
