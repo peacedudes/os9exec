@@ -8761,31 +8761,26 @@ do {
 // process the system tick pre-empted had its time booked to the arbitrator, so
 // a program computing without calls saw clock() stand still: the Whetstone
 // benchmark divided by zero. Found by the osk-freeware session. The program
-// reads P$UTicks and the wall clock around a loop with no calls in it; its own
-// ticks must be at least half of the wall ticks, and some.
+// reads P$UTicks around a loop with no calls in it and must have been charged
+// at least 10 ticks for it. Not measured against the wall clock: F$Time's tick
+// is not aligned with its seconds, so seconds*100+tick jumps by up to a second.
 do {
     let ticksAsm = [
         "  use /dd/DEFS/oskdefs.d",
-        "F$ID equ $0C", "F$Exit equ $06", "F$Time equ $15", "F$GPrDsc equ $18", "I$WritLn equ $8C",
+        "F$ID equ $0C", "F$Exit equ $06", "F$GPrDsc equ $18", "I$WritLn equ $8C",
         "  psect mutick,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,8192,start",
         "start:",
-        "  bsr.s uticks", "  move.l d0,d6", "  bsr.w now", "  move.l d4,d7",
+        "  bsr.s uticks", "  move.l d0,d6",
         "  move.l #30000000,d5",
         "spin:", "  subq.l #1,d5", "  bne.s spin",
-        "  bsr.s uticks", "  sub.l d6,d0", "  move.l d0,d6", "  bsr.w now", "  sub.l d7,d4",
-        "  cmpi.l #10,d4", "  blt.s bad",       // the loop must have taken some time
-        "  add.l d6,d6", "  cmp.l d4,d6", "  blt.s bad",
+        "  bsr.s uticks", "  sub.l d6,d0", "  move.l d0,d6",
+        "  cmpi.l #10,d6", "  blt.s bad",       // 40-80 here; the bug gave 0 or 1
         "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
         "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
         "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
         // d0 = this process's P$UTicks
         "uticks:", "  OS9 F$ID", "  move.w #$800,d1", "  lea (a6),a0", "  OS9 F$GPrDsc",
         "  move.l $2B4(a6),d0", "  rts",
-        // d4 = seconds since midnight * 100 + current tick
-        "now:", "  moveq #3,d0", "  OS9 F$Time",
-        "  move.l d0,d4", "  move.l d0,d5", "  move.l d0,d1",
-        "  lsl.l #6,d4", "  lsl.l #5,d5", "  lsl.l #2,d1", "  add.l d5,d4", "  add.l d1,d4",
-        "  moveq #0,d5", "  move.w d3,d5", "  add.l d5,d4", "  rts",
         "mok:  dc.b \"USER TICKS COUNTED\",$0D", "mokl equ *-mok",
         "mbad: dc.b \"USER TICKS MISSING\",$0D", "mbadl equ *-mbad",
         "  ends", ""
