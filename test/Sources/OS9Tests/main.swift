@@ -1761,6 +1761,39 @@ do {
     }
 }
 
+// ── RBF: an image whose sector-size word is 0 opens as 256-byte sectors ───────
+// Sector 0's word at $68 is the sector size, and images from formats that
+// predate the field carry 0 there, which has always meant 256. The check added
+// for oversized sectors ran before that fallback and refused such images with
+// E$SectSize -- a user's own disk that had opened for years. Found by rdoggett.
+do {
+    let name = "rbf: an image whose sector-size word is 0 still opens, as 256-byte sectors"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem(scratchDevice)
+        _ = os9(["mount -k=512K \(scratchDevice)", "echo seed >/h9/seed"], timeout: 30)
+        var patched = false
+        if let handle = FileHandle(forUpdatingAtPath: scratchHostPath) {
+            handle.seek(toFileOffset: 0x68)
+            handle.write(Data([0x00, 0x00]))          // no sector size recorded
+            handle.closeFile()
+            patched = true
+        }
+        let out = os9(["list /h9/seed"], timeout: 30)
+        let listed = out.split(whereSeparator: \.isNewline)
+            .contains { $0.trimmingCharacters(in: .whitespaces) == "seed" }
+        if patched && listed && !out.contains("Error") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("Error") || $0.contains("seed") }
+            print("      saw (patched=\(patched)): \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        removeScratchItem(scratchDevice)
+    }
+}
+
 // ── RBF: a byte patched after a multi-sector write lands in the written data ──
 // A write of whole sectors goes to the device in one transfer, and the path's
 // one-sector cache was then labelled with the last sector written without

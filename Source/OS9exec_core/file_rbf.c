@@ -1299,6 +1299,10 @@ static os9err RootLSN( _pid_, rbfdev_typ* dev, syspath_typ* spP, Boolean ignore 
                path's FD and data buffers are sized to MIN_TMP_SCT_SIZE, and a
                larger sector read into them ran past their ends. */
             sctSize= GET_OS9W(dev->tmp_sct, SECT_POS);
+            /* 0 is what images from formats that predate the field carry, and
+               has always meant the standard 256 (bfo 2002, below). Checked
+               before that fallback, it refused images that had always opened. */
+            if (sctSize==0) sctSize= STD_SECTSIZE;
             err= CheckSectorSize( sctSize ); if (err) return err;
         }
         else {
