@@ -9067,6 +9067,93 @@ do {
                         $0.contains("tcpsend") || $0.contains("rror") || $0.contains("Sending")
                     }
                     print("      out: \(seen.joined(separator: " | "))")
+// ── sockets: a listening socket is ready when a connection is waiting ─────────
+// A server may poll its listening path with SS_Ready before accepting, as boa
+// (the OSK web server, written for ISP) does. The answer was always E$NotRdy on
+// a socket that was not connected, so such a server logged "starting server"
+// and never answered anyone. Found by the osk-freeware session. The guest opens
+// "/socket", binds loopback and listens; the host connects; the guest must see
+// SS_Ready succeed within a few seconds.
+do {
+    let name = "net: SS_Ready on a listening socket answers ready once a connection waits"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(name) (the container cannot reach the host's loopback)")
+        } else {
+            let port: UInt16 = 27123
+            let readyAsm = [
+                "  use /dd/DEFS/oskdefs.d",
+                "F$Exit equ $06", "F$Sleep equ $0A", "I$Open equ $84", "I$WritLn equ $8C",
+                "I$GetStt equ $8D", "I$SetStt equ $8E",
+                "  psect mlsnrdy,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+                "start:",
+                "  lea sname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w bad", "  move.w d0,d7",
+                "  lea sargs(pc),a0", "  moveq #12,d2", "  move.w #$6F,d1", "  OS9 I$SetStt", "  bcs.w bad",
+                "  move.w d7,d0", "  lea saddr(pc),a0", "  moveq #16,d2", "  move.w #$6C,d1",
+                "  OS9 I$SetStt", "  bcs.w bad",
+                "  move.w d7,d0", "  moveq #1,d2", "  move.w #$6D,d1", "  OS9 I$SetStt", "  bcs.w bad",
+                "  move.w #400,d6",
+                "poll:", "  move.w d7,d0", "  moveq #1,d1", "  OS9 I$GetStt", "  bcc.s ready",
+                "  moveq #2,d0", "  OS9 F$Sleep", "  dbra d6,poll",
+                "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1", "  bra.s say",
+                "ready:", "  lea mok(pc),a0", "  moveq #mokl,d1",
+                "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+                "sargs: dc.l 2,1,0",
+                "saddr: dc.w 2,\(port)", "  dc.l $7F000001,0,0",
+                "sname: dc.b \"/socket\",0",
+                "mok:  dc.b \"LISTENING SOCKET READY\",$0D", "mokl equ *-mok",
+                "mbad: dc.b \"LISTENING SOCKET NEVER READY\",$0D", "mbadl equ *-mbad",
+                "  ends", ""
+            ].joined(separator: "\r")
+            try? readyAsm.write(toFile: scratchDisk + "/mlsnrdy.a", atomically: true, encoding: .utf8)
+            _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                     "r68 /h5/mlsnrdy.a -o=/h5/mlsnrdy.r", "l68 /h5/mlsnrdy.r -o=/h5/mlsnrdy"], timeout: 60)
+
+            // keep trying until the guest listens, then hold the connection open
+            var connected = false
+            let done = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                let started = Date()
+                while Date().timeIntervalSince(started) < 20 && !connected {
+                    let client = socket(AF_INET, streamSocketType, 0)
+                    var addr = sockaddr_in()
+                    addr.sin_family = sa_family_t(AF_INET)
+                    addr.sin_port = port.bigEndian
+                    addr.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
+                    let result = withUnsafePointer(to: &addr) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            connect(client, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                        }
+                    }
+                    if result == 0 {
+                        connected = true
+                        usleep(3_000_000)
+                    } else {
+                        usleep(50_000)
+                    }
+                    close(client)
+                }
+                done.signal()
+            }
+            let out = os9(["/h5/mlsnrdy"], timeout: 60)
+            _ = done.wait(timeout: .now() + 30)
+            if out.contains("LISTENING SOCKET READY") {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                let seen = out.split(whereSeparator: \.isNewline)
+                    .filter { $0.contains("LISTENING") || $0.contains("Error") }
+                print("      saw (host connected: \(connected)): \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+            for leftover in ["mlsnrdy.a", "mlsnrdy.r", "mlsnrdy"] {
+                try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+            }
+        }
+    }
+}
+
                     failed += 1
                 }
             }

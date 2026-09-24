@@ -339,7 +339,9 @@ static int SpfListen( syspath_typ* spP, int backlog )
 {
     if (backlog<=0) backlog= 5;
     debugprintf( dbgSpecialIO,dbgNorm,("# SPF: listen backlog %d\n", backlog ));
-    return listen( SpfFd( spP ), backlog )==0 ? 0 : errno;
+    if (listen( SpfFd( spP ), backlog )!=0) return errno;
+    spP->u.spf.listening= true;
+    return 0;
 } /* SpfListen */
 
 
@@ -555,6 +557,7 @@ static os9err pSopen( _pid_, syspath_typ* spP, _modeP_, const char* pathname )
     spP->u.spf.acceptPlus1= 0;
     spP->u.spf.proto      = 0;
     spP->u.spf.connected  = false;
+    spP->u.spf.listening  = false;
     spP->u.spf.connecting = false;
     spP->u.spf.bareIcmp   = false;
     spP->u.spf.writeDone  = 0;
@@ -636,17 +639,23 @@ static os9err pSready( _pid_, syspath_typ* spP, uint32_t* n )
 
     *n= 0;
     if (fd<0) return os9error(E_NOTRDY);
-    if (ioctl( fd, FIONREAD, &cnt )!=0) return os9error(E_NOTRDY);
-    *n= (uint32_t)cnt;
-    if (cnt>0) return 0;
+    /* A listening socket has no byte count to give (the host may refuse
+       FIONREAD on it), so a failure here is not the answer yet: poll below. */
+    if (ioctl( fd, FIONREAD, &cnt )==0 && cnt>0) { *n= (uint32_t)cnt; return 0; }
 
     /* Nothing pending, but readable all the same: the far end has closed.
        Say one byte is ready, as a broken pipe does (pPready), so the caller
        reads and meets the end of file. Answering "not ready" left a telnet
-       client waiting forever on a connection the server had already closed. */
+       client waiting forever on a connection the server had already closed.
+       A LISTENING socket is readable when a connection is waiting to be
+       accepted, and that is ready too: a server that polls its listening
+       path this way (boa, written for ISP) otherwise never accepts. The
+       path's own flag says which it is: macOS answers SO_ACCEPTCONN with 0. */
     {   struct pollfd pf;
+        Boolean       listening= spP->u.spf.listening && !spP->u.spf.connected;
         pf.fd= fd; pf.events= POLLIN; pf.revents= 0;
-        if (spP->u.spf.connected && poll( &pf,1, 0 )>0 && (pf.revents & (POLLIN|POLLHUP))) {
+        if ((spP->u.spf.connected || listening) && poll( &pf,1, 0 )>0 &&
+            (pf.revents & (listening ? POLLIN : (POLLIN|POLLHUP)))) {
             *n= 1; return 0;
         }
     }
@@ -813,6 +822,7 @@ static os9err pSspf( ushort pid, syspath_typ* spP, uint32_t* d1, byte* blk )
             nsp->u.spf.fdPlus1    = spP->u.spf.acceptPlus1;
             nsp->u.spf.proto      = spP->u.spf.proto;
             nsp->u.spf.connected  = true;
+            nsp->u.spf.listening  = false;
             nsp->u.spf.connecting = false;              /* a fresh connection */
             nsp->u.spf.writeDone  = 0;
             spP->u.spf.acceptPlus1= 0;                  /* handed over */

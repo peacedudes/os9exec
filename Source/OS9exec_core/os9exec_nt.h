@@ -914,6 +914,7 @@ typedef struct {
             int       acceptPlus1;  /* connection taken by accept, not yet claimed */
             ushort    proto;        /* the BSD socket type this path was made with */
             Boolean   connected;
+            Boolean   listening;    /* listen() succeeded: readable means a connection waits */
             Boolean   connecting;   /* a connect is under way; its caller is parked */
             Boolean   bareIcmp;     /* host ICMP socket with no IP header on replies,
                                        and its own echo identifier (Linux) */
