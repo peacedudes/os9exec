@@ -8,6 +8,10 @@ The last release was V3.39, in 2007, when 32-bit hosts were still the ordinary
 case. The purpose of this update is to support 64-bit hosts as well. It builds
 and runs on 32- and 64-bit machines, big-endian and little-endian alike.
 
+**The current release is V4.1.0**: OS-9 networking programs reach the real
+network, os9exec runs in a web browser, and a long list of fixes brings it
+closer to the manuals. [What's new in V4.1.0](docs/release-notes-v4.1.0.md).
+
 ### A continuation of the original authors' work
 
 OS9exec was written by **Lukas Zeller** and **Beat Forster**. They both know of
@@ -243,6 +247,27 @@ ln -s /any/host/dir h5      # now /h5 inside OS-9 is that directory
 ```
 
 ---
+
+## Networking
+
+OS-9 programs that use sockets reach the host's network directly: there is no
+interface to configure and no stack to start, because the host owns both. Load
+Microware's two database modules from your disk first, then run the programs as
+on a real system:
+
+```sh
+load /dd/CMDS/BOOTOBJS/SPF/inetdb /dd/CMDS/BOOTOBJS/SPF/netdb_local
+telnet some.host
+```
+
+Measured working: `telnet`, `ftp`, `ping`, `tcpsend`/`tcprecv`, `tftpd`,
+`msend`/`mrecv`, RPC (`rsort` through `portmap`), the older socket library's
+programs (`ttcp`, BIND's `nslookup` and `nsquery`), and the `telnetd` and `ftpd`
+servers, which a client on the host can log in to. A server binds the same port
+it would on OS-9, so `telnetd` wants port 23: macOS lets an ordinary user bind
+that on all addresses, and on Linux the host has to allow low ports for users
+(or you run it as root). Programs that configure interfaces (`ifconfig`,
+`ipstart`) have nothing to do here. [CMDS.md](CMDS.md) lists the network tools.
 
 ## Options
 
