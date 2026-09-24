@@ -1302,6 +1302,15 @@ typedef struct {
                 systaskfunc_typ systask;    /* the system task function if state=pSysTask */
                 void      *systaskdataP;    /* system task data pointer */
                 ulong      systask_offs;    /* offset for rewrite call (from tty/pty) */
+                /* A pipe request parked as a system task whose last try moved
+                   nothing, and the pipe as it was then: until the pipe changes
+                   the scheduler may sleep rather than try it again at once
+                   (pipefiles.c, pipe_task_stalled). */
+                Boolean         stalled;
+                byte*          stallPrp;
+                byte*          stallPwp;
+                short         stallLink;
+                ushort        stallCons;
                 ushort      lastsyscall;    /* last system call issued by this process */
                 int            wTimeOut;    /* timeout counter for pWaitRead */
 

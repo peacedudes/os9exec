@@ -452,8 +452,24 @@ static void PipePutc( pipechan_typ* p, char c )
 } /* PipePutC */
 
 
+/* Record whether a parked pipe request moved anything on this try, and if
+   not, the pipe as it stands: see pipe_task_stalled. Pipes only -- a tty/pty
+   channel is also drained by the host side, where no snapshot sees it. */
+static void NoteStall( process_typ* cp, syspath_typ* spP, Boolean movedNothing )
+{
+    pipechan_typ* p= spP->u.pipe.pchP;
+
+    cp->stalled= movedNothing && spP->type==fPipe;
+    if (!cp->stalled) return;
+    cp->stallPrp = p->prp;
+    cp->stallPwp = p->pwp;
+    cp->stallLink= spP->linkcount;
+    cp->stallCons= p->consumers;
+} /* NoteStall */
+
 static void Reactivate( ushort pid, process_typ* cp, const char* callingProc )
 {
+  cp->stalled= false;
   if (cp->state!=pWaitRead &&       /* this statement costed me 2 days debugging !! */
       cp->state!=pWaiting  &&       /* and this one another 1.5 days !!! */
       cp->state!=pWaitWrite)        /* new: don't repeat those mistakes for blocked writes either */
@@ -580,6 +596,7 @@ static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
                 
             cp->systask= wr_func;
             cp->systaskdataP= (void *) spP;
+            NoteStall( cp, spP, bytes==0 ); /* nothing fitted: wait for a change */
             /* leave it as systask */
 
             /* An internal command is host C run to completion: it never returns
@@ -755,6 +772,7 @@ static os9err pReadSysTaskExe( ushort  pid, syspath_typ *spP,
             set_os9_state( pid, pSysTask, "pReadSysTaskExe" ); /* stay in (or enter) systask */
             cp->systask     = rd_func;
             cp->systaskdataP= (void*)spP;
+            NoteStall( cp, spP, nn==0 ); /* nothing to read: wait for a change */
             /* leave it as systask and as consumer */
         }
     }
@@ -1060,6 +1078,29 @@ Boolean pipe_request_reads( ushort pid )
     return cp->state==pSysTask && cp->systaskdataP!=NULL &&
           (cp->systask==(systaskfunc_typ)pReadSysTask || cp->systask==(systaskfunc_typ)pReadSysTaskLn);
 } /* pipe_request_reads */
+
+/* A pipe request parked as a system task, whose last try moved nothing and
+   whose pipe has not changed since: nothing it waits for has happened, so
+   trying it again at once would only spin. The scheduler counts it as
+   waiting, and sleeps if nothing else can run (ROADMAP item 23: a writer
+   parked on a full pipe used to keep a whole core busy). Any change to the
+   pipe -- bytes read or written, a path opened or closed on it, a reader
+   arriving or leaving -- makes it runnable again; so does anything that moves
+   it out of the system task, a signal included. */
+Boolean pipe_task_stalled( ushort pid )
+{
+    process_typ*  cp= &procs[ pid ];
+    syspath_typ*  spP;
+    pipechan_typ* p;
+
+    if (!cp->stalled || cp->state!=pSysTask || cp->systaskdataP==NULL) return false;
+    spP= (syspath_typ*)cp->systaskdataP;
+    if (spP->type!=fPipe) return false;
+    p= spP->u.pipe.pchP;
+    return p->prp==cp->stallPrp && p->pwp==cp->stallPwp &&
+           spP->linkcount==cp->stallLink && p->consumers==cp->stallCons &&
+           !p->broken && !p->pathlost;
+} /* pipe_task_stalled */
 
 /* A signal is cutting short a request parked in one of pipeman's system tasks
    (called from F$RTE): give back what the request holds -- a reader counts as

@@ -8904,6 +8904,57 @@ do {
     }
 }
 
+// ── idle: a writer waiting on a full pipe does not keep a core busy ─────────────
+// A pipe request parked as a system task was tried again on every pass of the
+// scheduler, so a writer waiting for a slow reader to make room spun the host
+// at 100% for as long as it waited (4.98 s of CPU in 5.03 s, measured; v4.0.0
+// the same). Now a parked request that moved nothing waits for its pipe to
+// change. The reader sleeps 3 s before draining 13K that `list` writes; the
+// emulator's own CPU time for the whole run must stay under a second. Local
+// only: a container's CPU is not the host's to count.
+do {
+    let name = "idle: a writer parked on a full pipe for 3 s costs under a second of CPU"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(name) (a container's CPU time is not counted here)")
+        } else {
+            let slowAsm = [
+                "  use /dd/DEFS/oskdefs.d", "F$Exit equ $06", "F$Sleep equ $0A", "I$Read equ $89",
+                "  psect mslowrd,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+                "  vsect", "buf: ds.b 512", "  ends",
+                "start:", "  move.l #300,d0", "  OS9 F$Sleep",
+                "rd:", "  moveq #0,d0", "  lea buf(a6),a0", "  move.l #512,d1", "  OS9 I$Read", "  bcc.s rd",
+                "  moveq #0,d1", "  OS9 F$Exit", "  ends", ""
+            ].joined(separator: "\r")
+            try? slowAsm.write(toFile: scratchDisk + "/mslowrd.a", atomically: true, encoding: .utf8)
+            _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                     "r68 /h5/mslowrd.a -o=/h5/mslowrd.r", "l68 /h5/mslowrd.r -o=/h5/mslowrd"], timeout: 60)
+            func childCPU() -> Double {
+                var usage = rusage()
+                getrusage(RUSAGE_CHILDREN, &usage)
+                return Double(usage.ru_utime.tv_sec) + Double(usage.ru_utime.tv_usec) / 1e6
+                     + Double(usage.ru_stime.tv_sec) + Double(usage.ru_stime.tv_usec) / 1e6
+            }
+            let before = childCPU()
+            let started = Date()
+            let out = os9(["list /dd/SYS/errmsg ! /h5/mslowrd", "echo PIPE DONE"], timeout: 60)
+            let spent = childCPU() - before
+            let wall = Date().timeIntervalSince(started)
+            if out.contains("PIPE DONE") && wall >= 3 && spent < 1.0 {
+                print("PASS: \(name)")
+                passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      cpu \(String(format: "%.2f", spent)) s in \(String(format: "%.2f", wall)) s")
+                failed += 1
+            }
+        }
+        for leftover in ["mslowrd.a", "mslowrd.r", "mslowrd"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$Sleep: a few 256ths of a second still sleep ──────────────────────────────
 // "If the high order bit of d0.l is set, the low 31 bits are converted from
 // 256ths of a second into ticks" (F$Sleep, p.1-58); F$Alarm, for the same

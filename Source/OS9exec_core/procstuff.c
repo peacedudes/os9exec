@@ -428,6 +428,7 @@ os9err new_process(ushort parentid, ushort *newpid, ushort numpaths)
             cp->fticks    = 0;
             cp->iticks    = 0;
             cp->upend     = 0;
+            cp->stalled   = false; /* no parked pipe request from a slot's last owner */
             cp->pd._sticks= os9_long(cp->fticks + cp->iticks);
             
             /* julian time and date */
@@ -1400,6 +1401,7 @@ void DoWait( void )
  *       should be changed to next waiting/active process
  */
 Boolean pipe_request_reads( ushort pid ); /* pipefiles.c */
+Boolean pipe_task_stalled ( ushort pid ); /* pipefiles.c */
 
 /* Whether os9exec should end now: the process it was started with has gone,
    and every process left is only waiting for input -- parked reading a
@@ -1491,7 +1493,7 @@ void do_arbitrate( ushort allowedIntUtil )
           while (true) {
                 sprocess= &procs[spid];   /* do it in correct order */
             if (sprocess->state==pActive ||
-                sprocess->state==pSysTask) {
+               (sprocess->state==pSysTask && !pipe_task_stalled( spid ))) {
               if  (spid<=cpid) pDone= true; // it's immediately ok
 
               spid= 0;                      // do it later
