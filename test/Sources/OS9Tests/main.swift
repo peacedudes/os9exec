@@ -12807,7 +12807,13 @@ checkEnv("hostterm: /t1 refuses a host path that does not exist",
 func makePTY() -> (master: Int32, slave: Int32, name: String)? {
     var master: Int32 = 0
     var slaveFD: Int32 = 0
-    guard openpty(&master, &slaveFD, nil, nil, nil) == 0 else { return nil }
+    guard openpty(&master, &slaveFD, nil, nil, nil) == 0 else {
+        // Every caller skips its whole test on nil and prints nothing, so a
+        // test that never ran would vanish from the count: say so, and count it.
+        print("FAIL: a pseudo-terminal could not be opened (errno \(errno)); the test asking for it did not run")
+        failed += 1
+        return nil
+    }
     let name = String(cString: ttyname(slaveFD))
     _ = fcntl(master, F_SETFL, fcntl(master, F_GETFL, 0) | O_NONBLOCK)
     return (master, slaveFD, name)
