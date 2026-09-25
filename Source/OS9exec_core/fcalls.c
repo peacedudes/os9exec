@@ -2435,7 +2435,10 @@ os9err OS9_F_DExec( regs_type *rp, ushort cpid )
     }
     dbg_remaining[childpid]  = (count == 0 || count == 0xFFFFFFFF) ? -1 : (long)count;
     dbg_exec_count[childpid] = 0;
-    load_debug_regs( childpid );   /* the child resumes from what the buffer says */
+    /* the child resumes from what the buffer says -- unless it is parked in a
+       system call (below), whose own registers the call still needs */
+    if (cp->state!=pWaitRead && cp->state!=pWaitWrite && cp->state!=pSysTask)
+        load_debug_regs( childpid );
 
     /* Park the parent until execution stops; MAX_SLEEP prevents do_arbitrate false-wakeup */
     procs[cpid].wakeUpTick = MAX_SLEEP;
@@ -2444,7 +2447,11 @@ os9err OS9_F_DExec( regs_type *rp, ushort cpid )
      * the breakpoint list / remaining count (see dbg_should_stop) */
     dbg_step_pending[childpid] = 1;
     m68k_os9singlestep         = 1;
-    set_os9_state(childpid, pActive, "OS9_F_DExec child");
+    /* a child parked in a system call (a read, a write, a pipe) stays parked:
+       made active, the call was abandoned half done and the child went on as
+       though it had returned. Stepping resumes when the call completes. */
+    if (cp->state!=pWaitRead && cp->state!=pWaitWrite && cp->state!=pSysTask)
+        set_os9_state(childpid, pActive, "OS9_F_DExec child");
     arbitrate = true;
     return 0;
 } /* OS9_F_DExec */
