@@ -2,7 +2,9 @@
 
 The first update since v4.0.0. It makes os9exec a good deal more faithful to the OS-9/68000
 manuals, lets OS-9 networking programs reach the real network, adds a browser build, and fixes
-a long list of things found by running a large collection of real OS-9 software under it.
+a long list of things found by running a large collection of real OS-9 software under it:
+the [OS-9/68000 freeware collection](https://github.com/peacedudes/osk-freeware), three decades
+of community software on one disk image. Nearly every fix here was found by running it.
 
 Nearly every fix listed here has a test that fails on the build before it and passes on this
 one. The suite runs on macOS and on Linux (x86-64, i386 and big-endian s390x), and the
