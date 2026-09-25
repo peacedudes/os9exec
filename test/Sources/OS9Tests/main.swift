@@ -3809,6 +3809,70 @@ do {
     }
 }
 
+// ── memory: -W refuses a write outside the process's own memory ──────────────
+// A debugging aid, as OS-9's SSM is on real hardware: with -W a user-state
+// write must land in the process's data area, its F$SRqMem blocks or a loaded
+// module, and anywhere else is a bus error that names the address. Fourteen of
+// our own test programs wrote 32K past their data area for months, unseen,
+// until one session layout made dcheck loop. The program writes its variables,
+// its stack and a requested block, returns the block, then writes to it again:
+// a freed block is also exactly what the check's one-slot cache must not
+// remember. The same program without -W is the control: the late write lands.
+do {
+    let wildAsm = [
+        "FSRqMem set $28", "FSRtMem set $29", "IWritLn set $8C", "FExit set $06",
+        " psect wcheck,$0101,$8001,0,2048,start",
+        " vsect", "own ds.l 1", " ends",
+        "start",
+        " move.l #$11111111,own(a6)",
+        " bsr.s sub",
+        " move.l #4096,d0", " trap #0", " dc.w FSRqMem", " bcs.s bad",
+        " movea.l a2,a3", " move.l #$22222222,(a3)",
+        " lea okmsg(pc),a0", " moveq #1,d0", " moveq #okl,d1", " trap #0", " dc.w IWritLn",
+        " move.l #4096,d0", " movea.l a3,a2", " trap #0", " dc.w FSRtMem", " bcs.s bad",
+        " move.l #$33333333,(a3)",
+        " lea latemsg(pc),a0", " moveq #1,d0", " moveq #latel,d1", " trap #0", " dc.w IWritLn",
+        " moveq #0,d1",
+        "bad", " trap #0", " dc.w FExit",
+        "sub", " move.l d0,-(a7)", " move.l (a7)+,d0", " rts",
+        "okmsg dc.b \"OWN STACK HEAP OK\",$0D", "okl equ *-okmsg",
+        "latemsg dc.b \"WROTE AFTER RETURN\",$0D", "latel equ *-latemsg",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "memory: -W refuses a write to a returned block, naming it, and nothing else"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? wildAsm.write(toFile: scratchDisk + "/wcheck.a", atomically: true, encoding: .utf8)
+        let build = ["load /dd/CMDS/r68 /dd/CMDS/l68",
+                     "r68 /h5/wcheck.a -o=/h5/wcheck.r", "l68 /h5/wcheck.r -o=/h5/wcheck"]
+        _ = os9(build, timeout: 60)
+        let plain   = os9(["/h5/wcheck"], timeout: 30)
+        let checked = os9(build + ["/h5/wcheck"], timeout: 60, flags: ["-W"])
+
+        // under OS9_FLAGS=-W (the whole suite run with the check on) there is no control
+        let everyRunChecked = (ProcessInfo.processInfo.environment["OS9_FLAGS"] ?? "")
+            .split(separator: " ").contains("-W")
+        let controlLands = everyRunChecked
+            || (plain.contains("OWN STACK HEAP OK") && plain.contains("WROTE AFTER RETURN") && !plain.contains("-W:"))
+        let ownAllowed   = checked.contains("OWN STACK HEAP OK")
+        let lateRefused  = checked.contains("wrote 4 bytes at $") && !checked.contains("WROTE AFTER RETURN")
+        if controlLands && ownAllowed && lateRefused {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            if !controlLands { print("      without -W the late write did not land, or -W spoke anyway") }
+            if !ownAllowed { print("      -W refused the program's own memory (or r68/l68/the shell)") }
+            if !lateRefused { print("      -W let the write to the returned block through, or did not name it") }
+            let seen = checked.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("-W") || $0.contains("OK") || $0.contains("WROTE") || $0.contains("rror") }
+            print("      saw: \(seen.prefix(6))")
+            failed += 1
+        }
+        for leftover in ["wcheck.a", "wcheck.r", "wcheck"] { removeScratchItem(leftover) }
+    }
+}
+
 // ── memory: a process may hold more than 512 separate blocks ─────────────────
 // os9exec kept a fixed 512-slot table of each process's F$SRqMem blocks and,
 // unlike OS-9, never joins adjacent ones -- so the 513th request failed

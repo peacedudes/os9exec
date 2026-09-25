@@ -31,6 +31,12 @@ instead of polling: about 0.1% of a core, down from about 1.6%. A waiting reader
 resumes when its data arrives, and a writer waiting on a full pipe no longer keeps a core busy
 (in v4.0.0 it spun until its reader caught up).
 
+**A check for stray writes.** `-W` makes a program's write outside its own memory (its data
+area, the blocks it requested, loaded modules) a bus error, and names the address and the
+instruction, as OS-9's SSM does on real hardware. It is off by default. It is a debugging aid:
+our own test programs once wrote 32K past their data for months, and it showed only as a
+utility looping in one session layout.
+
 **Built-in commands.** New: `pwd` and `cd`, and `iterm`, which makes a `/tN` terminal at runtime
 the way `mount` makes an `/hX` disk. `devs` now lists host directories as well, says who is using
 each device and how to attach to a terminal, and fits 80 columns. `mount <image> hX` now attaches

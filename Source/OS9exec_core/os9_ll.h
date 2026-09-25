@@ -511,6 +511,11 @@ Boolean llm_vm_enabled      (void);
 Boolean llm_has_cache       (void);
 Boolean llm_runs_in_usermode(void);
 
+/* -W: user-state writes must land in the process's own memory (newcpu.c). A
+   refused one is a bus error; this hands over what it was, once. */
+extern int os9_write_check;
+Boolean llm_refused_write( ulong* addr, int* size, ulong* pc );
+
 void  Flush68kCodeRange(void *address, uint32_t size);
 void  LockMemRange     (void *address, uint32_t size);
 void  UnlockMemRange   (void *address, uint32_t size);

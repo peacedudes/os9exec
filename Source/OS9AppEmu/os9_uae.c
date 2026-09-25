@@ -89,6 +89,36 @@ int os9exec_error_handler_installed(int vect)
     return procs[currentpid].ErrorTraps[vect-FIRSTEXCEPTION].handleraddr!=0;
 }
 
+/* -W, from newcpu.c: may the running process write [addr, addr+size)? The
+   same two tests F$ChkMem makes for write access: its own memory, or a loaded
+   module (a shared data module is written by processes that did not make it). */
+int os9exec_user_may_write(uaecptr addr, int size)
+{
+    void* p= FROM68K( addr );
+    return RangeInProcMem( currentpid, p, (ulong)size ) || RangeInAnyModule( p, (ulong)size );
+}
+
+/* The write -W last refused, until the exception report takes it. */
+static struct { Boolean pending; uaecptr addr, pc; int size; } refused;
+
+void os9exec_refused_write(uaecptr addr, int size, uaecptr pc)
+{
+    refused.pending= true;
+    refused.addr   = addr;
+    refused.size   = size;
+    refused.pc     = pc;
+}
+
+Boolean llm_refused_write( ulong* addr, int* size, ulong* pc )
+{
+    if (!refused.pending) return false;
+    refused.pending= false;
+    *addr= refused.addr;
+    *size= refused.size;
+    *pc  = refused.pc;
+    return true;
+}
+
 extern int m68k_os9singlestep; /* newcpu.c: F$DExec's one-instruction step */
 
 /* called by newcpu.c's Exception routine */

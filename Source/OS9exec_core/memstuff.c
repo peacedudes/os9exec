@@ -634,6 +634,25 @@ static ushort install_memblock(ushort pid, void *base, ulong size)
 } /* install_memblock */
 
 
+static Boolean BlockHolds( const memblock_typ* m, const byte* b, ulong cnt )
+/* True if [b, b+cnt) lies wholly within allocated block m (overflow-safe, as
+ * RangeInProcMem explains). */
+{
+  const byte* base= (const byte*)m->base;
+  const byte* end;
+  if (base==NULL) return false;
+  end= base + m->size;
+  return b>=base && b<end && cnt<=(ulong)(end-b);
+} /* BlockHolds */
+
+
+/* The block that last matched, tried first: under -W every write a C program
+ * makes to its heap asks, and the table is MAXMEMBLOCKS long. BlockHolds
+ * re-reads the slot each time, so a freed or reused one never grants a stale
+ * range. */
+static ushort lastPid  = MAXPROCESSES;
+static int    lastBlock= 0;
+
 Boolean RangeInProcMem( ushort pid, void* p, ulong cnt )
 /* True if the byte range [p, p+cnt) lies wholly within process <pid>'s own
  * writable memory: its static-storage data area [memstart,memtop) -- which the
@@ -653,6 +672,7 @@ Boolean RangeInProcMem( ushort pid, void* p, ulong cnt )
   int          k;
 
   if (cnt==0) return true;   /* an empty write touches nothing */
+  if (pid>=MAXPROCESSES) return false; /* the no-process sentinel owns nothing */
 
   if (cp->memtop > cp->memstart) { /* has a data area at all */
     byte* lo= (byte*)FROM68K( cp->memstart );
@@ -660,12 +680,14 @@ Boolean RangeInProcMem( ushort pid, void* p, ulong cnt )
     if (b>=lo && b<hi && cnt<=(ulong)(hi-b)) return true;
   } // if
 
+  if (lastPid==pid && BlockHolds( &pmem[ pid ].m[ lastBlock ], b, cnt )) return true;
+
   for (k=0; k<MAXMEMBLOCKS; k++) { /* or one of its allocated memory blocks */
-    byte* base= (byte*)pmem[ pid ].m[ k ].base;
-    byte* end;
-    if (base==NULL) continue;
-    end= base + pmem[ pid ].m[ k ].size;
-    if (b>=base && b<end && cnt<=(ulong)(end-b)) return true;
+    if (BlockHolds( &pmem[ pid ].m[ k ], b, cnt )) {
+      lastPid  = pid;
+      lastBlock= k;
+      return true;
+    } // if
   } // for
 
   return false;

@@ -572,6 +572,8 @@ static void os9_usage(char *name)
     upho_printf("   -r          run terminal output full speed (no baud-rate pacing)\n" );
     upho_printf("   -6          also open RBF disks without the OS-9/68000 \"Cruz\" mark,\n" );
     upho_printf("               as 6809 (CoCo) disks are (off by default)\n" );
+    upho_printf("   -W          debugging aid: a user-state write outside the process's\n" );
+    upho_printf("               own memory is a bus error, as under OS-9's SSM (off)\n" );
     upho_printf("   -h[h]       show this help [and conditions for using the software]\n");
     upho_printf("\n");
 
@@ -974,7 +976,8 @@ void os9_main( int argc, char **argv, char **envp )
 
           case 'x' :  ulp=&screenW;      goto getlnum;
           case 'y' :  ulp=&screenH;      goto getlnum;
-          case 'w' :  ulp=&spininterval; goto getlnum;
+          case 'w' :  if (optRaw=='W') { os9_write_check= 1; break; } // refuse writes outside own memory
+                      ulp=&spininterval; goto getlnum;
           case 'p' :  ulp=&iniprior;       goto getlnum;
           case 'm' :  /* -M and -m are DIFFERENT options, and this switch sees a
                        * lowercased letter -- so the raw one decides. A plain

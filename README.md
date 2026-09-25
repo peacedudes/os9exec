@@ -289,6 +289,7 @@ that on all addresses, and on Linux the host has to allow low ports for users
 | `-q[ms]` | Turn the 100Hz system tick off (`-q`), or retune it (`-q<ms>`) |
 | `-r` | Run terminal output at full speed (disable baud-rate pacing) |
 | `-6` | Also open RBF disks without the OS-9/68000 format's "Cruz" mark, as 6809 (CoCo) disks are; off by default |
+| `-W` | Debugging aid: a program's write outside its own memory (data area, requested blocks, loaded modules) is a bus error that names the address and instruction, as OS-9's SSM makes it on real hardware; off by default |
 | `-h` | Full option list |
 
 Console output is paced to the path's configured baud rate by default (see `tmode`) - a 300-baud session visibly trickles rather than dumping everything instantly, the way it would on real serial hardware. `-r` disables this for scripted/automated use.

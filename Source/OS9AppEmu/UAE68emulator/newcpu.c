@@ -1398,6 +1398,25 @@ uae_u8 *os9exec_oob_fault(uaecptr addr)
 }
 
 
+
+/* -W: a user-state write outside the running process's own memory is refused
+   as the bus error OS-9's SSM would raise, through the same longjmp as an
+   out-of-arena access. Only the CPU's own writes arrive here: a system call
+   runs as host C and never does, and system state is exempt, as under SSM.
+   The refusal is recorded first so the exception report can name it; the PC
+   is the writing instruction's own in most handlers, just past it in the few
+   that fetch their extension words before storing. */
+void os9exec_write_check(uaecptr addr, int size)
+{
+    if (!os9_oob_armed || regs.s)                return;
+    if ((uae_u32)addr >= emul_arena_limit)       return; /* faults as out-of-arena */
+    if (os9exec_user_may_write(addr, size))      return;
+    os9exec_refused_write(addr, size, m68k_getpc());
+    os9_oob_addr = addr;
+    longjmp(os9_oob_jmp, 1);
+}
+
+
 // special emulator call, runs up to next os9_running=0 assignment
 unsigned long m68k_os9go(void)
 {

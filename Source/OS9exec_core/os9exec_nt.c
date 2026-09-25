@@ -1926,6 +1926,11 @@ static Boolean TCALL_or_Exception( process_typ* cp, regs_type* crp, ushort cpid 
 		   is re-entered forever (the div-by-zero "hang").  The old code only skipped
 		   the dump for the zero-divide vector; gate it on "no handler installed", which
 		   covers every arithmetic trap BASIC09 (and anything else) catches. */
+		{ ulong addr, pc; int size; /* -W names what it refused, handled or not */
+		  if (vect==2 && llm_refused_write( &addr, &size, &pc ))
+		    uphe_printf( "-W: pid=%d wrote %d byte%s at $%08lX, outside its own memory (pc=$%08lX)\n",
+		                 cpid, size, size==1 ? "":"s", addr, pc );
+		}
 		if (!hasHandler && debugcheck(dbgAnomaly,dbgNorm)) debug_procdump(cp, cpid);
 
 		if ((vect>=FIRSTEXCEPTION) && (vect<FIRSTEXCEPTION+NUMEXCEPTIONS)) {

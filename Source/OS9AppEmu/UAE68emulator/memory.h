@@ -144,6 +144,20 @@ static __inline__ uae_u8 *get_real_address(uaecptr addr)
     return emul_base + (uae_u32)addr;
 }
 
+/* -W: a user-state write must land in the running process's own memory (its
+   data area, its F$SRqMem blocks, a loaded module), as OS-9's SSM enforces.
+   Off by default; when off, a write pays one predicted-not-taken branch. The
+   check lives in newcpu.c beside the out-of-arena fault it shares. */
+extern int  os9_write_check;
+extern void os9exec_write_check(uaecptr addr, int size);
+
+static __inline__ uae_u8 *get_real_address_w(uaecptr addr, int size)
+{
+    if (__builtin_expect(os9_write_check, 0))
+        os9exec_write_check(addr, size);
+    return get_real_address(addr);
+}
+
 /* Non-faulting variant for the debugger/disassembler, which deliberately peeks
    at addresses computed from garbage (e.g. ShowEA dereferencing a memory-
    indirect EA past an RTS).  Out-of-arena clamps to the arena base instead of
@@ -169,9 +183,9 @@ static __inline__ uae_u8 *get_real_address_safe(uaecptr addr)
 #define longget(addr)   (do_get_mem_long((uae_u32 *)get_real_address(addr)))
 #define wordget(addr)   (do_get_mem_word((uae_u16 *)get_real_address(addr)))
 #define byteget(addr)   (do_get_mem_byte((uae_u8  *)get_real_address(addr)))
-#define longput(addr,l) (do_put_mem_long((uae_u32 *)get_real_address(addr), l))
-#define wordput(addr,w) (do_put_mem_word((uae_u16 *)get_real_address(addr), w))
-#define byteput(addr,b) (do_put_mem_byte((uae_u8  *)get_real_address(addr), b))
+#define longput(addr,l) (do_put_mem_long((uae_u32 *)get_real_address_w(addr,4), l))
+#define wordput(addr,w) (do_put_mem_word((uae_u16 *)get_real_address_w(addr,2), w))
+#define byteput(addr,b) (do_put_mem_byte((uae_u8  *)get_real_address_w(addr,1), b))
 
 /*
 //%%% LuZ: This case does not seem to be a valid choice any more, as
