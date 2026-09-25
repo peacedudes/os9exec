@@ -2540,9 +2540,11 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
        server's reply on its control connection; ftpd, which had to run to
        send it, never got a turn, and the whole emulator spun at 100% CPU. On
        OS-9 a signal mask only holds signals back; it never stops a waiting
-       process from giving up the CPU. */
+       process from giving up the CPU. A pipe read or write parks as a
+       system task, and counts the same: an intercept routine (which runs
+       masked) waiting on a pipe froze the whole emulator. */
     if (!cwti && !cwti_svd &&
-        (cp->masklevel<=0 || cp->state==pWaitRead || cp->state==pWaitWrite)) {
+        (cp->masklevel<=0 || cp->state==pWaitRead || cp->state==pWaitWrite || cp->state==pSysTask)) {
       do_arbitrate( svd_intpid );
     //if (cp->isIntUtil)
     //  debugprintf(dbgSysCall,dbgNorm,("# int after arb: pid=%d state=%d isInt=%d\n", 

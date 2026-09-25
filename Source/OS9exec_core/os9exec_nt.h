@@ -1364,6 +1364,9 @@ typedef struct {
                 pstate_typ rtestate;        /* saved process' state */
                 ushort     rtevector;       /* saved vector */
                 ushort     rtefunc;         /* and function */
+                systaskfunc_typ rtesystask; /* the system task parked in, if rtestate==pSysTask */
+                void*      rtesystaskdataP; /* its data pointer */
+                ulong      rtesystask_offs; /* and its rewrite offset */
                 
                 int     masklevel;
                 Boolean pwr_brk;            /* pWaitRead break for signals <= 32 */

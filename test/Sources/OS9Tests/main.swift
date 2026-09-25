@@ -4969,6 +4969,82 @@ do {
     }
 }
 
+// ── F$RTE: an intercept that waits on a pipe of its own ──────────────────────
+// A read parks on an empty pipe; a signal's handler then waits on a second
+// pipe (a named one, fed a second later by msigw) and returns. F$RTE has
+// to go back to the FIRST read. It went back to the handler's instead -- the
+// parked request was remembered by state alone, and the handler's wait had
+// overwritten which request that was -- so the program's own read came back
+// E$EOF off a pipe it never read. Here a second alarm, below 32, cuts the
+// right read short with the signal as its error (found by the pre-release
+// kernel review). Writing this test found the handler's wait froze the whole
+// emulator first: a masked process parked on a pipe never gave up the CPU.
+do {
+    let nestAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$Icpt equ $09", "F$RTE equ $1E", "F$Alarm equ $56", "I$Dup equ $82",
+        "I$Create equ $83", "I$Open equ $84", "I$ReadLn equ $8B", "I$WritLn equ $8C",
+        "  psect msigp,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "  vsect", "scr: ds.b 256", "  ends",
+        "start:",
+        "  lea handler(pc),a0", "  OS9 F$Icpt",
+        "  moveq #0,d0", "  moveq #1,d1", "  move.w #200,d2", "  moveq #30,d3", "  OS9 F$Alarm",
+        "  moveq #0,d0", "  moveq #1,d1", "  moveq #2,d2", "  move.w #500,d3", "  OS9 F$Alarm",
+        "  lea pipe(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.s fail",
+        "  move.w d0,d7", "  OS9 I$Dup",                             // a second holder: a writer
+        "  move.w d7,d0", "  lea scr(a6),a0", "  moveq #32,d1", "  OS9 I$ReadLn",  // parked on pipe A
+        "  bcc.s wrong", "  cmpi.w #2,d1", "  bne.s wrong",
+        "  lea right(pc),a0", "  bra.s say",
+        "wrong:", "  lea bad(pc),a0",
+        "say:", "  moveq #1,d0", "  moveq #64,d1", "  OS9 I$WritLn",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "handler:",
+        "  cmpi.w #200,d1", "  bne.s back",                           // the second alarm: nothing to do
+        "  lea named(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.s back",
+        "  move.w d0,d6", "  OS9 I$Dup",                             // held open: a real wait
+        "  move.w d6,d0", "  lea scr+128(a6),a0", "  moveq #32,d1", "  OS9 I$ReadLn",  // parked on pipe B
+        "back:", "  OS9 F$RTE",
+        "pipe: dc.b \"/pipe\",0", "named: dc.b \"/pipe/sigb\",0",
+        "right: dc.b \"THE PARKED READ WAS THE ONE CUT SHORT\",13",
+        "bad: dc.b \"ANOTHER REQUEST CAME BACK\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+    // the feeder: a named pipe that exists is OPENED (creating it again is E$CEF, so the shell's > cannot)
+    let feedAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Open equ $84", "I$WritLn equ $8C",
+        "  psect msigw,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea named(pc),a0", "  moveq #2,d0", "  OS9 I$Open", "  bcs.s fail",
+        "  lea line(pc),a0", "  moveq #3,d1", "  OS9 I$WritLn", "  bcs.s fail",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "named: dc.b \"/pipe/sigb\",0", "line: dc.b \"hi\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "signal: F$RTE goes back to the read the signal found, not the handler's own pipe wait"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? nestAsm.write(toFile: scratchDisk + "/msigp.a", atomically: true, encoding: .utf8)
+        try? feedAsm.write(toFile: scratchDisk + "/msigw.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/msigp.a -o=/h5/msigp.r", "l68 /h5/msigp.r -o=/h5/msigp",
+                 "r68 /h5/msigw.a -o=/h5/msigw.r", "l68 /h5/msigw.r -o=/h5/msigw"], timeout: 60)
+        let output = os9(["/h5/msigp &", "sleep -s 1", "/h5/msigw", "sleep -s 6"], timeout: 30)
+        if output.contains("THE PARKED READ WAS THE ONE CUT SHORT") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      output: \(output.suffix(300))")
+            failed += 1
+        }
+        for leftover in ["msigp.a", "msigp.r", "msigp", "msigw.a", "msigw.r", "msigw"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$Event: Ev$Wait answers the value that satisfied it ──────────────────────
 // "returns with the value of the event causing the process to wake" (Microware,
 // OS-9 Intermediate training, _os9_ev_wait) -- the value BEFORE the wait

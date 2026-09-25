@@ -975,6 +975,12 @@ os9err send_signal( ushort spid, ushort signal )
          the reader as waiting. */
       if (sigp->state!=pWaitRead && sigp->state!=pSysTask) set_os9_state( spid, pActive, "send_signal" );
       sigp->rtestate= sigp->state;                                  /* save it, active after signal */
+      /* and the system task it is parked in: an intercept routine that waits
+         on a pipe of its own parks there too, and would leave F$RTE resuming
+         (or cutting short) the intercept's request instead of this one */
+      sigp->rtesystask     = sigp->systask;
+      sigp->rtesystaskdataP= sigp->systaskdataP;
+      sigp->rtesystask_offs= sigp->systask_offs;
       set_os9_state( spid, pActive, "send_signal" );                /* now activate it */
            
       sigp->os9regs.pc  = os9_long((ulong)sigp->pd._sigvec);
