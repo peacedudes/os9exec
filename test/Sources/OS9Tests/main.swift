@@ -6977,6 +6977,20 @@ do {
         message("mapart", "ZERO BLOCK HAS ITS OWN ADDRESS") + message("mshared", "ZERO BLOCK SHARES AN ADDRESS") +
         ["  ends", ""]
 
+    // A zero-byte block handed back with a size of its own: os9free walked it
+    // "in smaller pieces" of zero bytes, on the same address, for ever, and the
+    // host's stack overflowed -- two system calls took the emulator down
+    // (found by the pre-release kernel review).
+    let zeroFree = header + [
+        "  psect mzfre,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #0,d0", "  OS9 F$SRqMem", "  bcs.w fail",
+        "  moveq #16,d0", "  OS9 F$SRtMem", "  bcs.w fail"] + say("mzfok") + [
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit"] +
+        message("mzfok", "ZERO BLOCK GIVEN BACK") +
+        ["  ends", ""]
+
     // "If the module's access word does not give the process read permission,
     // the link call fails" (F$Link, page 1-41). The creator's own field is the
     // one checked here -- the super-user group is checked the same way -- so a
@@ -7053,7 +7067,8 @@ do {
         message("mzok", "FMEM REGROWN AREA CLEAN") + message("mzno", "FMEM REGROWN AREA STALE") + ["  ends", ""]
 
     let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl, "macct": acct,
-                   "mstky": sticky, "mzero": zeroBlock, "mperm": permLink, "mrevw": reviewFixes, "mmemw": memWrap,
+                   "mstky": sticky, "mzero": zeroBlock, "mzfre": zeroFree,
+                   "mperm": permLink, "mrevw": reviewFixes, "mmemw": memWrap,
                    "mmemz": memClean]
     for (module, lines) in modules {
         try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
@@ -7081,6 +7096,8 @@ do {
                    module: "mstky", want: ["STICKY KEPT AT 0 AND GONE AT -1"]),
         StatusCase(name: "memory: a zero-byte F$SRqMem gets an address of its own, and says nothing on return",
                    module: "mzero", want: ["ZERO BLOCK HAS ITS OWN ADDRESS"], absent: ["BLOCK at"]),
+        StatusCase(name: "memory: a zero-byte block given back with a size of 16 frees, and the emulator lives",
+                   module: "mzfre", want: ["ZERO BLOCK GIVEN BACK"]),
         StatusCase(name: "module: F$Link refuses a module whose access word gives no read permission",
                    module: "mperm", want: ["LINK NEEDS READ PERMISSION"]),
         StatusCase(name: "system: a 4 GB F$SRqMem, F$DExec of a stranger, FCMP of equal infinities",

@@ -981,6 +981,16 @@ os9err os9free( ushort pid, void* membase, ulong memsz )
           return 0; /* freed ok */
         } // if
         
+        /* A block recorded as zero bytes (F$SRqMem with d0=0 makes one) has
+           no pieces to walk: freeing it "in smaller pieces" below recursed on
+           the same address for ever and overflowed the host's stack -- two
+           system calls crashed the emulator. It is the caller's block, so it
+           goes, whatever size it is given back with. */
+        if (m->size==0) {
+          release_memblock( pid, k );
+          return 0; /* freed ok */
+        } // if
+
         // try to free it in smaller pieces ...
         // NOTE: e.g. OS-9 "dir" is doing it this way !
         if (memsz > m->size) { // recursive call
