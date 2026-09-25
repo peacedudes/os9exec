@@ -5624,6 +5624,72 @@ do {
     }
 }
 
+// ── -d tracing does not starve a pipeline's terminal writer ───────────────────
+// Trace lines ("narration") used to go through the paced output queue and wait
+// for room in it. A pipeline's first process traces every call, so the queue
+// was refilled the moment it had room, while the second process's parked
+// write was retried only every thirtieth round: under -d 0x0002, `dir -e
+// /dd/CMDS ! list` held list's first line back for 26 seconds, until dir was
+// done. Narration now goes straight to the terminal, after whatever the program
+// had queued there (consio.c, "who may write"), and list writes at once.
+// Over a real pty and paced, as a person would see it.
+do {
+    let name = "trace: under -d, a pipeline's second process writes without waiting for the first"
+    if (filter.isEmpty || name.localizedCaseInsensitiveContains(filter)) && !containerized,
+       let (controller, device, _) = makePTY() {
+        let process = Process()
+        process.executableURL       = execURL
+        process.arguments           = ["-d", "0x0002", shellArg]
+        process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
+        process.environment         = ["OS9DISK": diskPath].merging(inheritedByChildren) { mine, _ in mine }
+        let deviceHandle = FileHandle(fileDescriptor: device, closeOnDealloc: false)
+        process.standardInput  = deviceHandle
+        process.standardOutput = deviceHandle
+        process.standardError  = deviceHandle
+        var waited = -1.0
+        if (try? process.run()) != nil {
+            let marker = Array("you must specify".utf8)          // list's own first line
+            var got = [UInt8]()
+            var buf = [UInt8](repeating: 0, count: 65536)
+            func drain(_ seconds: Double, until wanted: [UInt8]? = nil) -> Bool {
+                let end = Date().addingTimeInterval(seconds)
+                while Date() < end {
+                    var fds = pollfd(fd: controller, events: Int16(POLLIN), revents: 0)
+                    if poll(&fds, 1, 100) > 0 {
+                        let count = read(controller, &buf, buf.count)
+                        if count <= 0 { return false }
+                        got += buf[0..<count]
+                        if let wanted, got.suffix(70000).firstRange(of: wanted) != nil { return true }
+                    }
+                }
+                return false
+            }
+            _ = drain(8)
+            got.removeAll()
+            let command = Array("dir -e /dd/CMDS ! list\n".utf8)
+            let began = Date()
+            _ = command.withUnsafeBufferPointer { write(controller, $0.baseAddress, command.count) }
+            if drain(40, until: marker) { waited = Date().timeIntervalSince(began) }
+            _ = drain(40, until: Array("\n$ ".utf8))              // let the pipeline finish
+            let quit = Array("\u{1B}\n".utf8)
+            _ = quit.withUnsafeBufferPointer { write(controller, $0.baseAddress, quit.count) }
+            usleep(500_000)
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+        close(controller); close(device)
+        if waited >= 0 && waited < 8 {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let took = waited < 0 ? "more than 40" : String(format: "%.1f", waited)
+            print("      list's first line after \(took) s (want < 8)")
+            failed += 1
+        }
+    }
+}
+
 // ── F$Event: Ev$Wait answers the value that satisfied it ──────────────────────
 // "returns with the value of the event causing the process to wake" (Microware,
 // OS-9 Intermediate training, _os9_ev_wait) -- the value BEFORE the wait

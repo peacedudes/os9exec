@@ -1599,6 +1599,143 @@ void console_owner_release( ushort pid )
     for (i=0; i<CONS_OWNERS; i++) if (consOwner[ i ]==pid) consOwner[ i ]= 0;
 } /* console_owner_release */
 
+/* ---- who may write to a terminal, when, and what waits ---------------------
+   Every write to a (non-pty) terminal comes from one of four kinds of writer,
+   known before its first byte:
+     GUEST      a process's own I$Write/I$WritLn. It can be PARKED (pWaitWrite)
+                and re-run from where it stopped, so whenever it cannot go on it
+                parks, and loses nothing.
+     BUILTIN    an internal command (tested first: it prints through the same
+                path as narration, but what it prints is the program's output):
+                host C running straight through, with no
+                emulated PC to rewind. It cannot park, so it WAITS IN PLACE --
+                pumping input so an XON can be seen, draining the queue -- for a
+                hold to lift or for room, bounded; after that it writes
+                best-effort. (Parked, it lost the rest of its output: `dhelp`
+                after ^S delivered 11 bytes of 1184.)
+     NARRATION  the emulator talking to the operator (-d traces, warnings),
+                inside some process's call; in_recursion marks it. It is not the
+                program's output, so it goes straight to the terminal, past the
+                paced queue and any hold, and never waits or counts toward a
+                page -- after sending what the program already had queued there
+                (baud_drain_now), so lines keep their order. When it waited for
+                room in the guests' queue instead, a stream of trace lines from
+                one process starved another process's parked write for good:
+                under -d, `dir ! list` hung on list's first line.
+     SYSTEM     pid 0, the no-process sentinel, or a system-state write: no
+                process to park or make wait, so straight to the terminal.
+   A GUEST is held up by three things, each tested in one place:
+     BUSY   another guest's request still holds this terminal (consOwner): SCF
+            gives one request the device until it is done;
+     HELD   XOFF, or a full page under page pause, on this terminal;
+     FULL   the paced queue has no room for the next unit, or a bound /tN takes
+            none of it (or only part: its tail then waits in unitRest).
+   A UNIT is a character with the auto-LF and PD_NUL pad bytes a CR carries. It
+   goes out whole -- a lone CR leaves an unterminated line, and the next output
+   lands on top of it -- or its unsent tail waits; it is never sent twice.
+   ------------------------------------------------------------------------ */
+typedef enum { W_GUEST, W_BUILTIN, W_NARRATION, W_SYSTEM } writer_kind;
+typedef enum { UNIT_SENT, UNIT_REFUSED, UNIT_PARTIAL } unit_result;
+
+static writer_kind writer_of( ushort pid, const process_typ* cp, Boolean narration )
+{
+    /* a built-in first: it prints through usrpath_puts too, so in_recursion
+       is raised for its own output -- which is the program's output, and must
+       wait for a hold like any (measured: `dhelp` after ^S ran straight past
+       it when narration was asked first) */
+    if (pid>0 && pid<MAXPROCESSES && cp->isIntUtil)         return W_BUILTIN;
+    if (narration)                                           return W_NARRATION;
+    if (pid==0 || pid>=MAXPROCESSES || cp->state==pSysTask) return W_SYSTEM;
+    return W_GUEST;
+} /* writer_of */
+
+/* NARRATION is about to go straight to <term>: first send whatever the
+   program has queued there, at once, so a trace line lands after the output
+   that came before it rather than between its characters. Pacing is lost
+   only while narrating -- i.e. while tracing. Stops where a /tN would block. */
+static void baud_drain_now( short term )
+{
+    int i;
+    for (i=0; i<MAXBAUDDEV; i++) {
+        baud_device_t* d= &baud_devices[i];
+        byte   c;
+        ushort owner;
+        if (!d->inUse || d->term_id!=term || d->count==0) continue;
+        while (d->count>0 && ConsPutcTo( d->term_id, d->buf[d->head], d->owner[d->head] ))
+            fifo_pop( d,&c,&owner );
+        wake_parked_writers();
+    }
+    recompute_next_wake();
+} /* baud_drain_now */
+
+/* a GUEST that cannot go on: park it, to resume at character <cnt> */
+static void park_write( ushort pid, process_typ* cp, long cnt, const char* why )
+{
+    cp->saved_cnt  = (int)cnt;
+    cp->saved_state= cp->state;
+    set_os9_state( pid, pWaitWrite, why );
+    arbitrate= true;
+} /* park_write */
+
+/* a BUILTIN that cannot go on: wait here while <term> is held, and then until
+   <dev> (if paced) has <need> slots. Both bounded -- a hold whose owner has
+   gone must not wedge the emulator, and baud_make_room gives up on a device
+   that stops draining -- after which the write goes on regardless. Spinning
+   costs no concurrency: a built-in runs to completion as host C anyway. */
+static void builtin_wait( short term, baud_device_t* dev, int need )
+{
+    int spins= 0;
+    while (console_held( term ) && ++spins <= 12000) {
+        struct timespec ts;
+        CheckInputBuffers();   /* so a typed XON is seen */
+        baud_drain_due();
+        ts.tv_sec= 0; ts.tv_nsec= 10L*1000L*1000L; /* 10ms */
+        nanosleep( &ts, NULL );
+    }
+    if (dev!=NULL && BAUD_FIFO_SIZE - dev->count < need) baud_make_room( dev, need );
+} /* builtin_wait */
+
+/* <c> and its tail (<needsLF>, <nulls> pad bytes) out as one unit: into the
+   paced queue <dev> when there is one, else to a bound /tN for a GUEST (which
+   can wait for a partial write to finish), else straight to the screen. */
+static unit_result emit_unit( writer_kind kind, ushort pid, process_typ* cp,
+                              baud_device_t* dev, char c, Boolean needsLF, int nulls )
+{
+    int q;
+
+    if (dev!=NULL) {
+        if (BAUD_FIFO_SIZE - dev->count < 1 + (needsLF ? 1:0) + nulls) return UNIT_REFUSED;
+        /* stamped with the WRITER, not whoever runs when they reach the screen */
+                      fifo_push( dev, (byte)c, pid );
+        if (needsLF)  fifo_push( dev, LF,      pid );
+        for (q=0; q<nulls; q++) fifo_push( dev, NUL, pid );
+        return UNIT_SENT;
+    }
+
+    if (kind==W_GUEST && hostterm_bound( gConsoleID )) {
+        char unit[2+255];
+        int  len= 0, w;
+
+        unit[len++]= c;
+        if (needsLF) unit[len++]= LF;
+        for (q=0; q<nulls; q++) unit[len++]= NUL;
+        w= hostterm_put( gConsoleID, unit,len );
+        if (w>=len) return UNIT_SENT;
+        /* would block (0), or failed (<0): parking is never wrong, only slow,
+           and a device that is truly gone says so again on the retry */
+        if (w<=0)   return UNIT_REFUSED;
+        cp->unitRestLen= (short)(len-w);
+        memcpy( cp->unitRest, unit+w, (size_t)(len-w) );
+        return UNIT_PARTIAL;
+    }
+
+    /* the screen, or a /tN for a writer that cannot park: best-effort */
+                  ConsPutc( c  );
+    if (needsLF)  ConsPutc( LF );
+    for (q=0; q<nulls; q++) ConsPutc( NUL );
+    return UNIT_SENT;
+} /* emit_unit */
+
 static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                           uint32_t *maxlenP, char* buffer, Boolean wrln )
 /* output to console */
@@ -1617,11 +1754,8 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
     struct _sgs* ot = &spC->opt; /* path opt table */
     Boolean      do_lf= false;
     process_typ* cp= &procs[pid];
-    Boolean      paced= false;
-    Boolean      held = false;       /* XOFF on this terminal: park, don't write */
-    Boolean      narration= false;   /* emulator narration: host C, never parked */
-    Boolean      owned= false;       /* this write takes part in terminal ownership */
-    baud_device_t* dev= NULL;
+    writer_kind  kind;               /* who is writing: see "who may write" above */
+    baud_device_t* dev= NULL;        /* the paced queue this write goes through, if any */
 
     gConsoleID=  spP->term_id;
     g_spP     =  spP;
@@ -1649,31 +1783,18 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
     else {
         /* interactive output to console */
         #ifdef TERMINAL_CONSOLE
-          /* decide once whether this write is paced or goes straight to the
-             screen; guards pid==0 (system process) and the pid>=MAXPROCESSES
-             sentinel (banner/system output) used elsewhere in this file */
-          dev  = paced_device( pid, spP );
-          paced= dev!=NULL;
-
-          /* Emulator NARRATION -- a `-d` trace line, an allocator warning, any
-             u*_printf -- is host C running inside some process's syscall. It
-             arrives through usrpath_puts, which raises in_recursion for exactly
-             that span, and a genuine guest write never does. Like an internal
-             command it cannot be parked: the dispatcher resumes a parked
-             process by re-running its whole call, which printed the narration
-             again, filled the FIFO again and parked again, forever. `-d 2` never
-             got past shell start-up under pacing, and each retry re-ran the
-             call itself too. So narration waits for room instead, and never
-             takes over the resume state of a write that genuinely is parked. */
-          narration= in_recursion;
+          kind= writer_of( pid, cp, in_recursion );
+          /* paced_device already refuses pid 0, the sentinel and pSysTask;
+             narration is not the program's output and is never paced */
+          dev = (kind==W_NARRATION) ? NULL : paced_device( pid, spP );
+          if (kind==W_NARRATION) baud_drain_now( (short)gConsoleID );
 
           cnt= 0;
-          if (pid>0 && pid<MAXPROCESSES && cp->state==pWaitWrite && !narration) {
+          if (kind==W_GUEST && cp->state==pWaitWrite) {    /* resuming a parked write */
               set_os9_state( pid, cp->saved_state, "ConsoleOut" );
               cnt=                cp->saved_cnt;
 
-              /* the tail of a line ending the terminal took only part of */
-              if (cp->unitRestLen>0) {
+              if (cp->unitRestLen>0) {                     /* first, a unit's unsent tail */
                   int w= hostterm_bound( gConsoleID ) ?
                          hostterm_put( gConsoleID, cp->unitRest, cp->unitRestLen ) : cp->unitRestLen;
                   if (w>0) {
@@ -1681,83 +1802,36 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                       memmove( cp->unitRest, cp->unitRest+w, (size_t)cp->unitRestLen );
                   }
                   if (cp->unitRestLen>0) {
-                      cp->saved_cnt  = cnt;
-                      cp->saved_state= cp->state;
-                      set_os9_state( pid, pWaitWrite, "ConsoleOut (line ending)" );
-                      arbitrate= true;
+                      park_write( pid, cp, cnt, "ConsoleOut (line ending)" );
                       *maxlenP= cnt;
                       return 0;
                   }
               }
           }
 
-          /* another process's request still holds this terminal: wait for it
-             (see consOwner), before writing anything */
-          owned= pid>0 && pid<MAXPROCESSES && !narration && !cp->isIntUtil &&
-                 cp->state!=pSysTask && gConsoleID>=0 && gConsoleID<CONS_OWNERS;
-          if (owned) {
+          /* BUSY: another guest's request holds this terminal */
+          if (kind==W_GUEST && gConsoleID>=0 && gConsoleID<CONS_OWNERS) {
               ushort own= consOwner[ gConsoleID ];
               if (own!=0 && own!=pid && own<MAXPROCESSES && procs[own].state==pWaitWrite) {
-                  cp->saved_cnt  = cnt;
-                  cp->saved_state= cp->state;
-                  set_os9_state( pid, pWaitWrite, "ConsoleOut (terminal busy)" );
-                  arbitrate= true;
+                  park_write( pid, cp, cnt, "ConsoleOut (terminal busy)" );
                   *maxlenP= cnt;
                   return 0;
               }
           }
 
-          /* XOFF on this terminal: halt its output until XON, and PARK the
-             writer to do it. Parking is the whole point -- the scheduler is
-             cooperative, so a `while (held) CheckInputBuffers()` spin inside
-             the write syscall (what the classic-Mac console did) never lets
-             the process leave the kernel, and stalls every OTHER process and
-             every due F$Alarm along with the one that asked to be paused.
-             A pWaitWrite process is rescheduled periodically (procstuff.c) and
-             comes back through here, so release needs no wakeup of its own.
-             pid 0 / the MAXPROCESSES sentinel / pSysTask cannot be parked (see
-             the two branches below); their output goes out regardless, which is
-             the same compromise those branches already make. */
-          /* ...but an INTERNAL COMMAND cannot be parked either: it is host C
-             running straight through, with no emulated PC to rewind, so the
-             park above drops everything it had left to say. Measured before
-             this: with `^S` typed at the prompt and then `dhelp`, 11 bytes of
-             1184 arrived and the other 1173 were never delivered, not even
-             after `^Q`. Wait for the release in place instead, pumping input
-             so the XON can actually be seen -- the loop was otherwise deaf and
-             the hold could never lift from here.
-
-             Spinning here does NOT cost the concurrency the park exists to
-             protect: an internal command already runs to completion as host C,
-             so nothing else is running during it either way. Bounded so a hold
-             whose owner has gone cannot wedge the emulator; at shutdown
-             console_held() answers false anyway (g_final_drain). */
-          if ((cp->isIntUtil || narration) && console_held( (short)gConsoleID )) {
-              int spins= 0;
-              while (console_held( (short)gConsoleID ) && ++spins <= 12000) {
-                  struct timespec ts;
-                  CheckInputBuffers();   /* so a typed XON is seen */
-                  baud_drain_due();
-                  ts.tv_sec= 0; ts.tv_nsec= 10L*1000L*1000L; /* 10ms */
-                  nanosleep( &ts, NULL );
-              }
-          }
-
-          held= console_held( (short)gConsoleID ) &&
-                pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask &&
-                !cp->isIntUtil && !narration; /* handled above; parking either would drop or livelock */
+          /* HELD, for a built-in: wait out the hold before the first byte */
+          if (kind==W_BUILTIN) builtin_wait( (short)gConsoleID, NULL, 0 );
 
           while (cnt<*maxlenP) {
-              Boolean needsLF; /* does this char carry a trailing auto-LF? */
-              int     nulls;   /* PD_NUL padding bytes that follow it */
-              int     need;    /* FIFO slots this char and its tail need */
-              int     q;
+              Boolean       needsLF; /* does this char carry a trailing auto-LF? */
+              int           nulls;   /* PD_NUL padding bytes that follow it */
+              unit_result   sent;
+              baud_device_t* via= dev;
 
-              if (held) {
-                  cp->saved_cnt  = cnt;
-                  cp->saved_state= cp->state;
-                  set_os9_state( pid, pWaitWrite, "ConsoleOut" );
-                  arbitrate= true;
+              /* HELD, for a guest: XOFF or a full page, checked before every
+                 unit, as a page pause can begin inside this very write */
+              if (kind==W_GUEST && console_held( (short)gConsoleID )) {
+                  park_write( pid, cp, cnt, "ConsoleOut (held)" );
                   break;
               }
 
@@ -1768,132 +1842,33 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                   c = toupper((unsigned char)c);
               }
 
-              /* A CR that gets an auto-LF and its LF must reach the FIFO
-               * TOGETHER. The old code pushed the CR, then pushed the LF
-               * best-effort and dropped it whenever the FIFO happened to be full
-               * -- which under baud pacing it routinely is by the end of a long
-               * write. The line was then left un-terminated (a bare CR), so the
-               * next thing written -- the shell prompt after `login` -- landed on
-               * top of it. Treat CR+LF as one atomic 2-byte unit: require room
-               * for both, and if there isn't room, park BEFORE pushing the CR so
-               * resume retries the pair (never a lone CR). Unpaced output goes
-               * straight to the screen and can't drop anything, exactly as before. */
               /* PD_ALF follows a CARRIAGE RETURN, not PD_EOR -- citation in
-                 ConsPutcEdit. Ending the RECORD is still PD_EOR's job, and
-                 that test is the `wrln` break at the bottom of this loop. */
+                 ConsPutcEdit; ending the RECORD is still PD_EOR's job (the
+                 `wrln` break below). PD_NUL is "the number of [NUL]s sent after
+                 each carriage return/line-feed character" (v2.4 Technical I/O
+                 Manual), for slow devices -- keyed on CR as PD_ALF is, and part
+                 of I$WritLn's line editing, which `wrln` gates. */
               needsLF= (wrln && c==CR && ot->_sgs_alf);
-              /* PD_NUL: "the number of NULL padding bytes to be sent after a
-                 carriage return/line-feed character" (v2.4 Technical I/O
-                 Manual); the Guru says the same, "[NUL] characters to send
-                 after [CR] ... for slow devices that do not support flow
-                 control handshaking, such as teletypes". So it keys on CR
-                 exactly as PD_ALF does, and belongs to I$WritLn's line
-                 editing, which is what `wrln` gates. It was read into
-                 struct _sgs and never used. Defaults to zero, so a path that
-                 has not asked for padding is byte-for-byte as before. */
               nulls  = (wrln && c==CR) ? ot->_sgs_nul : 0;
-              need   = 1 + (needsLF ? 1:0) + nulls; /* always fits: see BAUD_FIFO_SIZE */
 
-              if (paced) {
-                  /* An internal command is host C and cannot be parked and
-                     resumed -- parking it drops the rest of its output. Wait
-                     for room instead. `paced` already excludes the other
-                     unparkable writers (pid 0, the MAXPROCESSES sentinel,
-                     pSysTask), so isIntUtil and narration are the cases left. */
-                  if ((cp->isIntUtil || narration) && BAUD_FIFO_SIZE - dev->count < need)
-                      baud_make_room( dev, need );
-
-                  if (BAUD_FIFO_SIZE - dev->count < need) {
-                      /* Narration still without room after baud_make_room gave
-                         up -- a /tN nobody has read for seconds -- is DROPPED.
-                         Parking it is the re-dispatch loop narration exists to
-                         avoid; guest output parks and loses nothing. */
-                      if (!narration) {
-                          cp->saved_cnt  = cnt;
-                          cp->saved_state= cp->state;
-                          set_os9_state( pid, pWaitWrite, "ConsoleOut" );
-                          arbitrate= true;
-                          break;
-                      }
-                  }
-                  else {
-                  /* Stamp the WRITER, not whoever will be running when these
-                     bytes finally reach the screen -- that is the whole point. */
-                                fifo_push( dev, c,   pid );
-                  if (needsLF)  fifo_push( dev, LF,  pid );
-                  for (q=0; q<nulls; q++) fifo_push( dev, NUL, pid );
-                  }
+              /* FULL, for a built-in: wait for room, then write around the
+                 queue if it never came */
+              if (kind==W_BUILTIN && via!=NULL) {
+                  int need= 1 + (needsLF ? 1:0) + nulls; /* always fits: see BAUD_FIFO_SIZE */
+                  if (BAUD_FIFO_SIZE - via->count < need) builtin_wait( (short)gConsoleID, via, need );
+                  if (BAUD_FIFO_SIZE - via->count < need) via= NULL;
               }
-              else if (hostterm_bound( gConsoleID ) && !narration
-                       && pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask) {
-                  /* Same protection `paced` above relies on: pid==0 is the
-                     system process and pid==MAXPROCESSES is the "no process
-                     running" banner sentinel (see ConsPutc's own comment on
-                     gLastwritten_pid) -- neither is a real process that can
-                     be parked and later rescheduled, so a park here would
-                     hang the emulator rather than one OS-9 process. A system-
-                     state write instead falls through to the plain ConsPutc
-                     arm below, best-effort, same as it was before this change.
 
-                     CR and its auto-LF must reach the endpoint TOGETHER or not
-                     at all -- a lone CR leaves an unterminated line and the
-                     next output lands on top of it (the 75a8ea8 bug). Build
-                     the pair, then write it as one unit. */
-                  /* c, its optional LF, and up to 255 PD_NUL pad bytes --
-                     kept one unit for the same reason the CR and its LF are:
-                     a partially written tail is what leaves a line looking
-                     terminated when it is not. */
-                  char pair[2+255];
-                  int  len= 0;
-                  int  w;
-
-                  pair[len++]= c;
-                  if (needsLF) pair[len++]= LF;
-                  for (q=0; q<nulls; q++) pair[len++]= NUL;
-
-                  w= hostterm_put( gConsoleID, pair,len );
-
-                  /* w<len covers both "would block" (hostterm_put returns 0)
-                     and a genuine short write (0<w<len) -- either way, some
-                     byte of the pair was not accepted and must not be
-                     skipped. A hard error (w<0) parks too rather than
-                     dropping: parking is never wrong, only potentially slow,
-                     and the resumed retry will surface a persistent error
-                     again on its own if the endpoint is truly gone. */
-                  if (w<len) {
-                      /* Park exactly as the paced branch does and retry from
-                         this same character on resume -- never advance cnt
-                         past a byte the endpoint did not take. A pWaitWrite
-                         process is rescheduled periodically (procstuff.c), so
-                         it comes back here and proceeds once the far end
-                         drains. When PART of the unit went, the rest waits in
-                         unitRest instead: re-sending the whole unit on resume
-                         wrote its CR, LF or pad bytes twice (pre-release
-                         review). */
-                      if (w>0) {
-                          cp->unitRestLen= (short)(len-w);
-                          memcpy( cp->unitRest, pair+w, (size_t)(len-w) );
-                          cnt++;                   /* the character itself went */
-                      }
-                      cp->saved_cnt  = cnt;
-                      cp->saved_state= cp->state;
-                      set_os9_state( pid, pWaitWrite, "ConsoleOut" );
-                      arbitrate= true;
-                      break;
-                  }
-              }
-              else {
-                  /* Plain screen output, and any hostterm-bound write this
-                     bulk path cannot park (system-state, see above). ConsPutc
-                     still owns the echo path, baud_drain_due and debug.c --
-                     all single characters at low volume -- so its own
-                     hostterm branch stays best-effort; only THIS bulk path
-                     gained backpressure. */
-                                ConsPutc( c  );
-                  if (needsLF)  ConsPutc( LF );
-                  for (q=0; q<nulls; q++) ConsPutc( NUL );
+              sent= emit_unit( kind, pid, cp, via, c, needsLF, nulls );
+              if (sent==UNIT_REFUSED) {                    /* FULL, for a guest */
+                  park_write( pid, cp, cnt, "ConsoleOut (full)" );
+                  break;
               }
               cnt++;
+              if (sent==UNIT_PARTIAL) {                    /* the tail waits in unitRest */
+                  park_write( pid, cp, cnt, "ConsoleOut (line ending)" );
+                  break;
+              }
 
               if (cp->state==pSysTask) { /* should never go to here */
                   cp->systask_offs= cnt-1; /* store it here !! */
@@ -1901,16 +1876,15 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                   break; /* tty/pty break */
               }
 
-              if (c==CR && ot->_sgs_pause && ot->_sgs_page>0 &&
+              /* page pause: a full page holds the terminal as XOFF would. Only
+                 a guest can be held; a built-in's lines start the count over,
+                 and narration is not on the program's page at all. */
+              if (c==CR && ot->_sgs_pause && ot->_sgs_page>0 && kind!=W_NARRATION &&
                   spP->term_id>=0 && spP->term_id<PAGE_TERMS &&
                   ++pageLines[ spP->term_id ] >= ot->_sgs_page) {
-                  /* a full page: hold here until a key, as XOFF would --
-                     except for a writer that cannot be parked (a built-in,
-                     narration), which carries on */
-                  if (pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask && !cp->isIntUtil && !narration) {
+                  if (kind==W_GUEST) {
                       pagePending[ spP->term_id ]= true;
                       console_hold_changed( spP->term_id, true );
-                      held= true;
                   }
                   else pageLines[ spP->term_id ]= 0;
               }
@@ -1920,8 +1894,8 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
               }
           } /* while */
 
-          /* parked partway: this request keeps the terminal; done: let it go */
-          if (owned) {
+          /* a guest parked partway keeps the terminal; one that is done lets it go */
+          if (kind==W_GUEST && gConsoleID>=0 && gConsoleID<CONS_OWNERS) {
               if      (cp->state==pWaitWrite)          consOwner[ gConsoleID ]= pid;
               else if (consOwner[ gConsoleID ]==pid) consOwner[ gConsoleID ]= 0;
           }
