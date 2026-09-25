@@ -5924,6 +5924,68 @@ do {
     }
 }
 
+// ── F$RTE does not take the terminal from a write that parked meanwhile ───────
+// While A's intercept routine runs, A is not waiting on its write, so B's
+// write goes ahead and parks part way, holding the terminal. F$RTE handed the
+// terminal back to A regardless, and A's rest landed in the middle of B's
+// record (pre-release review of the console model). A resumes behind B now.
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Fork equ $03", "F$Wait equ $04", "F$Exit equ $06", "F$Icpt equ $09", "F$Sleep equ $0A",
+        "F$RTE equ $1E", "F$SRqMem equ $28", "F$Alarm equ $56", "I$Write equ $8A"
+    ]
+    func fill(_ count: Int, _ char: String) -> [String] {
+        ["  move.l #\(count),d0", "  OS9 F$SRqMem", "  bcs.w fail", "  movea.l a2,a3",
+         "  move.w #\(count - 1),d2", "fill:", "  move.b #'\(char)',(a2)+", "  dbra d2,fill"]
+    }
+    let first = header + ["  psect mrtea,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "start:",
+        "  lea handler(pc),a0", "  OS9 F$Icpt"] + fill(8000, "~") + [
+        "  lea bname(pc),a0", "  lea bparm(pc),a1", "  moveq #0,d0", "  moveq #1,d1", "  moveq #0,d2",
+        "  moveq #3,d3", "  moveq #0,d4", "  OS9 F$Fork", "  bcs.s fail",
+        "  moveq #0,d0", "  moveq #1,d1", "  move.w #200,d2", "  moveq #20,d3", "  OS9 F$Alarm",
+        "  movea.l a3,a0", "  moveq #1,d0", "  move.l #8000,d1", "  OS9 I$Write",
+        "  OS9 F$Wait", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "handler:", "  moveq #15,d0", "  OS9 F$Sleep", "  OS9 F$RTE",
+        "bname: dc.b \"/h5/mrteb\",0", "bparm: dc.b $0D", "  ends", ""]
+    let second = header + ["  psect mrteb,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "start:",
+        "  moveq #5,d0", "  OS9 F$Sleep"] + fill(4000, "^") + [
+        "  movea.l a3,a0", "  moveq #1,d0", "  move.l #4000,d1", "  OS9 I$Write", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit", "  ends", ""]
+    let modules = ["mrtea": first, "mrteb": second]
+
+    let name = "signal: after F$RTE a write resumes behind one that parked during its intercept"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for (module, lines) in modules {
+            try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                      atomically: true, encoding: .utf8)
+            build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+        }
+        _ = os9(build, timeout: 60)
+        let output = os9(["/h5/mrtea"], timeout: 60, paced: true)
+        let marks  = output.filter { $0 == "~" || $0 == "^" }   // characters nothing else prints
+        let tildes = marks.filter { $0 == "~" }.count
+        let hashes = marks.filter { $0 == "^" }.count
+        var whole  = false
+        if let from = marks.firstIndex(of: "^"), let upTo = marks.lastIndex(of: "^") {
+            whole = !marks[from...upTo].contains("~")
+        }
+        if tildes == 8000 && hashes == 4000 && whole {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      ~ \(tildes) (want 8000), ^ \(hashes) (want 4000), ^ in one run: \(whole)")
+            failed += 1
+        }
+        for module in modules.keys {
+            for suffix in [".a", ".r", ""] { removeScratchItem(module + suffix) }
+        }
+    }
+}
+
 // ── debugger listings go to the operator, not where idbg's output is sent ─────
 // The debugger's P, M, F and V list through the same routine internal commands
 // print with, so run as `idbg >file` their listings went into the file. What

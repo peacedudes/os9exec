@@ -1625,10 +1625,17 @@ void console_owner_release( ushort pid )
 } /* console_owner_release */
 
 /* <pid>'s parked write on <term> is live again after its intercept routine
-   (F$RTE): it holds the terminal once more */
+   (F$RTE): it holds the terminal once more -- unless another process's write
+   parked there meanwhile, while the handler ran. That one keeps it; <pid>
+   resumes behind it (BUSY), instead of into the middle of its record
+   (pre-release review). */
 void console_owner_claim( ushort pid, short term )
 {
-    if (term>=0 && term<CONS_OWNERS) consOwner[ term ]= pid;
+    ushort own;
+    if (term<0 || term>=CONS_OWNERS) return;
+    own= consOwner[ term ];
+    if (own!=0 && own!=pid && own<MAXPROCESSES && procs[ own ].state==pWaitWrite) return;
+    consOwner[ term ]= pid;
 } /* console_owner_claim */
 
 /* ---- who may write to a terminal, when, and what waits ---------------------
@@ -1851,6 +1858,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
     process_typ* cp= &procs[pid];
     writer_kind  kind;               /* who is writing: see "who may write" above */
     Boolean      recordDone= false;  /* a resumed I$WritLn whose record already ended */
+    Boolean      resumed;            /* a parked guest write, picked up again */
     Boolean      writeFailed= false; /* the terminal's far end has gone */
     baud_device_t* dev= NULL;        /* the paced queue this write goes through, if any */
 
@@ -1887,31 +1895,15 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
           if (kind==W_NARRATION) baud_drain_now( (short)gConsoleID );
 
           cnt= 0;
-          if (kind==W_GUEST && cp->state==pWaitWrite) {    /* resuming a parked write */
+          resumed= kind==W_GUEST && cp->state==pWaitWrite;
+          if (resumed) {                                   /* resuming a parked write */
               set_os9_state( pid, cp->saved_state, "ConsoleOut" );
               cnt=                cp->saved_cnt;
-
-              if (cp->unitRestLen>0) {                     /* first, a unit's unsent tail */
-                  int w= hostterm_bound( gConsoleID ) ?
-                         hostterm_put( gConsoleID, cp->unitRest, cp->unitRestLen ) : cp->unitRestLen;
-                  if (w>0) {
-                      cp->unitRestLen-= (short)w;
-                      memmove( cp->unitRest, cp->unitRest+w, (size_t)cp->unitRestLen );
-                  }
-                  if (cp->unitRestLen>0) {
-                      park_write( pid, cp, cnt, "ConsoleOut (line ending)" );
-                      *maxlenP= cnt;
-                      return 0;
-                  }
-                  /* the unit just finished was the record's end: the write is
-                     done. Carrying on wrote whatever the caller's buffer held
-                     after it (pre-release review of the console model). */
-                  if (wrln && cnt>0 && buffer[cnt-1]!=NUL && buffer[cnt-1]==ot->_sgs_eorch)
-                      recordDone= true;
-              }
           }
 
-          /* BUSY: another guest's request holds this terminal */
+          /* BUSY: another guest's request holds this terminal. Tested before
+             a resumed write's unsent tail, which belongs to this record: sent
+             first, it landed inside the owner's (pre-release review). */
           if (kind==W_GUEST && gConsoleID>=0 && gConsoleID<CONS_OWNERS) {
               ushort own= consOwner[ gConsoleID ];
               if (own!=0 && own!=pid && own<MAXPROCESSES && procs[own].state==pWaitWrite) {
@@ -1919,6 +1911,25 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                   *maxlenP= cnt;
                   return 0;
               }
+          }
+
+          if (resumed && cp->unitRestLen>0) {              /* first, a unit's unsent tail */
+              int w= hostterm_bound( gConsoleID ) ?
+                     hostterm_put( gConsoleID, cp->unitRest, cp->unitRestLen ) : cp->unitRestLen;
+              if (w>0) {
+                  cp->unitRestLen-= (short)w;
+                  memmove( cp->unitRest, cp->unitRest+w, (size_t)cp->unitRestLen );
+              }
+              if (cp->unitRestLen>0) {
+                  park_write( pid, cp, cnt, "ConsoleOut (line ending)" );
+                  *maxlenP= cnt;
+                  return 0;
+              }
+              /* the unit just finished was the record's end: the write is
+                 done. Carrying on wrote whatever the caller's buffer held
+                 after it (pre-release review of the console model). */
+              if (wrln && cnt>0 && buffer[cnt-1]!=NUL && buffer[cnt-1]==ot->_sgs_eorch)
+                  recordDone= true;
           }
 
           /* HELD, for a built-in: wait out the hold before the first byte */
