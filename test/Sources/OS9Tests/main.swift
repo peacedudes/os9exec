@@ -9091,6 +9091,118 @@ do {
     }
 }
 
+// ── F$DExec steps its child and nobody else ───────────────────────────────────
+// The one-instruction step is the CPU's, and F$DExec armed it for whichever
+// process ran next. With the debugged child parked in a terminal read, that was
+// a bystander: it ran one instruction per trip through the scheduler until its
+// next system call -- a 60-million-iteration loop took 48s instead of under 2
+// (found by the pre-release review; measured before the fix). A pipe read parks
+// differently and never showed it, which is why the child reads the terminal.
+do {
+    let header = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$Sleep equ $0A", "F$DFork equ $22", "F$DExec equ $23", "F$DExit equ $24",
+        "I$ReadLn equ $8B", "I$WritLn equ $8C", "REGS equ -32700"
+    ]
+    let child = header + ["  psect mdxkid,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "buf: ds.b 32", "  ends", "start:",
+        "  moveq #0,d0", "  lea buf(a6),a0", "  moveq #32,d1", "  OS9 I$ReadLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "  ends", ""]
+    let debugger = header + ["  psect mdxdbg,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "start:",
+        "  lea cname(pc),a0", "  lea cparm(pc),a1", "  lea REGS(a6),a2", "  moveq #0,d0", "  moveq #0,d1",
+        "  moveq #1,d2", "  moveq #3,d3", "  moveq #0,d4", "  OS9 F$DFork", "  bcs.s fail",
+        "  moveq #0,d5", "  move.w d0,d5",
+        "  move.l d5,d0", "  moveq #0,d1", "  moveq #0,d2", "  OS9 F$DExec",
+        "  move.l d5,d0", "  OS9 F$DExit",
+        "  lea donem(pc),a0", "  moveq #2,d0", "  moveq #20,d1", "  OS9 I$WritLn", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "cname: dc.b \"/h5/mdxkid\",0", "cparm: dc.b $0D", "donem: dc.b \"DEBUGGER DONE\",13", "  ends", ""]
+    let bystander = header + ["  psect mdxby,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start", "start:",
+        "  moveq #30,d0", "  OS9 F$Sleep",
+        "  move.l #60000000,d0", "spin:", "  subq.l #1,d0", "  bne.s spin",
+        "  lea donem(pc),a0", "  moveq #2,d0", "  moveq #20,d1", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "donem: dc.b \"BYSTANDER DONE\",13", "  ends", ""]
+    let modules = ["mdxkid": child, "mdxdbg": debugger, "mdxby": bystander]
+
+    let name = "process: F$DExec steps its own child, not a bystander, while the child waits"
+    if (filter.isEmpty || name.localizedCaseInsensitiveContains(filter)) && !containerized {
+        var build = ["load /dd/CMDS/r68 /dd/CMDS/l68"]
+        for (module, lines) in modules {
+            try? lines.joined(separator: "\r").write(toFile: scratchDisk + "/\(module).a",
+                                                      atomically: true, encoding: .utf8)
+            build += ["r68 /h5/\(module).a -o=/h5/\(module).r", "l68 /h5/\(module).r -o=/h5/\(module)"]
+        }
+        _ = os9(build, timeout: 60)
+
+        var bystanderDone = false
+        var debuggerDone  = false
+        var shown         = ""
+        if let (ptyMain, ptyTerminal, _) = makePTY() {
+            let process = Process()
+            process.executableURL       = execURL
+            process.arguments           = ["-r", shellArg]
+            process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
+            let resolved: String = {                   // one spelling, as os9() gives it
+                guard let path = realpath(scratchDisk, nil) else { return scratchDisk }
+                defer { free(path) }
+                return String(cString: path)
+            }()
+            process.environment         = ["OS9DISK": diskPath, "OS9STOP": "1",
+                                           "OS9H\(scratchDev.dropFirst())": resolved]
+                                          .merging(inheritedByChildren) { mine, _ in mine }
+            let terminalHandle = FileHandle(fileDescriptor: ptyTerminal, closeOnDealloc: false)
+            process.standardInput  = terminalHandle
+            process.standardOutput = terminalHandle
+            process.standardError  = terminalHandle
+
+            if (try? process.run()) != nil {
+                var seen = Data()
+                func send(_ keys: String) { var bytes = Array(keys.utf8); _ = write(ptyMain, &bytes, bytes.count) }
+                func wait(for text: String, _ seconds: Double) -> Bool {
+                    let end = Date().addingTimeInterval(seconds)
+                    var buf = [UInt8](repeating: 0, count: 65536)
+                    while Date() < end {
+                        if seen.range(of: Data(text.utf8)) != nil { return true }
+                        var fds = pollfd(fd: ptyMain, events: Int16(POLLIN), revents: 0)
+                        if poll(&fds, 1, 200) > 0 {
+                            let count = read(ptyMain, &buf, buf.count)
+                            if count <= 0 { break }
+                            seen.append(contentsOf: buf[0..<count])
+                        }
+                    }
+                    return seen.range(of: Data(text.utf8)) != nil
+                }
+                _ = wait(for: "$ ", 5)
+                send("/h5/mdxby >/nil&\n")
+                usleep(200_000)
+                send("/h5/mdxdbg\n")
+                bystanderDone = wait(for: "BYSTANDER DONE", 10)
+                send("go\n")                             // the child's line: now it can finish
+                debuggerDone = wait(for: "DEBUGGER DONE", 60)
+                shown = String(bytes: seen.suffix(300), encoding: .utf8) ?? ""
+                send("\u{1B}\n\u{04}\n")
+                usleep(500_000)
+                if process.isRunning { process.terminate() }
+                process.waitUntilExit()
+            }
+            close(ptyMain); close(ptyTerminal)
+        }
+        if bystanderDone && debuggerDone {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      bystander done within 10s: \(bystanderDone), debugger done after the line: \(debuggerDone)")
+            let oneLine = shown.replacingOccurrences(of: "\r", with: "|").replacingOccurrences(of: "\n", with: "")
+            print("      last shown: \(oneLine)")
+            failed += 1
+        }
+        for module in modules.keys {
+            for suffix in [".a", ".r", ""] { removeScratchItem(module + suffix) }
+        }
+    }
+}
+
 // ── F$DExec takes the child's registers from the buffer ─────────────────────
 // F$DExec's input includes "register buffer contains child register image"
 // (p.1-16), so a register a debugger changes there is what the child runs with;

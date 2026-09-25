@@ -2281,7 +2281,14 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
           #ifdef THREAD_SUPPORT
             if (ptocThread) pthread_mutex_unlock( &sysCallMutex );
           #endif
-        
+
+          /* The one-instruction step is the CPU's, so it is set from the
+             process about to run: only F$DExec's child steps. Left armed by
+             F$DExec alone, it went to whichever process ran next -- another
+             one, while the child sat parked in a call, which then crawled an
+             instruction at a time and could be put to sleep for good
+             (pre-release review). */
+          m68k_os9singlestep= dbg_step_pending[ cpid ] ? 1 : 0;
           resL= llm_os9_go(crp);
 				
           #ifdef THREAD_SUPPORT
