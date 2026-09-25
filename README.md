@@ -13,7 +13,7 @@ network, os9exec runs in a web browser, and a long list of fixes brings it
 closer to the manuals. [What's new in V4.1.0](docs/release-notes-v4.1.0.md).
 
 **Looking for software to run?** The
-[OS-9/68000 freeware collection](https://github.com/peacedudes/osk-freeware) is
+[OS-9/68000 freeware collection](https://github.com/peacedudes/osk-freeware) (coming soon) is
 three decades of community software for OS-9/68000 gathered on one disk image,
 with source for most of it, ready to mount beside your system disk. It is also
 how V4.1.0 was made: running that collection under os9exec found nearly every
