@@ -1382,6 +1382,60 @@ run("fs: raw open of a host-directory device answers one sector, then stops",
         $0.contains("created on") && $0.contains("bitmap") && !$0.contains("221")
     }
 
+// A raw path names its device, and its name is the device root's host
+// directory -- so SS_Attr and SS_FD through it reached that directory: a chmod
+// of the whole device, and its time set from the caller's FD (found by the
+// pre-release review, after the raw path gained a name). There is nothing to
+// set on a device through its raw path; both are E$BMode (203).
+do {
+    let rawAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Open equ $84", "I$SetStt equ $8E", "I$WritLn equ $8C",
+        "  psect mrawset,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "fd: ds.b 16", "  ends",
+        "start:",
+        "  lea dev(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.s bad", "  move.w d0,d7",
+        "  move.w #$1C,d1", "  moveq #0,d2", "  OS9 I$SetStt", "  bcc.s bad",
+        "  cmpi.w #203,d1", "  bne.s bad",
+        "  move.w d7,d0", "  move.w #$0F,d1", "  lea fd(a6),a0", "  moveq #16,d2", "  OS9 I$SetStt",
+        "  bcc.s bad", "  cmpi.w #203,d1", "  bne.s bad",
+        "  lea okm(pc),a0", "  bra.s tell",
+        "bad:", "  lea badm(pc),a0",
+        "tell:", "  moveq #1,d0", "  moveq #40,d1", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "dev: dc.b \"/h5@\",0",
+        "okm: dc.b \"RAW SETSTAT REFUSED\",13", "badm: dc.b \"RAW SETSTAT NOT REFUSED\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "fs: SS_Attr and SS_FD through a raw path leave the device's host directory alone"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? rawAsm.write(toFile: scratchDisk + "/mrawset.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mrawset.a -o=/h5/mrawset.r", "l68 /h5/mrawset.r -o=/h5/mrawset"], timeout: 60)
+        let files  = FileManager.default
+        let before = try? files.attributesOfItem(atPath: scratchDisk)
+        let out    = os9(["/h5/mrawset"], timeout: 30)
+        let after  = try? files.attributesOfItem(atPath: scratchDisk)
+        let mode   = { (attrs: [FileAttributeKey: Any]?) in (attrs?[.posixPermissions] as? NSNumber)?.intValue ?? -1 }
+        let time   = { (attrs: [FileAttributeKey: Any]?) in attrs?[.modificationDate] as? Date }
+        let untouched = mode(before) == mode(after) && time(before) == time(after)
+        if out.contains("RAW SETSTAT REFUSED") && untouched {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      refused: \(out.contains("RAW SETSTAT REFUSED")), host dir untouched: \(untouched)")
+            print("      mode \(String(mode(before), radix: 8)) -> \(String(mode(after), radix: 8))")
+            failed += 1
+        }
+        if let old = before {                     // put the scratch device back as it was
+            try? files.setAttributes([.posixPermissions: old[.posixPermissions] as Any,
+                                      .modificationDate: old[.modificationDate] as Any], ofItemAtPath: scratchDisk)
+        }
+        for leftover in ["mrawset.a", "mrawset.r", "mrawset"] { removeScratchItem(leftover) }
+    }
+}
+
 // `mount -k` names its image "<startPath>/<dev>" and prints that name, which is
 // the only place the emulator's computed startPath is observable from outside.
 // StartDir used to rebuild the cwd by climbing ".." and matching each child's
