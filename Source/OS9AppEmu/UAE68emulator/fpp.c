@@ -25,6 +25,7 @@
 
 
 #include <math.h>
+#include <fenv.h>
 #include <float.h>
 #include <stdint.h>
 #include <string.h>
@@ -436,6 +437,24 @@ static __inline__ int get_fp_value (uae_u32 opcode, uae_u16 extra, double *src)
    is an operand error that stores its largest integer of that sign; a NaN is
    taken by its sign here. A C cast truncated whatever the mode, and past the
    range was undefined behaviour. */
+/* FPCR's rounding mode for the arithmetic of one FPU instruction: the host
+   FPU is set to it for the instruction and put back after. It was always to
+   nearest, whatever a program set. Hosts without all four modes (WebAssembly
+   has only to nearest) keep rounding to nearest. */
+#if defined FE_TONEAREST && defined FE_TOWARDZERO && defined FE_DOWNWARD && defined FE_UPWARD
+  static int fpp_round_enter (void)
+  {
+      static const int mode[4] = { FE_TONEAREST, FE_TOWARDZERO, FE_DOWNWARD, FE_UPWARD };
+      int sv = fegetround ();
+      fesetround (mode[(regs.fpcr >> 4) & 3]);
+      return sv;
+  }
+  static void fpp_round_leave (int sv) { fesetround (sv); }
+#else
+  static int  fpp_round_enter (void)   { return 0; }
+  static void fpp_round_leave (int sv) { (void) sv; }
+#endif
+
 /* <value> rounded to an integer the way FPCR's mode control says: nearest
    (even), toward zero, toward minus or toward plus infinity */
 static double fpp_round (double value)
@@ -907,6 +926,7 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 {
     int reg;
     double src;
+    int svRound;	/* the host's rounding mode, while FPCR's is in force */
 
 	#if DEBUG_FPP
 	  char*  p;
@@ -1285,6 +1305,7 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 		sav= regs.fp[reg];
 	#endif
 
+	svRound = fpp_round_enter ();
 	switch (extra & 0x7f) {
 	case 0x00:		/* FMOVE */
 	case 0x40:  /* Explicit rounding. This is just a quick fix. Same
@@ -1507,6 +1528,7 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	    op_illg (opcode);
 	    break;
 	}
+	fpp_round_leave (svRound);
 	
 	#if DEBUG_FPP
 	switch (extra & 0x7f) {

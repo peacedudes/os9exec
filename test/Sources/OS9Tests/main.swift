@@ -5895,6 +5895,56 @@ do {
     }
 }
 
+// ── 68881 arithmetic rounds as FPCR says ─────────────────────────────────────
+// FPCR's rounding mode governed only a float stored as an integer and FINT;
+// arithmetic always rounded to nearest. 2/3 shows it: it is inexact and to
+// nearest rounds it down, so rounding toward plus infinity gives a result one
+// unit in the last place higher. (Not in the browser build: WebAssembly has no
+// rounding modes.)
+do {
+    let roundAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$WritLn equ $8C",
+        "  psect mfprnd,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "near: ds.l 2", "up: ds.l 2", "  ends",
+        "start:",
+        "  dc.w $F23C,$4000", "  dc.l 2", "  dc.w $F23C,$4020", "  dc.l 3",
+        "  lea near(a6),a0", "  dc.w $F210,$7400",
+        "  dc.w $F23C,$9000", "  dc.l $30",                     // FPCR: toward plus infinity
+        "  dc.w $F23C,$4000", "  dc.l 2", "  dc.w $F23C,$4020", "  dc.l 3",
+        "  lea up(a6),a0", "  dc.w $F210,$7400",
+        "  dc.w $F23C,$9000", "  dc.l 0",
+        "  move.l near(a6),d0", "  cmp.l up(a6),d0", "  bne.s same",
+        "  move.l up+4(a6),d0", "  sub.l near+4(a6),d0", "  cmpi.l #1,d0", "  bne.s same",
+        "  lea okm(pc),a0", "  bra.s tell",
+        "same:", "  lea sam(pc),a0",
+        "tell:", "  moveq #1,d0", "  moveq #40,d1", "  OS9 I$WritLn",
+        "  moveq #0,d1", "  OS9 F$Exit",
+        "okm: dc.b \"FPCR ROUNDING HONOURED\",13",
+        "sam: dc.b \"FPCR ROUNDING IGNORED\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "68881: arithmetic rounds as FPCR says (2/3 rounded up is one ulp above to nearest)"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? roundAsm.write(toFile: scratchDisk + "/mfprnd.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mfprnd.a -o=/h5/mfprnd.r", "l68 /h5/mfprnd.r -o=/h5/mfprnd"], timeout: 60)
+        let output = os9(["/h5/mfprnd"], timeout: 30)
+        if output.contains("FPCR ROUNDING HONOURED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      saw: \(output.split(whereSeparator: \.isNewline).filter { $0.contains("FPCR") })")
+            failed += 1
+        }
+        for leftover in ["mfprnd.a", "mfprnd.r", "mfprnd"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$Event: Ev$Wait answers the value that satisfied it ──────────────────────
 // "returns with the value of the event causing the process to wake" (Microware,
 // OS-9 Intermediate training, _os9_ev_wait) -- the value BEFORE the wait

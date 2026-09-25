@@ -84,8 +84,9 @@ System calls, now as the Technical Manual describes them:
 - New: `F$SchBit`, `F$AllBit`, `F$DelBit`, `F$SysID` (pre-3.0 form), and much more of `F$SetSys`.
 - The 68000 core: `MOVE from SR` is user-legal; `NEG`, `NBCD` and `SUB` set X; the 68881
   emulation stores doubles exactly (results were sometimes one bit off) and reports infinities,
-  so a division by zero under `math881` is an error rather than a wrong number. `FINT` rounds as
-  the FPU's rounding mode says (to nearest even by default), and `FINTRZ`, `FMOD` and `FREM` are
+  so a division by zero under `math881` is an error rather than a wrong number. Arithmetic and
+  `FINT` round as the FPU's rounding mode says (to nearest even by default; the browser build
+  always rounds to nearest, as WebAssembly has no other mode), and `FINTRZ`, `FMOD` and `FREM` are
   exact beyond 32-bit values. Also per Motorola's manual: `FSCALE` is exact; `FGETEXP` and
   `FGETMAN` answer zero and infinity correctly; `FMOD` and `FREM` set the quotient byte, which
   other instructions no longer clear; the not-greater-or-equal condition is right; a byte
