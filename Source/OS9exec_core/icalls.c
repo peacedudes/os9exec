@@ -377,10 +377,17 @@ os9err OS9_I_WritLn( regs_type *rp, ushort cpid )
    
     /* search if there is a CR char before end of the buffer */
     /* if yes, terminate the string a little bit earlier     */
-           ii= 0;
-    while (ii<cnt) {
-        if (buff[ii]==CR) cnt= ii+1;
-        ii++;
+    /* -- except on a terminal, whose record ends on its own PD_EOR (`tmode
+       eor=`), which ConsoleOut honours: cut here at a CR first, a record
+       ending in LF was split at any CR inside it (pre-release review) */
+    { syspath_typ* spP= (path<MAXUSRPATHS) ? get_syspath( cpid, procs[cpid].usrpaths[ path ] ) : NULL;
+      if (spP==NULL || (spP->type!=fCons && spP->type!=fTTY)) {
+             ii= 0;
+      while (ii<cnt) {
+          if (buff[ii]==CR) { cnt= ii+1; break; }
+          ii++;
+      }
+      }
     }
     
     /* now write */

@@ -5302,6 +5302,173 @@ do {
     }
 }
 
+// ── rbf: a path created on an image reports the new file's attributes ────────
+// The path kept the attributes of the directory searched to reach the new
+// file, so SS_Opt's PD_ATT on a freshly created file answered the directory's
+// (directory bit included), and single-user sharing was judged by them too
+// (found by the pre-release RBF review).
+do {
+    let attAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Create equ $83", "I$Delete equ $87", "I$GetStt equ $8D",
+        "I$WritLn equ $8C", "I$Close equ $8F",
+        "  psect mratt,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "opt: ds.b 128", "  ends",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #2,d0", "  OS9 I$Delete",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.s fail",
+        "  move.w d0,d7",
+        "  moveq #0,d1", "  lea opt(a6),a0", "  OS9 I$GetStt", "  bcs.s fail",
+        "  move.w d7,d0", "  OS9 I$Close",
+        "  cmpi.b #3,opt+$35(a6)", "  bne.s wrong",
+        "  lea filem(pc),a0", "  bra.s tell",
+        "wrong:", "  lea dirm(pc),a0",
+        "tell:", "  moveq #1,d0", "  moveq #40,d1", "  OS9 I$WritLn",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "fname: dc.b \"/h9/attfile\",0",
+        "filem: dc.b \"ATTRIBUTES ARE THE NEW FILE'S\",13",
+        "dirm: dc.b \"ATTRIBUTES ARE NOT THE NEW FILE'S\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "rbf: a file just created on an image reports its own attributes in SS_Opt"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? attAsm.write(toFile: scratchDisk + "/mratt.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mratt.a -o=/h5/mratt.r", "l68 /h5/mratt.r -o=/h5/mratt"], timeout: 60)
+        let output = os9(["mount -k=300K \(scratchDevice)", "/h5/mratt"], timeout: 60)
+        if output.contains("ATTRIBUTES ARE THE NEW FILE'S") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = output.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("ATTRIBUTES") || $0.contains("Error") }
+            print("      saw: \(seen)")
+            failed += 1
+        }
+        for leftover in ["mratt.a", "mratt.r", "mratt"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
+// ── scf: I$WritLn to a terminal ends the record on its PD_EOR, not a CR ──────
+// I$WritLn cut every record at the first CR before the file manager saw it, so
+// after `tmode eor=0A` a record ending in LF was split at a CR inside it. The
+// terminal ends a record on PD_EOR; disk files and pipes still end on CR
+// (found by the pre-release character-I/O review).
+do {
+    let eorAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$WritLn equ $8C",
+        "  psect mweor,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea rec(pc),a0", "  moveq #1,d0", "  moveq #6,d1", "  OS9 I$WritLn", "  bcs.s fail",
+        "  cmpi.l #6,d1", "  bne.s cut",
+        "  lea wholem(pc),a0", "  bra.s tell",
+        "cut:", "  lea cutm(pc),a0",
+        "tell:", "  moveq #2,d0", "  moveq #40,d1", "  OS9 I$WritLn",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "rec: dc.b \"AB\",13,\"CD\",10",
+        "wholem: dc.b \"THE WHOLE RECORD WAS WRITTEN\",10",
+        "cutm: dc.b \"THE RECORD WAS CUT AT ITS CR\",10",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "scf: I$WritLn to a terminal with eor=0A writes a record through an embedded CR"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? eorAsm.write(toFile: scratchDisk + "/mweor.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mweor.a -o=/h5/mweor.r", "l68 /h5/mweor.r -o=/h5/mweor"], timeout: 60)
+        let output = os9(["tmode eor=0A", "/h5/mweor", "tmode eor=0D"], timeout: 60)
+        if output.contains("THE WHOLE RECORD WAS WRITTEN") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = output.split(whereSeparator: \.isNewline).filter { $0.contains("RECORD") }
+            print("      saw: \(seen)")
+            failed += 1
+        }
+        for leftover in ["mweor.a", "mweor.r", "mweor"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
+// ── F$Fork and F$Load need the read permission F$Link needs ──────────────────
+// "If the module's access word does not give the process read permission, the
+// link call fails" (F$Link) -- and F$Fork ("the module is linked and executed")
+// and F$Load ("the first module read is linked") end in that link. Only F$Link
+// looked, so a program readable only by its owner ran for anyone (found by the
+// freeware session's M$Accs scan: TOP's mmon is owner-only). The module here is
+// user 1.1's, owner-read only; user 5.5 may neither run it nor load it, and the
+// same module opened to everyone still runs.
+do {
+    let target = [
+        "  use /dd/DEFS/oskdefs.d", "F$Exit equ $06",
+        "  psect mpriv,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:", "  moveq #0,d1", "  OS9 F$Exit", "  ends", ""
+    ].joined(separator: "\r")
+    let caller = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$Fork equ $03", "F$Wait equ $04", "F$Load equ $01", "F$SUser equ $1C",
+        "I$WritLn equ $8C",
+        "  psect mprun,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  move.l #$00050005,d1", "  OS9 F$SUser", "  bcs.w fail",
+        "  lea pname(pc),a0", "  lea cparm(pc),a1", "  moveq #0,d0", "  moveq #1,d1", "  moveq #0,d2",
+        "  moveq #3,d3", "  moveq #0,d4", "  OS9 F$Fork",
+        "  bcc.s forked", "  cmpi.w #164,d1", "  bne.s fother",
+        "  lea frefm(pc),a0", "  bsr.s say", "  bra.s load",
+        "forked:", "  OS9 F$Wait", "  lea fokm(pc),a0", "  bsr.s say", "  bra.s load",
+        "fother:", "  lea fothm(pc),a0", "  bsr.s say",
+        "load:", "  lea pname(pc),a0", "  moveq #0,d0", "  OS9 F$Load",
+        "  bcc.s loaded", "  cmpi.w #164,d1", "  bne.s lother",
+        "  lea lrefm(pc),a0", "  bsr.s say", "  bra.s out",
+        "loaded:", "  lea lokm(pc),a0", "  bsr.s say", "  bra.s out",
+        "lother:", "  lea lothm(pc),a0", "  bsr.s say",
+        "out:", "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "say:", "  moveq #1,d0", "  moveq #40,d1", "  OS9 I$WritLn", "  rts",
+        "pname: dc.b \"/h5/mpriv\",0", "cparm: dc.b 13",
+        "frefm: dc.b \"FORK REFUSED 164\",13", "fokm: dc.b \"FORK RAN\",13",
+        "fothm: dc.b \"FORK OTHER ERROR\",13",
+        "lrefm: dc.b \"LOAD REFUSED 164\",13", "lokm: dc.b \"LOAD ALLOWED\",13",
+        "lothm: dc.b \"LOAD OTHER ERROR\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "module: F$Fork and F$Load refuse a module the caller has no read permission for"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? target.write(toFile: scratchDisk + "/mpriv.a", atomically: true, encoding: .utf8)
+        try? caller.write(toFile: scratchDisk + "/mprun.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mpriv.a -o=/h5/mpriv.r", "l68 /h5/mpriv.r -o=/h5/mpriv",
+                 "r68 /h5/mprun.a -o=/h5/mprun.r", "l68 /h5/mprun.r -o=/h5/mprun"], timeout: 60)
+        let closed = os9(["fixmod -uo=1.1 -up=005 /h5/mpriv", "/h5/mprun"], timeout: 60)
+        let opened = os9(["fixmod -uo=1.1 -up=555 /h5/mpriv", "/h5/mprun"], timeout: 60)
+        let refused = closed.contains("FORK REFUSED 164") && closed.contains("LOAD REFUSED 164")
+        let allowed = opened.contains("FORK RAN") && opened.contains("LOAD ALLOWED")
+        if refused && allowed {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = (closed + opened).split(whereSeparator: \.isNewline)
+                .filter { $0.contains("FORK") || $0.contains("LOAD") || $0.contains("fixmod") }
+            print("      owner-only refused: \(refused), opened allowed: \(allowed); saw: \(seen)")
+            failed += 1
+        }
+        for leftover in ["mpriv.a", "mpriv.r", "mpriv", "mprun.a", "mprun.r", "mprun"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$Event: Ev$Wait answers the value that satisfied it ──────────────────────
 // "returns with the value of the event causing the process to wake" (Microware,
 // OS-9 Intermediate training, _os9_ev_wait) -- the value BEFORE the wait
@@ -10832,6 +10999,72 @@ do {
         }
     }
 
+    // A send parked on a full socket and cut short by a signal must not leave its
+    // progress behind: the next write from the same buffer skipped that many
+    // bytes and reported them sent (found by the pre-release character-I/O
+    // review). The host holds off reading so the first 2 MB send parks, an
+    // alarm ends it, and the second 2 MB -- all B -- must arrive whole.
+    let abandonName = "net: a socket send cut short by a signal leaves nothing for the next send to skip"
+    if filter.isEmpty || abandonName.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(abandonName) (the container cannot reach the host's loopback)")
+        } else if let (listenFd, port) = loopbackSocket(listening: true) {
+            // a small receive window, so the host cannot swallow 2 MB at once
+            // and the first send really has to park (macOS loopback otherwise can)
+            var window: Int32 = 8192
+            setsockopt(listenFd, SOL_SOCKET, SO_RCVBUF, &window, socklen_t(MemoryLayout<Int32>.size))
+            var letterA = 0, letterB = 0
+            let done = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                let conn = accept(listenFd, nil, nil)
+                if conn >= 0 {
+                    Thread.sleep(forTimeInterval: 3.0)      // the first send parks, then is cut short
+                    var buf = [UInt8](repeating: 0, count: 65536)
+                    while case let got = read(conn, &buf, buf.count), got > 0 {
+                        for byte in buf[0..<got] {
+                            if byte == 0x41 { letterA += 1 } else if byte == 0x42 { letterB += 1 }
+                        }
+                    }
+                    close(conn)
+                }
+                done.signal()
+            }
+            let body = [
+                "F$Icpt equ $09", "F$RTE equ $1E", "F$Alarm equ $56", "F$SRqMem equ $28",
+                "  lea handler(pc),a0", "  OS9 F$Icpt",
+                // fill first: the send must start the moment the connection
+                // exists, while the host is still holding off
+                "  move.l #$200000,d0", "  OS9 F$SRqMem", "  bcs fail", "  movea.l a2,a3",
+                "  movea.l a3,a1", "  move.l #$80000,d2",
+                "filla:", "  move.l #$41414141,(a1)+", "  subq.l #1,d2", "  bne.s filla"] +
+                openSocket + Array(connectAndSend.prefix(6)) + [
+                "  moveq #0,d0", "  moveq #1,d1", "  moveq #2,d2", "  moveq #50,d3", "  OS9 F$Alarm",
+                "  move.w d7,d0", "  movea.l a3,a0", "  move.l #$200000,d1", "  OS9 I$Write",
+                "  movea.l a3,a1", "  move.l #$80000,d2",
+                "fillb:", "  move.l #$42424242,(a1)+", "  subq.l #1,d2", "  bne.s fillb",
+                "  move.w d7,d0", "  movea.l a3,a0", "  move.l #$200000,d1", "  OS9 I$Write", "  bcs fail",
+                "  move.w d7,d0", "  OS9 I$Close",
+                "  moveq #0,d1", "  bra fail",
+                "handler:", "  OS9 F$RTE"
+            ]
+            let out = buildAndRun("ispabn", socketProgram("ispabn", port: port, body), timeout: 90)
+            let drained = done.wait(timeout: .now() + 30) == .success
+            if !drained { shutdown(listenFd, SHUT_RDWR) }
+            close(listenFd)
+            if drained && letterB == 0x200000 && letterA < 0x200000 && out.contains("ISPABN-END") {
+                print("PASS: \(abandonName)")
+                passed += 1
+            } else {
+                print("FAIL: \(abandonName)")
+                print("      host got \(letterA) A and \(letterB) B (want every one of 2097152 B), drained=\(drained)")
+                print("      out: \(errorLines(out))")
+                failed += 1
+            }
+        } else {
+            print("SKIP: \(abandonName) (no loopback port could be bound)")
+        }
+    }
+
     // A server: socket, bind, listen, accept. The accepted connection comes back
     // as a new path in d1; the host client must read what is written to it.
     let serverName = "net: a /socket server binds, listens and accepts, the connection a path of its own"
@@ -13584,6 +13817,77 @@ if (filter.isEmpty || pagePauseName.localizedCaseInsensitiveContains(filter)) &&
         }
     }
     try? FileManager.default.removeItem(atPath: pageFile)
+}
+
+// -- a /tN that takes part of a line ending gets the rest once, not again ----
+// A line ending (CR, auto-LF, PD_NUL pad bytes) goes to a bound /tN as one
+// unit. When the pty took only part of it, the writer parked and on resume
+// sent the WHOLE unit again, duplicating its CR, LF or pad bytes (found by the
+// pre-release character-I/O review). Here the reader stays away until the pty
+// buffer is full, so partial writes are certain, then drains everything.
+let tnUnitName = "hostterm: a line ending the /tN takes only part of is finished, not sent twice"
+if (filter.isEmpty || tnUnitName.localizedCaseInsensitiveContains(filter)) && !containerized {
+    let unitAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Open equ $84", "I$GetStt equ $8D", "I$SetStt equ $8E",
+        "I$WritLn equ $8C", "I$Close equ $8F",
+        "  psect mtnul,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "opt: ds.b 128", "  ends",
+        "start:",
+        "  lea term(pc),a0", "  moveq #2,d0", "  OS9 I$Open", "  bcs.s fail", "  move.w d0,d7",
+        "  moveq #0,d1", "  lea opt(a6),a0", "  OS9 I$GetStt", "  bcs.s fail",
+        "  move.b #100,opt+6(a6)", "  move.b #1,opt+5(a6)",          // PD_NUL 100, PD_ALF on
+        "  move.w d7,d0", "  moveq #0,d1", "  lea opt(a6),a0", "  OS9 I$SetStt", "  bcs.s fail",
+        "  moveq #39,d6",
+        "more:", "  move.w d7,d0", "  lea line(pc),a0", "  moveq #8,d1", "  OS9 I$WritLn", "  bcs.s fail",
+        "  dbra d6,more",
+        "  move.w d7,d0", "  OS9 I$Close",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "term: dc.b \"/t1\",0",
+        "line: dc.b \"LINE-AB\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+    try? unitAsm.write(toFile: scratchDisk + "/mtnul.a", atomically: true, encoding: .utf8)
+    _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+             "r68 /h5/mtnul.a -o=/h5/mtnul.r", "l68 /h5/mtnul.r -o=/h5/mtnul"], timeout: 60)
+
+    if let (controller, device, deviceName) = makePTY() {
+        let received = NSMutableData()
+        let readerDone = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            Thread.sleep(forTimeInterval: 2.0)          // let the pty fill: partial writes follow
+            var buf = [UInt8](repeating: 0, count: 65536)
+            var quiet = 0
+            while quiet < 15 {                          // until 3 s pass with nothing new
+                var fds = pollfd(fd: controller, events: Int16(POLLIN), revents: 0)
+                if poll(&fds, 1, 200) > 0 {
+                    let count = read(controller, &buf, buf.count)
+                    if count <= 0 { break }
+                    received.append(buf, length: count)
+                    quiet = 0
+                } else { quiet += 1 }
+            }
+            readerDone.signal()
+        }
+        _ = os9(["/h5/mtnul"], timeout: 60, env: ["OS9T1": deviceName], holdOpen: 4.0)
+        _ = readerDone.wait(timeout: .now() + 30)
+        close(controller); close(device)
+
+        let bytes = [UInt8](received as Data)
+        let returns = bytes.filter { $0 == 13 }.count
+        let pads = bytes.filter { $0 == 0 }.count
+        if returns == 40 && pads == 4000 {
+            print("PASS: \(tnUnitName)"); passed += 1
+        } else {
+            print("FAIL: \(tnUnitName)")
+            print("      CRs: \(returns) (want 40), pad NULs: \(pads) (want 4000), bytes: \(bytes.count)")
+            failed += 1
+        }
+    }
+    for leftover in ["mtnul.a", "mtnul.r", "mtnul"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
 }
 
 let xoffInputName = "console: XOFF halts output but input is still taken"

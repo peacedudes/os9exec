@@ -1415,7 +1415,7 @@ static os9err Open_Image( ushort pid, rbfdev_typ* dev, ptype_typ type, char* pat
         err= syspath_seek   ( pid,  sp,  0 );                 if (err) break;
 
         /* the "Cruz" mark, or a sector 0 a disk this size can have */
-        if (!RBF_IsImage( bb, (long)iSize )) { err= E_FNA; break; }
+        if (!RBF_IsImage( bb, iSize )) { err= E_FNA; break; }
         totScts= GET_OS9L(bb, TOT_POS) >> BpB;
         sctSize= GET_OS9W(bb, SECT_POS);
         if (sctSize==0)                     sctSize= STD_SECTSIZE;
@@ -4254,6 +4254,11 @@ os9err pRopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* name )
                     else {
                         err= CreateNewFile( pid, spP, procs[pid].fileAtt,
                               (char*)&cmp_entry, procs[pid].cre_initsize );
+                        /* the new file's attributes, not those of the directory
+                           searched to reach it: they decide single-user sharing
+                           and are what SS_Opt reports as PD_ATT (pre-release
+                           review) */
+                        if (!err) rbf->att= spP->fd_sct[ 0 ];
                         rbf->currPos= 0;  /* initialize position to 0 */
                         rbf->lastPos= 0;
                     }

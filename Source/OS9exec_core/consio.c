@@ -1595,6 +1595,7 @@ static ushort consOwner[ CONS_OWNERS ];
 void console_owner_release( ushort pid )
 {
     int i;
+    if (pid<MAXPROCESSES) procs[ pid ].unitRestLen= 0; /* nor a line ending to finish */
     for (i=0; i<CONS_OWNERS; i++) if (consOwner[ i ]==pid) consOwner[ i ]= 0;
 } /* console_owner_release */
 
@@ -1670,6 +1671,24 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
           if (pid>0 && pid<MAXPROCESSES && cp->state==pWaitWrite && !narration) {
               set_os9_state( pid, cp->saved_state, "ConsoleOut" );
               cnt=                cp->saved_cnt;
+
+              /* the tail of a line ending the terminal took only part of */
+              if (cp->unitRestLen>0) {
+                  int w= hostterm_bound( gConsoleID ) ?
+                         hostterm_put( gConsoleID, cp->unitRest, cp->unitRestLen ) : cp->unitRestLen;
+                  if (w>0) {
+                      cp->unitRestLen-= (short)w;
+                      memmove( cp->unitRest, cp->unitRest+w, (size_t)cp->unitRestLen );
+                  }
+                  if (cp->unitRestLen>0) {
+                      cp->saved_cnt  = cnt;
+                      cp->saved_state= cp->state;
+                      set_os9_state( pid, pWaitWrite, "ConsoleOut (line ending)" );
+                      arbitrate= true;
+                      *maxlenP= cnt;
+                      return 0;
+                  }
+              }
           }
 
           /* another process's request still holds this terminal: wait for it
@@ -1847,7 +1866,15 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                          past a byte the endpoint did not take. A pWaitWrite
                          process is rescheduled periodically (procstuff.c), so
                          it comes back here and proceeds once the far end
-                         drains. */
+                         drains. When PART of the unit went, the rest waits in
+                         unitRest instead: re-sending the whole unit on resume
+                         wrote its CR, LF or pad bytes twice (pre-release
+                         review). */
+                      if (w>0) {
+                          cp->unitRestLen= (short)(len-w);
+                          memcpy( cp->unitRest, pair+w, (size_t)(len-w) );
+                          cnt++;                   /* the character itself went */
+                      }
                       cp->saved_cnt  = cnt;
                       cp->saved_state= cp->state;
                       set_os9_state( pid, pWaitWrite, "ConsoleOut" );

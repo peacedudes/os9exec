@@ -238,7 +238,7 @@ Boolean SCSI_Device  ( const char* os9path,
 #endif
 
 Boolean RBF_ImgSize( long size );
-Boolean RBF_IsImage( const byte* s0, long size );
+Boolean RBF_IsImage( const byte* s0, uint64_t size );
 extern Boolean rbf_unmarked; /* -6: also take unmarked (6809) disks for RBF */
 /* Returns true, if it is a valid RBF Image size */
 

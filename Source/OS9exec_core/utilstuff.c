@@ -2792,8 +2792,9 @@ Boolean SCSI_Device( const char* os9path,
 
 Boolean rbf_unmarked= false; /* -6: also take unmarked disks (6809 ones) for RBF */
 
-Boolean RBF_IsImage( const byte* s0, long size )
-/* Is <s0> sector 0 of an RBF disk image <size> bytes long?
+Boolean RBF_IsImage( const byte* s0, uint64_t size )
+/* Is <s0> sector 0 of an RBF disk image <size> bytes long? (64 bits: a long
+   is 32 on i386 and 32-bit Windows, and read a 2 GB image as negative) 
  *
  * The OS-9/68000 format says so outright: "Cruz" at $60. By default nothing
  * else is taken for a disk. The mark looks deliberate -- rdoggett's educated
@@ -2827,7 +2828,7 @@ Boolean RBF_IsImage( const byte* s0, long size )
     if (dir==0 || dir>=tot)                     return false;
     need= ((tot+bit-1)/bit + 7)/8;
     if (map<need || map>((need+STD_SECTSIZE-1)/STD_SECTSIZE)*STD_SECTSIZE) return false;
-    return (uint64_t)(dir+1)*STD_SECTSIZE <= (uint64_t)size;
+    return (uint64_t)(dir+1)*STD_SECTSIZE <= size;
 } /* RBF_IsImage */
 
 Boolean RBF_ImgSize( long size )
@@ -3427,7 +3428,7 @@ Boolean RBF_ImgSize( long size )
               fclose( stream );                        err= E_FNA;  break;
           }
           fclose( stream ); /* is this really an RBF disk image? */
-          if (!RBF_IsImage( (const byte*)bb, (long)info.st_size )) { err= E_FNA; break; }
+          if (!RBF_IsImage( (const byte*)bb, (uint64_t)info.st_size )) { err= E_FNA; break; }
       } while (false);
 
       if (hostpath!=NULL) {

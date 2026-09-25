@@ -1389,6 +1389,8 @@ typedef struct {
 
                 /* Stdin saved buffer */
                 int        saved_cnt;
+                char       unitRest[2+255];   /* a /tN line ending written only in part: */
+                short      unitRestLen;       /* its unsent tail, sent first on resume    */
                 pstate_typ saved_state;     /* saved process' state */
 
                 /* This process' entry in one event's wait queue (events.c).

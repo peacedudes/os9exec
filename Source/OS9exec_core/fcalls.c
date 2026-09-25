@@ -240,6 +240,8 @@ os9err OS9_F_Exit( regs_type* rp, ushort cpid )
   return 0;
 } /* OS9_F_Exit */
 
+Boolean module_readable_by( ushort grp, ushort usr, const mod_exec* m ); /* below */
+
 os9err OS9_F_Load( regs_type *rp, ushort cpid )
 {
 /* F$Load:
@@ -288,6 +290,12 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
     err= load_module( cpid,mpath,&mid, exedir ); if (err) return err;
     
     theModule= get_module_ptr(mid);
+    /* its link, like any link, needs read permission (see module_readable_by);
+       the modules stay loaded, as the manual loads them before linking */
+    if (!module_readable_by( os9_word( procs[cpid].pd._group ), os9_word( procs[cpid].pd._user ), theModule )) {
+        unlink_module( mid );
+        return os9error(E_PERMIT);
+    }
     retword(rp->d[0])=os9_word(theModule->_mh._mtylan);
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
 
@@ -297,24 +305,29 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
     return 0;
 } /* OS9_F_Load */
 
-static Boolean module_readable( ushort pid, const mod_exec* m )
+Boolean module_readable_by( ushort grp, ushort usr, const mod_exec* m )
 /* "If the module's access word does not give the process read permission, the
    link call fails" (F$Link, page 1-41). Which of M$Accs's fields applies is the
    OS-9 Guru's (3.2.4): the owner's for the creator -- and for the super-user
    group, which is checked the same way rather than let through -- the group's
    for the creator's group, and the public field for everyone else. Read is
-   bit 0 of each four-bit field (Module Header, M$Accs). */
+   bit 0 of each four-bit field (Module Header, M$Accs). F$Load and F$Fork
+   end in the same link ("the first module read is linked"; "the module is
+   linked and executed"), so they answer to it too: a program readable only
+   by its owner ran for anyone, found by the freeware session's M$Accs scan. */
 {
     uint32_t owner= os9_long( m->_mh._mowner );
     ushort   acc  = os9_word( m->_mh._maccess );
-    ushort   grp  = os9_word( procs[pid].pd._group );
-    ushort   usr  = os9_word( procs[pid].pd._user  );
     ushort   field;
 
     if      (grp==0 || (grp==(owner>>16) && usr==(owner & 0xFFFF))) field= acc;
     else if (grp==(owner>>16))                                      field= acc>>4;
     else                                                            field= acc>>8;
     return (field & 0x1)!=0;
+} /* module_readable_by */
+
+static Boolean module_readable( ushort pid, const mod_exec* m )
+{   return module_readable_by( os9_word( procs[pid].pd._group ), os9_word( procs[pid].pd._user ), m );
 } /* module_readable */
 
 

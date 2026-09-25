@@ -429,6 +429,7 @@ os9err new_process(ushort parentid, ushort *newpid, ushort numpaths)
             cp->iticks    = 0;
             cp->upend     = 0;
             cp->stalled   = false; /* no parked pipe request from a slot's last owner */
+            cp->unitRestLen= 0;    /* nor a line ending half written to a /tN */
             cp->pd._sticks= os9_long(cp->fticks + cp->iticks);
             
             /* julian time and date */
@@ -1410,6 +1411,7 @@ void DoWait( void )
  *       should be changed to next waiting/active process
  */
 Boolean pipe_request_reads( ushort pid ); /* pipefiles.c */
+Boolean module_readable_by( ushort grp, ushort usr, const mod_exec* m ); /* fcalls.c */
 Boolean pipe_task_stalled ( ushort pid ); /* pipefiles.c */
 
 /* Whether os9exec should end now: the process it was started with has gone,
@@ -1905,8 +1907,9 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
     /* check if module is executeable and */
     /* check if this module is not in the "black list" of OS9exec */
         mty= os9_word( theModule->_mh._mtylan )>>BpB;
-    if (mty!=MT_PROGRAM) err= E_NEMOD;
-    else                 err= os9exec_compatible( theModule ); 
+    if      (mty!=MT_PROGRAM)                            err= E_NEMOD;
+    else if (!module_readable_by( grp,usr, theModule ))  err= E_PERMIT; /* F$Fork links it: fcalls.c */
+    else                                                 err= os9exec_compatible( theModule ); 
 
     if (err) { unlink_module( mid ); return err; }
 
