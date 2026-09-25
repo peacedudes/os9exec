@@ -109,7 +109,7 @@ void os9exec_refused_write(uaecptr addr, int size, uaecptr pc)
     refused.pc     = pc;
 }
 
-Boolean llm_refused_write( ulong* addr, int* size, ulong* pc )
+Boolean llm_refused_write( uint32_t* addr, int* size, uint32_t* pc )
 {
     if (!refused.pending) return false;
     refused.pending= false;
