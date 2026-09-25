@@ -647,6 +647,7 @@ typedef struct {
             short   linkcount;
             ushort  group;     /* the first module of the file it came from; itself if alone */
             uint32_t entered;  /* when it entered the directory: of equals, the lower is established */
+            ushort  holder;    /* a non-re-entrant module's linking process; 0 = none known */
          } module_typ;
 
 

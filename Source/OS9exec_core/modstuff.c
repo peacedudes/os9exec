@@ -597,6 +597,7 @@ void init_modules()
     
         os9modules[k].isBuiltIn= false;
         os9modules[k].linkcount= 0;
+        os9modules[k].holder   = 0;
         os9modules[k].group    = (ushort)k; /* a group of one until a load says otherwise */
     }
    
@@ -673,6 +674,7 @@ void release_module(ushort mid, Boolean modOK)
      
     os9modules[mid].isBuiltIn= false;      
     os9modules[mid].linkcount= 0;
+    os9modules[mid].holder   = 0;
     os9modules[mid].group    = mid;
 } /* release_module */
     

@@ -1420,6 +1420,7 @@ void DoWait( void )
  */
 Boolean pipe_request_reads( ushort pid ); /* pipefiles.c */
 Boolean module_readable_by( ushort grp, ushort usr, const mod_exec* m ); /* fcalls.c */
+Boolean module_busy_for( ushort pid, ushort mid );                        /* fcalls.c */
 Boolean pipe_task_stalled ( ushort pid ); /* pipefiles.c */
 
 /* Whether os9exec should end now: the process it was started with has gone,
@@ -1917,6 +1918,7 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
         mty= os9_word( theModule->_mh._mtylan )>>BpB;
     if      (mty!=MT_PROGRAM)                            err= E_NEMOD;
     else if (!module_readable_by( grp,usr, theModule ))  err= E_PERMIT; /* F$Fork links it: fcalls.c */
+    else if (module_busy_for( newpid, mid ))             err= E_MODBSY; /* the same link's other rule */
     else                                                 err= os9exec_compatible( theModule ); 
 
     if (err) { unlink_module( mid ); return err; }

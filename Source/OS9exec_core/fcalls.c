@@ -241,6 +241,7 @@ os9err OS9_F_Exit( regs_type* rp, ushort cpid )
 } /* OS9_F_Exit */
 
 Boolean module_readable_by( ushort grp, ushort usr, const mod_exec* m ); /* below */
+Boolean module_busy_for( ushort pid, ushort mid );                        /* below */
 
 os9err OS9_F_Load( regs_type *rp, ushort cpid )
 {
@@ -296,6 +297,7 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
         unlink_module( mid );
         return os9error(E_PERMIT);
     }
+    if (module_busy_for( cpid, mid )) { unlink_module( mid ); return os9error(E_MODBSY); }
     retword(rp->d[0])=os9_word(theModule->_mh._mtylan);
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
 
@@ -304,6 +306,29 @@ os9err OS9_F_Load( regs_type *rp, ushort cpid )
     rp->a[1]=TO68K(theModule)+os9_long(theModule->_mexec);
     return 0;
 } /* OS9_F_Load */
+
+#define ATTR_REENT 0x8000   /* M$Attr bit 7, as the high byte of the attr/rev word */
+
+Boolean module_busy_for( ushort pid, ushort mid )
+/* "If the module requested is not re-entrant, only one process may link to it
+   at a time" (F$Link, page 1-41); E$ModBsy is "non-sharable module already in
+   use by another process". Asked AFTER the caller's link is counted. The
+   module directory keeps only a count, so the process whose link found the
+   module unlinked is remembered as its holder: a second process is refused
+   while that one lives, and one process linking twice is not -- the manual
+   names another process, and no more is enforced than it says. A holder that
+   has gone, or none known, hands the module to the caller. */
+{
+    module_typ* e= &os9modules[ mid ];
+    mod_exec*   m= os9mod( mid );
+    ushort      h= e->holder;
+
+    if (m==NULL || (os9_word( m->_mh._mattrev ) & ATTR_REENT)) return false; /* sharable */
+    if (e->linkcount>1 && h!=0 && h!=pid && h<MAXPROCESSES &&
+        procs[ h ].state!=pUnused && procs[ h ].state!=pDead) return true;
+    e->holder= pid;
+    return false;
+} /* module_busy_for */
 
 Boolean module_readable_by( ushort grp, ushort usr, const mod_exec* m )
 /* "If the module's access word does not give the process read permission, the
@@ -433,6 +458,7 @@ os9err OS9_F_Link( regs_type *rp, ushort cpid )
         unlink_module( mid );
         return os9error(E_PERMIT);
     }
+    if (module_busy_for( cpid, mid )) { unlink_module( mid ); return os9error(E_MODBSY); }
         
     retword(rp->d[1])=os9_word(theModule->_mh._mattrev);
     rp->a[0]= TO68K(p);
@@ -2101,6 +2127,7 @@ os9err OS9_F_DatMod( regs_type *rp, ushort cpid )
     
     mod_crc( theModule );
     os9modules[mid].linkcount= 1;                 /* module is created and linked */
+    os9modules[mid].holder   = cpid;              /* by its creator (module_busy_for) */
     os9modules[mid].group    = mid;               /* a group of its own */
 
     theModule= get_module_ptr( mid );

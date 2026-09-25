@@ -55,7 +55,10 @@ A few fixes change behaviour that a script could have come to rely on:
   saturate instead of wrapping. BASIC09's own `INT`, `FIX` and integer assignment are unchanged.
 - `F$Link` and `F$UnLoad` with a type or language look only for a module of that kind.
 - `F$Fork` and `F$Load` refuse a module the caller has no read permission for (`E$Permit`), as
-  `F$Link` does: a program readable only by its owner no longer runs for other users.
+  `F$Link` does: a program readable only by its owner no longer runs for other users. A module
+  that is not re-entrant is linked by one process at a time; another process's `F$Link`, `F$Load`
+  or `F$Fork` of it gets `E$ModBsy`. No program on the freeware disk is affected: all of its
+  modules are re-entrant.
 - Page pause (`tmode pause`) now pauses: output stops after each page until a key is pressed,
   and that key is not passed on to the program. It used to stream on and eat the next key typed.
 - A host directory refuses to create a name longer than 28 characters (`E$BPNam`).
@@ -161,7 +164,7 @@ Files and devices:
 os9exec is built from the manuals, and where the manuals leave room it has had to make a
 reading. The conformance suite, CONF68K, turns those readings into tests with the manual's
 words beside each, and it runs on real OS-9 as well as here. This release attaches it as
-a single disk image, `conf68k.dsk`: 113 standalone tests, hand-written assembly, no Microware
+a single disk image, `conf68k.dsk`: 114 standalone tests, hand-written assembly, no Microware
 software on it. Put it on a disk device, `chd` to it and type `runall`; each test prints one
 line with what it observed and what the manual led us to expect. Where a claim is our inference
 rather than the manual's plain statement, the claim says so. If your hardware disagrees with
