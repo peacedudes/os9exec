@@ -1965,7 +1965,8 @@ void upo_printf( const char* format, ... )
     vsnprintf(buffer,MAXPRINTFLEN,format,vp);
     va_end                (vp);
 
-    usrpath_puts( currentpid,usrStdout,buffer, true );
+    /* in the debugger, a listing is the operator's (see debugwait) */
+    usrpath_puts( currentpid, in_debugger ? MAXUSRPATHS : usrStdout, buffer, !in_debugger );
 } /* upo_printf */
 
 void upho_printf( const char* format, ... )
@@ -1981,7 +1982,7 @@ void upho_printf( const char* format, ... )
 
     buffer[ 0 ]= '#';
     buffer[ 1 ]= ' ';
-    usrpath_puts( currentpid,usrStdout,buffer, true );
+    usrpath_puts( currentpid, in_debugger ? MAXUSRPATHS : usrStdout, buffer, !in_debugger );
 } /* upho_printf */
 
 void upe_printf( const char* format, ... )

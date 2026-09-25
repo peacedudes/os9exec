@@ -5870,6 +5870,31 @@ do {
     }
 }
 
+// ── debugger listings go to the operator, not where idbg's output is sent ─────
+// The debugger's P, M, F and V list through the same routine internal commands
+// print with, so run as `idbg >file` their listings went into the file. What
+// the debugger says belongs to the operator, like the rest of its output
+// (found by the pre-release CPU review).
+do {
+    let name = "debugger: its P listing goes to the operator even when idbg's output is redirected"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let file = scratchDisk + "/dbgout"
+        try? FileManager.default.removeItem(atPath: file)
+        let out = os9(["idbg >/\(scratchDev)/dbgout", "p", "g"], timeout: 30)
+        let inFile = (try? String(contentsOfFile: file, encoding: .isoLatin1)) ?? ""
+        if out.contains("Last Syscall") && !inFile.contains("Last Syscall") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let shown = out.contains("Last Syscall"), filed = inFile.contains("Last Syscall")
+            print("      listing on the terminal: \(shown), in the file: \(filed)")
+            failed += 1
+        }
+        try? FileManager.default.removeItem(atPath: file)
+    }
+}
+
 // ── F$Event: Ev$Wait answers the value that satisfied it ──────────────────────
 // "returns with the value of the event causing the process to wake" (Microware,
 // OS-9 Intermediate training, _os9_ev_wait) -- the value BEFORE the wait

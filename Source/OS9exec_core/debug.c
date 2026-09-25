@@ -710,8 +710,23 @@ static Boolean is_flow_terminator(uint32_t addr)
     return false;
 }
 
-/* wait for debug confirmation */
+static ushort debugwait_menu( void );
+
+/* wait for debug confirmation. While the debugger's menu runs, what its
+   commands list (P, M, F, V print through upo_printf, which internal commands
+   share) goes to the operator, as its other output does -- not along the
+   program's stdout redirection (pre-release review). */
 ushort debugwait( void )
+{
+    Boolean sv= in_debugger;
+    ushort  r;
+    in_debugger= true;
+    r= debugwait_menu();
+    in_debugger= sv;
+    return r;
+} /* debugwait */
+
+static ushort debugwait_menu( void )
 {
     #ifdef TERMINAL_CONSOLE
       char *cp;
@@ -964,7 +979,7 @@ ushort debugwait( void )
     
 goon:
     return extra;
-} /* debugwait */
+} /* debugwait_menu */
 
 /* show one reg in specified length */
 void showonereg(uint32_t value, Boolean isa, ushort regnum, ushort lenspec)

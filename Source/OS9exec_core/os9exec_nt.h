@@ -1641,6 +1641,7 @@ extern Boolean host_stdin_eof;   /* sticky EOF on a redirected (non-tty) host st
 /* break the recursion loops variable */
 extern Boolean in_recursion;
 extern Boolean in_narration; /* the write in progress is to the operator (dbgOut), not a program's path */
+extern Boolean in_debugger;  /* the debugger's menu is running: its listings are the operator's */
 
 /* global settings */
 extern int     dbgOut;
