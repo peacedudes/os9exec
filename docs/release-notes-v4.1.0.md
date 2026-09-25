@@ -78,7 +78,9 @@ System calls, now as the Technical Manual describes them:
 - Processes and signals: `F$STrap` handlers get the PC in a0 and run on their own stack, for
   every vector the manual lists; signals queued while masked reach the intercept routine in
   order, with the count in d0; the mask level stops at 255; a process's own `S$Wake` wakes it;
-  `F$DExec` single-steps system calls and resumes from the debugger's register buffer. A signal
+  `F$DExec` single-steps system calls, resumes from the debugger's register buffer, and steps
+  only its own child (a program running beside a debugged one that waited at the terminal was
+  stepped too, and crawled). A signal
   handler that waits on a pipe no longer freezes the whole emulator (it did in v4.0.0), and
   `F$RTE` goes back to the request the signal interrupted.
 - CPU time: a process that computes without making system calls is charged for it, so the C
@@ -122,7 +124,8 @@ Files and devices:
   middle of a path; lookups are much faster (a device scan that took minutes on a Docker share
   takes seconds). The internal `rename` can no longer rename a device's own root directory, and
   open paths and current directories follow a rename; a listing no longer ends early once many
-  other directories have been read; a raw path to a device no longer blocks deleting a file.
+  other directories have been read; a raw path to a device no longer blocks deleting a file, and
+  `SS_Attr` and `SS_FD` through one are refused rather than reaching the host directory.
 - `-6` also opens RBF disks without the OS-9/68000 format's "Cruz" mark, as 6809 (CoCo) disks
   are: the file system is the same RBF, and listing, reading and `dcheck` work. It is off by
   default, because that mark is what tells a 68000 disk from a 6809 one, so reading an unmarked
@@ -136,7 +139,10 @@ Files and devices:
   waiting behind `^S` no longer keeps a core busy; a signal ends a write parked on a terminal with
   the signal as its error; `I$WritLn` to a terminal ends the record at its own end-of-record
   character; a `/tN` that takes part of a line ending gets the rest once, not twice; a write to a
-  `/tN` whose far end has gone ends with `E$Write` instead of waiting for ever.
+  `/tN` whose far end has gone ends with `E$Write` instead of waiting for ever. A built-in
+  command held by `^S` that nobody lifts waits 10 seconds once and then writes, in order; it used
+  to stop the whole emulator for two minutes per character. After `F$RTE`, a write resumes behind
+  one that began while its intercept routine ran, instead of inside it.
 - Sockets: a send cut short by a signal no longer makes the next send from the same buffer skip
   bytes.
 - `-d` tracing and the debugger talk to you, never into the program's own output. The debugger's
