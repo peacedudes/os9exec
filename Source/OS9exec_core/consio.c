@@ -1361,9 +1361,22 @@ Boolean console_page_release( short term_id )
     return true;
 } /* console_page_release */
 
+/* How long a built-in waits for a hold to lift before it writes regardless,
+   and the terminals whose current hold it has already waited out. A built-in
+   is host C, so while it waits every process on every terminal is stopped:
+   the wait is short, and taken once per hold, not once per character or line
+   (a hold nobody lifts -- ^S, then the terminal left -- cost the whole limit
+   for every character of `dhelp`: pre-release review). XON or a fresh XOFF
+   starts a new hold (console_hold_changed). */
+#define BUILTIN_HOLD_MS 10000
+#define HOLD_TERMS      256
+static Boolean holdWaitedOut[ HOLD_TERMS ];
+
 void console_hold_changed( short term_id, Boolean held )
 {
     int i;
+
+    if (term_id>=0 && term_id<HOLD_TERMS) holdWaitedOut[ term_id ]= false;
 
     if (!held) {
         /* Released. The backlog queued before the XOFF is due at timestamps
@@ -1630,7 +1643,8 @@ void console_owner_claim( ushort pid, short term )
                 straight through, with no emulated PC to rewind. It cannot park,
                 so it WAITS IN PLACE -- pumping input so an XON can be seen,
                 draining the queue -- before each unit: for a hold to lift (up to
-                two minutes; a hold still there at shutdown is dropped), for room
+                BUILTIN_HOLD_MS, once per hold; a hold still there at shutdown
+                is dropped), for room
                 in the paced queue or for a bound /tN to take the unit (~2s
                 without progress). After that it writes best-effort. (Parked, it
                 lost the rest of its output: `dhelp` after ^S delivered 11 bytes
@@ -1687,10 +1701,18 @@ static writer_kind writer_of( ushort pid, const process_typ* cp )
    the narration then goes out AHEAD of it: an XOFF (held output must stay
    held -- the operator's own lines are not held), and a /tN that stops
    taking bytes part way (narration to it is best-effort, and may be lost). */
+static void baud_drain_all( short term );
+
 static void baud_drain_now( short term )
 {
-    int i;
     if (console_held( term )) return;
+    baud_drain_all( term );
+} /* baud_drain_now */
+
+/* everything queued for <term>, out now, held or not */
+static void baud_drain_all( short term )
+{
+    int i;
     for (i=0; i<MAXBAUDDEV; i++) {
         baud_device_t* d= &baud_devices[i];
         byte   c;
@@ -1701,7 +1723,7 @@ static void baud_drain_now( short term )
         wake_parked_writers();
     }
     recompute_next_wake();
-} /* baud_drain_now */
+} /* baud_drain_all */
 
 /* a GUEST that cannot go on: park it, to resume at character <cnt> */
 static void park_write( ushort pid, process_typ* cp, long cnt, const char* why )
@@ -1720,19 +1742,27 @@ static void park_write( ushort pid, process_typ* cp, long cnt, const char* why )
    costs no concurrency: a built-in runs to completion as host C anyway. */
 static void builtin_wait( short term, baud_device_t* dev, int need )
 {
-    int spins= 0;
-    while (console_held( term ) && ++spins <= 12000) {
+    Boolean known= term>=0 && term<HOLD_TERMS;
+    int     spins= known && holdWaitedOut[ term ] ? BUILTIN_HOLD_MS/10 : 0;
+    while (console_held( term ) && ++spins <= BUILTIN_HOLD_MS/10) {
         struct timespec ts;
         CheckInputBuffers();   /* so a typed XON is seen */
         baud_drain_due();
         ts.tv_sec= 0; ts.tv_nsec= 10L*1000L*1000L; /* 10ms */
         nanosleep( &ts, NULL );
     }
+    if (known && console_held( term )) holdWaitedOut[ term ]= true;
     /* not while still held: baud_make_room waits out a hold without limit
        (so an interactive XON can come), and this wait's own limit has run out */
     if (dev!=NULL && !console_held( term ) && BAUD_FIFO_SIZE - dev->count < need)
         baud_make_room( dev, need );
 } /* builtin_wait */
+
+/* A hold on <term> that a built-in has waited out and now writes through */
+static Boolean hold_given_up( short term )
+{
+    return term>=0 && term<HOLD_TERMS && holdWaitedOut[ term ] && console_held( term );
+} /* hold_given_up */
 
 /* <c> and its tail (<needsLF>, <nulls> pad bytes) out as one unit: into the
    paced queue <dev> when there is one, else to a bound /tN for a GUEST (which
@@ -1924,8 +1954,16 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
               nulls  = (wrln && c==CR) ? ot->_sgs_nul : 0;
 
               /* HELD, for a built-in: before every unit, as for a guest */
-              if (kind==W_BUILTIN && console_held( (short)gConsoleID ))
+              if (kind==W_BUILTIN && console_held( (short)gConsoleID )) {
                   builtin_wait( (short)gConsoleID, NULL, 0 );
+                  /* given up on: what is queued goes first and this goes
+                     straight after it, so nothing overtakes -- written around
+                     a held queue, newer bytes went out ahead of older ones */
+                  if (hold_given_up( (short)gConsoleID )) {
+                      baud_drain_all( (short)gConsoleID );
+                      via= NULL;
+                  }
+              }
 
               /* FULL, for a built-in: wait for room, then write around the
                  queue if it never came */

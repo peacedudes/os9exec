@@ -14126,6 +14126,81 @@ if runXoffIntUtil && !containerized {
     }
 }
 
+// -- a hold nobody lifts stops a built-in once, not once per character --------
+// A built-in cannot park, so it waits in place for a hold to lift -- and while
+// it waits, every process on every terminal is stopped. That wait was two
+// minutes, and it was taken again before every character: ^S with nobody left
+// to type ^Q froze the whole emulator for hours behind a single `dhelp` (found
+// by the pre-release review). Now the wait is BUILTIN_HOLD_MS (10s), once per
+// hold. Both halves: the hold is honoured at first, and the listing then
+// arrives whole although XON never comes -- and in order: written around the
+// still-held queue, its newer bytes went out ahead of the older ones.
+let holdOnceName = "console: a built-in waits out a hold nobody lifts once, then writes"
+if (filter.isEmpty || holdOnceName.localizedCaseInsensitiveContains(filter)) && !containerized {
+    if let (ptyMain, ptyTerminal, _) = makePTY() {
+        let process = Process()
+        process.executableURL       = execURL
+        process.arguments           = [shellArg]        // NO -r: pacing is the point
+        process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
+        process.environment         = ["OS9DISK": diskPath, "OS9STOP": "1"]
+                                      .merging(inheritedByChildren) { mine, _ in mine }
+        let terminalHandle = FileHandle(fileDescriptor: ptyTerminal, closeOnDealloc: false)
+        process.standardInput  = terminalHandle
+        process.standardOutput = terminalHandle
+        process.standardError  = terminalHandle
+
+        var early = -1
+        var later = -1
+        var text  = Data()
+
+        if (try? process.run()) != nil {
+            func send(_ keys: String) { var bytes = Array(keys.utf8); _ = write(ptyMain, &bytes, bytes.count) }
+            func drain(_ seconds: Double, into total: inout Int) {
+                let end = Date().addingTimeInterval(seconds)
+                var buf = [UInt8](repeating: 0, count: 65536)
+                while Date() < end {
+                    var fds = pollfd(fd: ptyMain, events: Int16(POLLIN), revents: 0)
+                    if poll(&fds, 1, 200) > 0 {
+                        let count = read(ptyMain, &buf, buf.count)
+                        if count <= 0 { return }
+                        total += count
+                        text.append(contentsOf: buf[0..<count])
+                    }
+                }
+            }
+            var discard = 0
+            drain(2.0, into: &discard)          // settle, then ignore the banner
+            text = Data()
+            send("\u{13}")                      // XOFF, and never an XON
+            usleep(400_000)
+            send("dhelp\n")
+            early = 0
+            drain(5.0, into: &early)            // inside the wait: held
+            later = early
+            drain(14.0, into: &later)           // past it: the whole listing
+            send("\u{11}\u{1B}\n\u{04}\n")
+            usleep(500_000)
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+        close(ptyMain); close(ptyTerminal)
+
+        // dhelp is ~1184 bytes; the command line's echo may pass while held
+        let head = text.range(of: Data("Debug and Stop masks".utf8))?.lowerBound
+        let tail = text.range(of: Data("insider information".utf8))?.lowerBound
+        var inOrder = false
+        if let head, let tail { inOrder = head < tail }
+        if early >= 0 && early < 60 && later > 900 && inOrder {
+            print("PASS: \(holdOnceName)"); passed += 1
+        } else {
+            print("FAIL: \(holdOnceName)")
+            print("      [held <60 bytes for 5s, then >900 by 19s with no XON, first line first]")
+            print("      first 5s: \(early)   by 19s: \(later)   in order: \(inOrder)")
+            failed += 1
+        }
+    }
+}
+
 // -- ^C behind a full type-ahead buffer still aborts ---------------------------
 // The console readers stopped reading the host once the 256-byte input buffer
 // was full, and KeyToBuffer refused a full buffer before it looked at the
