@@ -2157,6 +2157,216 @@ do {
     }
 }
 
+// ── RBF: a chd too deep for the path field is refused, not written past it ──────
+// The process's current path is a 255-byte field, and a relative chd appended to
+// it with no bound: a tree of 28-character directories nested ten deep, entered
+// one level at a time, ran past the field into the rest of the process
+// descriptor. Found by the pre-release review. The level that would not fit must
+// be refused E$BPNam, and pwd must still answer from the level before.
+do {
+    let name = "rbf: a chd too deep for the 255-byte path field is refused E$BPNam"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem(scratchDevice)
+        let level = "abcdefghijklmnopqrstuvwxyz28"
+        var commands = ["mount -k=512K \(scratchDevice)", "chd /h9"]
+        for _ in 0..<10 { commands += ["makdir \(level)", "chd \(level)"] }
+        commands += ["echo DEPTH DONE"]
+        let out = os9(commands, timeout: 60)
+        let refused = out.contains("000:215")
+        if refused && out.contains("DEPTH DONE") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      refused E$BPNam: \(refused)")
+            failed += 1
+        }
+        removeScratchItem(scratchDevice)
+    }
+}
+
+// ── RBF: a directory with an unwritten entry is not taken for an empty one ──────
+// SS_Attr refuses to clear the directory bit of a directory that is not empty,
+// but the emptiness test read the device: an entry still unwritten in a path's
+// sector buffer was invisible, and the directory became a plain file with a live
+// entry in it -- orphaning that entry's file. Found by the pre-release review. A
+// directory gets one deleted slot; an update path on it writes an entry into
+// that slot (held in its buffer) and asks, on the same path, to clear the bit.
+do {
+    let dneAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Open equ $84", "I$Seek equ $88", "I$Write equ $8A",
+        "I$WritLn equ $8C", "I$SetStt equ $8E", "I$Close equ $8F",
+        "  psect mdne,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "entry: ds.b 32", "  ends",
+        "start:",
+        "  lea entry(a6),a0", "  move.b #$F9,(a0)", "  move.b #1,31(a0)",       // "y", FD at sector 1
+        "  lea dname(pc),a0", "  move.w #$83,d0", "  OS9 I$Open", "  bcs.s bad", "  move.w d0,d7",
+        "  move.w d7,d0", "  moveq #64,d1", "  OS9 I$Seek", "  bcs.s bad",
+        "  move.w d7,d0", "  lea entry(a6),a0", "  moveq #32,d1", "  OS9 I$Write", "  bcs.s bad",
+        "  move.w d7,d0", "  moveq #$1C,d1", "  moveq #$3F,d2", "  OS9 I$SetStt",
+        "  bcc.s bad", "  cmpi.w #238,d1", "  bne.s bad",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "dname: dc.b \"/h9/d\",0",
+        "mok:  dc.b \"UNWRITTEN ENTRY COUNTS\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"DIRECTORY TAKEN FOR EMPTY\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "rbf: a directory with an entry not yet written is not taken for an empty one"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? dneAsm.write(toFile: scratchDisk + "/mdne.a", atomically: true, encoding: .utf8)
+        removeScratchItem(scratchDevice)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mdne.a -o=/h5/mdne.r", "l68 /h5/mdne.r -o=/h5/mdne"], timeout: 60)
+        let out = os9(["mount -k=512K \(scratchDevice)", "makdir /h9/d", "echo x >/h9/d/x", "del /h9/d/x",
+                       "/h5/mdne"], timeout: 60)
+        if out.contains("UNWRITTEN ENTRY COUNTS") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("ENTRY") || $0.contains("EMPTY") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mdne.a", "mdne.r", "mdne"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+        removeScratchItem(scratchDevice)
+    }
+}
+
+// ── RBF: a full segment list leaves no freed sectors in the file's FD ───────────
+// When an allocation found the FD's segment list full (E$SLF), the new run had
+// already been written into the path's copy of the FD, and its sectors were then
+// freed; SS_Size's error path also handed that copy to the file's other paths.
+// A path holding it then grew the file into the freed run with no allocation --
+// writing sectors the bitmap calls free, which the next allocation hands to
+// another file -- and wrote the FD with the run in it. Found by the pre-release
+// review. Two files are written in turns until the first has 47 of its 48
+// segment slots; a second path opens it; SS_Size asks for more than one segment
+// can hold (32767 sectors) -- on 16-sector clusters, so that one bitmap sector
+// can give a run that long -- and the run fills the last slot and runs out. The
+// second path writes its FD (SS_Attr) and the first writes 4K at the end, which
+// now takes a proper allocation. dcheck must pass: on the build before, it
+// reports the 4K's sectors as "not in bit map".
+do {
+    let slfAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Create equ $83", "I$Open equ $84", "I$Write equ $8A",
+        "I$SetStt equ $8E", "I$Close equ $8F",
+        "  psect mslf,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "scr: ds.b 4096", "  ends",
+        "start:",
+        "  lea aname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w done",
+        "  move.w d0,d7",
+        "  lea bname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w done",
+        "  move.w d0,d6",
+        "  moveq #45,d5",                                     // 46 turns: 47 of 48 slots
+        "turns:", "  move.w d7,d0", "  lea scr(a6),a0", "  move.l #4096,d1", "  OS9 I$Write",   // one cluster
+        "  move.w d6,d0", "  lea scr(a6),a0", "  move.l #4096,d1", "  OS9 I$Write",
+        "  dbra d5,turns",
+        "  lea aname(pc),a0", "  moveq #3,d0", "  OS9 I$Open", "  bcs.w done", "  move.w d0,d4",
+        "  move.w d7,d0", "  moveq #2,d1", "  move.l #10000000,d2", "  OS9 I$SetStt",  // > one segment
+        "  move.w d4,d0", "  moveq #$1C,d1", "  moveq #$1B,d2", "  OS9 I$SetStt",
+        "  move.w d7,d0", "  lea scr(a6),a0", "  move.l #4096,d1", "  OS9 I$Write",   // grow into it
+        "  move.w d4,d0", "  OS9 I$Close", "  move.w d6,d0", "  OS9 I$Close",
+        "  move.w d7,d0", "  OS9 I$Close",
+        "done:", "  moveq #0,d1", "  OS9 F$Exit",
+        "aname: dc.b \"/h9/segs\",0", "bname: dc.b \"/h9/between\",0",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "rbf: a full segment list leaves no freed sectors in the file's FD (E$SLF)"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? slfAsm.write(toFile: scratchDisk + "/mslf.a", atomically: true, encoding: .utf8)
+        removeScratchItem(scratchDevice)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mslf.a -o=/h5/mslf.r", "l68 /h5/mslf.r -o=/h5/mslf"], timeout: 60)
+        let out = os9(["mount -k=16M -c=16 \(scratchDevice)", "/h5/mslf"], timeout: 60)
+            + os9(["dcheck /h9"], timeout: 120)
+        if dcheckClean(out) {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("RUN") || $0.contains("Error") || $0.contains("not in") }.prefix(4)
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mslf.a", "mslf.r", "mslf"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+        removeScratchItem(scratchDevice)
+    }
+}
+
+// ── RBF: a write that runs out of disk leaves the file's size alone ─────────────
+// A write that needed a new allocation and found the disk full set the file's
+// size to where that write began. Begun inside the file, that cut off whatever
+// lay past it: a file of 200 bytes, a write of 2000 at 150 on a full disk, and
+// the file closed at 150. Found by the pre-release review. The program writes
+// 200 bytes, fills the disk with a second file (SS_Size far past its end),
+// writes 2000 at offset 150 of the first (E$Full), closes it, and reads its
+// size back.
+do {
+    let fullAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Create equ $83", "I$Open equ $84", "I$Seek equ $88", "I$Write equ $8A",
+        "I$WritLn equ $8C", "I$GetStt equ $8D", "I$SetStt equ $8E", "I$Close equ $8F",
+        "  psect mfullsz,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "scr: ds.b 2048", "  ends",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w bad",
+        "  move.w d0,d7",
+        "  move.w d7,d0", "  lea scr(a6),a0", "  move.l #200,d1", "  OS9 I$Write", "  bcs.w bad",
+        "  lea gname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w bad",
+        "  move.w d0,d6",
+        "  move.w d6,d0", "  moveq #2,d1", "  move.l #4000000,d2", "  OS9 I$SetStt",   // fills the disk
+        "  move.w d6,d0", "  OS9 I$Close",
+        "  move.w d7,d0", "  move.l #150,d1", "  OS9 I$Seek", "  bcs.w bad",
+        "  move.w d7,d0", "  lea scr(a6),a0", "  move.l #2000,d1", "  OS9 I$Write", "  bcc.w bad",
+        "  move.w d7,d0", "  OS9 I$Close",
+        "  lea fname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.w bad", "  move.w d0,d7",
+        "  move.w d7,d0", "  moveq #2,d1", "  OS9 I$GetStt", "  bcs.w bad",
+        "  cmpi.l #200,d2", "  bne.s bad",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "bad:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "fname: dc.b \"/h9/keep\",0", "gname: dc.b \"/h9/filler\",0",
+        "mok:  dc.b \"SIZE KEPT AT 200\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"SIZE CUT BY THE FAILED WRITE\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "rbf: a write that runs out of disk leaves the file's size alone"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? fullAsm.write(toFile: scratchDisk + "/mfullsz.a", atomically: true, encoding: .utf8)
+        removeScratchItem(scratchDevice)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mfullsz.a -o=/h5/mfullsz.r", "l68 /h5/mfullsz.r -o=/h5/mfullsz"], timeout: 60)
+        let out = os9(["mount -k=300K \(scratchDevice)", "/h5/mfullsz"], timeout: 60)
+        if out.contains("SIZE KEPT AT 200") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("SIZE") || $0.contains("Error") }
+            print("      saw: \(seen.joined(separator: " | "))")
+            failed += 1
+        }
+        for leftover in ["mfullsz.a", "mfullsz.r", "mfullsz"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+        removeScratchItem(scratchDevice)
+    }
+}
+
 // ── RBF: a directory held open does not flush a stale sector over a new entry ──
 // The path RBF adds and removes directory entries through was a ring of its
 // own, so a user path holding the same directory sector neither lost its copy

@@ -3403,6 +3403,13 @@ static os9err AdaptAlloc_FD( syspath_typ* spP, ulong pos, ulong scs )
   ulong       lscs= scs; /* a ushort cut a count of 65536 or more: one call can
                             now be asked that many (SS_Size), and the bitmap bits
                             of the difference were set with no FD naming them */
+  /* The loop writes the run into the FD sector as it goes. If the segment list
+     runs out, the run's sectors are given back below, so the FD must be given
+     back too: left as it was, it named freed sectors, and SS_Size's error path
+     then published it to the file's other paths, the next of which to write
+     its FD put that on the disk -- two files sharing sectors. */
+  byte        fdsave[ MIN_TMP_SCT_SIZE ];
+  memcpy( fdsave, spP->fd_sct, dev->sctSize );
 
   for (ii=First; ii+SegSize <= dev->sctSize; ii+=SegSize) {
     if (GET_OS9W(spP->fd_sct, ii+3)==0) { /* zero is zero for big/little endian */
@@ -3439,6 +3446,7 @@ static os9err AdaptAlloc_FD( syspath_typ* spP, ulong pos, ulong scs )
     prev_ii = ii;
   } /* for */
 
+  memcpy( spP->fd_sct, fdsave, dev->sctSize );
   GetThem( dev, pos,scs, false );
   return E_SLF;
 } /* AdaptAlloc_FD */
@@ -3459,7 +3467,7 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     /* PD_SAS is a path option, not a device setting: <rbf->sas> starts as the
        device descriptor's value and SS_Opt can change it for this path alone. */
     ulong       ma    = Max( rbf->sas,dev->clusterSize );
-    ulong       sect, slim, offs, size, totsize, maxc, pos, scs, *rs, pref, coff, sv, req;
+    ulong       sect, slim, offs, size, totsize, maxc, pos, scs, *rs, pref, coff, sv, req, lp0;
     byte*       bb;
     byte        attr;
     int         ii;
@@ -3477,7 +3485,8 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
     byte*       b;
     
     debugprintf( dbgFiles,dbgDetail,("# >DoAccess (%s): n=%d\n", wMode ? "write":"read", *lenP ));
-    sv= rbf->currPos;
+    sv = rbf->currPos;
+    lp0= rbf->lastPos;
 
     /* Re-entered after parking -- restore the process whatever kind of access
      * parked it. This was `if (!wMode)` from when only a READ could park (at
@@ -3742,9 +3751,16 @@ static os9err DoAccess( syspath_typ* spP, uint32_t *lenP, char* buffer,
         boffs += maxc;
     } while (remain>0);
     
-    if (err==E_FULL) {
+    if (err==E_FULL || err==E_SLF) {
+        /* The write did not happen: the pointer goes back to where it began,
+           and the file keeps the size it had. Setting the size to the write's
+           start shrank a file written past there earlier -- a write begun
+           inside a file that ran out of disk cut the file at that point. Any
+           segments allocated before the failure are in the FD already, so the
+           file's other paths get it too (as SS_Size's error path does). */
         rbf->currPos= sv;
-        rbf->lastPos= sv;
+        rbf->lastPos= lp0;
+        RingPublishFD( spP );
     }
     
     if (!spP->rawMode && *lenP==0 && sv==rbf->currPos) {
@@ -4470,6 +4486,14 @@ os9err pRchd( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname 
         spP= get_syspathd( pid, cp->usrpaths[path] );
     if (spP==NULL) return os9error(E_BPNUM);
     
+    /* Checked before anything is changed: the new current path is built in
+       the process's own OS9PATHLEN field. A directory tree deep enough really
+       exists (ten levels of 28-character names), and appending its path to
+       the old one ran past the field. */
+    if ((AbsPath(pathname) ? 0 : strlen( curpath )+1) + strlen( pathname ) >= OS9PATHLEN) {
+        usrpath_close( pid, path );
+        return os9error(E_BPNAM);
+    }
     *xV= spP->u.rbf.devnr; dev= &rbfdev[ *xV ];
     *xD= spP->u.rbf.fd_nr;
 
@@ -4478,7 +4502,8 @@ os9err pRchd( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname 
     strcat( curpath,pathname );
       
     n= strlen(dev->img_name);
-    if (SamePathBegin( curpath,dev->img_name )) {
+    if (SamePathBegin( curpath,dev->img_name ) &&
+        1+strlen( dev->name )+strlen( &curpath[n] ) < OS9PATHLEN) {
         strcpy( tmp,   curpath );
         strcpy( curpath,PSEP_STR  ); /* get a str staring with dev->name instead of dev->img_name */
         strcat( curpath,dev->name );
@@ -4945,12 +4970,22 @@ static os9err DirHasEntries( syspath_typ* spP, Boolean* hasP )
    caller on a lock. A deleted entry's name starts with a zero byte. */
 {
     rbfdev_typ* dev = &rbfdev[spP->u.rbf.devnr];
-    ulong       size= FDSize( spP ), seen= 0, pos, scs, k, off;
+    ulong       size= Max( FDSize( spP ), spP->u.rbf.lastPos ), seen= 0, pos, scs, k, off;
+                /* the path's own end too: a directory it has just extended
+                   is longer than the FD sector says until that is written */
     int         ii;
     byte*       buf;
     os9err      err= 0;
 
     *hasP= false;
+    /* The device is not the whole truth: an entry can sit unwritten in this
+       path's sector buffer or another path's. Written out first, so a
+       directory with a live entry is never taken for an empty one (and turned
+       into a plain file, orphaning that entry). */
+    if (spP->mustW!=0 && spP->rw_sct!=NULL) {
+        err= WriteSector( dev, spP->mustW,1, spP->rw_sct ); if (err) return err;
+        spP->mustW= 0;
+    }
     buf= malloc( dev->sctSize ); if (buf==NULL) return os9error(E_NORAM);
 
     for (ii=FD_Header_Size; ii+SegSize<=dev->sctSize && seen<size && !*hasP; ii+=SegSize) {
@@ -4958,6 +4993,7 @@ static os9err DirHasEntries( syspath_typ* spP, Boolean* hasP )
         scs= GET_OS9W(spP->fd_sct, ii+3);
         if (scs==0) break;
 
+        err= RingFlushRange( spP, pos, scs ); if (err) break;
         for (k=0; k<scs && seen<size && !*hasP && !err; k++) {
             err= ReadSector( dev, pos+k, 1, buf ); if (err) break;
             for (off=0; off+DIRENTRYSZ<=dev->sctSize && seen<size; off+=DIRENTRYSZ, seen+=DIRENTRYSZ) {
