@@ -129,12 +129,15 @@ Files and devices:
   type-ahead buffer (typed or pasted text beyond it waits rather than being lost); an echo
   waiting behind `^S` no longer keeps a core busy; a signal ends a write parked on a terminal with
   the signal as its error; `I$WritLn` to a terminal ends the record at its own end-of-record
-  character; a `/tN` that takes part of a line ending gets the rest once, not twice.
+  character; a `/tN` that takes part of a line ending gets the rest once, not twice; a write to a
+  `/tN` whose far end has gone ends with `E$Write` instead of waiting for ever.
 - Sockets: a send cut short by a signal no longer makes the next send from the same buffer skip
   bytes.
 - `-d` tracing and the debugger talk to you, never into the program's own output. The debugger's
-  `k` refuses a process that does not exist, `n` keeps the whole trigger name, and a listing taken
-  while tracing no longer moves the program's own PC.
+  `k` refuses a process that does not exist, `n` keeps the whole trigger name, a listing taken
+  while tracing no longer moves the program's own PC, and its process, module, file and memory
+  listings reach you even when `idbg`'s output is redirected. Under `-d`, a traced pipeline's
+  second program no longer waits for the first to finish before its output appears.
 - 32-bit hosts (Linux i386, 32-bit Windows, the browser): several sizes that wrapped there, and
   a module file that could hang `F$Load`, are fixed; so is a clock that froze paced terminal
   output for over an hour every 72 minutes, and the size of a disk image of 2 GB or more.
