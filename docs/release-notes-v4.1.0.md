@@ -61,11 +61,14 @@ System calls, now as the Technical Manual describes them:
   and records its creator.
 - Memory: `F$Mem` resizes the data area in place, and what it adds is always clean;
   `F$SRqMem` with -1 allocates the largest free block; a request near 4 GB is `E$NoRAM` on every
-  host; a process may hold 8192 blocks; `F$GBlkMp` reports the free map.
+  host; a process may hold 8192 blocks; `F$GBlkMp` reports the free map; a zero-byte block
+  can be given back without crashing the emulator.
 - Processes and signals: `F$STrap` handlers get the PC in a0 and run on their own stack, for
   every vector the manual lists; signals queued while masked reach the intercept routine in
   order, with the count in d0; the mask level stops at 255; a process's own `S$Wake` wakes it;
-  `F$DExec` single-steps system calls and resumes from the debugger's register buffer.
+  `F$DExec` single-steps system calls and resumes from the debugger's register buffer. A signal
+  handler that waits on a pipe no longer freezes the whole emulator (it did in v4.0.0), and
+  `F$RTE` goes back to the request the signal interrupted.
 - CPU time: a process that computes without making system calls is charged for it, so the C
   library's `clock()` advances (the Whetstone benchmark used to divide by zero).
 - Permissions: `S$Kill`, `F$SPrior`, `F$SetSys` and `F$DExit` enforce the manual's rules.
@@ -90,7 +93,10 @@ Files and devices:
   while another path still used it; a hard-linked file's sectors freed by deleting one of its
   names; allocations of 65536 sectors or more half recorded; a directory held open writing a
   stale sector over a new entry; and a disk filled part way by `SS_Size` losing the sectors it
-  took. An image claiming a sector size os9exec cannot read is refused.
+  took; a write that runs out of disk shortening the file; a file whose segment list fills
+  keeping sectors it had just given back; and a directory whose only entry was still unwritten
+  counting as empty, so it could be deleted. An image claiming a sector size os9exec cannot read
+  is refused, and a `chd` deeper than a path can record is refused with `E$BPNam`.
 - Host directories: files can be renamed and moved by rewriting their entry, as OS-9's `move`
   does; directory entries keep their positions across a deletion; a symlink cannot lead out of
   the device; paths with spaces work, and so do host names longer than 28 characters in the
