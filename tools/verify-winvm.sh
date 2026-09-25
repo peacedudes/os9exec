@@ -66,17 +66,21 @@ scp -q -r $SSHOPTS -P 2222 "$REPO/test/68k-conformance" claude@localhost:C:/veri
 
 # Run every test module as its own boot program and tally the RESULT lines,
 # which is exactly what conformance.sh's --noshell leg does on Unix.
+# The verdict is the WORD IN ITS COLUMN, matched case-sensitively: PowerShell's
+# -match ignores case, so t85's PASS line ("...ends a blocked read with error
+# 2") was also counted as an ERROR. Every non-PASS line is listed, SKIPs too,
+# so the run can be held against the Unix --noshell leg's SKIPs.
 ps_body='$mods = Get-ChildItem CMDS | Where-Object { $_.Name -ne "tally" -and $_.Name -ne "mark" } | Sort-Object Name
 $res=@(); foreach ($m in $mods) {
   $o = (C:\verify\os9exec.exe -r ("/dd/CMDS/" + $m.Name) 2>&1 | Out-String)
   $res += (($o -replace "`r","`n") -split "`n" | Where-Object { $_ -match "^RESULT " })
 }
 Write-Output ("TOTAL=" + $res.Count)
-Write-Output ("PASS="  + ($res | Where-Object {$_ -match " PASS "}).Count)
-Write-Output ("FAIL="  + ($res | Where-Object {$_ -match " FAIL "}).Count)
-Write-Output ("SKIP="  + ($res | Where-Object {$_ -match " SKIP "}).Count)
-Write-Output ("ERROR=" + ($res | Where-Object {$_ -match " ERROR "}).Count)
-$res | Where-Object {$_ -match " FAIL | ERROR "}'
+Write-Output ("PASS="  + ($res | Where-Object {$_ -cmatch "^RESULT \S+ PASS "}).Count)
+Write-Output ("FAIL="  + ($res | Where-Object {$_ -cmatch "^RESULT \S+ FAIL "}).Count)
+Write-Output ("SKIP="  + ($res | Where-Object {$_ -cmatch "^RESULT \S+ SKIP "}).Count)
+Write-Output ("ERROR=" + ($res | Where-Object {$_ -cmatch "^RESULT \S+ ERROR "}).Count)
+$res | Where-Object {$_ -cmatch "^RESULT \S+ (FAIL|ERROR|SKIP) "}'
 
 run_suite() {   # $1 = the OS9DISK spelling to run under
     $SSH 'cd C:\verify\68k-conformance
