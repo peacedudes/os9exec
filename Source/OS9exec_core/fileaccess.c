@@ -1352,6 +1352,10 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
     if (spP->rawMode) {        /* rawmode allows only reading of 1st sector */
         spP->rw_sct = get_mem( STD_SECTSIZE );       /* for some info procs */
         spP->rawPos = 0;
+        /* the device's own host path: SS_Opt describes this path by it, and
+           with no name at all FD_ID read before its buffer (ASan) */
+        strncpy( spP->fullName, pp, OS9PATHLEN-1 );
+                 spP->fullName[ OS9PATHLEN-1 ]= NUL;
         if (PathFound(pp)) {
             /* A host DIRECTORY: it has no disk sectors, but the C library's
              * stat() reads the identification sector before it will describe

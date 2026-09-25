@@ -1685,7 +1685,7 @@ os9err FD_ID( const char* pathname, dirent_typ* dEnt,
       
   #if defined win_unix
     if (dEnt!=NULL) {
-      if     ( tmp[ strlen( tmp )-1 ]!=PATHDELIM ) strcat( tmp,PATHDELIM_STR );
+      if     ( tmp[0]==NUL || tmp[ strlen( tmp )-1 ]!=PATHDELIM ) strcat( tmp,PATHDELIM_STR );
       strcat ( tmp, dEnt->d_name );
     } // if
   #endif
