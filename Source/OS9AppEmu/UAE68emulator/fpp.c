@@ -1327,8 +1327,7 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	   rounding a negative value, FINT(-2.3) giving -1. The 68881 keeps
 	   the result a float: FINT rounds "using the current rounding mode"
 	   (FINT, M68000 PRM), FINTRZ toward zero; FMOD's quotient is rounded
-	   toward zero, FREM's to nearest, which is C's fmod and remainder.
-	   Arithmetic itself still rounds to nearest whatever FPCR says. */
+	   toward zero, FREM's to nearest, which is C's fmod and remainder. */
 	case 0x01:		/* FINT */
 	    regs.fp[reg] = fpp_round (src);
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
@@ -1524,6 +1523,9 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	    regs.fpsr = fpsr_cc (src);
 	    break;
 	default:
+	    /* the host's own mode first: the exception can longjmp out past
+	       the leave below, when its frame will not fit on the stack */
+	    fpp_round_leave (svRound);
 	    m68k_setpc (m68k_getpc () - 4);
 	    op_illg (opcode);
 	    break;
