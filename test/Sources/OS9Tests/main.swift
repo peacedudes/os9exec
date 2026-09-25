@@ -5469,6 +5469,161 @@ do {
     }
 }
 
+// ── 68881: seven readings the pre-release CPU/FPU review found wrong ─────────
+// Each check leaves a digit; the line printed is the seven of them, 1 where the
+// FPU gave the M68000 PRM's answer. In order: FMOVE.B #5 read the high byte of
+// its extension word (gave 0); FSNGE was NAN or (Z and N) where the PRM's table
+// 3-23 is NAN or (N and not Z), wrong both for -5 < 3 and for -5 = -5; FSCALE
+// #3 of 1.0 gave 7.999999999999998; FINT ignored FPCR's rounding mode (2.7 gave
+// 3.0 toward zero); FGETEXP of 0 gave -1, not 0; FMOD never set FPSR's quotient
+// byte (7 mod 2 has quotient 3); FScc (An)+ stored at An and never moved it.
+// The instructions are hand-encoded: r68 has no 68881 mnemonics.
+do {
+    let fpuAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$WritLn equ $8C",
+        "  psect mfpu,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "res: ds.b 8", "buf: ds.b 4", "  ends",
+        "start:",
+        "  lea res(a6),a2", "  moveq #6,d0",
+        "clr:", "  move.b #'0',(a2,d0.w)", "  dbra d0,clr",
+        // 1: FMOVE.B #5,FP0 ; FMOVE.L FP0,D0
+        "  dc.w $F23C,$5800,$0005", "  dc.w $F200,$6000",
+        "  cmpi.l #5,d0", "  bne.s t2", "  move.b #'1',0(a2)",
+        // 2: -5 FCMP 3 -> NGE true ; -5 FCMP -5 -> NGE false
+        "t2:", "  dc.w $F23C,$4000", "  dc.l -5", "  dc.w $F23C,$4038", "  dc.l 3",
+        "  dc.w $F241,$001C",
+        "  dc.w $F23C,$4000", "  dc.l -5", "  dc.w $F23C,$4038", "  dc.l -5",
+        "  dc.w $F242,$001C",
+        "  cmpi.b #$FF,d1", "  bne.s t3", "  tst.b d2", "  bne.s t3", "  move.b #'1',1(a2)",
+        // 3: 1.0 FSCALE.W #3 must be exactly 8
+        "t3:", "  dc.w $F23C,$4000", "  dc.l 1", "  dc.w $F23C,$5026,$0003",
+        "  dc.w $F23C,$4038", "  dc.l 8", "  dc.w $F243,$0001",
+        "  cmpi.b #$FF,d3", "  bne.s t4", "  move.b #'1',2(a2)",
+        // 4: FPCR round-toward-zero, FINT 2.7 must be 2
+        "t4:", "  dc.w $F23C,$9000", "  dc.l $10",
+        "  dc.w $F23C,$4000", "  dc.l 27", "  dc.w $F23C,$4020", "  dc.l 10", "  dc.w $F200,$0001",
+        "  dc.w $F23C,$9000", "  dc.l 0",
+        "  dc.w $F23C,$4038", "  dc.l 2", "  dc.w $F244,$0001",
+        "  cmpi.b #$FF,d4", "  bne.s t5", "  move.b #'1',3(a2)",
+        // 5: FGETEXP of 0 is 0
+        "t5:", "  dc.w $F23C,$4000", "  dc.l 0", "  dc.w $F200,$009E", "  dc.w $F200,$043A",
+        "  dc.w $F245,$0001",
+        "  cmpi.b #$FF,d5", "  bne.s t6", "  move.b #'1',4(a2)",
+        // 6: 7 FMOD 2 leaves quotient 3 in FPSR's quotient byte
+        "t6:", "  dc.w $F23C,$4000", "  dc.l 7", "  dc.w $F23C,$4021", "  dc.l 2",
+        "  dc.w $F206,$A800", "  swap d6", "  andi.w #$FF,d6",
+        "  cmpi.w #3,d6", "  bne.s t7", "  move.b #'1',5(a2)",
+        // 7: FSEQ (A0)+ moves A0 on by one
+        "t7:", "  lea buf(a6),a0", "  move.l a0,d7", "  addq.l #1,d7",
+        "  dc.w $F258,$0001",
+        "  cmpa.l d7,a0", "  bne.s tell", "  move.b #'1',6(a2)",
+        "tell:", "  move.b #13,7(a2)",
+        "  movea.l a2,a0", "  moveq #1,d0", "  moveq #8,d1", "  OS9 I$WritLn",
+        "  moveq #0,d1", "  OS9 F$Exit",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "68881: byte immediates, NGE, FSCALE, FINT's rounding mode, FGETEXP 0, FMOD's quotient, FScc (An)+"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? fpuAsm.write(toFile: scratchDisk + "/mfpu.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mfpu.a -o=/h5/mfpu.r", "l68 /h5/mfpu.r -o=/h5/mfpu"], timeout: 60)
+        let output = os9(["/h5/mfpu"], timeout: 30)
+        if output.contains("1111111") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = output.split(whereSeparator: \.isNewline)
+                .filter { $0.count == 7 && $0.allSatisfy { "01".contains($0) } }
+            print("      digits (want 1111111): \(seen)")
+            failed += 1
+        }
+        for leftover in ["mfpu.a", "mfpu.r", "mfpu"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
+// ── a bus error hands its F$STrap handler the flags the program had ────────────
+// The CPU keeps its flags apart from SR until something asks for SR, and the
+// out-of-memory bus error path never asked: the register image an F$STrap
+// handler got (R$sr) carried a stale condition code (found by the pre-release
+// CPU review). Here X, N and C are set ($19) just before the faulting read.
+do {
+    let busAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$STrap equ $0E", "I$WritLn equ $8C",
+        "  psect mbusf,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  moveq #0,d0", "  movea.l d0,a0", "  lea exctbl(pc),a1", "  OS9 F$STrap", "  bcs.s fail",
+        "  moveq #0,d1", "  subq.l #1,d1",                      // X, N and C set
+        "  move.l $F0000000,d0",                                 // far past memory: a bus error
+        "  lea nobus(pc),a0", "  bra.s tell",
+        "exctbl: dc.w $08,handler-*-4", "  dc.w -1",
+        "handler:", "  move.w $40(a5),d6", "  andi.w #$1F,d6", "  cmpi.w #$19,d6", "  bne.s lost",
+        "  lea keptm(pc),a0", "  bra.s tell",
+        "lost:", "  lea lostm(pc),a0",
+        "tell:", "  moveq #1,d0", "  moveq #40,d1", "  OS9 I$WritLn",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "keptm: dc.b \"BUS ERROR KEPT THE FLAGS\",13",
+        "lostm: dc.b \"BUS ERROR LOST THE FLAGS\",13",
+        "nobus: dc.b \"NO BUS ERROR\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "cpu: an F$STrap handler for a bus error sees the flags the program had"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? busAsm.write(toFile: scratchDisk + "/mbusf.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mbusf.a -o=/h5/mbusf.r", "l68 /h5/mbusf.r -o=/h5/mbusf"], timeout: 60)
+        let output = os9(["/h5/mbusf"], timeout: 30)
+        if output.contains("BUS ERROR KEPT THE FLAGS") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = output.split(whereSeparator: \.isNewline)
+                .filter { $0.contains("BUS ERROR") || $0.contains("Error") }
+            print("      saw: \(seen)")
+            failed += 1
+        }
+        for leftover in ["mbusf.a", "mbusf.r", "mbusf"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
+// ── debugger: k, n and i leave the emulator whole ─────────────────────────────
+// Three debugger commands the pre-release review found harmful: `k60000` wrote
+// far past the process table and faulted the host; `nshell` set the trigger to
+// "shel" (a CR already gone was cut again) and ran on into a register dump; a
+// listing (`i`) in trace mode moved the live PC, so `g` resumed the program at
+// the end of the listing and the shell died on an illegal instruction.
+do {
+    let name = "debugger: k<pid> past the table, n<name>, and i in trace mode leave the emulator whole"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let kill = os9(["idbg", "k60000", "g", "echo AFTER-KILL"], timeout: 30)
+        let trigger = os9(["idbg", "nshell", "g"], timeout: 30)
+        let listing = os9(["idbg", "t", "i1000", "g", "echo AFTER-LISTING"], timeout: 30)
+        // the host fault was caught and turned into a bus error for the
+        // process running idbg, so "the shell went on" alone is not enough
+        let killOK = kill.contains("no such process") && !kill.contains("E_BUSERR")
+        let triggerOK = trigger.contains("trigger='shell'") && !trigger.contains("trigger='shel'")
+        let listingOK = listing.contains("AFTER-LISTING")
+        if killOK && triggerOK && listingOK {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      k60000 survived: \(killOK), trigger kept whole: \(triggerOK), listing left PC: \(listingOK)")
+            failed += 1
+        }
+    }
+}
+
 // ── F$Event: Ev$Wait answers the value that satisfied it ──────────────────────
 // "returns with the value of the event causing the process to wake" (Microware,
 // OS-9 Intermediate training, _os9_ev_wait) -- the value BEFORE the wait

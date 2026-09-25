@@ -1422,6 +1422,9 @@ unsigned long m68k_os9go(void)
            handle_os9exec_exception builds the frame, dispatches to an installed
            F$STrap handler or kills the process, and clears os9_running. */
         os9_oob_armed = 0;
+        MakeSR(); /* the flags live in regflags until now: without this the
+                     exception frame and the handler's R$sr carried a stale
+                     CCR (pre-release review) */
         handle_os9exec_exception(2, m68k_getpc());
         goto os9go_exit;
     }
@@ -1456,24 +1459,11 @@ unsigned long m68k_os9go(void)
 			 * in ANY debug session, by anyone, ever — until this call was
 			 * added.
 			 *
-			 * DISABLED ON PURPOSE: enabling it lets that branch finally be
-			 * taken for the first time, which immediately exposes a second,
-			 * more serious, unrelated bug — the debugged child crashes
-			 * ("Invalid sync bytes: corrupted module?"), and an UNRELATED
-			 * process (the shell) crashes moments later at the exact same
-			 * PC, an address outside its own memory but inside the debug
-			 * child's. That's cross-process state bleeding in the
-			 * exception/crash-report path (os9exec_nt.c), not a CPU-fetch
-			 * issue — ruled out fill_prefetch_0() as the cause by testing it
-			 * directly; the crash was byte-for-byte identical with or
-			 * without it. Root cause not yet found.
-			 *
-			 * A rare "runaway" single-step loop (today's behavior, without
-			 * this line) is a much smaller blast radius than a crash that
-			 * can take down an unrelated process. Re-enable this once the
-			 * cross-process crash-path bug above is found and fixed — this
-			 * fix will be needed then; leaving it out doesn't avoid that bug,
-			 * it just hides it behind the flags bug instead.
+			 * It was left out for a while because enabling it exposed a
+			 * cross-process crash in the exception/crash-report path.
+			 * e51a4a8 re-enabled it (and made a runaway F$DExec run
+			 * recoverable with Ctrl-C); the record does not say that crash
+			 * was reproduced again, and the F$DExec tests pass with it on.
 			 */
 			MakeSR();
 			m68_os9go_result    = 0xFBFB0000; /* single-step done token */

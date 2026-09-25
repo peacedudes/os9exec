@@ -95,12 +95,34 @@ static __inline__ uae_u32 from_single (double src)
    infinity: math881 copies these four into the CPU's CCR, where I lands on V,
    and its caller's TRAPV is how BASIC09 reports an overflow or a division by
    zero -- with the FPU in use it reported nothing and printed a garbage value. */
+/* The whole FPSR as an operation leaves it: its condition codes, the quotient
+   byte (which only FMOD and FREM change: "Quotient Byte: Not affected") and
+   the accrued exception byte (sticky) kept, the exception byte cleared, as
+   exceptions are not emulated. Every operation used to replace all four
+   bytes, wiping what FMOD/FREM and earlier operations had left (review). */
+static __inline__ uae_u32 fpsr_keep (uae_u32 cc)
+{
+    return (regs.fpsr & 0x00FF00FF) | cc;
+}
+
 static __inline__ uae_u32 fpsr_cc (double v)
 {
-    return (signbit (v) ? 0x8000000 : 0) |
-           (v == 0      ? 0x4000000 : 0) |
-           (isinf (v)   ? 0x2000000 : 0) |
-           (isnan (v)   ? 0x1000000 : 0);
+    return fpsr_keep ((signbit (v) ? 0x8000000 : 0) |
+                      (v == 0      ? 0x4000000 : 0) |
+                      (isinf (v)   ? 0x2000000 : 0) |
+                      (isnan (v)   ? 0x1000000 : 0));
+}
+
+/* FMOD/FREM: the quotient byte -- its sign and its seven low bits -- of the
+   quotient rounded toward zero (FMOD) or to nearest (FREM) */
+static __inline__ void fpsr_quotient (double dst, double src, int nearest)
+{
+    double q = dst / src;
+    uae_u32 byte;
+    if (isnan (q) || isinf (q)) return;
+    q = nearest ? nearbyint (q) : trunc (q);
+    byte = ((uae_u32) fmod (fabs (q), 128.0)) | (signbit (q) ? 0x80 : 0);
+    regs.fpsr = (regs.fpsr & ~0x00FF0000u) | (byte << 16);
 }
 
 static __inline__ double to_exten(uae_u32 wrd1, uae_u32 wrd2, uae_u32 wrd3)
@@ -177,9 +199,18 @@ static __inline__ void from_double(double src, uae_u32 * wrd1, uae_u32 * wrd2)
 
 static __inline__ double to_pack(uae_u32 wrd1, uae_u32 wrd2, uae_u32 wrd3)
 {
-    double d;
+    double d = 0.0;	/* a string sscanf cannot read left it uninitialised */
     char *cp;
     char str[100];
+
+    /* SE and both Y bits set with exponent $FFF: an infinity when the
+       fraction is zero, a NaN otherwise (M68000 PRM, table 1-7). Read as
+       digits these became letters, and garbage. */
+    if ((wrd1 & 0x7FFF0000) == 0x7FFF0000) {
+	if (wrd2 == 0 && wrd3 == 0)
+	    return (wrd1 & 0x80000000) ? -INFINITY : INFINITY;
+	return NAN;
+    }
 
     cp = str;
     if (wrd1 & 0x80000000)
@@ -220,6 +251,14 @@ static __inline__ void from_pack(double src, uae_u32 * wrd1, uae_u32 * wrd2, uae
     char *cp;
     char str[100];
 
+    /* an infinity or a NaN has its own packed form (see to_pack); printed
+       with %e it was "inf" or "nan", packed as if the letters were digits */
+    if (isinf (src) || isnan (src)) {
+	*wrd1 = (signbit (src) ? 0x80000000 : 0) | 0x7FFF0000;
+	*wrd2 = isnan (src) ? 0x40000000 : 0;	/* a quiet NaN's fraction */
+	*wrd3 = 0;
+	return;
+    }
     sprintf(str, "%.16e", src);
     cp = str;
     *wrd1 = *wrd2 = *wrd3 = 0;
@@ -381,7 +420,9 @@ static __inline__ int get_fp_value (uae_u32 opcode, uae_u16 extra, double *src)
 	}
 	break;
     case 6:
-	*src = (double) (uae_s8) get_byte(ad);
+	/* a byte immediate is the LOW byte of its extension word: FMOVE.B #5
+	   read the high one and loaded 0 (pre-release review) */
+	*src = (double) (uae_s8) get_byte(mode == 7 && reg == 4 ? ad + 1 : ad);
 	break;
     default:
 	return 0;
@@ -395,16 +436,23 @@ static __inline__ int get_fp_value (uae_u32 opcode, uae_u16 extra, double *src)
    is an operand error that stores its largest integer of that sign; a NaN is
    taken by its sign here. A C cast truncated whatever the mode, and past the
    range was undefined behaviour. */
+/* <value> rounded to an integer the way FPCR's mode control says: nearest
+   (even), toward zero, toward minus or toward plus infinity */
+static double fpp_round (double value)
+{
+    switch ((regs.fpcr >> 4) & 3) {
+    case 0:  return nearbyint (value);
+    case 1:  return trunc (value);
+    case 2:  return floor (value);
+    default: return ceil (value);
+    }
+}
+
 static uae_s32 fpp_to_int (double value, double lo, double hi)
 {
     double r;
     if (isnan (value)) return (uae_s32) (signbit (value) ? lo : hi);
-    switch ((regs.fpcr >> 4) & 3) {
-    case 0:  r = nearbyint (value); break;
-    case 1:  r = trunc (value);     break;
-    case 2:  r = floor (value);     break;
-    default: r = ceil (value);      break;
-    }
+    r = fpp_round (value);
     return (uae_s32) (r < lo ? lo : r > hi ? hi : r);
 }
 
@@ -663,8 +711,8 @@ static __inline__ int fpp_cond(uae_u32 opcode, int contition)
 	return NotANumber || !(N || Z);
     case 0x1b:
 	return NotANumber || Z || !N;
-    case 0x1c:
-	return NotANumber || (Z && N);
+    case 0x1c:		/* NGE: NAN or (N and not Z), as ULT ($0C) -- PRM table 3-23 */
+	return NotANumber || (N && !Z);
     case 0x1d:
 	return NotANumber || Z || N;
     case 0x1e:
@@ -717,11 +765,19 @@ void fscc_opp(uae_u32 opcode, uae_u16 extra)
 	m68k_dreg (regs, opcode & 7) = (m68k_dreg (regs, opcode & 7) & ~0xff) |
 	    (cc ? 0xff : 0x00);
     } else {
+	/* (An)+ and -(An): get_fp_ad leaves the address register alone, so the
+	   byte went to An itself and An never moved. A byte step is 1, 2 for
+	   the stack pointer. */
+	int     mode = (opcode >> 3) & 7, an = opcode & 7;
+	uae_u32 step = (an == 7) ? 2 : 1;
+	if (mode == 4) m68k_areg (regs, an) -= step;
 	if (get_fp_ad(opcode, &ad) == 0) {
 	    m68k_setpc (m68k_getpc () - 4);
 	    op_illg (opcode);
-	} else
+	} else {
 	    put_byte(ad, cc ? 0xff : 0x00);
+	    if (mode == 3) m68k_areg (regs, an) += step;
+	}
     }
 }
 
@@ -737,6 +793,7 @@ void ftrapcc_opp(uae_u32 opcode, uaecptr oldpc)
     if (cc == -1) {
 	m68k_setpc (oldpc);
 	op_illg (opcode);
+	return;		/* illegal, and not a trap as well */
     }
     if (cc)
 	Exception(7, oldpc - 2);
@@ -1247,12 +1304,12 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	   value past 2^31 (undefined behaviour, and a wrong answer on every
 	   host), for inf and NaN, and -- (int) truncating toward zero -- for
 	   rounding a negative value, FINT(-2.3) giving -1. The 68881 keeps
-	   the result a float: FINT rounds by FPCR's mode, whose default is
-	   to nearest (even), FINTRZ toward zero; FMOD's quotient is rounded
+	   the result a float: FINT rounds "using the current rounding mode"
+	   (FINT, M68000 PRM), FINTRZ toward zero; FMOD's quotient is rounded
 	   toward zero, FREM's to nearest, which is C's fmod and remainder.
-	   FPCR's other rounding modes are not emulated anywhere here. */
+	   Arithmetic itself still rounds to nearest whatever FPCR says. */
 	case 0x01:		/* FINT */
-	    regs.fp[reg] = nearbyint (src);
+	    regs.fp[reg] = fpp_round (src);
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x02:		/* FSINH */
@@ -1349,16 +1406,22 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	    break;
 	case 0x1e:		/* FGETEXP */
 	    {
+		/* zero answers itself, an infinity a NaN (FGETEXP, M68000 PRM);
+		   frexp gave -1 for zero and garbage for infinity */
 		int expon;
-		frexp (src, &expon);
-		regs.fp[reg] = (double) (expon - 1);
+		if (src == 0.0 || isnan (src)) regs.fp[reg] = src;
+		else if (isinf (src))          regs.fp[reg] = NAN;
+		else { frexp (src, &expon); regs.fp[reg] = (double) (expon - 1); }
 		regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    }
 	    break;
 	case 0x1f:		/* FGETMAN */
 	    {
 		int expon;
-		regs.fp[reg] = frexp (src, &expon) * 2.0;
+		/* as FGETEXP: zero answers itself, an infinity a NaN (PRM) */
+		if (src == 0.0 || isnan (src)) regs.fp[reg] = src;
+		else if (isinf (src))          regs.fp[reg] = NAN;
+		else regs.fp[reg] = frexp (src, &expon) * 2.0;
 		regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    }
 	    break;
@@ -1367,6 +1430,7 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x21:		/* FMOD */
+	    fpsr_quotient (regs.fp[reg], src, 0);
 	    regs.fp[reg] = fmod (regs.fp[reg], src);
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
@@ -1383,11 +1447,22 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x25:		/* FREM */
+	    fpsr_quotient (regs.fp[reg], src, 1);
 	    regs.fp[reg] = remainder (regs.fp[reg], src);
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x26:		/* FSCALE */
-	    regs.fp[reg] *= exp (log (2.0) * src);
+	    /* adds the source, chopped toward zero, to the exponent (FSCALE,
+	       M68000 PRM): exact, where exp(log(2)*n) was not -- FSCALE #3 of
+	       1.0 gave 7.999999999999998. An infinite scale is a NaN; past
+	       2^14 it always over- or underflows, so a clamp loses nothing. */
+	    if (isnan (src) || isinf (src)) regs.fp[reg] = NAN;
+	    else {
+		double n = trunc (src);
+		if (n >  20000.0) n =  20000.0;
+		if (n < -20000.0) n = -20000.0;
+		regs.fp[reg] = ldexp (regs.fp[reg], (int) n);
+	    }
 	    regs.fpsr = fpsr_cc (regs.fp[reg]);
 	    break;
 	case 0x27:		/* FSGLMUL */
@@ -1417,12 +1492,11 @@ void fpp_opp(uae_u32 opcode, uae_u16 extra)
 	    {
 		double dst = regs.fp[reg];
 		if (isnan (dst) || isnan (src))
-		    regs.fpsr = 0x1000000;
+		    regs.fpsr = fpsr_keep (0x1000000);
 		else if (dst == src)
-		    regs.fpsr = 0x4000000 | (signbit (dst) && signbit (src) ? 0x8000000 : 0);
-		else
-		    regs.fpsr = (dst < src ? 0x8000000 : 0) |
-		                ((isinf (dst) || isinf (src)) ? 0x2000000 : 0);
+		    regs.fpsr = fpsr_keep (0x4000000 | (signbit (dst) && signbit (src) ? 0x8000000 : 0));
+		else /* "The infinity bit is always cleared by the FCMP instruction" */
+		    regs.fpsr = fpsr_keep (dst < src ? 0x8000000 : 0);
 	    }
 	    break;
 	case 0x3a:		/* FTST */

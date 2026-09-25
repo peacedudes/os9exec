@@ -788,9 +788,11 @@ ushort debugwait( void )
                               strlen from being 0 and indexing [-1]. */
                            strncpy(triggername,&inp[1],TRIGNAMELEN-1);
                                    triggername[TRIGNAMELEN-1]=0;
-                                   triggername[strlen(triggername)-1]=0; /* cut CR away */
+                           /* the line has lost its CR already: cutting one
+                              more character made `nshell` trigger on "shel" */
                        }
                        else triggername[0]=0;
+                       break; /* it ran on into 'r' and dumped registers too */
                        
             case 'r' : if (tolower((unsigned char)inp[1])=='u') temp=MAXPROCESSES;
                        else if (sscanf(&inp[1],"%hu", &temp)<1) temp= currentpid;
@@ -807,6 +809,11 @@ ushort debugwait( void )
             case 'm' : show_modules( NULL ); break;
 
             case 'k' : if      (sscanf(&inp[1],"%hu", &temp)<1) temp= currentpid;
+                       /* procs[] has MAXPROCESSES slots: `k60000` wrote far
+                          past it and faulted the host (pre-release review) */
+                       if (temp>=MAXPROCESSES || procs[temp].state==pUnused) {
+                           dbg_printf("no such process\n"); break;
+                       }
                        procs[temp].exiterr=E_PRCABT;
                        kill_process(temp);
                        break;
@@ -859,6 +866,10 @@ ushort debugwait( void )
                          }
                          if (bad_addr(listbase)) break;
                          { int n; Boolean hit_term = false;
+                           /* the disassembler reads through the CPU's own PC:
+                              keep the live one, or `g` after a listing entered
+                              from trace mode resumed at its end (review) */
+                           uaecptr svPC= regs.pc; uae_u8* svP= regs.pc_p; uae_u8* svOld= regs.pc_oldp;
                            for (n = 0; n < 10; n++) {
                                Boolean term = is_flow_terminator(listbase);
                                regs.pc = listbase;
@@ -867,6 +878,7 @@ ushort debugwait( void )
                                if (term) { hit_term = true; break; }
                                if (bad_addr(listbase)) break;
                            }
+                           regs.pc= svPC; regs.pc_p= svP; regs.pc_oldp= svOld;
                            if (hit_term && emul_base + (uae_u32)listbase < emul_end) {
                                dbg_printf("# (flow ends — bytes that follow, not necessarily code:)\n");
                                uint32_t peek = listbase;
@@ -878,6 +890,7 @@ ushort debugwait( void )
 
               case '.' : if (disasm) {
                              int n; Boolean hit_term = false;
+                             uaecptr svPC= regs.pc; uae_u8* svP= regs.pc_p; uae_u8* svOld= regs.pc_oldp; /* see 'i' */
                              for (n = 0; n < 10; n++) {
                                  Boolean term = is_flow_terminator(listbase);
                                  regs.pc = listbase;
@@ -886,6 +899,7 @@ ushort debugwait( void )
                                  if (term) { hit_term = true; break; }
                                  if (bad_addr(listbase)) break;
                              }
+                             regs.pc= svPC; regs.pc_p= svP; regs.pc_oldp= svOld;
                              if (hit_term && emul_base + (uae_u32)listbase < emul_end) {
                                  dbg_printf("# (flow ends — bytes that follow, not necessarily code:)\n");
                                  uint32_t peek = listbase;
