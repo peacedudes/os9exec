@@ -84,8 +84,13 @@ System calls, now as the Technical Manual describes them:
 - New: `F$SchBit`, `F$AllBit`, `F$DelBit`, `F$SysID` (pre-3.0 form), and much more of `F$SetSys`.
 - The 68000 core: `MOVE from SR` is user-legal; `NEG`, `NBCD` and `SUB` set X; the 68881
   emulation stores doubles exactly (results were sometimes one bit off) and reports infinities,
-  so a division by zero under `math881` is an error rather than a wrong number. `FINT` rounds to
-  nearest even, and `FINTRZ`, `FMOD` and `FREM` are exact beyond 32-bit values.
+  so a division by zero under `math881` is an error rather than a wrong number. `FINT` rounds as
+  the FPU's rounding mode says (to nearest even by default), and `FINTRZ`, `FMOD` and `FREM` are
+  exact beyond 32-bit values. Also per Motorola's manual: `FSCALE` is exact; `FGETEXP` and
+  `FGETMAN` answer zero and infinity correctly; `FMOD` and `FREM` set the quotient byte, which
+  other instructions no longer clear; the not-greater-or-equal condition is right; a byte
+  immediate operand reads the right byte; `FScc (An)+` moves An; packed-decimal infinities and
+  NaNs convert. A bus-error handler sees the program's condition flags as they were.
 
 Files and devices:
 
@@ -126,7 +131,9 @@ Files and devices:
   character; a `/tN` that takes part of a line ending gets the rest once, not twice.
 - Sockets: a send cut short by a signal no longer makes the next send from the same buffer skip
   bytes.
-- `-d` tracing and the debugger talk to you, never into the program's own output.
+- `-d` tracing and the debugger talk to you, never into the program's own output. The debugger's
+  `k` refuses a process that does not exist, `n` keeps the whole trigger name, and a listing taken
+  while tracing no longer moves the program's own PC.
 - 32-bit hosts (Linux i386, 32-bit Windows, the browser): several sizes that wrapped there, and
   a module file that could hang `F$Load`, are fixed; so is a clock that froze paced terminal
   output for over an hour every 72 minutes, and the size of a disk image of 2 GB or more.
