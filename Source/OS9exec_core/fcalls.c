@@ -1231,6 +1231,14 @@ os9err OS9_F_RTE( _rp_, ushort cpid )
             cp->systask_offs= cp->rtesystask_offs;
             cp->stalled     = false; /* its pipe may have moved meanwhile: look again */
         } // if
+        if (cp->state==pWaitWrite) { /* back to the terminal write the signal found parked */
+            cp->saved_cnt  = cp->rtesaved_cnt;
+            cp->saved_state= cp->rtesaved_state;
+            cp->unitRestLen= cp->rteunitRestLen;
+            memcpy( cp->unitRest, cp->rteunitRest, sizeof(cp->unitRest) );
+            cp->parkedTerm = cp->rteparkedTerm;
+            console_owner_claim( cpid, cp->parkedTerm ); /* the handler's finished write let it go */
+        } // if
         debugprintf(dbgProcess,dbgNorm,("# F$RTE: end of intercept in pid=%d, signal was %d; state=%s\n",
                        cpid, os9_word(cp->pd._signal), PStateStr(cp) ));
         memcpy( (void*)&cp->os9regs, (void*)&cp->rteregs, sizeof(regs_type) ); /* restore regs */

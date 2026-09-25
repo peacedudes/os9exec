@@ -1929,8 +1929,11 @@ static void usrpath_puts( ushort pid, ushort up, char* s, Boolean direct )
             if      (up<MAXUSRPATHS && no_o)
                 usrpath_write( pid,up, &c, b, true );
             else {                 
+                Boolean svN= in_narration;
                                    sp= no_o ? 0 : dbgOut;
+                in_narration= true;  /* the operator's channel: see consio.c */
                 syspath_write( pid,sp, &c, b, true );
+                in_narration= svN;
             }
             
             base= ii+1;

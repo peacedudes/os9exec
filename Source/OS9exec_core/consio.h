@@ -122,6 +122,7 @@ extern  ulong        gNetLast;
   extern   int     KeyRoom            ( const ttydev_typ *mco );
   extern   Boolean console_page_release( short term_id );
   extern   void    console_owner_release( ushort pid );
+  extern   void    console_owner_claim  ( ushort pid, short term );
   extern   Boolean DevReady           ( long *count );
 #endif
 

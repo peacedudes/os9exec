@@ -985,6 +985,14 @@ os9err send_signal( ushort spid, ushort signal )
       sigp->rtesystask     = sigp->systask;
       sigp->rtesystaskdataP= sigp->systaskdataP;
       sigp->rtesystask_offs= sigp->systask_offs;
+      /* ...and, the same way, a parked terminal write's place: an intercept
+         routine whose own write parks overwrote it, and the outer write then
+         resumed at the handler's count (pre-release review) */
+      sigp->rtesaved_cnt   = sigp->saved_cnt;
+      sigp->rtesaved_state = sigp->saved_state;
+      sigp->rteunitRestLen = sigp->unitRestLen;
+      memcpy( sigp->rteunitRest, sigp->unitRest, sizeof(sigp->unitRest) );
+      sigp->rteparkedTerm  = sigp->parkedTerm;
       set_os9_state( spid, pActive, "send_signal" );                /* now activate it */
            
       sigp->os9regs.pc  = os9_long((ulong)sigp->pd._sigvec);

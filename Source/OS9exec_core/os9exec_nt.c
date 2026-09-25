@@ -627,6 +627,7 @@ Boolean host_stdin_eof= false;/* sticky: a REDIRECTED host stdin has reached EOF
 
 /* this avoids recursion problems */
 Boolean in_recursion  = false;
+Boolean in_narration  = false;
 
 /* global settings */
 int     dbgOut        = -1;

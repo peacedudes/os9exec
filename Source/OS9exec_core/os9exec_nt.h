@@ -1391,6 +1391,14 @@ typedef struct {
                 int        saved_cnt;
                 char       unitRest[2+255];   /* a /tN line ending written only in part: */
                 short      unitRestLen;       /* its unsent tail, sent first on resume    */
+                short      parkedTerm;        /* the terminal a parked write waits on     */
+                /* a parked write's resume state, kept across an intercept routine
+                   that parks writes of its own (send_signal saves, F$RTE restores) */
+                int        rtesaved_cnt;
+                pstate_typ rtesaved_state;
+                char       rteunitRest[2+255];
+                short      rteunitRestLen;
+                short      rteparkedTerm;
                 pstate_typ saved_state;     /* saved process' state */
 
                 /* This process' entry in one event's wait queue (events.c).
@@ -1632,6 +1640,7 @@ extern Boolean host_stdin_eof;   /* sticky EOF on a redirected (non-tty) host st
 
 /* break the recursion loops variable */
 extern Boolean in_recursion;
+extern Boolean in_narration; /* the write in progress is to the operator (dbgOut), not a program's path */
 
 /* global settings */
 extern int     dbgOut;
