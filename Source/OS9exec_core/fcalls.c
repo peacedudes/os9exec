@@ -1185,6 +1185,7 @@ os9err OS9_F_Icpt( regs_type *rp, ushort cpid )
 } /* OS9_F_Icpt */
 
 Boolean pipe_abort_request( ushort pid ); /* pipefiles.c */
+void    spf_abort_request ( ushort pid ); /* spfsock.c */
 
 os9err OS9_F_RTE( _rp_, ushort cpid )
 /* F$RTE:
@@ -1223,7 +1224,7 @@ os9err OS9_F_RTE( _rp_, ushort cpid )
                  cp->vector=   cp->rtevector;
                  cp->func  =   cp->rtefunc;
         
-        if (cp->state==pWaitRead) { /* make the save status ready again */
+        if (cp->state==pWaitRead || cp->state==pWaitWrite) { /* make the save status ready again */
                      svd=        &cp->savread; /* pointer to process' saved registers */
             memcpy( (void*)&svd->r, (void*)&cp->rteregs, sizeof(regs_type) );
                      svd->vector= cp->rtevector;
@@ -1232,6 +1233,8 @@ os9err OS9_F_RTE( _rp_, ushort cpid )
                   /* but the process will be woken up after intercept !!! */
                 pds= os9_word(cp->pd._signal);
             if (pds>0 && pds<32) { /* below S$Deadly (32), as the branch below */
+                if (cp->state==pWaitWrite) console_owner_release( cpid ); /* the terminal is free */
+                spf_abort_request( cpid );                                /* and no send resumes */
                 cp->os9regs.d[1]= pds;
 			          cp->os9regs.sr |= CARRY;
                 set_os9_state( cpid, pActive, "OS9_F_RTE" );  /* only for some cases */

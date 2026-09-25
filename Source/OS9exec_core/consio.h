@@ -117,6 +117,11 @@ extern  ulong        gNetLast;
   #endif
     
   extern   Boolean KeyToBuffer        ( ttydev_typ *mco, char key );
+  extern   Boolean KeyAhead           ( ttydev_typ *mco, char key );
+  extern   void    KeysAhead          ( ttydev_typ *mco );
+  extern   int     KeyRoom            ( const ttydev_typ *mco );
+  extern   Boolean console_page_release( short term_id );
+  extern   void    console_owner_release( ushort pid );
   extern   Boolean DevReady           ( long *count );
 #endif
 

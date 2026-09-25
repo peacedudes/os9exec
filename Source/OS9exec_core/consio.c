@@ -137,7 +137,16 @@ os9err pGBlink   ( ushort pid, syspath_typ*, uint32_t   *d2 );
 /* ------------------------------------------------------------------------- */
 
 /* -----------------------  /term pause control  --------------------------- */
-static int term_line = 0;
+/* Page pause (PD_PAU/PD_PAG): "output halts after each full screen until a key
+   is pressed", per terminal. It used to be one line count for every terminal,
+   and a full page only ended the write early -- output never stopped -- while
+   the NEXT character typed, whatever it was for, was swallowed (`echo abc` ran
+   as `cho abc`). Now a full page holds the terminal exactly as XOFF does: the
+   writer parks and the paced queue stops, and the next key on that terminal
+   releases it and is discarded (console_page_release, from KeyToBuffer). */
+#define PAGE_TERMS 256
+static int     pageLines  [ PAGE_TERMS ]; /* lines written since the terminal last read */
+static Boolean pagePending[ PAGE_TERMS ]; /* a full page is waiting for a key */
 /* ------------------------------------------------------------------------- */
 
 /* Forward declaration: pCopen calls this before its own definition (further
@@ -544,6 +553,15 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
     interactivepid=pid; /* set focus to this process */
     fflush(stdout);     /* ensure all is written out */
     clearerr(stdin);    /* make sure we are not stuck with a Cmd-. */
+    if (spP->term_id>=0 && spP->term_id<PAGE_TERMS) {
+        /* a new page -- and a read is not output, so a pause still waiting
+           for its key ends here rather than eating the answer typed to it */
+        pageLines[ spP->term_id ]= 0;
+        if (pagePending[ spP->term_id ]) {
+            pagePending[ spP->term_id ]= false;
+            console_hold_changed( spP->term_id, false );
+        }
+    }
     
     if (cp->state==pWaitRead) {
         set_os9_state( pid, cp->saved_state, "ConsRead" );
@@ -652,13 +670,7 @@ static os9err ConsRead( ushort pid, syspath_typ* spP, uint32_t *maxlenP,
 
         } /* if not NUL char */
         
-        if (ot->_sgs_pause && term_line >= ot->_sgs_page) {
-            /* pause is ON and a screenful has been output,
-               so the last character read means "go on".
-               Reset the line count and swallow the character */
-            term_line = 0;
-        }
-        else {
+        {
             /* Both of these run BEFORE the dup expansion below, because that
                reads buffer[cnt] and buffer[cnt+1] -- one and two past the end
                of the caller's buffer once the count is reached. The old loop
@@ -909,7 +921,7 @@ os9err pCclose( ushort pid, syspath_typ* spP )
     g_spP     = spP;
     gConsoleID= spP->term_id;
 
-    if (hostterm_in_range( spP->term_id )) hostterm_close( spP->term_id );
+    if (hostterm_in_range( spP->term_id )) hostterm_close( spP->term_id, spP );
 
     if (spP->type!=fTTY) {
         #ifdef MACTERMINAL
@@ -1128,6 +1140,7 @@ static Boolean g_final_drain= false; /* see baud_drain_all_pending */
 static Boolean console_held( short term_id )
 {
     if (g_final_drain)             return false;
+    if (term_id>=0 && term_id<PAGE_TERMS && pagePending[ term_id ]) return true; /* page pause */
     if (term_id>=TTY_Base)         return false;
     if (hostterm_bound( term_id )) return hostterm_held( term_id );
 
@@ -1138,7 +1151,12 @@ static Boolean console_held( short term_id )
     #endif
 } /* console_held */
 
-#define BAUD_FIFO_SIZE   256
+/* Room for the largest unit ConsoleOut queues whole -- a CR, its auto-LF and
+   PD_NUL's 255 pad bytes, 257 -- with room to spare. At 256, a paced write
+   with PD_NUL 255 waited for room that could never exist (found by the
+   pre-release review). */
+#define BAUD_FIFO_SIZE   512
+typedef char baud_fifo_holds_a_whole_unit[ (BAUD_FIFO_SIZE >= 2+255) ? 1 : -1 ];
 #define MAXBAUDDEV         8
 
 typedef struct {
@@ -1153,28 +1171,32 @@ typedef struct {
        device: two processes writing one terminal genuinely interleave here. */
     ushort  owner[BAUD_FIFO_SIZE];
     ushort  head, tail, count;
-    ulong   us_per_char;   /* 0 = unpaced; Task 3 fills this in for real baud rates */
-    ulong   next_due_us;   /* host time next pop may happen; Task 3 makes this meaningful */
+    uint64_t us_per_char;  /* 0 = unpaced; Task 3 fills this in for real baud rates */
+    uint64_t next_due_us;  /* host time next pop may happen; Task 3 makes this meaningful */
 } baud_device_t;
 
 static baud_device_t baud_devices[MAXBAUDDEV];
 
-static ulong g_next_wake_us= 0; /* earliest next_due_us across all paced non-empty devices;
+static uint64_t g_next_wake_us= 0; /* earliest next_due_us across all paced non-empty devices;
                                     0 is the sentinel for "nothing pending" -- relies on
                                     gettimeofday() never legitimately returning exactly
                                     epoch microsecond 0, which is true on any real system */
 
-static ulong host_micros( void )
+/* 64 bits on every host. ulong is 32 bits on i386, 32-bit Windows and the
+   browser build, where microseconds since the epoch wrapped every 71.6 minutes:
+   a deadline set just before the wrap then lay an hour in the future, and
+   paced output stopped dead for that long (found by the pre-release review). */
+static uint64_t host_micros( void )
 {
     struct timeval tv;
     gettimeofday( &tv, NULL );
-    return (ulong)tv.tv_sec*1000000UL + (ulong)tv.tv_usec;
+    return (uint64_t)tv.tv_sec*1000000U + (uint64_t)tv.tv_usec;
 } /* host_micros */
 
 static void recompute_next_wake( void )
 {
-    int   i;
-    ulong earliest= 0;
+    int      i;
+    uint64_t earliest= 0;
     for (i=0; i<MAXBAUDDEV; i++) {
         baud_device_t* d= &baud_devices[i];
         /* A held device contributes no deadline. It must not: its next_due_us
@@ -1256,7 +1278,7 @@ void baud_drain_due( void )
     int    i;
     byte   c;
     ushort owner;
-    ulong  now;
+    uint64_t now;
 
     for (i=0; i<MAXBAUDDEV; i++) {
         baud_device_t* d= &baud_devices[i];
@@ -1308,12 +1330,24 @@ void baud_drain_due( void )
 
 ulong baud_next_wake_delay_us( void )
 {
-    ulong now;
+    uint64_t now, left;
     if (g_next_wake_us==0) return ULONG_MAX; /* nothing pending: no deadline */
     now= host_micros();
     if (now>=g_next_wake_us) return 0;       /* already due */
-    return g_next_wake_us-now;
+    left= g_next_wake_us-now;
+    return left>=ULONG_MAX ? ULONG_MAX-1 : (ulong)left; /* a deadline, however far */
 } /* baud_next_wake_delay_us */
+
+/* A key arrived on <term_id>: if a page pause was waiting for it, the pause
+   ends and the key is spent on it. True when it was. */
+Boolean console_page_release( short term_id )
+{
+    if (term_id<0 || term_id>=PAGE_TERMS || !pagePending[ term_id ]) return false;
+    pagePending[ term_id ]= false;
+    pageLines  [ term_id ]= 0;
+    console_hold_changed( term_id, false );
+    return true;
+} /* console_page_release */
 
 void console_hold_changed( short term_id, Boolean held )
 {
@@ -1480,8 +1514,12 @@ static void baud_make_room( baud_device_t* d, int need )
         else if (d->count>=was) { if (++stalled > 200) return; }  /* ~2s of no progress */
         else                      stalled= 0;
 
+        /* A held device sets no deadline, so the delay is "none" -- and the
+           loop then went round without sleeping at all: an echo waiting for
+           room behind ^S ran a whole core until ^Q (found by the pre-release
+           review). Nap the same 10ms whatever the reason for waiting. */
         delay= baud_next_wake_delay_us();
-        if (delay>0 && delay!=ULONG_MAX) {
+        if (delay>0) {
             struct timespec ts;
             ulong capped= (delay>10000UL) ? 10000UL : delay; /* cap each nap at 10ms */
             ts.tv_sec = 0;
@@ -1552,6 +1590,13 @@ static void echo_putc( ushort pid, syspath_typ* spP, char c )
    character by character. Indexed by console id; 0 is nobody. */
 #define CONS_OWNERS 256
 static ushort consOwner[ CONS_OWNERS ];
+
+/* <pid>'s parked write was ended by a signal (F$RTE): it holds no terminal */
+void console_owner_release( ushort pid )
+{
+    int i;
+    for (i=0; i<CONS_OWNERS; i++) if (consOwner[ i ]==pid) consOwner[ i ]= 0;
+} /* console_owner_release */
 
 static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                           uint32_t *maxlenP, char* buffer, Boolean wrln )
@@ -1728,7 +1773,7 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                  struct _sgs and never used. Defaults to zero, so a path that
                  has not asked for padding is byte-for-byte as before. */
               nulls  = (wrln && c==CR) ? ot->_sgs_nul : 0;
-              need   = 1 + (needsLF ? 1:0) + nulls;
+              need   = 1 + (needsLF ? 1:0) + nulls; /* always fits: see BAUD_FIFO_SIZE */
 
               if (paced) {
                   /* An internal command is host C and cannot be parked and
@@ -1829,11 +1874,18 @@ static os9err ConsoleOut( ushort pid, syspath_typ* spP,
                   break; /* tty/pty break */
               }
 
-              if (c == CR && ot->_sgs_pause) {
-                  term_line++;
-                  if (term_line >= ot->_sgs_page) {
-                      break;
+              if (c==CR && ot->_sgs_pause && ot->_sgs_page>0 &&
+                  spP->term_id>=0 && spP->term_id<PAGE_TERMS &&
+                  ++pageLines[ spP->term_id ] >= ot->_sgs_page) {
+                  /* a full page: hold here until a key, as XOFF would --
+                     except for a writer that cannot be parked (a built-in,
+                     narration), which carries on */
+                  if (pid>0 && pid<MAXPROCESSES && cp->state!=pSysTask && !cp->isIntUtil && !narration) {
+                      pagePending[ spP->term_id ]= true;
+                      console_hold_changed( spP->term_id, true );
+                      held= true;
                   }
+                  else pageLines[ spP->term_id ]= 0;
               }
 
               if (wrln && c!=NUL && c==ot->_sgs_eorch) {

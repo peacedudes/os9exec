@@ -5199,6 +5199,109 @@ do {
     }
 }
 
+// ── a signal ends a write parked on the terminal, with the signal as its error ─
+// "Signal values less than 32 usually cause the current I/O operation to
+// terminate with an error status equal to the signal value" (F$Send). F$RTE did
+// that for a parked read and a pipe request, but a write parked on a paced
+// terminal (pWaitWrite) was simply made active: its I$Write came back carry
+// clear, with whatever count it had reached (found by the pre-release
+// character-I/O review).
+do {
+    let parkAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$Icpt equ $09", "F$RTE equ $1E", "F$Alarm equ $56", "I$Write equ $8A",
+        "I$WritLn equ $8C", "F$SRqMem equ $28",
+        "  psect mwsig,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea handler(pc),a0", "  OS9 F$Icpt",
+        "  move.l #8000,d0", "  OS9 F$SRqMem", "  bcs.w fail", "  movea.l a2,a3",
+        "  move.w #7999,d2",
+        "fill:", "  move.b #'x',(a2)+", "  dbra d2,fill",
+        "  moveq #0,d0", "  moveq #1,d1", "  moveq #2,d2", "  moveq #20,d3", "  OS9 F$Alarm",
+        "  movea.l a3,a0", "  moveq #1,d0", "  move.l #8000,d1", "  OS9 I$Write",
+        "  bcc.s nocarry", "  cmpi.w #2,d1", "  bne.s other",
+        "  lea sigm(pc),a0", "  bra.s tell",
+        "nocarry:", "  cmpi.l #8000,d1", "  beq.s whole", "  lea shortm(pc),a0", "  bra.s tell",
+        "whole:", "  lea wholem(pc),a0", "  bra.s tell",
+        "other:", "  lea otherm(pc),a0",
+        "tell:", "  moveq #2,d0", "  moveq #64,d1", "  OS9 I$WritLn",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "handler:", "  OS9 F$RTE",
+        "sigm: dc.b \"WRITE ENDED BY THE SIGNAL\",13",
+        "shortm: dc.b \"WRITE RETURNED SHORT WITHOUT AN ERROR\",13",
+        "wholem: dc.b \"WRITE COMPLETED BEFORE THE SIGNAL\",13",
+        "otherm: dc.b \"WRITE ENDED WITH ANOTHER ERROR\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "signal: a write parked on a paced terminal ends with the signal as its error"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? parkAsm.write(toFile: scratchDisk + "/mwsig.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mwsig.a -o=/h5/mwsig.r", "l68 /h5/mwsig.r -o=/h5/mwsig"], timeout: 60)
+        let output = os9(["/h5/mwsig"], timeout: 60, paced: true)
+        if output.contains("WRITE ENDED BY THE SIGNAL") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = output.split(whereSeparator: \.isNewline).filter { $0.contains("WRITE") }
+            print("      saw: \(seen)")
+            failed += 1
+        }
+        for leftover in ["mwsig.a", "mwsig.r", "mwsig"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
+// ── a line with the most padding SCF allows still goes out when paced ─────────
+// PD_NUL asks for up to 255 NULs after each CR. With its auto-LF that is 257
+// bytes queued as one unit, and the paced output queue held 256: the write
+// waited for room that could never exist (found by the pre-release review).
+// Set through SS_Opt, as `tmode null=` cannot store 255.
+do {
+    let nulAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$GetStt equ $8D", "I$SetStt equ $8E", "I$WritLn equ $8C",
+        "  psect mnul,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "opt: ds.b 128", "  ends",
+        "start:",
+        "  moveq #1,d0", "  moveq #0,d1", "  lea opt(a6),a0", "  OS9 I$GetStt", "  bcs.s fail",
+        "  move.b #255,opt+6(a6)", "  move.b #1,opt+5(a6)",         // PD_NUL 255, PD_ALF on
+        "  moveq #1,d0", "  moveq #0,d1", "  lea opt(a6),a0", "  OS9 I$SetStt", "  bcs.s fail",
+        "  lea line(pc),a0", "  moveq #1,d0", "  moveq #3,d1", "  OS9 I$WritLn", "  bcs.s fail",
+        "  clr.b opt+6(a6)",
+        "  moveq #1,d0", "  moveq #0,d1", "  lea opt(a6),a0", "  OS9 I$SetStt",
+        "  lea done(pc),a0", "  moveq #2,d0", "  moveq #40,d1", "  OS9 I$WritLn",
+        "  moveq #0,d1",
+        "fail:", "  OS9 F$Exit",
+        "line: dc.b \"HI\",13",
+        "done: dc.b \"PADDED LINE WRITTEN\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "console: a paced line padded with 255 NULs is written, not held for ever"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? nulAsm.write(toFile: scratchDisk + "/mnul.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mnul.a -o=/h5/mnul.r", "l68 /h5/mnul.r -o=/h5/mnul"], timeout: 60)
+        let output = os9(["/h5/mnul"], timeout: 30, paced: true)
+        if output.contains("PADDED LINE WRITTEN") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      output: \(output.suffix(160))")
+            failed += 1
+        }
+        for leftover in ["mnul.a", "mnul.r", "mnul"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── F$Event: Ev$Wait answers the value that satisfied it ──────────────────────
 // "returns with the value of the event causing the process to wake" (Microware,
 // OS-9 Intermediate training, _os9_ev_wait) -- the value BEFORE the wait
@@ -13258,6 +13361,229 @@ if runXoffIntUtil && !containerized {
             failed += 1
         }
     }
+}
+
+// -- ^C behind a full type-ahead buffer still aborts ---------------------------
+// The console readers stopped reading the host once the 256-byte input buffer
+// was full, and KeyToBuffer refused a full buffer before it looked at the
+// special keys: with 300 characters typed ahead of a listing, ^C was never even
+// read and the listing ran to its end. Keys past a full buffer now wait in a
+// type-ahead queue, and the special ones act the moment they arrive (found by
+// the pre-release character-I/O review).
+let ctrlCAheadName = "console: ^C typed behind 300 characters of type-ahead still stops a listing"
+if (filter.isEmpty || ctrlCAheadName.localizedCaseInsensitiveContains(filter)) && !containerized {
+    if let (controller, device, _) = makePTY() {
+        let process = Process()
+        process.executableURL       = execURL
+        process.arguments           = [shellArg]        // paced: the listing takes seconds
+        process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
+        process.environment         = ["OS9DISK": diskPath].merging(inheritedByChildren) { mine, _ in mine }
+        let deviceHandle = FileHandle(fileDescriptor: device, closeOnDealloc: false)
+        process.standardInput  = deviceHandle
+        process.standardOutput = deviceHandle
+        process.standardError  = deviceHandle
+
+        var afterAbort = -1
+        if (try? process.run()) != nil {
+            func send(_ text: String) { var bytes = Array(text.utf8); _ = write(controller, &bytes, bytes.count) }
+            func drain(_ seconds: Double, into total: inout Int) {
+                let end = Date().addingTimeInterval(seconds)
+                var buf = [UInt8](repeating: 0, count: 65536)
+                while Date() < end {
+                    var fds = pollfd(fd: controller, events: Int16(POLLIN), revents: 0)
+                    if poll(&fds, 1, 200) > 0 {
+                        let count = read(controller, &buf, buf.count)
+                        if count <= 0 { return }
+                        total += count
+                    }
+                }
+            }
+            var discard = 0
+            drain(2.0, into: &discard)
+            send("list /dd/SYS/errmsg\n")
+            drain(1.0, into: &discard)
+            send(String(repeating: "x", count: 300))   // type-ahead the listing never reads
+            drain(0.5, into: &discard)
+            send("\u{03}")                              // ^C
+            afterAbort = 0
+            drain(6.0, into: &afterAbort)
+            send("\u{1B}\n\u{04}\n")
+            usleep(500_000)
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+        close(controller); close(device)
+
+        // errmsg is about 13 KB; stopped, only the FIFO's tail and a prompt remain
+        if afterAbort >= 0 && afterAbort < 2000 {
+            print("PASS: \(ctrlCAheadName)"); passed += 1
+        } else {
+            print("FAIL: \(ctrlCAheadName)")
+            print("      bytes in the 6 s after ^C: \(afterAbort) (the listing should have stopped)")
+            failed += 1
+        }
+    }
+}
+
+// -- an echo waiting behind ^S does not spin, and ^Q releases it --------------
+// A reader's echo goes through the terminal's paced queue. Held by ^S with that
+// queue full, the echo waited for room in a loop that never slept, because a
+// held device sets no deadline: a whole core until ^Q (found by the pre-release
+// character-I/O review).
+let echoHoldName = "console: an echo waiting behind ^S costs almost no CPU, and ^Q lets it through"
+if (filter.isEmpty || echoHoldName.localizedCaseInsensitiveContains(filter)) && !containerized {
+    if let (controller, device, _) = makePTY() {
+        let process = Process()
+        process.executableURL       = execURL
+        process.arguments           = [shellArg]
+        process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
+        process.environment         = ["OS9DISK": diskPath].merging(inheritedByChildren) { mine, _ in mine }
+        let deviceHandle = FileHandle(fileDescriptor: device, closeOnDealloc: false)
+        process.standardInput  = deviceHandle
+        process.standardOutput = deviceHandle
+        process.standardError  = deviceHandle
+
+        func cpuSeconds(_ pid: Int32) -> Double {
+            let lister = Process()
+            lister.executableURL = URL(fileURLWithPath: "/bin/ps")
+            lister.arguments = ["-o", "time=", "-p", String(pid)]
+            let pipe = Pipe()
+            lister.standardOutput = pipe
+            guard (try? lister.run()) != nil else { return -1 }
+            lister.waitUntilExit()
+            let text = String(bytes: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let parts = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ":")
+            let seconds = parts.reduce(0.0) { $0 * 60 + (Double($1) ?? 0) }
+            return parts.isEmpty ? -1 : seconds
+        }
+
+        var spent = -1.0
+        var afterXon = -1
+        if (try? process.run()) != nil {
+            func send(_ text: String) { var bytes = Array(text.utf8); _ = write(controller, &bytes, bytes.count) }
+            func drain(_ seconds: Double, into total: inout Int) {
+                let end = Date().addingTimeInterval(seconds)
+                var buf = [UInt8](repeating: 0, count: 65536)
+                while Date() < end {
+                    var fds = pollfd(fd: controller, events: Int16(POLLIN), revents: 0)
+                    if poll(&fds, 1, 200) > 0 {
+                        let count = read(controller, &buf, buf.count)
+                        if count <= 0 { return }
+                        total += count
+                    }
+                }
+            }
+            var discard = 0
+            drain(2.0, into: &discard)
+            send("list /dd/SYS/errmsg &\n")
+            drain(0.5, into: &discard)
+            send("\u{13}")                              // ^S: the queue fills and stays full
+            drain(1.0, into: &discard)
+            send(String(repeating: "a", count: 200))     // echoes that find no room
+            drain(0.5, into: &discard)
+            let before = cpuSeconds(process.processIdentifier)
+            drain(3.0, into: &discard)
+            let after = cpuSeconds(process.processIdentifier)
+            if before >= 0 && after >= 0 { spent = after - before }
+            send("\u{11}")                              // ^Q
+            afterXon = 0
+            drain(4.0, into: &afterXon)
+            send("\u{03}\n\u{1B}\n\u{04}\n")
+            usleep(500_000)
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+        close(controller); close(device)
+
+        if spent >= 0 && spent < 1.0 && afterXon > 500 {
+            print("PASS: \(echoHoldName)"); passed += 1
+        } else {
+            print("FAIL: \(echoHoldName)")
+            print("      CPU while held: \(spent) s of 3 (want < 1), bytes after ^Q: \(afterXon) (want > 500)")
+            failed += 1
+        }
+    }
+}
+
+// -- page pause stops output and the key that resumes it is not typed --------
+// "Page pause (tmode pause): output halts after each full screen until a key is
+// pressed" (the os9-dev skill, after the v2.4 manuals). A full page only ended
+// the write early, so output never stopped; one line count served every
+// terminal; and the next key typed was swallowed wherever it went -- `echo abc`
+// then ran as `cho abc` (found by the pre-release character-I/O review).
+let pagePauseName = "console: tmode pause stops a listing at each page, and the resuming key is not typed"
+if (filter.isEmpty || pagePauseName.localizedCaseInsensitiveContains(filter)) && !containerized {
+    let pageFile = scratchDisk + "/pagefile"
+    let lines = (1...20).map { String(format: "LINE%02d", $0) }.joined(separator: "\r") + "\r"
+    try? lines.write(toFile: pageFile, atomically: true, encoding: .utf8)
+    if let (controller, device, _) = makePTY() {
+        let process = Process()
+        process.executableURL       = execURL
+        process.arguments           = ["-r", shellArg]
+        process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
+        let deviceEnv = ["OS9DISK": diskPath, "OS9H\(scratchDev.dropFirst())": scratchDisk]
+        process.environment         = deviceEnv.merging(inheritedByChildren) { mine, _ in mine }
+        let deviceHandle = FileHandle(fileDescriptor: device, closeOnDealloc: false)
+        process.standardInput  = deviceHandle
+        process.standardOutput = deviceHandle
+        process.standardError  = deviceHandle
+
+        var firstPage = ""
+        var secondPage = ""
+        var ending = ""
+        if (try? process.run()) != nil {
+            func send(_ text: String) { var bytes = Array(text.utf8); _ = write(controller, &bytes, bytes.count) }
+            func collect(_ seconds: Double) -> String {
+                var got = [UInt8]()
+                let end = Date().addingTimeInterval(seconds)
+                var buf = [UInt8](repeating: 0, count: 65536)
+                while Date() < end {
+                    var fds = pollfd(fd: controller, events: Int16(POLLIN), revents: 0)
+                    if poll(&fds, 1, 200) > 0 {
+                        let count = read(controller, &buf, buf.count)
+                        if count <= 0 { break }
+                        got += buf[0..<count]
+                    }
+                }
+                return String(bytes: got, encoding: .isoLatin1) ?? ""
+            }
+            _ = collect(2.0)
+            send("tmode pause pag=5\n")
+            _ = collect(1.0)
+            send("list /\(scratchDev)/pagefile\n")
+            firstPage = collect(1.5)
+            send(" ")
+            secondPage = collect(1.5)
+            for _ in 0..<3 {                    // one key per page: lines 11-15, 16-20, the prompt
+                send(" ")
+                _ = collect(1.0)
+            }
+            send("tmode nopause\n")
+            _ = collect(1.0)
+            send("echo abc\n")
+            ending = collect(1.5)
+            send("\u{1B}\n\u{04}\n")
+            usleep(500_000)
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+        close(controller); close(device)
+
+        let stopped = firstPage.contains("LINE05") && !firstPage.contains("LINE07")
+        let resumed = secondPage.contains("LINE08") && !secondPage.contains("LINE13")
+        // `echo abc` prints a line of its own; run as `cho abc` it is error 216
+        let printed = ending.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let typed = printed.contains("abc") && !ending.contains("216")
+        if stopped && resumed && typed {
+            print("PASS: \(pagePauseName)"); passed += 1
+        } else {
+            print("FAIL: \(pagePauseName)")
+            print("      stopped at page 1: \(stopped), next page on a key: \(resumed), echo abc intact: \(typed)")
+            failed += 1
+        }
+    }
+    try? FileManager.default.removeItem(atPath: pageFile)
 }
 
 let xoffInputName = "console: XOFF halts output but input is still taken"

@@ -159,6 +159,23 @@ static void SpfNonBlocking( int fd )
 } /* SpfNonBlocking */
 
 
+/* A signal ended <pid>'s parked request (F$RTE). A send it had part done must
+   not be resumed by the process's NEXT write: that one starts at byte 0 even
+   when it reuses the same buffer (a static or stdio buffer does), and used to
+   skip the bytes the abandoned send had got out, reporting them sent. */
+void spf_abort_request( ushort pid )
+{
+    int k;
+    for (k=1; k<MAXSYSPATHS; k++) {
+        syspath_typ* sp= &syspaths[ k ];
+        if (sp->type==fSPF && sp->u.spf.writePid==pid) {
+            sp->u.spf.writeDone= 0;
+            sp->u.spf.writePid = 0;
+            sp->u.spf.writeBuf = NULL;
+        }
+    }
+} /* spf_abort_request */
+
 static os9err SpfPark( ushort pid )
 /* Nothing to read yet: park the caller the way a console read does, and let
    the dispatcher run the same call again later (procstuff.c retries a
@@ -535,6 +552,11 @@ static int SpfSetOpt( syspath_typ* spP, uint32_t level, uint32_t name,
     return r==0 ? 0 : errno;
 } /* SpfSetOpt */
 
+#endif
+
+#if !(defined UNIX && !defined MINGW)
+  /* no host sockets behind SPF here, so no send to forget */
+  void spf_abort_request( ushort pid ) { (void)pid; }
 #endif
 
 

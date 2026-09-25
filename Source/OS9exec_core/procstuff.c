@@ -952,7 +952,7 @@ os9err send_signal( ushort spid, ushort signal )
           sigp->way_to_icpt= true;    /* activate both */
             cp->way_to_icpt= true;
       
-      if (sigp->state==pWaitRead) {
+      if (sigp->state==pWaitRead || sigp->state==pWaitWrite) { /* both park in savread */
                           svd= &sigp->savread; 
         sigp->rtevector=  svd->vector;   /* save original info */
         sigp->rtefunc  =  svd->func;
@@ -973,7 +973,10 @@ os9err send_signal( ushort spid, ushort signal )
          on. Recorded as pActive, the request was simply dropped: its I$Read
          "returned" whatever the registers held, and the pipe kept counting
          the reader as waiting. */
-      if (sigp->state!=pWaitRead && sigp->state!=pSysTask) set_os9_state( spid, pActive, "send_signal" );
+      /* A write parked on a busy terminal (pWaitWrite) likewise: made pActive,
+         its I$Write came back carry clear with the count it had got to. */
+      if (sigp->state!=pWaitRead && sigp->state!=pWaitWrite && sigp->state!=pSysTask)
+          set_os9_state( spid, pActive, "send_signal" );
       sigp->rtestate= sigp->state;                                  /* save it, active after signal */
       /* and the system task it is parked in: an intercept routine that waits
          on a pipe of its own parks there too, and would leave F$RTE resuming

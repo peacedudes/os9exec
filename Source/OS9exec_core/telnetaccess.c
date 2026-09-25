@@ -106,6 +106,7 @@ void InitTTYs()
         mco= &ttydev[k];
         mco->installed = false;
         mco->inBufUsed =     0;
+        mco->aheadUsed =     0;
         mco->holdScreen= false;
         mco->pid       =     0;
     }
@@ -316,7 +317,8 @@ void HandleEvent( void )
       int   room;
 
       if (PeekNamedPipe( hStdin, NULL,0, NULL, &avail, NULL ) && avail>0) {
-          room= INBUFSIZE-1 - main_mco.inBufUsed;
+          KeysAhead( &main_mco );
+          room= KeyRoom( &main_mco );
           if ((int)avail>room) avail= (DWORD)room;
 
           while (avail-->0) {
@@ -336,7 +338,7 @@ void HandleEvent( void )
                * swap ConsGetc() already does for genuine Unix terminals. */
               if      (c==LF) c= CR;
               else if (c==CR) c= LF;
-              if (c!=NUL) KeyToBuffer( &main_mco, c );
+              if (c!=NUL) KeyAhead( &main_mco, c );
           } // while
       } // if
       return;
@@ -398,12 +400,13 @@ void HandleEvent( void )
            * so this is a conservative floor: worst case we defer a few plain
            * characters to the next call instead of losing any.
            */
-          room= INBUFSIZE-1 - main_mco.inBufUsed;
+          KeysAhead( &main_mco );
+          room= KeyRoom( &main_mco );
           if (avail>room) avail= room;
 
           while (avail-->0) {
               if (read(STDIN_FILENO, &c,1)!=1) break;
-              KeyToBuffer( &main_mco, c );
+              KeyAhead( &main_mco, c );
           } // while
       } // if
 
@@ -419,14 +422,14 @@ void HandleEvent( void )
        * a true EOF, and a byte is fed in order rather than lost. Sticky -- once
        * a redirected stdin is spent it stays spent. This runs at most once more
        * per HandleEvent than the drain above, and never on a real keyboard. */
-      if (!host_stdin_eof && main_mco.inBufUsed==0 && !isatty(STDIN_FILENO)) {
+      if (!host_stdin_eof && main_mco.inBufUsed==0 && main_mco.aheadUsed==0 && !isatty(STDIN_FILENO)) {
           fd_set  rd; struct timeval z= { 0,0 };
           FD_ZERO( &rd ); FD_SET( STDIN_FILENO, &rd );
           if (select( STDIN_FILENO+1, &rd,NULL,NULL, &z )>0 &&
               FD_ISSET( STDIN_FILENO, &rd )) {
               ssize_t r= read( STDIN_FILENO, &c,1 );
               if      (r==0) host_stdin_eof= true;   /* readable + 0 bytes = EOF */
-              else if (r==1) KeyToBuffer( &main_mco, c );
+              else if (r==1) KeyAhead( &main_mco, c );
           } // if
       } // if
 
@@ -440,8 +443,9 @@ void HandleEvent( void )
       int           key;
       Boolean       typed= false;
 
-      while (main_mco.inBufUsed<INBUFSIZE-1 && (key= web_next_key())>=0) {
-          KeyToBuffer( &main_mco, (char)key );
+      KeysAhead( &main_mco );
+      while (KeyRoom( &main_mco )>0 && (key= web_next_key())>=0) {
+          KeyAhead( &main_mco, (char)key );
           typed= true;
       } // while
       /* A reader parked for this key is otherwise retried only after its

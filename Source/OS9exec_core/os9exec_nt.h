@@ -1220,12 +1220,15 @@ typedef struct {
 
 /* record structure for multi console access */
 #define INBUFSIZE  256
+#define AHEADSIZE 4096  /* type-ahead taken off the host beyond inBuf (KeyAhead) */
 typedef struct {
             Boolean      installed;
             ulong        consoleTermPtr;    /* used for the mac terminals */
             short        rIn, rOut;         /* used for the serial lines */
             char         inBuf[INBUFSIZE];
             int          inBufUsed;
+            char         ahead[AHEADSIZE];  /* plain keys waiting for room in inBuf */
+            int          aheadUsed;
             Boolean      holdScreen;
             ushort       pid;
             syspath_typ* spP;

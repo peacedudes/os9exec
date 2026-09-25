@@ -54,7 +54,7 @@ os9err  hostterm_declare  ( int term_id, const char* spec );
    the same device between commands, and so closing cannot discard bytes the
    far end has not read yet. Matches OS-9's own model, where a device
    descriptor outlives any single path to it. Safe on an unbound device. */
-void    hostterm_close    ( int term_id );
+void    hostterm_close    ( int term_id, syspath_typ* spP ); /* the path closing */
 
 /* Write <n> bytes, without blocking. Returns the count written; 0 if the
    endpoint would block (its buffer is full and the far end has not drained);

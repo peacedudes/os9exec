@@ -1468,6 +1468,7 @@ void init_syspaths()
       mco->installed =  true;
       mco->spP       =   spP;
       mco->inBufUsed =     0;
+      mco->aheadUsed =     0;
       mco->holdScreen= false;
     #endif
     

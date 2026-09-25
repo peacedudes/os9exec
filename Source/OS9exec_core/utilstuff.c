@@ -1091,16 +1091,15 @@ Boolean KeyToBuffer( ttydev_typ* mco, char key )
     char pd_xoff= ((byte*)&mco->spP->opt)[ PD_XOFF ];
 
     int lwp= mco->spP->lastwritten_pid;        /* where to send the signal ? */
-    if     ( mco->inBufUsed >= INBUFSIZE-1 ) {
-    /*  printf( "buffer is full %s\n", mco->spP->name ); */
-        return false; /* buffer is full */
-    }
     
-    /* these characters will be eaten before they reach the input buffer */
+    /* these characters will be eaten before they reach the input buffer --
+       and before the full-buffer test below, which used to come first: behind
+       255 characters of type-ahead, ^C, ^E and XON were refused like any
+       other key, so an abort was ignored and a held screen stayed held */
     /* treatment for special chars */
     if     (key!=NUL) {
-        if (key==pd_int)  { baud_flush_device( mco->spP->term_id ); mco->inBufUsed= 0; if (lwp) send_signal( lwp, S_Intrpt ); return 0; }
-        if (key==pd_qut)  { baud_flush_device( mco->spP->term_id ); mco->inBufUsed= 0; if (lwp) send_signal( lwp, S_Abort  ); return 0; }
+        if (key==pd_int)  { console_page_release( mco->spP->term_id ); baud_flush_device( mco->spP->term_id ); mco->inBufUsed= 0; mco->aheadUsed= 0; if (lwp) send_signal( lwp, S_Intrpt ); return 0; }
+        if (key==pd_qut)  { console_page_release( mco->spP->term_id ); baud_flush_device( mco->spP->term_id ); mco->inBufUsed= 0; mco->aheadUsed= 0; if (lwp) send_signal( lwp, S_Abort  ); return 0; }
         /* XON/XOFF are consumed by the driver, never handed to SCF ("the driver
            consumes the PD_XON and PD_XOFF characters itself" -- Technical I/O
            Manual V2.4, PD_XOFF). console_hold_changed() tells the paced-output
@@ -1111,6 +1110,14 @@ Boolean KeyToBuffer( ttydev_typ* mco, char key )
                             console_hold_changed( mco->spP->term_id, false ); return 0; }
         if (key==pd_xoff) { mco->holdScreen=  true;
                             console_hold_changed( mco->spP->term_id,  true ); return 0; }
+    }
+
+    /* a page pause is waiting for any key: this is it, and it goes no further */
+    if (console_page_release( mco->spP->term_id )) return 0;
+
+    if     ( mco->inBufUsed >= INBUFSIZE-1 ) {
+    /*  printf( "buffer is full %s\n", mco->spP->name ); */
+        return false; /* buffer is full */
     }
             
     mco->inBuf[ mco->inBufUsed++ ]= key; /* update the buffer */
@@ -1134,6 +1141,47 @@ Boolean KeyToBuffer( ttydev_typ* mco, char key )
     }
     return true;
 } /* KeyToBuffer */
+
+/* A key taken off the host. The terminal readers used to stop reading once
+   inBuf was full -- a byte read cannot be put back, and a pipe's must not be
+   lost -- so a ^C typed behind a full buffer was never even read. Now keys go
+   on being read into <ahead> while it has room: a special key acts at once,
+   and a plain one waits there, in order, for KeysAhead to move it into inBuf.
+   False only when both are full (the reader should stop). */
+Boolean KeyAhead( ttydev_typ* mco, char key )
+{
+    const byte* opt= (const byte*)&mco->spP->opt;
+
+    if (key!=NUL && (key==(char)opt[ PD_INT ] || key==(char)opt[ PD_QUT ] ||
+                     key==(char)opt[ PD_XON ] || key==(char)opt[ PD_XOFF ])) {
+        KeyToBuffer( mco, key );
+        return true;
+    }
+    /* here, not by KeyToBuffer's own test: its false would read as "full"
+       and queue the same key again, to release the NEXT page as well */
+    if (console_page_release( mco->spP->term_id )) return true;
+    if (mco->aheadUsed==0 && KeyToBuffer( mco, key )) return true;
+    if (mco->aheadUsed>=AHEADSIZE) return false;
+    mco->ahead[ mco->aheadUsed++ ]= key;
+    return true;
+} /* KeyAhead */
+
+/* move waiting type-ahead into inBuf, as far as it has room */
+void KeysAhead( ttydev_typ* mco )
+{
+    int n= 0;
+
+    while (n<mco->aheadUsed && mco->inBufUsed<INBUFSIZE-1) KeyToBuffer( mco, mco->ahead[ n++ ] );
+    if (n>0) {
+        mco->aheadUsed-= n;
+        memmove( mco->ahead, mco->ahead+n, (size_t)mco->aheadUsed );
+    }
+} /* KeysAhead */
+
+/* how many more keys a reader may take off the host now */
+int KeyRoom( const ttydev_typ* mco )
+{   return (INBUFSIZE-1 - mco->inBufUsed) + (AHEADSIZE - mco->aheadUsed);
+} /* KeyRoom */
 
 void LastCh_Bit7( char* name, Boolean setIt )
 /* adapt the dir entry's last char to normal/dir style depending on <setIt> */

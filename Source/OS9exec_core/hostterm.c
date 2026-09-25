@@ -63,6 +63,7 @@ static void hostterm_init( void )
         hostterms[k].endpoint[0]=   NUL;
         hostterms[k].dev.installed = false;
         hostterms[k].dev.inBufUsed =     0;
+        hostterms[k].dev.aheadUsed =     0;
         hostterms[k].dev.holdScreen= false;
         hostterms[k].dev.pid       =     0;
         hostterms[k].dev.spP       =  NULL;
@@ -334,6 +335,7 @@ static os9err hostterm_bind( int term_id )
 
     h->dev.installed = true;
     h->dev.inBufUsed =     0;
+    h->dev.aheadUsed =     0;
     h->dev.holdScreen= false;
     h->dev.pid       =     0;
     h->dev.spP       =  NULL;
@@ -386,9 +388,10 @@ os9err hostterm_declare( int term_id, const char* spec )
     return err;
 } /* hostterm_declare */
 
-void hostterm_close( int term_id )
+void hostterm_close( int term_id, syspath_typ* spP )
 {
     hostterm_typ* h;
+    int           k;
 
     hostterm_init();
     if (!hostterm_in_range( term_id )) return;
@@ -397,7 +400,20 @@ void hostterm_close( int term_id )
     if (!h->open) return;
 
     if (h->openCount>0) h->openCount--;
-    if (h->openCount>0) return;          /* another path still holds it */
+    if (h->openCount>0) {                /* another path still holds it */
+        /* ...but the device may have been pointing at THIS one (every open
+           takes it over), and the slot is about to be reused: keys would
+           then read another path's options, and ^C would signal whoever
+           owns it next. Point at one that stays. */
+        if (h->dev.spP==spP) {
+            h->dev.spP= NULL;
+            for (k=1; k<MAXSYSPATHS; k++) {
+                syspath_typ* sp= &syspaths[ k ];
+                if (sp!=spP && sp->type==spP->type && sp->term_id==term_id) { h->dev.spP= sp; break; }
+            }
+        }
+        return;
+    }
 
     /* Deliberately does NOT close h->fd or h->spareFd. A bound terminal is a
        DEVICE, and a device does not cease to exist because the last path to it
@@ -464,12 +480,13 @@ void hostterm_poll( void )
            cannot be pushed back. Same conservative floor HandleEvent() uses
            for stdin. Special chars do not consume inBuf space at all, so the
            worst case is deferring a few plain bytes to the next poll. */
-        room= INBUFSIZE-1 - h->dev.inBufUsed;
+        KeysAhead( &h->dev );
+        room= KeyRoom( &h->dev );
 
         while (room-->0) {
             char c;
             if (read( h->fd,&c,1 )!=1) break; /* EAGAIN: nothing more today */
-            KeyToBuffer( &h->dev, c );
+            KeyAhead( &h->dev, c );
         }
     }
 } /* hostterm_poll */
@@ -597,7 +614,7 @@ os9err hostterm_declare( int term_id, const char* spec )
     return os9error(E_UNIT); /* no host terminals on this platform */
 } /* hostterm_declare */
 
-void hostterm_close( int term_id ) { (void)term_id; }
+void hostterm_close( int term_id, syspath_typ* spP ) { (void)term_id; (void)spP; }
 
 int hostterm_put( int term_id, const char* buffer, int n )
 {
