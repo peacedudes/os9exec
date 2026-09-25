@@ -83,6 +83,14 @@ for m in $(ls "$REPO/test/68k-conformance/CMDS" | grep -avE '^(tally|mark|load|c
     esac
 done
 echo "WASM CONF68K: PASS=$pass FAIL=$fail SKIP=$skip NO-RESULT=$none"
+# The browser build signs on with the original authors' names whatever it runs:
+# a page is an interactive session even when it starts bash rather than the
+# shell, and it showed none (a terminal still prints it for shell/sh only).
+banner=$( cd "$OUT" && OS9DISK=/conf68k.dsk node os9exec.js -r /dd/CMDS/t01open 2>&1 | tr '\r' '\n' )
+case "$banner" in
+    *"Lukas Zeller / Beat Forster"*) echo "WASM sign-on: the authors' banner is shown" ;;
+    *) echo "WASM sign-on: NO authors' banner for a program other than shell"; exit 1 ;;
+esac
 # No test at all is not a pass: an empty CMDS (the suite not built) ran nothing.
 [ "$pass" -gt 0 ] || { echo "no conformance test ran -- is test/68k-conformance/CMDS built?"; exit 1; }
 [ "$fail" -eq 0 ] && [ "$none" -eq 0 ] || exit 1

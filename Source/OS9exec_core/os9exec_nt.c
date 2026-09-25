@@ -2889,6 +2889,12 @@ ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
 
   withTitle= ustrcmp( my_toolname,"shell" )==0 ||
              ustrcmp( my_toolname,"sh"    )==0;
+  #ifdef __EMSCRIPTEN__
+    /* A browser page is always an interactive session -- one may start bash
+       rather than the shell -- and has no single-command run for a banner to
+       clutter, so it always signs on with the original authors' names. */
+    withTitle= true;
+  #endif
     
   /* Sign-on message */
   if (withTitle) {

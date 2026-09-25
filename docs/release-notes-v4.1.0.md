@@ -22,8 +22,9 @@ the rest of the system: other processes keep running. See the README's Networkin
 **A browser build.** os9exec now also builds to WebAssembly and runs in a web page with a
 terminal. The page can keep a disk of your own in the browser's storage as `/h1`, and saves it
 when the page is hidden or closed. A `?run=` link types a command for you and leaves pressing
-Enter to you, so a link can never run anything on its own. It has no network and no host
-directories. See the README.
+Enter to you, so a link can never run anything on its own. It signs on with the original
+authors' names whatever program it starts. It has no network and no host directories. See the
+README.
 
 **Idle is idle.** An os9exec whose processes are all waiting now sleeps until something is due
 instead of polling: about 0.1% of a core, down from about 1.6%. A waiting reader or writer
