@@ -1414,8 +1414,8 @@ static os9err Open_Image( ushort pid, rbfdev_typ* dev, ptype_typ type, char* pat
         err= syspath_read   ( pid,  sp, &len, &bb, false );   if (err) break;
         err= syspath_seek   ( pid,  sp,  0 );                 if (err) break;
 
-        /* Cruzli check */
-        if (strcmp( (char*)&bb[ CRUZ_POS ],Cruz_Str )!=0) { err= E_FNA; break; }
+        /* the "Cruz" mark, or a sector 0 a disk this size can have */
+        if (!RBF_IsImage( bb, (long)iSize )) { err= E_FNA; break; }
         totScts= GET_OS9L(bb, TOT_POS) >> BpB;
         sctSize= GET_OS9W(bb, SECT_POS);
         if (sctSize==0)                     sctSize= STD_SECTSIZE;
@@ -3004,7 +3004,11 @@ static void AdaptPath( rbfdev_typ* dev, char** pathP )
 
 /* ---------------------------------------------------------------- */
 static ulong DirLSN( os9direntry_typ* dir_entry )
-{   return os9_long( dir_entry->fdsect );
+/* The entry's FD sector. Sector numbers are 24 bits (DD_TOT is three bytes),
+   so only the low three bytes count: the high one is 0 in the 68000 format,
+   and on a 6809 disk -- whose entries are a 29-byte name and a 3-byte sector
+   -- it is the last character of a name that long. */
+{   return os9_long( dir_entry->fdsect ) & 0x00FFFFFFUL;
 } /* DirLSN */
 
 os9err ReadFD( syspath_typ* spP )

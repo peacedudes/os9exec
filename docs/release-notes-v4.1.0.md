@@ -96,6 +96,10 @@ Files and devices:
   the device; paths with spaces work, and so do host names longer than 28 characters in the
   middle of a path; lookups are much faster (a device scan that took minutes on a Docker share
   takes seconds).
+- `-6` also opens RBF disks without the OS-9/68000 format's "Cruz" mark, as 6809 (CoCo) disks
+  are: the file system is the same RBF, and listing, reading and `dcheck` work. It is off by
+  default, because that mark is what tells a 68000 disk from a 6809 one, so reading an unmarked
+  disk is something you ask for rather than something os9exec assumes.
 - SCF and pipes: console line editing honours the path options (end-of-record, padding, the
   512-byte line buffer); the status codes the manuals give SCF and pipes are implemented; a
   signal ends a blocked pipe read; two writers' lines no longer interleave on one terminal.

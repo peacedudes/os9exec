@@ -1794,6 +1794,48 @@ do {
     }
 }
 
+// ── RBF: an unmarked disk opens only with -6; a file of junk never does ────────
+// os9exec takes a file for an RBF disk when sector 0 carries "Cruz" at $60, the
+// OS-9/68000 format's mark, which 6809 (CoCo) disks never have. The mark looks
+// deliberate -- a guard against taking a 6809 disk for a 68000 one -- so an
+// unmarked disk opens only when asked for with -6, then recognised by a sector 0
+// describing a disk the file can hold. A fresh image with its mark blanked
+// stands in for an unmarked disk; a file of arbitrary bytes named like a disk
+// must not be taken for one even with -6.
+do {
+    let name = "rbf: an unmarked disk (as 6809 disks are) opens only with -6; junk never does"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem(scratchDevice)
+        _ = os9(["mount -k=512K \(scratchDevice)", "echo unmarked >/h9/seed"], timeout: 30)
+        var patched = false
+        if let handle = FileHandle(forUpdatingAtPath: scratchHostPath) {
+            handle.seek(toFileOffset: 0x60)
+            handle.write(Data([0, 0, 0, 0]))          // no "Cruz"
+            handle.closeFile()
+            patched = true
+        }
+        func lists(_ out: String) -> Bool {
+            out.split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces) == "unmarked" }
+        }
+        let plain = lists(os9(["list /h9/seed"], timeout: 30))
+        let asked = lists(os9(["list /h9/seed"], timeout: 30, flags: ["-6"]))
+        removeScratchItem(scratchDevice)
+        var junk = Data(count: 64 * 1024)
+        for index in 0..<junk.count { junk[index] = UInt8(truncatingIfNeeded: index * 131 + 17) }
+        FileManager.default.createFile(atPath: scratchHostPath, contents: junk)
+        let junkIsNoDisk = !os9(["dir /h9"], timeout: 30, flags: ["-6"]).contains("Directory of /h9")
+        if patched && !plain && asked && junkIsNoDisk {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      opened without -6: \(plain), with -6: \(asked), junk refused: \(junkIsNoDisk)")
+            failed += 1
+        }
+        removeScratchItem(scratchDevice)
+    }
+}
+
 // ── RBF: a byte patched after a multi-sector write lands in the written data ──
 // A write of whole sectors goes to the device in one transfer, and the path's
 // one-sector cache was then labelled with the last sector written without

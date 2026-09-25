@@ -2715,6 +2715,46 @@ Boolean SCSI_Device( const char* os9path,
   } /* GetEntry */
 #endif
 
+Boolean rbf_unmarked= false; /* -6: also take unmarked disks (6809 ones) for RBF */
+
+Boolean RBF_IsImage( const byte* s0, long size )
+/* Is <s0> sector 0 of an RBF disk image <size> bytes long?
+ *
+ * The OS-9/68000 format says so outright: "Cruz" at $60. By default nothing
+ * else is taken for a disk. The mark looks deliberate -- rdoggett's educated
+ * guess is that it was put there so that a 6809 disk could not be mistaken for
+ * a 68000 one -- so reading an unmarked disk is asked for with -6, not assumed.
+ *
+ * With -6, formats without the mark -- 6809 (CoCo) disks above all, which are
+ * the same RBF on the same layout (file descriptors, 5-byte segments, 32-byte
+ * entries, the bitmap) -- are recognised by a sector 0 describing a disk this
+ * file can hold: a
+ * sector count, a power-of-two cluster size, an allocation map exactly as long
+ * as that disk needs (a formatter may pad it to a whole sector), and a root
+ * directory inside the disk and inside the file. Measured 2026-09-24 against
+ * every image on the development machine: the 39 unmarked 6809 disks pass, and
+ * the one file that came close (a sector count, but a map 142 bytes long for a
+ * disk needing 1 and a root directory past the end) does not. Such a disk
+ * is read with 256-byte sectors, the only size 6809 OS-9 has. */
+{
+    uint32_t tot, dir, need;
+    uint16_t map, bit;
+
+    if (strcmp( (const char*)&s0[ CRUZ_POS ],Cruz_Str )==0) return true;
+    if (!rbf_unmarked)                                        return false;
+
+    tot= ((uint32_t)s0[0]<<16) | ((uint32_t)s0[1]<<8) | s0[2];   /* DD_TOT */
+    map= (uint16_t)((s0[4]<<8) | s0[5]);                         /* DD_MAP */
+    bit= (uint16_t)((s0[6]<<8) | s0[7]);                         /* DD_BIT */
+    dir= ((uint32_t)s0[8]<<16) | ((uint32_t)s0[9]<<8) | s0[10];  /* DD_DIR */
+
+    if (tot==0 || bit==0 || (bit & (bit-1))!=0) return false;
+    if (dir==0 || dir>=tot)                     return false;
+    need= ((tot+bit-1)/bit + 7)/8;
+    if (map<need || map>((need+STD_SECTSIZE-1)/STD_SECTSIZE)*STD_SECTSIZE) return false;
+    return (uint64_t)(dir+1)*STD_SECTSIZE <= (uint64_t)size;
+} /* RBF_IsImage */
+
 Boolean RBF_ImgSize( long size )
 /* Returns true, if it is a valid RBF Image size */
 {
@@ -3311,8 +3351,8 @@ Boolean RBF_ImgSize( long size )
           if (fread( &bb, 1,sizeof(bb), stream )!=sizeof(bb)) {
               fclose( stream );                        err= E_FNA;  break;
           }
-          fclose( stream ); /* is this really an OS-9 partition ? => Cruzli check */
-          if (strcmp( &bb[CRUZ_POS],Cruz_Str )!=0)     { err= E_FNA;  break; }
+          fclose( stream ); /* is this really an RBF disk image? */
+          if (!RBF_IsImage( (const byte*)bb, (long)info.st_size )) { err= E_FNA; break; }
       } while (false);
 
       if (hostpath!=NULL) {

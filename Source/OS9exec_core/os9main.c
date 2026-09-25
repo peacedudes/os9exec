@@ -570,6 +570,8 @@ static void os9_usage(char *name)
     upho_printf("   -u          user defined option\n" );
     upho_printf("   -v          ctrl-C will stop OS9exec immediately\n" );
     upho_printf("   -r          run terminal output full speed (no baud-rate pacing)\n" );
+    upho_printf("   -6          also open RBF disks without the OS-9/68000 \"Cruz\" mark,\n" );
+    upho_printf("               as 6809 (CoCo) disks are (off by default)\n" );
     upho_printf("   -h[h]       show this help [and conditions for using the software]\n");
     upho_printf("\n");
 
@@ -925,6 +927,7 @@ void os9_main( int argc, char **argv, char **envp )
           case 'u' :  userOpt    =  true; break; // set user option
           case 'v' :  catch_ctrlC= false; break; // don not install a ctrl C handler
           case 'r' :  baud_throttle= false; break; // run full speed (no baud pacing)
+          case '6' :  rbf_unmarked = true;  break; // also open unmarked (6809) RBF disks
 
           case 'q' :  /* -q[ms]: the system tick, ON by default. Bare "-q"
                        * SWITCHES IT OFF -- the flag exists to turn the clock
