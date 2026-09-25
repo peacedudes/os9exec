@@ -1061,11 +1061,20 @@ os9err pPgetFD( _pid_, syspath_typ* spP, uint32_t *maxbytP, byte* buffer )
 } /* pPgetFD */
 
 
-/* get pipe size */
-os9err pPsize( _pid_, syspath_typ* spP, uint32_t *sizeP )
+/* SS_Size on a pipe is refused, E$UnkSvc. The manuals read two ways -- "Returns
+   the size of the pipe buffer" (Pipeman's own list) and "Return Current File
+   Size (RBF, PIPE)" (I$GetStt) -- and os9exec answered the buffer's capacity.
+   less, which sizes its input this way, then stopped there: `dir -e | less`
+   ended at 4K. Every other answer fails some real binary: any size cuts piped
+   input short (at 90 bytes with Pipeman's default buffer, on every system),
+   and 0 makes the less binary people ran on OS-9 show an empty file (measured
+   by the freeware session). Only an error lets it read to the end, as its
+   C library then reports the size unknown. An INFERENCE: CONF68K t111 asks
+   real hardware. */
+os9err pPsize( _pid_, _spP_, uint32_t *sizeP )
 {
-    *sizeP= spP->u.pipe.pchP->size-1; /* return max available size of pipe buffer */
-    return 0;
+    *sizeP= 0;
+    return os9error(E_UNKSVC);
 } /* pPsize */
 
 

@@ -110,6 +110,8 @@ Files and devices:
 - SCF and pipes: console line editing honours the path options (end-of-record, padding, the
   512-byte line buffer); the status codes the manuals give SCF and pipes are implemented; a
   signal ends a blocked pipe read; two writers' lines no longer interleave on one terminal.
+  `SS_Size` on a pipe is refused rather than answered with the buffer's size, so `less` pages
+  piped input to the end instead of stopping after 4K.
 - `-d` tracing and the debugger talk to you, never into the program's own output.
 - 32-bit hosts (Linux i386, 32-bit Windows, the browser): several sizes that wrapped there, and
   a module file that could hang `F$Load`, are fixed.
@@ -119,7 +121,7 @@ Files and devices:
 os9exec is built from the manuals, and where the manuals leave room it has had to make a
 reading. The conformance suite, CONF68K, turns those readings into tests with the manual's
 words beside each, and it runs on real OS-9 as well as here. This release attaches it as
-a single disk image, `conf68k.dsk`: 110 standalone tests, hand-written assembly, no Microware
+a single disk image, `conf68k.dsk`: 111 standalone tests, hand-written assembly, no Microware
 software on it. Put it on a disk device, `chd` to it and type `runall`; each test prints one
 line with what it observed and what the manual led us to expect. Where a claim is our inference
 rather than the manual's plain statement, the claim says so. If your hardware disagrees with
