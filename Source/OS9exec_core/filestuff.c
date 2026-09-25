@@ -1710,6 +1710,10 @@ os9err syspath_new( ushort *sp, ptype_typ type )
             spK->mh       = NULL;    /* no underlying module by default */
             spK->nr       = k;       /* store it also in itself */
             spK->rawMode  = false;   /* by default it is not raw mode */
+            spK->fullName[0]= NUL;   /* not a file until an open says so: a
+                                        raw open never sets it, and the last
+                                        user's name made I$Delete of that file
+                                        answer E$Share as if it were open */
             spK->mustW    = 0;       /* last sector to be written */
             spK->fd_sct   = NULL;
             spK->rw_sct   = NULL;

@@ -1882,7 +1882,10 @@ void Flush_FDCache( const char* pathname )
  * takes the first empty slot or goes on the end -- both as RBF does. Slots
  * last as long as the directory is remembered: DIRSLOTS_MAX directories, the
  * least recently used forgotten first, after which its next listing starts
- * again from the host's own order.
+ * again from the host's own order. A directory a path has open is not
+ * forgotten while there is another to forget, and a set made afresh is synced
+ * before its first read, whoever reads it: a reader part way through used to
+ * find an empty set once 64 other directories had been read, and stop there.
  * ------------------------------------------------------------------------ */
 #define DIRSLOTS_MAX 64
 
@@ -1892,6 +1895,7 @@ typedef struct {
     int        count;           /* slots, the empty ones included */
     int        cap;             /* slots allocated */
     ulong      used;            /* when last used, to forget the oldest */
+    Boolean    synced;          /* brought up to date with the host since made */
     dirent_room_typ entry;      /* what DirNthEntry hands out */
 } dirslots_typ;
 
@@ -1932,8 +1936,26 @@ static void SlotsFree( dirslots_typ* t )
 
     for (k=0; k<t->count; k++) free( t->name[ k ] );
     free( t->name );
-    t->name= NULL; t->count= 0; t->cap= 0; t->dir[0]= NUL;
+    t->name= NULL; t->count= 0; t->cap= 0; t->dir[0]= NUL; t->synced= false;
 } /* SlotsFree */
+
+static Boolean SlotsOpen( const dirslots_typ* t )
+/* whether a path has <t>'s directory open */
+{
+    char   key[OS9PATHLEN];
+    size_t len;
+    int    k;
+
+    for (k=1; k<MAXSYSPATHS; k++) {
+        const syspath_typ* sp= &syspaths[ k ];
+        if (sp->type!=fDir || sp->rawMode) continue;
+        strncpy( key, sp->fullName, OS9PATHLEN-1 ); key[ OS9PATHLEN-1 ]= NUL;
+        len= strlen( key );
+        while (len>1 && (key[ len-1 ]==PATHDELIM || key[ len-1 ]=='/')) key[ --len ]= NUL;
+        if (strcmp( key,t->dir )==0) return true;
+    }
+    return false;
+} /* SlotsOpen */
 
 static Boolean SlotsGrow( dirslots_typ* t, int count )
 /* room for <count> slots */
@@ -2006,11 +2028,15 @@ static dirslots_typ* SlotsFor( const char* dir )
     int           k;
 
     if (t==NULL) {
-        t= &dirSlots[0];
+        dirslots_typ* any= &dirSlots[0]; /* the oldest of all, if every one is open */
+        t= NULL;
         for (k=0; k<DIRSLOTS_MAX; k++) {
             if (dirSlots[ k ].dir[0]==NUL)          { t= &dirSlots[ k ]; break; }
-            if (dirSlots[ k ].used<t->used)            t= &dirSlots[ k ];
+            if (dirSlots[ k ].used<any->used)          any= &dirSlots[ k ];
+            if (SlotsOpen( &dirSlots[ k ] ))           continue;
+            if (t==NULL || dirSlots[ k ].used<t->used) t= &dirSlots[ k ];
         }
+        if (t==NULL) t= any;
         SlotsFree( t );
         strncpy( t->dir, dir, OS9PATHLEN-1 ); t->dir[ OS9PATHLEN-1 ]= NUL;
         k= (int)strlen( t->dir );
@@ -2065,8 +2091,9 @@ os9err DirNthEntry( syspath_typ* spP, int n, dirent_typ** dEnt )
     }
 
     t= SlotsFor( spP->fullName );
-    if (n==2 || spP->svD_n==0) { /* reading starts over: see what has changed */
+    if (n==2 || spP->svD_n==0 || !t->synced) { /* reading starts over, or the set is new */
         err= SlotsSync( t, spP->dDsc ); if (err) { SlotsFree( t ); return err; }
+        t->synced= true;
     }
     spP->svD_n= n;
     if (n-2>=t->count) return E_EOF;

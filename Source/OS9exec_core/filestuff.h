@@ -218,6 +218,11 @@ void    Disp_RBF_Devs   ( Boolean statistic );
 /* True when a mounted RBF image's host file is <hostpath> or below it --
    fileaccess.c's pDwrite will not rename one out from under its mount. */
 Boolean RBF_ImageOpenUnder( const char* hostpath );
+
+/* fileaccess.c: rename the host file or directory <srcPath> to <newName> in
+   its own directory, as a directory-entry rename does (device roots and
+   mounted images refused, open paths and current directories follow). */
+os9err  HostRenameInPlace( ushort pid, const char* srcPath, const char* newName );
 ushort  PathFDOwner       ( syspath_typ* spP ); /* file_rbf.c: an RBF path's FD_OWN */
 
 /* True when Disp_RBF_Devs already printed a row for /<name> -- i.e. the device

@@ -1278,6 +1278,16 @@ os9err pHdsize( ushort pid, syspath_typ* spP, uint32_t* size, uint32_t* dtype )
   } /* Get_Creator_And_Type */
 #endif 
 
+/* E$BPNam when the last name of the OS-9 pathlist <path> is longer than an
+   RBF name can be. A host directory took a 29-character name on create, and
+   the file then listed under its 28-character cut, answering to (and being
+   deleted in place of) any other file with that cut. */
+static os9err LastNameFits( const char* path )
+{
+    const char* last= strrchr( path, '/' );
+    return strlen( last!=NULL ? last+1 : path )>DIRNAMSZ ? os9error(E_BPNAM) : 0;
+} /* LastNameFits */
+
 os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname )
 {
 /* open/create file */
@@ -1427,6 +1437,7 @@ os9err pFopen( ushort pid, syspath_typ* spP, ushort *modeP, const char* pathname
       debugprintf(dbgFiles,dbgNorm,("# pFopen: trying to %s '%s', mode=$%04hX\n",
                                      cre ? "create":"open", pp,*modeP));
 
+      if (cre) { err= LastNameFits( pp ); if (err) return err; }
       err= AdjustPath( pp,adapted, cre );
       if (err) return err;
       pp=                 adapted;
@@ -1784,6 +1795,7 @@ os9err pFdelete( ushort pid, _spP_, ushort *modeP, const char* pathname )
             /* an open in mode 0 (no stream: attributes and status only) is
                an open all the same */
             if (op->type!=fFile && op->type!=fDir)   continue;
+            if (op->rawMode)                         continue; /* the device, not a file */
             if (op->fullName[0]==NUL)                continue;
             if (!same_host_file( op->fullName, pathname )) continue;
 
@@ -3282,6 +3294,38 @@ static os9err HostRename( ushort pid, const char* srcPath, const char* dstPath,
     return 0;
 } /* HostRename */
 
+os9err HostRenameInPlace( ushort pid, const char* srcPath, const char* newName )
+/* The internal `rename` on a host directory: <srcPath> (a host path) gets
+   <newName> in the directory it is in, under the same rules as a rename by
+   directory write. It used to call rename() with none of them, so `rename /h5
+   zz` renamed the device's own root directory -- a host directory outside the
+   device -- and an open path or current directory kept the old name. */
+{
+    char        srcDir [OS9PATHLEN];
+    char        dstPath[OS9PATHLEN];
+    char        dstHost[OS9PATHLEN];
+    const char* srcHost;
+    const char* q;
+    size_t      len;
+    os9err      err;
+
+    if (!HostPathWithinConfiguredDevice( srcPath )) return os9error(E_FNA);
+    q= strrchr( srcPath, PATHDELIM );
+    if (q==NULL || q[ 1 ]==NUL)                   return os9error(E_FNA);
+    srcHost= q+1;
+    len= (size_t)(q-srcPath);
+    if (len>=OS9PATHLEN)                          return os9error(E_BPNAM);
+    memcpy( srcDir, srcPath, len ); srcDir[ len ]= NUL;
+
+    HostSpelling( newName, srcHost, dstHost, sizeof(dstHost) );
+    err= NameTaken( srcDir, newName, dstHost, srcHost ); if (err) return err;
+    err= JoinPath ( dstPath, srcDir, dstHost );         if (err) return err;
+    if (strcmp( srcPath,dstPath )==0)             return 0; /* already so named */
+    err= HostRename( pid, srcPath, dstPath, srcHost, dstHost, srcDir ); if (err) return err;
+    DirSlotsForget( srcDir );         /* its directory lists the new name */
+    return 0;
+} /* HostRenameInPlace */
+
 /* move links a file into its new place by appending an entry that carries the
    file's FD sector, then clears the old entry with a one-byte write through a
    second path. On a host directory the append has already moved the file (see
@@ -3640,6 +3684,7 @@ os9err pDmakdir( ushort pid, _spP_, ushort *modeP, const char* pathname )
     } // if
 
   #elif defined windows32
+    err= LastNameFits( pathname );             if (err) return err;
     err= AdjustPath( pathname,adapted, true ); if (err) return err;
     pathname=                 adapted;
 
@@ -3647,6 +3692,7 @@ os9err pDmakdir( ushort pid, _spP_, ushort *modeP, const char* pathname )
     if (!CreateDirectory( pathname,NULL )) oserr=GetLastError();
 
   #elif defined UNIX
+    err= LastNameFits( pathname );             if (err) return err;
     err= AdjustPath( pathname,adapted, true ); if (err) return err;
     
     debugprintf(dbgFiles,dbgNorm,("# I$MakDir: Linux path=%s\n",adapted));

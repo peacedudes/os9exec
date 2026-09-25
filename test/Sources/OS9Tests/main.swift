@@ -1109,6 +1109,160 @@ run("rbf: mount -k image is dir/free/dcheck clean",
 // does not), and `mount -k` would otherwise be handed a file that already exists.
 removeScratchItem(scratchDevice)
 
+// ── host directory: a listing part way through survives 64 other listings ─────
+// A host directory's entries keep RBF-style slots, remembered for 64
+// directories. Once 64 others had been read, a reader part way through one
+// got a fresh, empty set and read E$EOF: 5 entries of 22, silently (found by
+// the pre-release host-files review).
+do {
+    let slotsAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Open equ $84", "I$Read equ $89", "I$WritLn equ $8C", "I$Close equ $8F",
+        "  psect mslot,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "buf: ds.b 64", "path: ds.b 32", "  ends",
+        "start:",
+        "  lea top(pc),a0", "  move.b #$81,d0", "  OS9 I$Open", "  bcs.w setup", "  move.w d0,d7",
+        "  moveq #0,d5", "  moveq #4,d4",
+        "first:", "  move.w d7,d0", "  lea buf(a6),a0", "  moveq #32,d1", "  OS9 I$Read", "  bcs.w setup",
+        "  addq.l #1,d5", "  dbra d4,first",
+        "  lea tmpl(pc),a0", "  lea path(a6),a1",
+        "copy:", "  move.b (a0)+,(a1)+", "  bne.s copy",
+        "  moveq #0,d4",
+        "other:", "  move.l d4,d0", "  divu #10,d0", "  lea path(a6),a1",
+        "  addi.b #'0',d0", "  move.b d0,12(a1)", "  swap d0", "  addi.b #'0',d0", "  move.b d0,13(a1)",
+        "  movea.l a1,a0", "  move.b #$81,d0", "  OS9 I$Open", "  bcs.w setup", "  move.w d0,d6",
+        "  moveq #2,d3",
+        "three:", "  move.w d6,d0", "  lea buf(a6),a0", "  moveq #32,d1", "  OS9 I$Read", "  bcs.w setup",
+        "  dbra d3,three",
+        "  move.w d6,d0", "  OS9 I$Close",
+        "  addq.l #1,d4", "  cmpi.l #64,d4", "  blt.s other",
+        "rest:", "  move.w d7,d0", "  lea buf(a6),a0", "  moveq #32,d1", "  OS9 I$Read", "  bcs.s ended",
+        "  addq.l #1,d5", "  bra.s rest",
+        "ended:", "  cmpi.w #211,d1", "  bne.s setup", "  cmpi.l #22,d5", "  bne.s short",
+        "  lea okm(pc),a0", "  bra.s tell",
+        "short:", "  lea shortm(pc),a0", "  bra.s tell",
+        "setup:", "  lea setupm(pc),a0",
+        "tell:", "  moveq #1,d0", "  moveq #40,d1", "  OS9 I$WritLn",
+        "  moveq #0,d1", "  OS9 F$Exit",
+        "top: dc.b \"/h5/sltop\",0", "tmpl: dc.b \"/h5/sldirs/d00\",0",
+        "okm: dc.b \"ALL 22 ENTRIES LISTED\",13", "shortm: dc.b \"LISTING ENDED SHORT\",13",
+        "setupm: dc.b \"SETUP FAILED\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "fs: a host directory read part way through still lists every entry after 64 others are read"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let files = FileManager.default
+        for dir in ["sltop", "sldirs"] { try? files.removeItem(atPath: scratchDisk + "/" + dir) }
+        try? files.createDirectory(atPath: scratchDisk + "/sltop", withIntermediateDirectories: true)
+        for index in 0..<20 { files.createFile(atPath: scratchDisk + "/sltop/f\(index)", contents: Data("x\n".utf8)) }
+        for index in 0..<64 {
+            let dir = scratchDisk + String(format: "/sldirs/d%02d", index)
+            try? files.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            files.createFile(atPath: dir + "/x", contents: Data("x\n".utf8))
+        }
+        try? slotsAsm.write(toFile: scratchDisk + "/mslot.a", atomically: true, encoding: .utf8)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/mslot.a -o=/h5/mslot.r", "l68 /h5/mslot.r -o=/h5/mslot", "/h5/mslot"], timeout: 60)
+        if out.contains("ALL 22 ENTRIES LISTED") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("LIST") || $0.contains("SETUP") }
+            print("      saw: \(seen)")
+            failed += 1
+        }
+        for item in ["sltop", "sldirs", "mslot.a", "mslot.r", "mslot"] {
+            try? files.removeItem(atPath: scratchDisk + "/" + item)
+        }
+    }
+}
+
+// ── host directory: a name over 28 characters is refused on create ──────────
+// RBF names are 1 to 28 characters. A host directory created a 29-character
+// file or directory anyway, which then listed under its 28-character cut and
+// answered to any other name with the same cut (found by the pre-release
+// host-files review).
+do {
+    let name = "fs: a host directory refuses to create a file or directory with a 29-character name"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let long = "a2345678901234567890123456789"
+        let out = os9(["echo x >/h5/\(long)", "makdir /h5/d\(long.dropFirst())"], timeout: 30)
+        let made = FileManager.default.fileExists(atPath: scratchDisk + "/" + long)
+            || FileManager.default.fileExists(atPath: scratchDisk + "/d" + long.dropFirst())
+        let refusals = out.components(separatedBy: "E_BPNAM").count - 1
+        if !made && refusals == 2 {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      created: \(made), E$BPNam refusals: \(refusals)")
+            failed += 1
+        }
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + long)
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/d" + long.dropFirst())
+    }
+}
+
+// ── host directory: a long dot-name, matched by its cut, leads on to a file ───
+// On Linux a leading "." reaches the host through the :2e spelling, which was
+// taken to be exactly 2 bytes longer than the host's name. A host dot-name of
+// more than 28 characters, matched by its 28-character cut, is longer still:
+// it was copied over the rest of the path, which then came apart (found by the
+// pre-release host-files review; a buffer overrun on Linux).
+do {
+    let name = "fs: a file inside a directory with a long dot-name is reached by the name's 28-character cut"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let cut = ".abcdefghijklmnopqrstuvwxyza"
+        let dir = scratchDisk + "/" + cut + "_LONGER_NAME"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        try? "FOUND PAST THE LONG DOT-NAME\n".write(toFile: dir + "/f", atomically: true, encoding: .utf8)
+        let out = os9(["list /h5/\(cut)/f"], timeout: 30)
+        if out.contains("FOUND PAST THE LONG DOT-NAME") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      output: \(out.suffix(200))")
+            failed += 1
+        }
+        try? FileManager.default.removeItem(atPath: dir)
+    }
+}
+
+// ── rename: a device root stays put, and a current directory follows ─────────
+// The internal `rename` on a host directory called rename() with none of the
+// rules a rename by directory write keeps: `rename /h6 zz` renamed the host
+// directory that IS the device, outside it, and a process's current directory
+// kept the old name (found by the pre-release host-files review).
+do {
+    let name = "rename: a device's root is refused, and a renamed current directory still works"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let hostScratch = URL(fileURLWithPath: scratchDisk).resolvingSymlinksInPath().path
+        let seen = containerized ? scratch : hostScratch
+        let root = hostScratch + "/rnroot"
+        try? FileManager.default.removeItem(atPath: root)
+        try? FileManager.default.removeItem(atPath: hostScratch + "/rnzz")
+        try? FileManager.default.createDirectory(atPath: root + "/d", withIntermediateDirectories: true)
+        try? "INSIDE THE RENAMED DIRECTORY\n".write(toFile: root + "/d/f", atomically: true, encoding: .utf8)
+        let out = os9(["rename /h6 rnzz", "chd /h6/d", "rename /h6/d e", "list f"], timeout: 30,
+                      env: ["OS9H6": seen + "/rnroot"])
+        let rootKept = FileManager.default.fileExists(atPath: root + "/e/f")
+            && !FileManager.default.fileExists(atPath: hostScratch + "/rnzz")
+        if rootKept && out.contains("INSIDE THE RENAMED DIRECTORY") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      root kept: \(rootKept); output: \(out.suffix(300))")
+            failed += 1
+        }
+        try? FileManager.default.removeItem(atPath: root)
+        try? FileManager.default.removeItem(atPath: hostScratch + "/rnzz")
+    }
+}
+
 // ── pwd names a directory under /hz, the last device letter ─────────────────────
 // pwd turns the host directory back into an OS-9 path by finding the device
 // whose root it is, trying /dd, /h0../h9 and /ha../hz. The loop gave up one
@@ -7053,6 +7207,28 @@ do {
         message("mapart", "ZERO BLOCK HAS ITS OWN ADDRESS") + message("mshared", "ZERO BLOCK SHARES AN ADDRESS") +
         ["  ends", ""]
 
+    // A raw open of a device (`/h5@`, as the C library's stat() makes) took a
+    // path slot whose last file's name was never cleared, so deleting that file
+    // afterwards was refused E$Share as though it were still open (found by the
+    // pre-release host-files review).
+    let rawDelete = header + [
+        "I$Create equ $83", "I$Delete equ $87", "I$Close equ $8F",
+        "  psect mrawd,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "start:",
+        "  lea victim(pc),a0", "  moveq #2,d0", "  OS9 I$Delete",       // a leftover from an earlier run
+        "  lea victim(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w setup",
+        "  OS9 I$Close",
+        "  lea raw(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.w setup", "  move.w d0,d7",
+        "  lea victim(pc),a0", "  moveq #2,d0", "  OS9 I$Delete", "  bcs.s refused"] + say("mrdok") + [
+        "  bra.s done", "refused:"] + say("mrdno") + [
+        "done:", "  move.w d7,d0", "  OS9 I$Close", "  moveq #0,d1", "  bra.s fail",
+        "setup:"] + say("mrdsu") + [
+        "fail:", "  OS9 F$Exit",
+        "victim: dc.b \"/h5/rawvict\",0", "raw: dc.b \"/h5@\",0"] +
+        message("mrdok", "DELETED WITH A RAW PATH OPEN") + message("mrdno", "DELETE REFUSED") +
+        message("mrdsu", "SETUP FAILED") +
+        ["  ends", ""]
+
     // A zero-byte block handed back with a size of its own: os9free walked it
     // "in smaller pieces" of zero bytes, on the same address, for ever, and the
     // host's stack overflowed -- two system calls took the emulator down
@@ -7143,7 +7319,7 @@ do {
         message("mzok", "FMEM REGROWN AREA CLEAN") + message("mzno", "FMEM REGROWN AREA STALE") + ["  ends", ""]
 
     let modules = ["mhrdy": ready, "mdmtyp": datmod, "mdmdat": datdefault, "mcctl": cctl, "macct": acct,
-                   "mstky": sticky, "mzero": zeroBlock, "mzfre": zeroFree,
+                   "mstky": sticky, "mzero": zeroBlock, "mzfre": zeroFree, "mrawd": rawDelete,
                    "mperm": permLink, "mrevw": reviewFixes, "mmemw": memWrap,
                    "mmemz": memClean]
     for (module, lines) in modules {
@@ -7172,6 +7348,8 @@ do {
                    module: "mstky", want: ["STICKY KEPT AT 0 AND GONE AT -1"]),
         StatusCase(name: "memory: a zero-byte F$SRqMem gets an address of its own, and says nothing on return",
                    module: "mzero", want: ["ZERO BLOCK HAS ITS OWN ADDRESS"], absent: ["BLOCK at"]),
+        StatusCase(name: "fs: a file can be deleted while a raw path to its device is open",
+                   module: "mrawd", want: ["DELETED WITH A RAW PATH OPEN"]),
         StatusCase(name: "memory: a zero-byte block given back with a size of 16 frees, and the emulator lives",
                    module: "mzfre", want: ["ZERO BLOCK GIVEN BACK"]),
         StatusCase(name: "module: F$Link refuses a module whose access word gives no read permission",
@@ -7203,7 +7381,8 @@ do {
             let lines = out.split(whereSeparator: \.isNewline).filter {
                 $0.contains("READY") || $0.contains("DATMOD") || $0.contains("CCTL") || $0.contains("Error") ||
                 $0.contains("UACCT") || $0.contains("unimplemented") || $0.contains("STICKY") ||
-                $0.contains("BLOCK") || $0.contains("LINK ") || $0.contains("REVIEW") || $0.contains("FMEM")
+                $0.contains("BLOCK") || $0.contains("LINK ") || $0.contains("REVIEW") || $0.contains("FMEM") ||
+                $0.contains("DELETE") || $0.contains("SETUP")
             }
             print("      saw: \(lines.joined(separator: " | "))")
             failed += 1

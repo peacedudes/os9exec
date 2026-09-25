@@ -103,13 +103,21 @@ Boolean CaseSens( char* pathname, char* filename, Boolean *reduS, char* real, si
 //  int  P_Len= strlen(".");
     char        tmp [OS9PATHLEN];
     char        name[DIRNAMSZ+1];  /* GetEntry writes up to DIRNAMSZ characters and a NUL */
+    char        root[4];           /* drive letter, colon, separator */
+    Boolean     driveRoot;
     
     *reduS= false;
+    /* The directory to scan is everything before <filename>'s separator -- but
+     * for a name directly under a drive's root that is "C:", which names the
+     * drive's CURRENT directory, not its root. Linux had the same gap at "/". */
+    driveRoot= (filename-1)==pathname+2 && pathname[1]==':';
+    root[0]= pathname[0]; root[1]= ':'; root[2]= PATHDELIM; root[3]= NUL;
     *(filename-1)= '\0'; /* cut the string into two pieces, 2nd accessible by <filename> */
 
-    debugprintf( dbgFiles,dbgNorm,("# CaseSens:  (in) '%s' - '%s'\n", pathname,filename ));
+    debugprintf( dbgFiles,dbgNorm,("# CaseSens:  (in) '%s' - '%s'\n",
+                 driveRoot ? root : pathname, filename ));
     
-        d=  opendir( pathname );
+        d=  opendir( driveRoot ? root : pathname );
     if (d==NULL) { *(filename-1)= PATHDELIM; return false; } /* shouldn't happen */
     
     strcpy     ( tmp,filename );
@@ -269,20 +277,23 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
         if (fnd) {
             size_t oldL= strlen( q ), newL= strlen( real );
 
-            if (newL>oldL && !reduS) {
-                /* The host's full name for a component matched by its 28-char
-                 * cut: the rest of the path -- NUL-separated pieces up to the
-                 * final NUL after <qs> -- moves up to make room, or the path is
-                 * too long for the buffer. It used to be strcpy'd over them. */
+            if (newL!=oldL) {
+                /* The host's name is another length than the component it
+                 * answered to: longer when a component matched by its 28-char
+                 * cut, shorter for the :2e form, either for a long dot-name
+                 * matched through :2e. The rest of the path -- NUL-separated
+                 * pieces up to the final NUL after <qs> -- moves by the
+                 * difference. strcpy used to go over it, and the :2e form was
+                 * then closed up by a fixed 2 bytes, which overran the buffer
+                 * when the host's dot-name was longer than 28 characters. */
                 size_t used= (size_t)(qs+1-adname) + 1;
-                size_t grow= newL-oldL;
 
-                if (used+grow > OS9PATHLEN) { err= E_BPNAM; break; }
+                if (newL>oldL && used+(newL-oldL) > OS9PATHLEN) { err= E_BPNAM; break; }
                 memmove( q+newL, q+oldL, (size_t)((qs+1)-(q+oldL)) + 1 );
                 memcpy ( q, real, newL );
-                qs+= grow;
+                qs= qs+newL-oldL;
             }
-            else strcpy( q, real );   /* same length, or the :2e form (shorter) */
+            else memcpy( q, real, newL );
         }
 
         if (last) {             /* end of the string reached ? */
@@ -299,11 +310,6 @@ os9err AdjustPath( const char* pathname, char* adname, Boolean creFile )
         
         q= adname+strlen(adname);
         *q= PATHDELIM;
-        if (reduS) {
-            *++q= NUL;
-            strcat( adname,q+2 ); 
-            qs= qs-2;
-        }
 
         while (*q!=NUL && *q!=PATHDELIM) q++;
     } /* while */

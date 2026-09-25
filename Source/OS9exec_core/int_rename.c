@@ -174,9 +174,7 @@ os9err int_rename( ushort cpid, int argc, char **argv )
 
     #if defined win_unix
       char*    pp;
-      char     newPath [OS9PATHLEN]; 
       char     adaptOld[OS9PATHLEN];
-      char     adaptNew[OS9PATHLEN];
     #endif   
     
     debugprintf(dbgUtils,dbgNorm,( "# rename\n" ));
@@ -297,20 +295,8 @@ os9err int_rename( ushort cpid, int argc, char **argv )
           pp=                  adaptOld;
           if (err) return _errmsg( err,"can't open \"%s\"",oldPath );
           
-          strcpy   ( newPath,pp );
-          qq=        newPath+strlen(newPath)-1;
-          while  (qq>newPath && *qq!=PATHDELIM) qq--; /* cut the existing file name */
-          *++qq= NUL;
-          if (strlen( newPath )+len >= OS9PATHLEN) return _errmsg( E_BPNAM,"pathlist too long\n" );
-          strcat  ( newPath,newName );
-          
-                           qq=  newPath;
-          err= AdjustPath( qq, adaptNew, false ); 
-          if (!err) return _errmsg( E_CEF,"can't rename to \"%s\"",newName );
-        
-          err= host2os9err( rename( pp,qq ),E_CEF );
-          debugprintf(dbgUtils,dbgNorm,( "# rename from: '%s'\n",        pp      ));
-          debugprintf(dbgUtils,dbgNorm,( "# rename to:   '%s' err=%d\n", qq, err ));
+          err= HostRenameInPlace( cpid, pp, newName );
+          debugprintf(dbgUtils,dbgNorm,( "# rename '%s' to '%s' err=%d\n", pp, newName, err ));
           if  (err) return _errmsg( err,"can't rename to \"%s\"",newName );
         #endif
     }
