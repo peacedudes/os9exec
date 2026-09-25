@@ -1281,7 +1281,7 @@ static void GetCurPaths( char* envname, ushort mode, dir_type *drP, Boolean recu
 	   adds anything. Truncating silently would be its own trap (the emulator
 	   would look for a device somewhere the user never named), so it says so. */
 	if (strlen(p)>=sizeof(tmp)) {
-	    uphe_printf( "# %s: path is %lu characters, over the %lu limit -- ignored\n",
+	    uphe_printf( "%s: path is %lu characters, over the %lu limit -- ignored\n",
 	                 envname, (unsigned long)strlen(p), (unsigned long)sizeof(tmp)-1 );
 	    return;
 	}
@@ -1965,7 +1965,7 @@ static Boolean TCALL_or_Exception( process_typ* cp, regs_type* crp, ushort cpid 
 			
 		    debugprintf( dbgTrapHandler,dbgNorm,("# main loop: [pid=%d] ready to kill\n", cpid ));
 			cp->exiterr=vect-FIRSTEXCEPTION+E_BUSERR; /* set exit code */
-            uphe_printf( "# Exception: pid=%d vector=$%02X err=#%03d:%03d — process will be killed (x to continue)\n",
+            uphe_printf( "Exception: pid=%d vector=$%02X err=#%03d:%03d -- process will be killed (x to continue)\n",
                          cpid, vect, cp->exiterr>>8, cp->exiterr&0xFF );
             debug_halt( dbgAnomaly ); /* stop BEFORE kill so registers and i are live */
 			kill_process(cpid); /* kill the process, change currentpid */
@@ -2996,7 +2996,7 @@ ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
 	   past mdirPath[] -- a global, so the damage landed on whatever the
 	   linker put next to it. */
 	if (p!=NULL && strlen(p)>=sizeof(mdirPath)) {
-	    uphe_printf( "# OS9MDIR: path is %lu characters, over the %lu limit -- ignored\n",
+	    uphe_printf( "OS9MDIR: path is %lu characters, over the %lu limit -- ignored\n",
 	                 (unsigned long)strlen(p), (unsigned long)sizeof(mdirPath)-1 );
 	    *mdirPath= NUL;
 	}

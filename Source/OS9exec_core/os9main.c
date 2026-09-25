@@ -243,7 +243,7 @@ static Boolean joinPath( char* dst, size_t dstsz,
     size_t need= strlen(a) + (sep!=NULL ? strlen(sep) : 0) + strlen(b) + 1;
 
     if (need>dstsz) {
-        uphe_printf( "# path is %lu characters, over the %lu limit -- ignored\n",
+        uphe_printf( "path is %lu characters, over the %lu limit -- ignored\n",
                      (unsigned long)(need-1), (unsigned long)(dstsz-1) );
         *dst= NUL;
         return false;
@@ -358,7 +358,7 @@ char* egetenv( const char* name )
                     if (base==NULL ||
                         strlen(base)+strlen(PATHDELIM_STR)+strlen("CMDS")
                             >= sizeof(ocm)) {
-                        uphe_printf( "# OS9CMDS cannot be derived from OS9DISK"
+                        uphe_printf( "OS9CMDS cannot be derived from OS9DISK"
                                      " -- unset or too long\n" );
                         return NULL;
                     }
@@ -406,7 +406,7 @@ char* egetenv( const char* name )
                       if (*rslt==PATHDELIM && tmp[ strlen(tmp)-1 ]==PATHDELIM) rslt++;
                     #endif
                     if (strlen(tmp)+strlen(rslt)+1 > sizeof(tmp)) {
-                        uphe_printf( "# %s: path is too long once resolved -- ignored\n", name );
+                        uphe_printf( "%s: path is too long once resolved -- ignored\n", name );
                         return NULL;
                     }
                     strcat( tmp,rslt );
@@ -433,7 +433,7 @@ char* egetenv( const char* name )
 
                 if (strlen(tmp) + (IsAbsHostPath(rslt) ? 0 : strlen(PATHDELIM_STR))
                                  + strlen(rslt) + 1 > sizeof(tmp)) {
-                    uphe_printf( "# %s: path is too long once resolved -- ignored\n", name );
+                    uphe_printf( "%s: path is too long once resolved -- ignored\n", name );
                     return NULL;
                 }
                 if (!IsAbsHostPath(rslt)) strcat( tmp,PATHDELIM_STR );

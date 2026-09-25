@@ -895,7 +895,7 @@ static ushort debugwait_menu( void )
                            }
                            regs.pc= svPC; regs.pc_p= svP; regs.pc_oldp= svOld;
                            if (hit_term && emul_base + (uae_u32)listbase < emul_end) {
-                               dbg_printf("# (flow ends — bytes that follow, not necessarily code:)\n");
+                               dbg_printf("# (flow ends -- bytes that follow, not necessarily code:)\n");
                                uint32_t peek = listbase;
                                dumpmem(&peek, 2);
                            }
@@ -916,7 +916,7 @@ static ushort debugwait_menu( void )
                              }
                              regs.pc= svPC; regs.pc_p= svP; regs.pc_oldp= svOld;
                              if (hit_term && emul_base + (uae_u32)listbase < emul_end) {
-                                 dbg_printf("# (flow ends — bytes that follow, not necessarily code:)\n");
+                                 dbg_printf("# (flow ends -- bytes that follow, not necessarily code:)\n");
                                  uint32_t peek = listbase;
                                  dumpmem(&peek, 2);
                              }

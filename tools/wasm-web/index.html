@@ -29,7 +29,7 @@
 <header>
   <span id="status">OS9exec: loading the emulator and its disk...</span>
   <span id="h1name"></span>
-  <button id="attach" disabled title="Open an RBF disk image from this computer as /h1. It is copied into this browser and stays on this machine; nothing is sent anywhere. Safari's own dialog says &quot;Upload&quot;, which it is not.">Open disk as /h1…</button>
+  <button id="attach" disabled title="Open an RBF disk image from this computer as /h1. It is copied into this browser and stays on this machine; nothing is sent anywhere. Safari's own dialog says &quot;Upload&quot;, which it is not.">Open disk as /h1...</button>
   <button id="save" disabled title="Download /h1 as it is now">Save /h1</button>
   <button id="detach" disabled title="Remove /h1 from this browser">Detach /h1</button>
   <input id="pick" type="file" hidden>
@@ -170,7 +170,7 @@
     typedRun = true;
     if (params.get('needs') === 'h1' && !Module.os9h1.name()) {
       Module.os9status('"' + runCmd + '" needs your own OS-9 system attached as /h1. ' +
-                       'Use "Open disk as /h1…" and it will run.');
+                       'Use "Open disk as /h1..." and it will run.');
       return;
     }
     typeText(runCmd);
