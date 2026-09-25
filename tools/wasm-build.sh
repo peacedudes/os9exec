@@ -91,6 +91,10 @@ case "$banner" in
     *"Lukas Zeller / Beat Forster"*) echo "WASM sign-on: the authors' banner is shown" ;;
     *) echo "WASM sign-on: NO authors' banner for a program other than shell"; exit 1 ;;
 esac
+case "$banner" in   # and names its platform, where it said '?' and "Unknown System"
+    *"Platform: 'Browser - wasm32' (wasm32)"*) echo "WASM sign-on: the platform is named" ;;
+    *) echo "WASM sign-on: the platform is not named"; exit 1 ;;
+esac
 # No test at all is not a pass: an empty CMDS (the suite not built) ran nothing.
 [ "$pass" -gt 0 ] || { echo "no conformance test ran -- is test/68k-conformance/CMDS built?"; exit 1; }
 [ "$fail" -eq 0 ] && [ "$none" -eq 0 ] || exit 1

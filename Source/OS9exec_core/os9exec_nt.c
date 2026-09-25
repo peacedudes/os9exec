@@ -1117,6 +1117,13 @@ void get_hw()
       }
     }
 
+  #elif defined __EMSCRIPTEN__
+    /* The browser build defines neither linux nor windows32, and signed on as
+       "Platform: '?' (?)" / "- Unknown System". hw_name goes into the init
+       module's 17-byte slot (see the linux branch): 16 visible characters. */
+    hw_site= "PC";
+    hw_name= "Browser - wasm32"; platform= "wasm32";
+
   #else
   /* unknown */
     hw_site= "?";
@@ -1848,7 +1855,8 @@ static void CheckStartup( int cpid, char* toolname, int *argc, char **argv )
 static void titles( void )
 {
    /* - Apperance (CTB-terminal, Win32 or Linux Console or MPW tool) */
-   upho_printf( "Platform: '%s' (%s)\n", hw_name, platform );
+   if (strcmp( hw_name,"?" )!=0) /* an unknown host says nothing rather than '?' */
+     upho_printf( "Platform: '%s' (%s)\n", hw_name, platform );
    
    #ifdef TERMINAL_CONSOLE
      #ifdef macintosh
@@ -1864,9 +1872,9 @@ static void titles( void )
        upho_printf("- Windows Console Version\n"); /* MINGW too -- it is not `windows32` */
      #elif defined linux
        upho_printf("- Linux XTerm Version\n");
-     #else
-       upho_printf("- Unknown System\n"); /* unknown */
-     #endif
+     #elif defined __EMSCRIPTEN__
+       upho_printf("- WebAssembly Version, in a web page\n");
+     #endif /* nothing to say for an unknown system */
      
    #else
      upho_printf("- Macintosh programmer's Workshop (MPW) Tool Version \n");
