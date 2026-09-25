@@ -46,6 +46,11 @@ A few fixes change behaviour that a script could have come to rely on:
   default: 2.7 stored as a long is 3, where it used to be truncated to 2. Out-of-range values
   saturate instead of wrapping. BASIC09's own `INT`, `FIX` and integer assignment are unchanged.
 - `F$Link` and `F$UnLoad` with a type or language look only for a module of that kind.
+- `F$Fork` and `F$Load` refuse a module the caller has no read permission for (`E$Permit`), as
+  `F$Link` does: a program readable only by its owner no longer runs for other users.
+- Page pause (`tmode pause`) now pauses: output stops after each page until a key is pressed,
+  and that key is not passed on to the program. It used to stream on and eat the next key typed.
+- A host directory refuses to create a name longer than 28 characters (`E$BPNam`).
 - The browser page's `?run=` link no longer presses Enter.
 
 ## Compatibility
@@ -54,7 +59,7 @@ System calls, now as the Technical Manual describes them:
 
 - Events: `Ev$Wait` returns the value that satisfied it, not the value after its increment
   (period code that uses an event as a lock hung on this); an empty event name is refused.
-- Modules: `F$Link` refuses a module the caller has no read permission for; sticky modules stay
+- Modules: `F$Link`, `F$Load` and `F$Fork` refuse a module the caller cannot read; sticky modules stay
   in memory at link count 0; a higher revision supersedes the resident module, and of equal
   revisions the established one keeps answering; a same-named module of another type no longer
   hides the one asked for; `F$Load` links only a file's first module, and the module directory
@@ -96,13 +101,16 @@ Files and devices:
   stale sector over a new entry; and a disk filled part way by `SS_Size` losing the sectors it
   took; a write that runs out of disk shortening the file; a file whose segment list fills
   keeping sectors it had just given back; and a directory whose only entry was still unwritten
-  counting as empty, so it could be deleted. An image claiming a sector size os9exec cannot read
+  counting as empty, so it could be deleted. A file just created reports its own attributes. An
+  image claiming a sector size os9exec cannot read
   is refused, and a `chd` deeper than a path can record is refused with `E$BPNam`.
 - Host directories: files can be renamed and moved by rewriting their entry, as OS-9's `move`
   does; directory entries keep their positions across a deletion; a symlink cannot lead out of
   the device; paths with spaces work, and so do host names longer than 28 characters in the
   middle of a path; lookups are much faster (a device scan that took minutes on a Docker share
-  takes seconds).
+  takes seconds). The internal `rename` can no longer rename a device's own root directory, and
+  open paths and current directories follow a rename; a listing no longer ends early once many
+  other directories have been read; a raw path to a device no longer blocks deleting a file.
 - `-6` also opens RBF disks without the OS-9/68000 format's "Cruz" mark, as 6809 (CoCo) disks
   are: the file system is the same RBF, and listing, reading and `dcheck` work. It is off by
   default, because that mark is what tells a 68000 disk from a 6809 one, so reading an unmarked
@@ -111,10 +119,17 @@ Files and devices:
   512-byte line buffer); the status codes the manuals give SCF and pipes are implemented; a
   signal ends a blocked pipe read; two writers' lines no longer interleave on one terminal.
   `SS_Size` on a pipe is refused rather than answered with the buffer's size, so `less` pages
-  piped input to the end instead of stopping after 4K.
+  piped input to the end instead of stopping after 4K. `^C`, `^E` and XON act even behind a full
+  type-ahead buffer (typed or pasted text beyond it waits rather than being lost); an echo
+  waiting behind `^S` no longer keeps a core busy; a signal ends a write parked on a terminal with
+  the signal as its error; `I$WritLn` to a terminal ends the record at its own end-of-record
+  character; a `/tN` that takes part of a line ending gets the rest once, not twice.
+- Sockets: a send cut short by a signal no longer makes the next send from the same buffer skip
+  bytes.
 - `-d` tracing and the debugger talk to you, never into the program's own output.
 - 32-bit hosts (Linux i386, 32-bit Windows, the browser): several sizes that wrapped there, and
-  a module file that could hang `F$Load`, are fixed.
+  a module file that could hang `F$Load`, are fixed; so is a clock that froze paced terminal
+  output for over an hour every 72 minutes, and the size of a disk image of 2 GB or more.
 
 ## If you have real OS-9/68000 hardware
 
