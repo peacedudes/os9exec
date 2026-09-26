@@ -3107,8 +3107,13 @@ Boolean RBF_ImgSize( long size )
             root!=NULL && *root!=NUL && \
             realpath( root,rootreal )!=NULL && \
             ( rl= strlen(rootreal), ustrncmp( real,rootreal,rl )==0 && \
-              (real[rl]==NUL || real[rl]==PATHDELIM) ) )
+              (real[rl]==PATHDELIM || (real[rl]==NUL && PathFound( rootreal ))) ) )
 
+      /* A path that IS a device's root is on that device only when the root is
+         a directory. An image device's root is the image file itself, which
+         is ON the device holding it, not on the one it backs: mounted as /h1,
+         the image under /h5 was reported as on /h1, ahead of /h5 in this
+         scan, and `unmount h1` found /h1 busy with its own image. */
       if (DEV_MATCHES( 'd','d' )) { strcpy(nameOut,devbuf); return true; }
       for (ch= '0'; ch<='9'; ch++)
           if (DEV_MATCHES( 'h',ch )) { strcpy(nameOut,devbuf); return true; }

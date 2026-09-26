@@ -1371,6 +1371,15 @@ do {
         return printed.filter { $0.contains("Directory of /h7") }.count == 1
             && !out.contains("already a device") && !out.contains("can't unmount")
     }
+    // An image's backing file is ON the device holding it, not on the one it
+    // backs. Mounted as /h1 -- a letter scanned before /h5, where it lives --
+    // it was reported as on /h1, and `unmount h1` refused: /h1 was "busy"
+    // with its own image.
+    run("rbf: an image mounted as /h1 from /h5 can be unmounted",
+        expectation: "unmount h1 succeeds, and /h1 is gone",
+        commands: ["mount /h5/\(scratchDevice) h1", "unmount h1", "dir /h1"]) { out in
+        !out.contains("can't unmount") && !out.contains("Directory of /h1")
+    }
     removeScratchItem(scratchDevice)
 }
 
