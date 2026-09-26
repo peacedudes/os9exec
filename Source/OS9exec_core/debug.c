@@ -749,8 +749,14 @@ static ushort debugwait_menu( void )
         clearerr(stdin); /* to make sure we don't get into an endless loop */
         
         #if defined(TERMINAL_CONSOLE) && defined(CON_SUPPORT)
+          /* Bounded, and judged on the key just read. It stored every key
+             with no limit, so a line of 100 or more ran off inp[] and over
+             this function's stack; and it tested the slot AFTER the one it
+             had filled, so a stale CR there ended a line early (console
+             review). A full line keeps its last slot for the keys that
+             follow, until Enter; backspace takes a key back. */
           cp= inp;
-          do {
+          for (;;) {
               /* clearerr resets the EOF flag getchar() sets on each VTIME timeout,
                * allowing read() to be called again on the next ConsGetc iteration. */
               do { clearerr(stdin); ConsGetc(cp);
@@ -763,9 +769,14 @@ static ushort debugwait_menu( void )
                   dbgh_printf("debugger: no input left, continuing\n");
                   goto goon;
               }
-              ConsPutcEdit(*cp, true);   /* do echo -- auto-LF follows the CR */
-              if          (*cp!=CR) cp++;
-          } while         (*cp!=CR);
+              if (*cp==CR) { ConsPutcEdit(CR, true); break; } /* auto-LF follows the CR */
+              if (*cp==0x08 || *cp==0x7F) {
+                  if (cp>inp) { cp--; ConsPutcEdit(0x08,true); ConsPutcEdit(' ',true); ConsPutcEdit(0x08,true); }
+                  continue;
+              }
+              ConsPutcEdit(*cp, true);   /* do echo */
+              if (cp < inp+INPLEN-1) cp++;
+          }
              *cp= NUL; /* string termination */
           if (cp==inp) continue;
         #else

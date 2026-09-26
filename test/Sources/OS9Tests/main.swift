@@ -1088,6 +1088,11 @@ check("internal: iquit -? explains itself instead of arming the quit",
 check("internal: icrash -? explains itself instead of crashing",
       contains: "Syntax:   icrash", "icrash -?")
 
+// The debugger read its command line into a 100-byte buffer with no limit, so
+// a longer line -- a paste, a script -- ran over the stack (console review).
+check("debugger: a 300-character command line neither crashes nor wedges it",
+      contains: "AFTER-DEBUGGER", "idbg", String(repeating: "x", count: 300), "g", "echo AFTER-DEBUGGER")
+
 // ── an SS_SSig left by a process that is gone does not refuse later reads ─────
 // A read on a path armed with SS_SSig is refused E$DevBsy. Nothing disarmed a
 // path whose arming process had gone, and a signal that could not be delivered
