@@ -565,6 +565,11 @@ void init_mem(ushort pid)
     } /* for */
   //#endif
     
+	/* Full: the shift below would write one entry past the list (kernel
+	   review). Declined, the block is not recorded, which every caller
+	   already allows for -- rather than overwrite freeN and all after it. */
+	if (freeinfo.freeN>=MAX_MEMALLOC-1) return false;
+
 	for (k=0;k<MAX_MEMALLOC;k++) { /* do not really release the memory */
             f= &freeinfo.f[k];
     	if (f->base==NULL || f->size<memsz) {

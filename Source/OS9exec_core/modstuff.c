@@ -1781,6 +1781,11 @@ static os9err load_module_local( ushort pid, char* name, ushort* midP, Boolean e
        
         *midP= mid0;
         if    (dsize==modSize) return 0; /* its done now */ 
+        /* a module starts on an even address, as the owner walk above also
+           insists: after an odd M$Size what follows is not one, and reading
+           its sync word there was a misaligned host read -- a SIGBUS on a
+           strict-alignment host (kernel review) */
+        if    (modSize & 1)    return 0;
         dsize= dsize- modSize;
         theModuleP= (mod_exec *)( (uintptr_t)theModuleP + (uintptr_t)modSize );
                                                   /* get pointer to the next module */
