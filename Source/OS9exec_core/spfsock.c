@@ -40,6 +40,7 @@
 #ifndef _WIN32
   #include <errno.h>
   static const int hostEINPROGRESS= EINPROGRESS;
+  static const int hostEAFNOSUPPORT= EAFNOSUPPORT;
 
   /* A host socket error, by what it means. The older library's callers are
      told what went wrong in OS-9's own socket error numbers (SpfIspErr), and
@@ -152,14 +153,18 @@ static void SpfNoSigpipe( int fd )
 
 
 static void SpfNonBlocking( int fd )
-/* reads, writes and accepts must never block the emulator */
+/* reads, writes and accepts must never block the emulator. Close-on-exec as
+   well: a host command run from the internal shell inherited every guest
+   socket, listening ones included, so a closed connection's peer never saw
+   EOF and a restarted server could not bind its port (networking review). */
 {
     int flags= fcntl( fd, F_GETFL, 0 );
     if (flags>=0) fcntl( fd, F_SETFL, flags | O_NONBLOCK );
+    fcntl( fd, F_SETFD, FD_CLOEXEC );
 } /* SpfNonBlocking */
 
 
-/* A signal ended <pid>'s parked request (F$RTE). A send it had part done must
+/* A signal ended <pid>'s parked request (F$RTE), or <pid> is gone. A send it had part done must
    not be resumed by the process's NEXT write: that one starts at byte 0 even
    when it reuses the same buffer (a static or stdio buffer does), and used to
    skip the bytes the abandoned send had got out, reporting them sent. */
@@ -200,10 +205,18 @@ static void SpfResume( ushort pid )
 } /* SpfResume */
 
 
-static void SpfHostAddr( const byte* guest, struct sockaddr_in* sa )
-/* <guest>, a socket address in the guest's layout, as the host's. The family
-   is not read: every caller has decided it is AF_INET before this. */
+static Boolean SpfHostAddr( const byte* guest, struct sockaddr_in* sa )
+/* <guest>, a socket address in the guest's layout, as the host's. False, and
+   nothing built, for a family other than AF_INET: an AF_UNIX or AF_INET6
+   address used to become an IPv4 address and port made of its path bytes
+   (networking review). The family is the address's SECOND byte: SPF's
+   callers use the BSD 4.4 layout, a length byte and then the family (mrecv
+   passes $04,$02 and $10,$02), and the older /socket library's 16-bit family
+   word has its value there too. 0 is taken as AF_INET, as BSD stacks take a
+   zeroed address with only the port filled in. */
 {
+    byte family= guest[1];
+    if (family!=GUEST_AF_INET && family!=0) return false;
     memset( sa,0,sizeof(*sa) );
     #ifdef __APPLE__
       sa->sin_len= sizeof(*sa);
@@ -211,6 +224,7 @@ static void SpfHostAddr( const byte* guest, struct sockaddr_in* sa )
     sa->sin_family= AF_INET;
     memcpy( &sa->sin_port,        guest+2, 2 ); /* both already in network order */
     memcpy( &sa->sin_addr.s_addr, guest+4, 4 );
+    return true;
 } /* SpfHostAddr */
 
 
@@ -305,7 +319,7 @@ static spfstep SpfConnect( syspath_typ* spP, const byte* to, int* herr )
         return stepDone;
     }
 
-    SpfHostAddr( to, &sa );
+    if (!SpfHostAddr( to, &sa )) { *herr= hostEAFNOSUPPORT; return stepFailed; }
         r= connect( fd, (struct sockaddr*)&sa, sizeof(sa) ); /* fd is non-blocking */
     debugprintf( dbgSpecialIO,dbgNorm,("# SPF: connect -> %d\n", r ));
     if (r==0) { spP->u.spf.connected= true; return stepDone; }
@@ -321,7 +335,7 @@ static int SpfBind( syspath_typ* spP, const byte* at )
     struct sockaddr_in sa;
     int                fd= SpfFd( spP ), on= 1, e;
 
-    SpfHostAddr( at, &sa );
+    if (!SpfHostAddr( at, &sa )) return hostEAFNOSUPPORT;
 
     /* A server that has just exited leaves its port in TIME_WAIT, and
        without this the next run cannot bind it for a minute or more.
@@ -393,6 +407,17 @@ static os9err SpfSend( ushort pid, syspath_typ* spP, uint32_t* lenP, const byte*
     int      fd  = SpfFd( spP );
 
     *herr= 0;
+    /* Another process's send is part done on this path: wait for it to end
+       rather than going out in the middle of it. The resume point is one per
+       path, so going ahead also wiped it, and the parked send later went out
+       again from its first byte (networking review). */
+    { ushort w= spP->u.spf.writePid;
+      if (w!=0 && w!=pid && w<MAXPROCESSES &&
+          procs[w].state!=pUnused && procs[w].state!=pDead) {
+          *lenP= 0;
+          return SpfPark( pid );
+      }
+    }
     /* A different write starts over. Only the parked call itself -- same
        process, same buffer -- resumes: a write abandoned by a signal, or one
        from another process sharing the path, left its offset behind, and the
@@ -430,6 +455,8 @@ static os9err SpfSend( ushort pid, syspath_typ* spP, uint32_t* lenP, const byte*
     }
 
     spP->u.spf.writeDone= 0;
+    spP->u.spf.writePid = 0;    /* ended: nobody's send is part done now */
+    spP->u.spf.writeBuf = NULL;
     if (done==0 && *lenP>0) { *lenP= 0; return os9error(E_WRITE); }
     *lenP= done;
     return 0;
@@ -443,7 +470,7 @@ static ssize_t SpfSendTo( syspath_typ* spP, const byte* buf, uint32_t len, int f
 {
     struct sockaddr_in sa;
 
-    SpfHostAddr( to, &sa );
+    if (!SpfHostAddr( to, &sa )) { errno= hostEAFNOSUPPORT; return -1; }
     if (spP->u.spf.bareIcmp && len>=8) memcpy( spP->u.spf.echoId, buf+4, 2 );
     return sendto( SpfFd( spP ), buf,len, flags | SPF_SENDFLAGS, (struct sockaddr*)&sa, sizeof(sa) );
 } /* SpfSendTo */

@@ -610,6 +610,8 @@ void AssignNewChild( ushort parentid, ushort pid )
 ushort  launch_pid  = 0;
 Boolean launch_alive= false;
 
+void spf_abort_request( ushort pid ); /* spfsock.c */
+
 os9err kill_process( ushort pid )
 /* kill a process
  * Note: exiterr must be set before calling kill_process (by F_Exit or F_Kill)
@@ -630,6 +632,7 @@ os9err kill_process( ushort pid )
                                        pid, os9_word(cp->pd._pid),cp->exiterr));
 
     /* remove some more resources */
+    spf_abort_request  ( pid ); /* a send it left part done is nobody's now */
     close_usrpaths     ( pid );
     debugprintf(dbgProcess,dbgNorm,("# kill_process: usrpaths closed\n" ));
     unlink_traphandlers( pid );

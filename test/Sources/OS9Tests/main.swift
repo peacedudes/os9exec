@@ -11840,6 +11840,82 @@ do {
         }
     }
 
+    // Two processes writing one socket path, the peer slow to read: both
+    // writes park. The resume point is one per path, so the second writer
+    // wiped the first's and the first went out again from its first byte --
+    // duplicated bytes, and the second write inside the first (found by the
+    // networking review). The parent puts the socket on its path 1 and forks a
+    // copy of itself ("C") that inherits it; each writes a megabyte. The host
+    // must get exactly a megabyte of each, in two runs.
+    let twoWriterName = "net: two processes writing one socket neither repeat nor split each other's writes"
+    if filter.isEmpty || twoWriterName.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(twoWriterName) (the container cannot reach the host's loopback)")
+        } else if let (listenFd, port) = loopbackSocket(listening: true) {
+            var window: Int32 = 8192
+            setsockopt(listenFd, SOL_SOCKET, SO_RCVBUF, &window, socklen_t(MemoryLayout<Int32>.size))
+            var letterA = 0, letterB = 0, runs = 0, last: UInt8 = 0
+            let done = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                let conn = accept(listenFd, nil, nil)
+                if conn >= 0 {
+                    Thread.sleep(forTimeInterval: 3.0)      // both writes park meanwhile
+                    var buf = [UInt8](repeating: 0, count: 65536)
+                    while case let got = read(conn, &buf, buf.count), got > 0 {
+                        for byte in buf[0..<got] {
+                            if byte == 0x41 { letterA += 1 } else if byte == 0x42 { letterB += 1 }
+                            if byte != last { runs += 1; last = byte }
+                        }
+                    }
+                    close(conn)
+                }
+                done.signal()
+            }
+            let megabyte = 0x100000
+            let body = [
+                "F$Fork equ $03", "F$Wait equ $04", "F$SRqMem equ $28", "I$Dup equ $82",
+                "  tst.l d5", "  beq.s parent", "  cmpi.b #'C',(a5)", "  beq.w child",
+                "parent:"] + openSocket + Array(connectAndSend.prefix(6)) + [
+                "  moveq #1,d0", "  OS9 I$Close",
+                "  move.w d7,d0", "  OS9 I$Dup", "  bcs fail",
+                "  lea myname(pc),a0", "  lea cparm(pc),a1", "  moveq #0,d0", "  moveq #0,d1",
+                "  moveq #2,d2", "  moveq #2,d3", "  moveq #0,d4", "  OS9 F$Fork", "  bcs fail",
+                "  move.l #$100000,d0", "  OS9 F$SRqMem", "  bcs fail", "  movea.l a2,a3",
+                "  movea.l a3,a1", "  move.l #$40000,d2",
+                "filla:", "  move.l #$41414141,(a1)+", "  subq.l #1,d2", "  bne.s filla",
+                "  move.w d7,d0", "  movea.l a3,a0", "  move.l #$100000,d1", "  OS9 I$Write", "  bcs fail",
+                "  OS9 F$Wait",
+                "  move.w d7,d0", "  OS9 I$Close",
+                "  moveq #1,d0", "  OS9 I$Close",
+                "  moveq #0,d1", "  bra fail",
+                "child:",
+                "  move.l #$100000,d0", "  OS9 F$SRqMem", "  bcs fail", "  movea.l a2,a3",
+                "  movea.l a3,a1", "  move.l #$40000,d2",
+                "fillb:", "  move.l #$42424242,(a1)+", "  subq.l #1,d2", "  bne.s fillb",
+                "  moveq #1,d0", "  movea.l a3,a0", "  move.l #$100000,d1", "  OS9 I$Write", "  bcs fail",
+                "  moveq #0,d1", "  bra fail",
+                "myname: dc.b \"isp2w\",0", "cparm: dc.b \"C\",13", "  align"
+            ]
+            let out = buildAndRun("isp2w", socketProgram("isp2w", port: port, body), timeout: 90)
+            let drained = done.wait(timeout: .now() + 30) == .success
+            if !drained { shutdown(listenFd, SHUT_RDWR) }
+            close(listenFd)
+            let whole = letterA == megabyte && letterB == megabyte && runs == 2
+            if drained && whole && out.contains("ISP2W-END") {
+                print("PASS: \(twoWriterName)")
+                passed += 1
+            } else {
+                print("FAIL: \(twoWriterName)")
+                print("      host got \(letterA) A, \(letterB) B in \(runs) runs (want 1048576 each, 2 runs)")
+                print("      drained=\(drained)")
+                print("      out: \(errorLines(out))")
+                failed += 1
+            }
+        } else {
+            print("SKIP: \(twoWriterName) (no loopback port could be bound)")
+        }
+    }
+
     // A server: socket, bind, listen, accept. The accepted connection comes back
     // as a new path in d1; the host client must read what is written to it.
     let serverName = "net: a /socket server binds, listens and accepts, the connection a path of its own"
