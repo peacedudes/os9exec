@@ -593,11 +593,14 @@ static os9err pSopen( _pid_, syspath_typ* spP, _modeP_, const char* pathname )
 {
     const char* p= pathname;
 
-  #if defined __EMSCRIPTEN__
-    /* A browser page cannot open a TCP connection at all, so there is no
-       network behind these paths there. Refuse the open as a device that is
-       not present, which is what the callers already handle, rather than let
-       them ask a socket that can never answer. */
+  #if defined __EMSCRIPTEN__ || !(defined UNIX && !defined MINGW)
+    /* A browser page cannot open a TCP connection at all, and the Windows
+       build has no host sockets behind SPF, so there is no network behind
+       these paths on either. Refuse the open as a device that is not
+       present, which is what the callers already handle, rather than let
+       them ask a socket that can never answer: on Windows the open used to
+       succeed and every later call answer E$UnkSvc, which some callers take
+       as "carry on" (networking review). */
     (void)p;
     return os9error(E_UNIT);
   #endif
