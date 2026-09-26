@@ -1360,6 +1360,17 @@ do {
         commands: ["mount /h5/\(scratchDevice) h1", "mount /h5/\(scratchDevice) h1"]) {
         $0.contains("/h1 is already a device")
     }
+    // unmount must undo it: the image stayed recorded under its letter, the
+    // next access mounted it again unasked, and mounting another image as the
+    // same device was refused (found by the file-system review).
+    run("rbf: unmount undoes mount <image> hX, and hX can be mounted again",
+        expectation: "/h7 is gone after unmount, then mounts again without a refusal",
+        commands: ["mount /h5/\(scratchDevice) h7", "unmount h7", "dir /h7",
+                   "mount /h5/\(scratchDevice) h7", "dir /h7"]) { out in
+        let printed = out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+        return printed.filter { $0.contains("Directory of /h7") }.count == 1
+            && !out.contains("already a device") && !out.contains("can't unmount")
+    }
     removeScratchItem(scratchDevice)
 }
 

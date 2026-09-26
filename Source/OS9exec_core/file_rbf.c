@@ -2834,6 +2834,13 @@ os9err int_unmount( ushort pid, int argc, char** argv )
     } while (false);
         
     if    (err) return _errmsg( err, "can't unmount device \"%s\".\n", name );
+
+    /* `mount <image> hX` also recorded the image under its letter, which is
+       where a device name is looked up first: left there, the next access
+       mounted the same image again, silently, and a new `mount ... hX`
+       found /hX already a device (file-system review). */
+    if (tolower((unsigned char)name[0])=='h' && name[1]!=NUL && name[2]==NUL)
+        SetMountedImage( name[1], NULL );
     return err;
 } /* int_unmount */
 
