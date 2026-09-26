@@ -102,4 +102,4 @@ echo "  image: $IMG ($(du -h "$IMG" | awk '{print $1}'))"
 echo
 echo "run it here:      tools/selfhost68k/run-image.sh"
 echo "verify contents:  tools/selfhost68k/verify-image.sh"
-echo "on real OS-9:     put the image on a disk device, chd to it, then: runall"
+echo "on real OS-9:     put the image on a disk device, chd to it, chx CMDS, then: runall >>+RESULTS/errors"

@@ -165,11 +165,13 @@ os9exec is built from the manuals, and where the manuals leave room it has had t
 reading. The conformance suite, CONF68K, turns those readings into tests with the manual's
 words beside each, and it runs on real OS-9 as well as here. This release attaches it as
 a single disk image, `conf68k.dsk`: 114 standalone tests, hand-written assembly, no Microware
-software on it. Put it on a disk device, `chd` to it and type `runall`; each test prints one
-line with what it observed and what the manual led us to expect. Where a claim is our inference
-rather than the manual's plain statement, the claim says so. If your hardware disagrees with
-us anywhere, please open an issue with the RESULT lines: that is the one thing an emulator
-cannot tell us for itself.
+software on it. Put it on a disk device and, as the super user, `chd` to it, `chx CMDS`, and
+type `runall >>+RESULTS/errors`. Each test prints one line with what it observed and what the
+manual led us to expect. Where a claim is our inference rather than the manual's plain
+statement, the claim says so. The report describes the machine it ran on by itself, and a test
+that disagrees prints the values it saw, so one run answers everything. If your hardware
+disagrees with us anywhere, please open an issue with RESULTS/report and RESULTS/errors: that
+is the one thing an emulator cannot tell us for itself. The disk's readme has the details.
 
 ## Known limitations
 
