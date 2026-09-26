@@ -1677,21 +1677,22 @@ void HostDirLSN0( const char* hostpath, byte* sct )
     StampVolume( sct, STD_SECTSIZE, volName );
 
     /* DD_TOT: the host filesystem in 256-byte sectors, as pHdsize reports it,
-       capped at the three bytes the field has */
-    #ifdef MINGW
+       capped at the three bytes the field has -- capped while still 64 bits:
+       narrowed first, a disk past 1 TiB wrapped, and could report as tiny
+       (file-system review) */
     {
-      ULARGE_INTEGER totalBytes;
-      if (GetDiskFreeSpaceExA( hostpath, NULL, &totalBytes, NULL ))
-          tot= (uint32_t)(totalBytes.QuadPart / STD_SECTSIZE);
+      unsigned long long sectors= 0;
+      #ifdef MINGW
+        ULARGE_INTEGER totalBytes;
+        if (GetDiskFreeSpaceExA( hostpath, NULL, &totalBytes, NULL ))
+            sectors= totalBytes.QuadPart / STD_SECTSIZE;
+      #else
+        struct statvfs st;
+        if (statvfs( hostpath, &st )==0)
+            sectors= (unsigned long long)st.f_blocks * st.f_frsize / STD_SECTSIZE;
+      #endif
+      if (sectors>0) tot= sectors>0xFFFFFF ? 0xFFFFFF : (uint32_t)sectors;
     }
-    #else
-    {
-      struct statvfs st;
-      if (statvfs( hostpath, &st )==0)
-          tot= (uint32_t)((unsigned long long)st.f_blocks * st.f_frsize / STD_SECTSIZE);
-    }
-    #endif
-    if (tot>0xFFFFFF) tot= 0xFFFFFF;
     sct[0]= (byte)(tot>>16); sct[1]= (byte)(tot>>8); sct[2]= (byte)tot;
 } /* HostDirLSN0 */
 
