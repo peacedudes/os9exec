@@ -884,8 +884,8 @@ static os9err int_devs( _pid_, int argc, char** argv )
             if (nr<0) *tnr= NUL; /* bound, but nothing has it open right now */
             else      snprintf( tnr,sizeof(tnr), "%d", nr );
 
-            upo_printf( "%-10s %-8s %-7s %2s %4s %-4s %-10s %s\n",
-                        tnam, "hostterm","scf", tnr, "","",
+            upo_printf( "%-10s %-8s %-5s %2s %-10s %s\n",   /* devs_printf's columns */
+                        tnam, "hostterm","scf", tnr,
                         nr<0 ? "" : devs_holder( (ushort)nr ), endp );
             anyHostTerm= true;
         } /* for */
@@ -1966,6 +1966,11 @@ os9err int_icopy( ushort pid, int argc, char** argv )
 
     if (outOpen) { cer= usrpath_close( pid, outP ); if (!err) err= cer; }
     if (inOpen)  { cer= usrpath_close( pid, inP  ); if (!err) err= cer; }
+
+    /* A copy that failed part way leaves nothing behind. A short file under
+       the name looked like a finished copy -- a module cut one block early
+       still links -- and a second try met E$CEF (console review). */
+    if (err && outOpen) (void)delete_file( pid, tOut, dst, 0x02 );
 
     if (err) return _errmsg( err, "can't copy \"%s\" to \"%s\"\n", src, dst );
     return 0;

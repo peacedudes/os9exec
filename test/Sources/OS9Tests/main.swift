@@ -1088,6 +1088,29 @@ check("internal: iquit -? explains itself instead of arming the quit",
 check("internal: icrash -? explains itself instead of crashing",
       contains: "Syntax:   icrash", "icrash -?")
 
+// A copy that fails part way leaves nothing behind. icopy onto an image too
+// small for the file left a short copy under the name -- attributes and all,
+// looking finished -- and a second try met E$CEF (console review).
+do {
+    let name = "internal: an icopy that runs out of room leaves no partial file"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem("h7")
+        FileManager.default.createFile(atPath: scratchDisk + "/icbig",
+                                       contents: Data(repeating: 0x5A, count: 300_000))
+        let out = os9(["mount -k=100K h7", "icopy /h5/icbig /h7/icbig", "dir -e /h7"], timeout: 60)
+        let refused = out.contains("can't copy")
+        let listing = out.components(separatedBy: "Directory of /h7").last ?? ""
+        if refused && !listing.contains("icbig") {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      refused: \(refused); /h7 still lists icbig: \(listing.contains("icbig"))")
+            failed += 1
+        }
+        removeScratchItem("icbig"); removeScratchItem("h7")
+    }
+}
+
 // The debugger read its command line into a 100-byte buffer with no limit, so
 // a longer line -- a paste, a script -- ran over the stack (console review).
 check("debugger: a 300-character command line neither crashes nor wedges it",
