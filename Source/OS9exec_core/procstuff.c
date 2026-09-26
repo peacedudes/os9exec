@@ -612,6 +612,26 @@ Boolean launch_alive= false;
 
 void spf_abort_request( ushort pid ); /* spfsock.c */
 
+static void sig_queue_forget( ushort pid )
+/* <pid> is gone: its queued signals go with it. Left in sig_queue they went
+   to the NEXT process given its pid -- a fresh command killed by an old
+   alarm's code -- and a queue kept full by them refused everyone else's
+   F$Send (kernel review). sig_mask takes one entry per call, so a process
+   that ends masked can leave many. */
+{
+    sig_typ* s= &sig_queue;
+    int      i, j= 0;
+
+    for (i=0; i<s->cnt; i++) {
+        if (s->pid[ i ]==pid) continue;
+        s->pid   [ j ]= s->pid   [ i ];
+        s->signal[ j ]= s->signal[ i ];
+        j++;
+    }
+    s->cnt= j;
+    if (s->cnt<=0) async_pending= false;
+} /* sig_queue_forget */
+
 os9err kill_process( ushort pid )
 /* kill a process
  * Note: exiterr must be set before calling kill_process (by F_Exit or F_Kill)
@@ -633,6 +653,7 @@ os9err kill_process( ushort pid )
 
     /* remove some more resources */
     spf_abort_request  ( pid ); /* a send it left part done is nobody's now */
+    sig_queue_forget   ( pid ); /* and its queued signals nobody's either */
     close_usrpaths     ( pid );
     debugprintf(dbgProcess,dbgNorm,("# kill_process: usrpaths closed\n" ));
     unlink_traphandlers( pid );

@@ -6146,6 +6146,50 @@ do {
     }
 }
 
+// ── a process's queued signals die with it, not with the next process ────────
+// Signals sent to a masked process wait in one global queue, taken one per
+// system call. A process that ended masked left its entries there, and they
+// went to the next process given its pid: `echo` after it was killed by an old
+// alarm's signal (found by the kernel review). Here a masked process computes
+// while a one-tick cyclic alarm piles signals up, and exits; the command after
+// it, given the same pid (the lowest free one), must simply run.
+do {
+    let leftAsm = [
+        "F$Exit equ $06", "F$Icpt equ $09", "F$Sleep equ $0A", "F$SigMask equ $0B", "F$RTE equ $1E",
+        "F$Alarm equ $56",
+        " psect msigleft,$0101,$8001,0,1024,start",
+        "start",
+        " lea handler(pc),a0", " trap #0", " dc.w F$Icpt",
+        " moveq #0,d0", " moveq #1,d1", " trap #0", " dc.w F$SigMask",
+        " moveq #0,d0", " move.w #2,d1", " move.l #300,d2", " moveq #1,d3", " trap #0", " dc.w F$Alarm",
+        // computing, not sleeping: a masked F$Sleep still ends at the first
+        // signal, and one queued signal was not enough to show the fault
+        " move.l #60000000,d0", "spin", " subq.l #1,d0", " bne.s spin",
+        " moveq #0,d1", " trap #0", " dc.w F$Exit",
+        "handler", " trap #0", " dc.w F$RTE",
+        " ends", ""
+    ].joined(separator: "\r")
+
+    let name = "signal: signals queued for a process that exits masked do not reach the next one"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? leftAsm.write(toFile: scratchDisk + "/msigleft.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/msigleft.a -o=/h5/msigleft.r", "l68 /h5/msigleft.r -o=/h5/msigleft"], timeout: 60)
+        let out = os9(["/h5/msigleft", "echo NEXT-RAN", "echo AND-THE-ONE-AFTER"], timeout: 30)
+        let lines = out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+        let ran = lines.contains { $0 == "NEXT-RAN" } && lines.contains { $0 == "AND-THE-ONE-AFTER" }
+        if ran {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      saw: \(lines.filter { $0.contains("RAN") || $0.contains("AFTER") || $0.contains("rror") })")
+            failed += 1
+        }
+        for item in ["msigleft.a", "msigleft.r", "msigleft"] { removeScratchItem(item) }
+    }
+}
+
 // ── debugger listings go to the operator, not where idbg's output is sent ─────
 // The debugger's P, M, F and V list through the same routine internal commands
 // print with, so run as `idbg >file` their listings went into the file. What
