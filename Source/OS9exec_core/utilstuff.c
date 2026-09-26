@@ -3089,6 +3089,7 @@ Boolean RBF_ImgSize( long size )
       char* slash;
       char* root;
       size_t rl;
+      Boolean fileRoots;  /* second pass: a root equal to the path counts even as a file */
 
       if (hostpath==NULL || *hostpath==NUL) return false;
 
@@ -3107,18 +3108,24 @@ Boolean RBF_ImgSize( long size )
             root!=NULL && *root!=NUL && \
             realpath( root,rootreal )!=NULL && \
             ( rl= strlen(rootreal), ustrncmp( real,rootreal,rl )==0 && \
-              (real[rl]==PATHDELIM || (real[rl]==NUL && PathFound( rootreal ))) ) )
+              (real[rl]==PATHDELIM || (real[rl]==NUL && (fileRoots || PathFound( rootreal )))) ) )
 
-      /* A path that IS a device's root is on that device only when the root is
-         a directory. An image device's root is the image file itself, which
-         is ON the device holding it, not on the one it backs: mounted as /h1,
-         the image under /h5 was reported as on /h1, ahead of /h5 in this
-         scan, and `unmount h1` found /h1 busy with its own image. */
-      if (DEV_MATCHES( 'd','d' )) { strcpy(nameOut,devbuf); return true; }
-      for (ch= '0'; ch<='9'; ch++)
-          if (DEV_MATCHES( 'h',ch )) { strcpy(nameOut,devbuf); return true; }
-      for (ch= 'a'; ch<='z'; ch++)
-          if (DEV_MATCHES( 'h',ch )) { strcpy(nameOut,devbuf); return true; }
+      /* A path that IS a device's root: a directory device holding it comes
+         first, and an image device whose root is the file itself only when
+         none does. The image file is ON the directory device that holds it,
+         not on the one it backs: mounted as /h1 from /h5, it was reported as
+         on /h1 (scanned first), and `unmount h1` found /h1 busy with its own
+         image. But an image outside every directory device (OS9H7 naming a
+         file anywhere) must still be inside SOME device, its own, or nothing
+         can be written to it. */
+      for (fileRoots= false; ; fileRoots= true) {
+          if (DEV_MATCHES( 'd','d' )) { strcpy(nameOut,devbuf); return true; }
+          for (ch= '0'; ch<='9'; ch++)
+              if (DEV_MATCHES( 'h',ch )) { strcpy(nameOut,devbuf); return true; }
+          for (ch= 'a'; ch<='z'; ch++)
+              if (DEV_MATCHES( 'h',ch )) { strcpy(nameOut,devbuf); return true; }
+          if (fileRoots) break;
+      }
 
       #undef DEV_MATCHES
       return false;
