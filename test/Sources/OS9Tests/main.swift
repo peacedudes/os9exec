@@ -6979,14 +6979,19 @@ do {
         let refused = "Error #000:237"
         let hint    = "arena is full"
 
+        // Built in a call of its own, as every other test here builds: assembling
+        // two programs inside the same 30s budget the run itself has left a cold
+        // or loaded container short of time, and a run cut off by its timeout
+        // failed BOTH tests at once -- seen once in the x64 leg under load 5.
+        _ = os9(build, timeout: 120)
         let errFile = scratchDisk + "/memfill.err"
-        let out     = os9(build + ["/h5/memflood", "/h5/memfill >>>/h5/memfill.err"], timeout: 30)
+        let out     = os9(["/h5/memflood", "/h5/memfill >>>/h5/memfill.err"], timeout: 30)
         let guestErr = (try? String(contentsOfFile: errFile, encoding: .isoLatin1)) ?? "<missing>"
         try? FileManager.default.removeItem(atPath: errFile)   // the shell will not redirect onto an existing file
         let paced   = os9(["/h5/memflood", "/h5/memfill >>>/h5/memfill.err"], timeout: 60, paced: true)
 
         // memflood's own stretch of the run: from its command line to memfill's.
-        // (The build lines name memfill too, so slice on the command lines.)
+        // Sliced on the command lines, which name each program once.
         let floodPart = out.components(separatedBy: "/h5/memflood\n").last?
                            .components(separatedBy: "/h5/memfill >>>").first ?? ""
         let floodSeen = floodPart.contains(refused)
@@ -7013,6 +7018,8 @@ do {
             } else {
                 print("FAIL: \(fillName)")
                 print("      hint lines: \(lines(out, hint).count) unpaced, \(lines(paced, hint).count) paced (want 1 each)")
+                let tail = paced.replacingOccurrences(of: "\r", with: "|").replacingOccurrences(of: "\n", with: "|")
+                print("      paced run ended: \(tail.suffix(240))")
                 if !namesM { print("      the hint does not name -M") }
                 if !notInGuest { print("      program's stderr file: \(guestErr.prefix(200))") }
                 failed += 1
