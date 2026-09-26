@@ -3344,39 +3344,72 @@ os9err HostRenameInPlace( ushort pid, const char* srcPath, const char* newName )
    which a host directory still refuses. */
 static ulong dirWrites;               /* pDwrite calls, to know what "next" is */
 static struct {
-    ushort pid;
-    ulong  seq;
-    char   dir[OS9PATHLEN];
+    ushort  pid;
+    ulong   seq;
+    char    dir[OS9PATHLEN];
+    Boolean linked;             /* the append made a second name: the clear removes the first */
+    char    src[OS9PATHLEN];
+    char    dst[OS9PATHLEN];
 } movedAway;
 
-static void MovedAwayNote( ushort pid, const char* srcPath )
+static void MovedAwayNote( ushort pid, const char* srcPath, const char* dstPath, Boolean linked )
 {
     char* q;
 
-    movedAway.pid= pid;
-    movedAway.seq= dirWrites;
+    movedAway.pid   = pid;
+    movedAway.seq   = dirWrites;
+    movedAway.linked= linked;
     strncpy( movedAway.dir, srcPath, OS9PATHLEN-1 ); movedAway.dir[ OS9PATHLEN-1 ]= NUL;
     q= strrchr( movedAway.dir, PATHDELIM ); if (q!=NULL) *q= NUL;
+    strncpy( movedAway.src, srcPath, OS9PATHLEN-1 ); movedAway.src[ OS9PATHLEN-1 ]= NUL;
+    strncpy( movedAway.dst, dstPath, OS9PATHLEN-1 ); movedAway.dst[ OS9PATHLEN-1 ]= NUL;
 } /* MovedAwayNote */
 
-static Boolean MovedAwayTake( ushort pid, const char* dir )
+static Boolean MovedAwayTake( ushort pid, const char* dir, os9err* errP )
+/* the clear that completes a move: true if this write is it. When the append
+   made a hard link, the old name goes now -- the move is complete, and what
+   was open under it follows the file. */
 {
     size_t  len= strlen( dir );
     Boolean hit;
 
+    *errP= 0;
     if (len>1 && dir[ len-1 ]==PATHDELIM) len--;
     hit= movedAway.pid==pid && movedAway.seq+1==dirWrites &&
          strlen( movedAway.dir )==len && strncmp( movedAway.dir,dir,len )==0;
-    if (hit) movedAway.pid= 0;
+    if (hit) {
+        movedAway.pid= 0;
+        if (movedAway.linked) {
+            if (remove( movedAway.src )!=0) { *errP= host2os9err( -1,E_FNA ); return true; }
+            DirSlotsForget( movedAway.dir );          /* the old name left that directory */
+            HostRepath( movedAway.src,movedAway.dst ); /* open paths and current dirs follow */
+        }
+    }
     return hit;
 } /* MovedAwayTake */
 
+static Boolean HostLink( const char* srcPath, const char* dstPath )
+/* a second host name for the file <srcPath>: false where the host will not
+   (another filesystem, one without hard links, a share that refuses them) */
+{
+  #ifdef MINGW
+    return CreateHardLinkA( dstPath, srcPath, NULL )!=0;
+  #else
+    return link( srcPath, dstPath )==0;
+  #endif
+} /* HostLink */
+
 static os9err AppendAsMove( ushort pid, syspath_typ* spP, const byte* b, int index )
 /* A whole entry written past the last one: how move links a file into this
-   directory. The entry's FD sector names the file (FD_Name), and on a host
-   directory the link and the unlink that follows become one host rename. The
-   file must still exist, inside a configured device, spelt by its own entry,
-   and no entry of this directory may already answer to the new name. */
+   directory, and how ln makes a file a second name. The entry's FD sector
+   names the file (FD_Name). A plain file gets a host hard link, and if the
+   old entry's clear follows (move), the old name goes then (MovedAwayTake);
+   with no clear (ln) both names stay, as on RBF. It used to be one host
+   rename at once, so ln on a host directory lost the original name
+   (file-system review). A directory, a change of case alone, or a host that
+   refuses the link, is renamed at once as before. The file must still
+   exist, inside a configured device, spelt by its own entry, and no entry of
+   this directory may already answer to the new name. */
 {
     uint32_t    fd;
     char*       known;
@@ -3415,10 +3448,24 @@ static os9err AppendAsMove( ushort pid, syspath_typ* spP, const byte* b, int ind
     err= NameTaken( spP->fullName, newName, dstHost, except ); if (err) return err;
     err= JoinPath ( dstPath, spP->fullName, dstHost );       if (err) return err;
     if (strcmp( srcPath,dstPath )==0)             return os9error(E_CEF); /* its own name */
+
+    if (FileFound( srcPath ) && !PathFound( srcPath ) && ustrcmp( srcPath,dstPath )!=0 &&
+        !IsHostDeviceRoot( srcPath )
+        #ifdef RBF_SUPPORT
+          && !RBF_ImageOpenUnder( srcPath )
+        #endif
+        && HostLink( srcPath, dstPath )) {
+        debugprintf(dbgFiles,dbgNorm,("# pDwrite: linked '%s' as '%s'\n", srcPath,dstPath));
+        DirSlotsPlace( spP->fullName, index-2, dstHost ); /* at the slot its entry was written to */
+        MovedAwayNote( pid, srcPath, dstPath, true );
+        seekD0( spP ); spP->svD_n= 0;
+        return 0;
+    }
+
     err= HostRename( pid, srcPath, dstPath, srcHost, dstHost, spP->fullName ); if (err) return err;
 
     DirSlotsPlace( spP->fullName, index-2, dstHost ); /* at the slot its entry was written to */
-    MovedAwayNote( pid, srcPath );
+    MovedAwayNote( pid, srcPath, dstPath, false );
     seekD0( spP ); spP->svD_n= 0;
     return 0;
 } /* AppendAsMove */
@@ -3478,9 +3525,12 @@ os9err pDwrite( ushort pid, syspath_typ* spP, uint32_t *n, char* buffer )
     dirWrites++;
     if (!(spP->mode & 0x02))                 return os9error(E_BMODE); /* not opened for write */
 
-    /* the unlink half of a move whose link half already moved the file */
+    /* the unlink half of a move whose link half already linked or moved the file */
     if (*n>=1 && *n<=DIRENTRYSZ && (*pos & 0x1F)==0 && b[ 0 ]==0 &&
-        MovedAwayTake( pid, spP->fullName )) { *pos+= *n; return 0; }
+        MovedAwayTake( pid, spP->fullName, &err )) {
+        if (err) return err;
+        *pos+= *n; return 0;
+    }
 
     if (*n!=DIRENTRYSZ || (*pos & 0x1F)!=0)  return os9error(E_BMODE); /* not one whole entry */
     if (index<2)                             return os9error(E_BMODE); /* ".." and "." */

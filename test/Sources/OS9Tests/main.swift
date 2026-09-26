@@ -4370,7 +4370,12 @@ do {
         MoveProbe(module: "mv03", srcDir: "/h5/mvd2", dstDir: "/h5/mvd2", from: "mvc", into: "mvc",
                   append: false, expect: 203, why: "a clear with no append before it (a delete)"),
         MoveProbe(module: "mv04", srcDir: "/h5/mvd2", dstDir: "/h5/mvd1", from: "mvc", into: "mvx",
-                  clear: false, expect: 218, why: "an append onto a name the directory already has")
+                  clear: false, expect: 218, why: "an append onto a name the directory already has"),
+        // ln: the append alone makes a second name, and the first stays. It was
+        // one host rename at once, and the original name was lost (found by the
+        // file-system review).
+        MoveProbe(module: "mv05", srcDir: "/h5/mvd1", dstDir: "/h5/mvd1", from: "mvx", into: "mvy",
+                  clear: false, expect: 0, why: "an append with no clear after it (ln)")
     ]
 
     let name = "fs: a host directory moves a file by link-then-unlink"
@@ -4409,7 +4414,9 @@ do {
             faults.append("after the moves: expected mvd2/mvc holding M and neither mva nor mvb in mvd1; "
                           + "saw mvd1 \(one.sorted()) mvd2 \(two.sorted())")
         }
-        if !one.contains("mvx") { faults.append("mvd1/mvx, the name the last append collided with, is gone") }
+        if !one.contains("mvx") { faults.append("mvd1/mvx, which mv04 collided with and mv05 linked, is gone") }
+        let linked = try? String(contentsOfFile: scratchDisk + "/mvd1/mvy", encoding: .utf8)
+        if linked != "X" { faults.append("mv05's second name mvd1/mvy does not hold X: \(linked ?? "missing")") }
 
         if faults.isEmpty {
             print("PASS: \(name)")
@@ -4420,7 +4427,7 @@ do {
             failed += 1
         }
 
-        for leftover in ["mvd1/mva", "mvd1/mvb", "mvd1/mvx", "mvd2/mvc", "mvd1", "mvd2"] {
+        for leftover in ["mvd1/mva", "mvd1/mvb", "mvd1/mvx", "mvd1/mvy", "mvd2/mvc", "mvd1", "mvd2"] {
             removeScratchItem(leftover)
         }
         for probe in probes {
