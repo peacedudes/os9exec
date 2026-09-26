@@ -2461,10 +2461,19 @@ void init_usrpaths( ushort pid )
 } /* init_usrpaths */
 
 void close_usrpaths( ushort pid )
-/* close all process <pid>'s open paths */
+/* close all process <pid>'s open paths, and drop any SS_SSig it armed: a path
+   it shared (a terminal or pipe inherited from its parent) stays open after
+   it, and an arming nobody would take made every read on it E$DevBsy until
+   an SS_Relea that could no longer come (file-system review) */
 {
     ushort*  spN;
     int       k;
+    for (k=1; k<MAXSYSPATHS; k++) {
+        if (syspaths[ k ].signal_to_send!=0 && syspaths[ k ].signal_pid==pid) {
+            syspaths[ k ].signal_to_send= 0;
+            syspaths[ k ].signal_pid    = 0;
+        }
+    }
     for (k=0; k<MAXUSRPATHS; k++) {
              spN= &procs[pid].usrpaths[k];
         if (*spN>0 && *spN<MAXSYSPATHS) usrpath_close( pid,k ); /* close this path */

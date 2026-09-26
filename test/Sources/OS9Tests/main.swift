@@ -1078,6 +1078,65 @@ if filter.isEmpty || padName.localizedCaseInsensitiveContains(filter) {
 check("pipe: three-stage chain",        contains: "1",
     "echo hello ! tr a-z A-Z ! count")
 
+// ── an SS_SSig left by a process that is gone does not refuse later reads ─────
+// A read on a path armed with SS_SSig is refused E$DevBsy. Nothing disarmed a
+// path whose arming process had gone, and a signal that could not be delivered
+// to it left the arming in place, so a pipe (or terminal) shared with the
+// parent refused every read after for good (found by the file-system review).
+// The parent puts a named pipe on path 0 and forks a copy of itself ("C"),
+// which arms SS_SSig on the empty pipe and exits; the parent then writes a
+// byte and must read it back.
+do {
+    let ssigAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Fork equ $03", "F$Wait equ $04", "F$Exit equ $06", "I$Create equ $83", "I$Dup equ $82",
+        "I$Read equ $89", "I$Write equ $8A", "I$WritLn equ $8C", "I$SetStt equ $8E", "I$Close equ $8F",
+        "  psect mssig,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "buf: ds.b 4", "  ends",
+        "start:",
+        "  tst.l d5", "  beq.s parent", "  cmpi.b #'C',(a5)", "  bne.s parent",
+        "  moveq #0,d0", "  move.w #$1A,d1", "  move.l #300,d2", "  OS9 I$SetStt",
+        "  moveq #0,d1", "  OS9 F$Exit",
+        "parent:",
+        "  lea pname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.w setup",
+        "  move.w d0,d7",
+        "  moveq #0,d0", "  OS9 I$Close",
+        "  move.w d7,d0", "  OS9 I$Dup", "  bcs.w setup",
+        "  lea myname(pc),a0", "  lea cparm(pc),a1", "  moveq #0,d0", "  moveq #0,d1", "  moveq #2,d2",
+        "  moveq #1,d3", "  moveq #0,d4", "  OS9 F$Fork", "  bcs.w setup",
+        "  OS9 F$Wait",
+        "  move.w d7,d0", "  lea one(pc),a0", "  moveq #1,d1", "  OS9 I$Write", "  bcs.s setup",
+        "  move.w d7,d0", "  lea buf(a6),a0", "  moveq #1,d1", "  OS9 I$Read", "  bcs.s refused",
+        "  lea okm(pc),a0", "  bra.s tell",
+        "refused:", "  lea badm(pc),a0",
+        "tell:", "  moveq #1,d0", "  moveq #40,d1", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "setup:", "  lea setm(pc),a0", "  bra.s tell",
+        "pname: dc.b \"/pipe/ssigleft\",0", "myname: dc.b \"mssig\",0", "cparm: dc.b \"C\",13",
+        "one: dc.b \"X\"",
+        "okm: dc.b \"SSIG LEFTOVER READ OK\",13", "badm: dc.b \"SSIG LEFTOVER READ REFUSED\",13",
+        "setm: dc.b \"SSIG SETUP FAILED\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "pipe: an SS_SSig left by a process that has gone does not refuse later reads"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? ssigAsm.write(toFile: scratchDisk + "/mssig.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mssig.a -o=/h5/mssig.r", "l68 /h5/mssig.r -o=/h5/mssig"], timeout: 60)
+        let out = os9(["/h5/mssig"], timeout: 30)
+        if out.contains("SSIG LEFTOVER READ OK") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("SSIG") || $0.contains("rror") }
+            print("      saw: \(seen)")
+            failed += 1
+        }
+        for item in ["mssig.a", "mssig.r", "mssig"] { removeScratchItem(item) }
+    }
+}
+
 // ── Expected error paths ──────────────────────────────────────────────────────
 
 // commands referencing nonexistent paths must produce "Error #"

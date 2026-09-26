@@ -480,7 +480,6 @@ static void Reactivate( ushort pid, process_typ* cp, const char* callingProc )
 static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
                                 uint32_t *lenP, char* buffer, Boolean wrln, systaskfunc_typ wr_func )
 {
-    os9err        err= 0;
     int           numfree, remaining, bytes, nn;
     byte*         buf;
     pipechan_typ* p= spP->u.pipe.pchP;
@@ -564,8 +563,12 @@ static os9err pWriteSysTaskExe( ushort  pid, syspath_typ* spP,
     //debugprintf(dbgSysCall,dbgNorm,("# SEND SIGNAL isInt=%d: pid=%d => pid=%d sig=%d\n", 
     //                                   cp->isIntUtil, pid, spP->signal_pid, spP->signal_to_send ));
                                          
-      err= send_signal( spP->signal_pid, spP->signal_to_send );
-      if (!err)                          spP->signal_to_send= 0;
+      /* One signal per arming, delivered or not: a signal for a process that
+         has gone cannot be delivered, and kept armed it made every later read
+         on this pipe E$DevBsy for good (file-system review). The write itself
+         succeeded either way. */
+      send_signal( spP->signal_pid, spP->signal_to_send );
+                                         spP->signal_to_send= 0;
     } // if
 
     /* check how things go on */
