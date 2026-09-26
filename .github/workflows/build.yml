@@ -147,7 +147,7 @@ jobs:
     - name: Install dependencies (macOS)
       if: runner.os == 'macOS'
       run: |
-        brew install llvm
+        brew install llvm coreutils
 
     - name: Install dependencies (Windows cross-compile)
       if: matrix.cc == 'mingw-cross'
@@ -213,6 +213,38 @@ jobs:
         echo "$OUTPUT" | grep -q "OS9exec" || { echo "FAIL: expected OS9exec header"; exit 1; }
         echo "✓ Windows binary runs under Wine and shows internal help"
 
+    # The conformance suite on EVERY build, not only on 64-bit Linux: a build
+    # that starts but runs OS-9 code wrongly passed the smoke tests above. No
+    # Microware software is involved (see the conformance job), so each build
+    # runs it the way a stranger would, with no shell, on a host directory and
+    # on an RBF image.
+    - name: Conformance suite (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        ./tools/conformance.sh 68k --noshell
+        ./tools/conformance.sh 68k --noshell --rbf
+
+    # The 32-bit binary runs in the image it was built in, against this
+    # checkout: the runner itself has no 32-bit C library.
+    - name: Conformance suite (Docker 32-bit)
+      if: matrix.cc == 'docker'
+      run: |
+        docker run --rm --entrypoint bash -v "$(pwd)":/w -w /w os9exec:linux32 -c \
+          './tools/conformance.sh 68k --noshell && ./tools/conformance.sh 68k --noshell --rbf'
+
+    # Under Wine, through a two-line wrapper named os9exec so the suite's
+    # scripts need no Windows case. Removed before the upload below, which
+    # takes os9exec*. The real Windows kernel is covered by
+    # tools/verify-winvm.sh on a Windows 11 VM before every release.
+    - name: Conformance suite (Windows, via Wine)
+      if: matrix.cc == 'mingw-cross'
+      run: |
+        printf '#!/bin/sh\nexec wine "$(dirname "$0")/os9exec.exe" "$@"\n' > os9exec
+        chmod +x os9exec
+        ./tools/conformance.sh 68k --noshell
+        ./tools/conformance.sh 68k --noshell --rbf
+        rm -f os9exec
+
     # Every asset in a GitHub release shares one namespace, so each uploaded
     # file needs a DISTINCT name. Only the 32-bit Docker build was renamed,
     # which left linux-x64 and macos-arm64 both shipping a file called
@@ -231,6 +263,40 @@ jobs:
         name: ${{ matrix.artifact }}
         path: os9exec*
         retention-days: 30
+
+  # The browser build: built with Emscripten and made to run the whole
+  # conformance suite under node, from the self-contained CONF68K disk. The
+  # disk is built first with a native os9exec, as on a developer's machine.
+  # wasm-build.sh exits 0 when node is missing ("built but not verified"),
+  # so its "WASM OK" line is required here rather than its exit status.
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential clang
+
+    - name: Build os9exec and the CONF68K disk
+      env:
+        CC: clang
+      run: |
+        make prod
+        ./tools/selfhost68k/build-image.sh
+
+    - name: Install Emscripten
+      run: |
+        git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+        "$RUNNER_TEMP/emsdk/emsdk" install latest
+        "$RUNNER_TEMP/emsdk/emsdk" activate latest
+
+    - name: Build for WebAssembly and run the suite under node
+      run: |
+        source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+        ./tools/wasm-build.sh | tee wasm.log
+        grep -q '^WASM OK' wasm.log || { echo "FAIL: the WebAssembly build was not verified"; exit 1; }
 
   publish-docker:
     if: github.event_name == 'push'
@@ -294,7 +360,7 @@ jobs:
     # `build`, so a tag would have published binaries for all four platforms
     # with the conformance suite red -- and the conformance suite is the whole
     # claim this project makes about itself.
-    needs: [build, conformance]
+    needs: [build, conformance, wasm]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     # Creating a release WRITES to the repository, and this workflow's token is
