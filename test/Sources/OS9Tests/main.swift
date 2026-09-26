@@ -1078,6 +1078,16 @@ if filter.isEmpty || padName.localizedCaseInsensitiveContains(filter) {
 check("pipe: three-stage chain",        contains: "1",
     "echo hello ! tr a-z A-Z ! count")
 
+// os9exec's own commands are neither files nor modules, so dir and mdir cannot
+// show them: the sign-on's last line says where to look, and every one of them
+// answers -? -- iquit armed the quit and icrash crashed instead.
+check("internal: the sign-on says ihelp lists the internal commands",
+      contains: "ihelp lists os9exec's own commands", "echo x")
+check("internal: iquit -? explains itself instead of arming the quit",
+      contains: "Syntax:   iquit", "iquit -?")
+check("internal: icrash -? explains itself instead of crashing",
+      contains: "Syntax:   icrash", "icrash -?")
+
 // ── an SS_SSig left by a process that is gone does not refuse later reads ─────
 // A read on a path armed with SS_SSig is refused E$DevBsy. Nothing disarmed a
 // path whose arming process had gone, and a signal that could not be delivered

@@ -2939,6 +2939,11 @@ ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
   }
   debugprintf(dbgStartup,dbgNorm,("# main startup: low level prepared\n"));
 
+  /* The last line of the sign-on, just above the first prompt. os9exec's own
+     commands are neither files nor modules, so dir and mdir cannot show them,
+     and without this nothing said where to look. */
+  if (withTitle) upho_printf( "ihelp lists os9exec's own commands; each answers -?\n" );
+
   /* show environment */
   debugprintf(dbgStartup,dbgNorm,("# main startup: FPU=%d, Virtual Mem=%d, Cache=%d, Runs in User mode=%d\n",
                                      llm_fpu_present(),llm_vm_enabled(),llm_has_cache(),llm_runs_in_usermode()));

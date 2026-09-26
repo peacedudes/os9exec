@@ -39,7 +39,8 @@ instruction, as OS-9's SSM does on real hardware. It is off by default. It is a 
 our own test programs once wrote 32K past their data for months, and it showed only as a
 utility looping in one session layout.
 
-**Built-in commands.** New: `pwd` and `cd`, and `iterm`, which makes a `/tN` terminal at runtime
+**Built-in commands.** They are neither files nor modules, so `dir` and `mdir` cannot show them;
+the sign-on now ends by pointing at `ihelp`, which lists them, and every one answers `-?`. New: `pwd` and `cd`, and `iterm`, which makes a `/tN` terminal at runtime
 the way `mount` makes an `/hX` disk. `devs` now lists host directories as well, says who is using
 each device and how to attach to a terminal, and fits 80 columns. `mount <image> hX` now attaches
 an existing disk image while running.

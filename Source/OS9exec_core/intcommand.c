@@ -1765,9 +1765,32 @@ static os9err int_hit( _pid_, _argc_, _argv_ )
   return 0;
 } // int_hit
 
-static os9err int_crash( _pid_, _argc_, _argv_ )
+/* For the internal commands that take no arguments: true if they should do
+   nothing, because -? or -h asked for their usage (printed here) or an
+   option is not theirs. Without it `iquit -?` quietly armed the quit and
+   `icrash -?` crashed, where every other command explains itself. */
+static Boolean no_args_usage( int argc, char** argv, const char* function )
+{
+  int h;
+  for (h=1; h<argc; h++) {
+    const char* p= argv[ h ];
+    if (*p=='-' && (p[1]=='?' || tolower((unsigned char)p[1])=='h')) {
+      upe_printf( "Syntax:   %s\n", argv[ 0 ] );
+      upe_printf( "Function: %s\n", function );
+      upe_printf( "Options:  None.\n" );
+      return true;
+    }
+    upe_printf( "Error: %s takes no arguments; %s -? explains it\n", argv[ 0 ], argv[ 0 ] );
+    return true;
+  }
+  return false;
+} /* no_args_usage */
+
+static os9err int_crash( _pid_, int argc, char** argv )
 {   
   ulong* a;
+
+  if (no_args_usage( argc, argv, "Access an invalid address, to test the crash handling" )) return 0;
   
   a= (ulong*)0xCE00BEF0;                            /* non existing address */
   a= (ulong*)*a;
@@ -1776,12 +1799,17 @@ static os9err int_crash( _pid_, _argc_, _argv_ )
   return 0;
 } /* int_crash */
 
-static os9err int_quit( _pid_, _argc_, _argv_ )
-{   quitFlag= true; return 0;
+static os9err int_quit( _pid_, int argc, char** argv )
+{   if (no_args_usage( argc, argv, "Quit os9exec at the next debugger entry (F$SysDbg)" )) return 0;
+    quitFlag= true; return 0;
 } /* int_quit */
 
-static os9err int_ignored( _pid_, _argc_, _argv_ )
-{   return 0; /* do nothing */
+static os9err int_ignored( _pid_, int argc, char** argv )
+/* dch/diskcache: a startup file's real arguments (dch -e /h0) stay ignored
+   without a word; only -? or -h is answered */
+{   if (argc>1 && argv[1][0]=='-' && (argv[1][1]=='?' || tolower((unsigned char)argv[1][1])=='h'))
+        (void)no_args_usage( 2, argv, "Accepted and ignored: os9exec has no disk cache to set" );
+    return 0; /* do nothing */
 } /* int_ignored */
 
 
