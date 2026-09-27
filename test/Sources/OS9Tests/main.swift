@@ -7155,7 +7155,7 @@ do {
         let errFile = scratchDisk + "/memfill.err"
         let out     = os9(["/h5/memflood", "/h5/memfill >>>/h5/memfill.err"], timeout: 30)
         let guestErr = (try? String(contentsOfFile: errFile, encoding: .isoLatin1)) ?? "<missing>"
-        try? FileManager.default.removeItem(atPath: errFile)   // the shell will not redirect onto an existing file
+        removeScratchItem("memfill.err")   // the shell will not redirect onto an existing file
         let paced   = os9(["/h5/memflood", "/h5/memfill >>>/h5/memfill.err"], timeout: 60, paced: true)
 
         // memflood's own stretch of the run: from its command line to memfill's.
