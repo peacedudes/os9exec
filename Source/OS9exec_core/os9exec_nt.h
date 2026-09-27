@@ -794,8 +794,6 @@ typedef struct {
             byte*     buf;                /* pointer to pipe buffer */
             byte*     prp;                /* pipe read pointer */
             byte*     pwp;                /* pipe write pointer */
-            uint32_t  bread;              /* number of bytes read so far */
-            uint32_t  bwritten;           /* number of bytes written so far */
             ushort    consumers;          /* number of waiting consumers for this pipe */
             ushort    sp_lock;            /* if <> 0, tty/pty to this system path nr */
             Boolean   do_lf;
@@ -1306,6 +1304,11 @@ typedef struct {
                 systaskfunc_typ systask;    /* the system task function if state=pSysTask */
                 void      *systaskdataP;    /* system task data pointer */
                 ulong      systask_offs;    /* offset for rewrite call (from tty/pty) */
+                /* How far this process's own pipe request has got. Per process,
+                   not per pipe: a request parked half done must not be reset by
+                   another process starting one on the same channel (the reader
+                   lost its bytes and was written past its buffer). */
+                uint32_t       pipeDone;
                 /* A pipe request parked as a system task whose last try moved
                    nothing, and the pipe as it was then: until the pipe changes
                    the scheduler may sleep rather than try it again at once
@@ -1371,6 +1374,7 @@ typedef struct {
                 systaskfunc_typ rtesystask; /* the system task parked in, if rtestate==pSysTask */
                 void*      rtesystaskdataP; /* its data pointer */
                 ulong      rtesystask_offs; /* and its rewrite offset */
+                uint32_t   rtepipeDone;     /* and its pipe progress */
                 
                 int     masklevel;
                 Boolean pwr_brk;            /* pWaitRead break for signals <= 32 */

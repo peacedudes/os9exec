@@ -1175,6 +1175,55 @@ do {
     }
 }
 
+// A pipe request's progress was kept on the PIPE, so any process starting a
+// request on the channel reset a reader parked half way: its bytes so far were
+// lost, and a count gone past its buffer wrote beyond it. Found by freeware
+// with ppmtopict, which reads its own stdout while wc waits on a line. Here the
+// writer ("W") sends half a line, lets the reader take it and park, reads its
+// own stdout, then sends the rest; the reader must get the whole line.
+do {
+    let partAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "F$Sleep equ $0A", "I$Read equ $89", "I$Write equ $8A", "I$ReadLn equ $8B",
+        "I$WritLn equ $8C",
+        "  psect mpart,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "buf: ds.b 256", "  ends",
+        "start:",
+        "  cmpi.b #'W',(a5)", "  beq.s writer",
+        "  moveq #0,d0", "  lea buf(a6),a0", "  move.l #256,d1", "  OS9 I$ReadLn", "  bcs.s done",
+        "  move.l d1,d7",
+        "  moveq #1,d0", "  lea tag(pc),a0", "  moveq #5,d1", "  OS9 I$Write",
+        "  moveq #1,d0", "  lea buf(a6),a0", "  move.l d7,d1", "  OS9 I$WritLn",
+        "done:", "  moveq #0,d1", "  OS9 F$Exit",
+        "writer:",
+        "  moveq #1,d0", "  lea half1(pc),a0", "  moveq #10,d1", "  OS9 I$Write",
+        "  moveq #20,d0", "  OS9 F$Sleep",
+        "  moveq #1,d0", "  lea buf(a6),a0", "  moveq #16,d1", "  OS9 I$Read",
+        "  moveq #1,d0", "  lea half2(pc),a0", "  moveq #4,d1", "  OS9 I$WritLn",
+        "  bra.s done",
+        "tag: dc.b \"LINE=\"", "half1: dc.b \"abcdefghij\"", "half2: dc.b \"klm\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "pipe: a reader parked half way keeps its bytes when another process reads the pipe"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? partAsm.write(toFile: scratchDisk + "/mpart.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mpart.a -o=/h5/mpart.r", "l68 /h5/mpart.r -o=/h5/mpart"], timeout: 60)
+        let out = os9(["/h5/mpart W ! /h5/mpart"], timeout: 30)
+        if out.contains("LINE=abcdefghijklm") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("LINE") || $0.contains("rror") }
+            print("      saw: \(seen)")
+            failed += 1
+        }
+        for item in ["mpart.a", "mpart.r", "mpart"] { removeScratchItem(item) }
+    }
+}
+
 // ── Expected error paths ──────────────────────────────────────────────────────
 
 // commands referencing nonexistent paths must produce "Error #"

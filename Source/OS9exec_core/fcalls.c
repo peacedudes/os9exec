@@ -1255,6 +1255,7 @@ os9err OS9_F_RTE( _rp_, ushort cpid )
             cp->systask     = cp->rtesystask;
             cp->systaskdataP= cp->rtesystaskdataP;
             cp->systask_offs= cp->rtesystask_offs;
+            cp->pipeDone    = cp->rtepipeDone;
             cp->stalled     = false; /* its pipe may have moved meanwhile: look again */
         } // if
         if (cp->state==pWaitWrite) { /* back to the terminal write the signal found parked */

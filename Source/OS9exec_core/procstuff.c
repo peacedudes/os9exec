@@ -1009,6 +1009,7 @@ os9err send_signal( ushort spid, ushort signal )
       sigp->rtesystask     = sigp->systask;
       sigp->rtesystaskdataP= sigp->systaskdataP;
       sigp->rtesystask_offs= sigp->systask_offs;
+      sigp->rtepipeDone    = sigp->pipeDone;
       /* ...and, the same way, a parked terminal write's place: an intercept
          routine whose own write parks overwrote it, and the outer write then
          resumed at the handler's count (pre-release review) */
