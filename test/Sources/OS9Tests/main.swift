@@ -1224,6 +1224,29 @@ do {
     }
 }
 
+// An orphan's exit ended the whole emulator. A process whose parent has gone
+// has no one to hand the CPU back to, and the scheduler, starting its search
+// from that empty slot, took "back where I began" for "nothing can ever run"
+// -- while the shell sat waiting for its next line. Found by freeware (vcron
+// exits as an orphan). Here an inner shell backgrounds a short sleep and
+// exits; the outer shell must still be there to see its input end.
+do {
+    let name = "process: an orphan's exit leaves the shell waiting for input running"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? "sleep 100&\r".write(toFile: scratchDisk + "/orphan.txt", atomically: true, encoding: .utf8)
+        let out = os9(["shell </h5/orphan.txt >>>/nil"], timeout: 30, holdOpen: 4.0)
+        if out.contains("eof") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      the run ended before its input did: \(out.suffix(120))")
+            failed += 1
+        }
+        removeScratchItem("orphan.txt")
+    }
+}
+
 // ── Expected error paths ──────────────────────────────────────────────────────
 
 // commands referencing nonexistent paths must produce "Error #"

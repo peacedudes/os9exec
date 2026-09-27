@@ -1592,9 +1592,16 @@ void do_arbitrate( ushort allowedIntUtil )
       /* --- test if all processes are tested already */
       if (spid==cpid) {
         /* -- no other process found to run */
-        if (!chkAll && (spid==allowedIntUtil || !sprocess->isIntUtil)) {
+        if (sprocess->state==pUnused || sprocess->state==pDead) {
+          /* The search began at a slot nobody holds -- an orphan's exit leaves
+             currentpid 0 -- so arriving back there is not "every process has
+             had its turn": the ones waiting for input were never asked. Going
+             on (the scan above already waited) keeps them; ending here shut
+             os9exec down under a live shell. ShutdownDue decides the end. */
+        }
+        else if (!chkAll && (spid==allowedIntUtil || !sprocess->isIntUtil)) {
           if (atLeast1) chkAll= true;
-          else          done  = true; 
+          else          done  = true;
         }
         else {
           debugprintf(dbgTaskSwitch,dbgDetail,("# arbitrate: checked all, now pid=%d must be startable\n",spid));
