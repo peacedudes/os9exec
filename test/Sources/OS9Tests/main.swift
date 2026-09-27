@@ -1549,6 +1549,50 @@ do {
         commands: ["mount /h5/\(scratchDevice) h1", "unmount h1", "dir /h1"]) { out in
         !out.contains("can't unmount") && !out.contains("Directory of /h1")
     }
+    // One image under two names is one drive: OS9DISK and OS9H0 both naming the
+    // freeware image is how it is booted. Each name got a device of its own,
+    // with its own open files, so a file still open for write through one name
+    // read empty through the other (found by freeware). The writer seeks back
+    // first, which lets go of its record lock, then reads through the twin.
+    let twinAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Exit equ $06", "I$Create equ $83", "I$Open equ $84", "I$Seek equ $88", "I$Read equ $89",
+        "I$Write equ $8A", "I$WritLn equ $8C",
+        "  psect mtwin,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "buf: ds.b 16", "  ends",
+        "start:",
+        "  lea wname(pc),a0", "  moveq #3,d0", "  moveq #3,d1", "  OS9 I$Create", "  bcs.s setup",
+        "  move.w d0,d7",
+        "  lea hello(pc),a0", "  moveq #5,d1", "  OS9 I$Write", "  bcs.s setup",
+        "  move.w d7,d0", "  moveq #0,d1", "  OS9 I$Seek", "  bcs.s setup",
+        "  lea rname(pc),a0", "  moveq #1,d0", "  OS9 I$Open", "  bcs.s setup",
+        "  lea buf(a6),a0", "  moveq #16,d1", "  OS9 I$Read", "  bcs.s empty",
+        "  cmpi.l #5,d1", "  bne.s empty",
+        "  lea allm(pc),a0", "  bra.s tell",
+        "empty:", "  lea nonem(pc),a0", "  bra.s tell",
+        "setup:", "  lea setm(pc),a0",
+        "tell:", "  moveq #1,d0", "  moveq #40,d1", "  OS9 I$WritLn", "  moveq #0,d1", "  OS9 F$Exit",
+        "wname: dc.b \"/h1/TWIN\",0", "rname: dc.b \"/h2/TWIN\",0", "hello: dc.b \"hello\"",
+        "allm: dc.b \"TWIN READ ALL\",13", "nonem: dc.b \"TWIN READ SHORT\",13", "setm: dc.b \"TWIN SETUP FAILED\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+    let twinName = "rbf: one image under two names is one device, so an open file reads the same through both"
+    if filter.isEmpty || twinName.localizedCaseInsensitiveContains(filter) {
+        try? twinAsm.write(toFile: scratchDisk + "/mtwin.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mtwin.a -o=/h5/mtwin.r", "l68 /h5/mtwin.r -o=/h5/mtwin"], timeout: 60)
+        let out = os9(["mount /h5/\(scratchDevice) h1", "mount /h5/\(scratchDevice) h2", "/h5/mtwin"], timeout: 30)
+        if out.contains("TWIN READ ALL") {
+            print("PASS: \(twinName)")
+            passed += 1
+        } else {
+            print("FAIL: \(twinName)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("TWIN") || $0.contains("rror") }
+            print("      saw: \(seen)")
+            failed += 1
+        }
+        for item in ["mtwin.a", "mtwin.r", "mtwin"] { removeScratchItem(item) }
+    }
     removeScratchItem(scratchDevice)
 }
 

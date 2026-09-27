@@ -230,8 +230,8 @@ os9err pFseek    ( ushort pid, syspath_typ*, uint32_t  *posP );
  * Where a stat fails, the literal names are compared: a miss leaves the
  * caller's old behaviour rather than refusing something it should not. Used
  * by pFdelete to honour I$Delete's "the file may not already be open"
- * (page 2 - 7). */
-static Boolean same_host_file( const char* a, const char* b )
+ * (page 2 - 7), and by RBF's DevInit to know one image under two names. */
+Boolean same_host_file( const char* a, const char* b )
 {
     #if defined MINGW || defined windows32
         return ustrcmp( a,b )==0;

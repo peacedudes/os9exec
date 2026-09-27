@@ -2093,6 +2093,26 @@ static os9err DeviceInit( ushort pid, rbfdev_typ** my_dev, syspath_typ* spP,
                     cdv= ii; break;
                 }
             
+                /* The same image under another name: OS9DISK and OS9H0 both
+                   naming it is how a freeware disk is booted, since its files
+                   say /h0. On OS-9 /dd is a second descriptor for the same
+                   drive -- one driver, one set of open files. Two instances
+                   here each kept their own sector cache and open-file state,
+                   so a file being written through /h0 read empty through /dd.
+                   The new name joins the device already open on the image --
+                   unless it asks for other protection: a `mount -w` twin must
+                   still refuse writes, so it keeps an instance of its own. */
+                if (imgIsHost && dev->wProtected==mnt_wProtect &&
+                    same_host_file( imgpath,dev->img_name )) {
+                    v= strstr( cmp,"@" ); if (v!=NULL) *v= NUL;
+                    if (ustrcmp( cmp,dev->name  )==0 ||
+                        ustrcmp( cmp,dev->name2 )==0 ||
+                        ustrcmp( cmp,dev->name3 )==0) { cdv= ii; break; }
+                    if (*dev->name2==NUL) { strcpy( dev->name2,cmp ); cdv= ii; break; }
+                    if (*dev->name3==NUL) { strcpy( dev->name3,cmp ); cdv= ii; break; }
+                    return E_DEVBSY;
+                }
+
                 /* compare with mnt_name, if available */
                              q= cmp;
                 if (mock)    q= mnt_name;

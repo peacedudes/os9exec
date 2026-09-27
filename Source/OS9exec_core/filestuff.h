@@ -223,6 +223,7 @@ Boolean RBF_ImageOpenUnder( const char* hostpath );
    its own directory, as a directory-entry rename does (device roots and
    mounted images refused, open paths and current directories follow). */
 os9err  HostRenameInPlace( ushort pid, const char* srcPath, const char* newName );
+Boolean same_host_file    ( const char* a, const char* b ); /* fileaccess.c: one host file? */
 ushort  PathFDOwner       ( syspath_typ* spP ); /* file_rbf.c: an RBF path's FD_OWN */
 
 /* True when Disp_RBF_Devs already printed a row for /<name> -- i.e. the device
