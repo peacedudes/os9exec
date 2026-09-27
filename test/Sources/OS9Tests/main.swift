@@ -1224,6 +1224,61 @@ do {
     }
 }
 
+// The writer's half of the same fault. "W" forks "B" onto its own stdout and
+// writes 6000 bytes, which parks it with the 4096-byte pipe full; B then starts
+// a one-byte write of its own. The reader waits for both to park, then counts
+// what arrives: 6001 exactly. A progress kept on the pipe was reset by B's
+// write, and W resent its bytes from the start.
+do {
+    let wrAsm = [
+        "  use /dd/DEFS/oskdefs.d",
+        "F$Fork equ $03", "F$Wait equ $04", "F$Exit equ $06", "F$Sleep equ $0A", "I$Read equ $89",
+        "I$Write equ $8A", "I$WritLn equ $8C",
+        "  psect mpwr,(Prgrm<<8)+Objct,(ReEnt<<8)+0,1,1024,start",
+        "  vsect", "buf: ds.b 6000", "  ends",
+        "start:",
+        "  cmpi.b #'W',(a5)", "  beq.s writer", "  cmpi.b #'B',(a5)", "  beq.s second",
+        "  moveq #50,d0", "  OS9 F$Sleep",
+        "  moveq #0,d7",
+        "count:", "  moveq #0,d0", "  lea buf(a6),a0", "  move.l #256,d1", "  OS9 I$Read", "  bcs.s counted",
+        "  add.l d1,d7", "  bra.s count",
+        "counted:", "  cmpi.l #6001,d7", "  bne.s wrong",
+        "  lea okm(pc),a0", "  bra.s tell",
+        "wrong:", "  lea badm(pc),a0",
+        "tell:", "  moveq #1,d0", "  moveq #40,d1", "  OS9 I$WritLn",
+        "done:", "  moveq #0,d1", "  OS9 F$Exit",
+        "writer:",
+        "  lea myname(pc),a0", "  lea bparm(pc),a1", "  moveq #0,d0", "  moveq #0,d1", "  moveq #2,d2",
+        "  moveq #2,d3", "  moveq #0,d4", "  OS9 F$Fork",
+        "  moveq #1,d0", "  lea buf(a6),a0", "  move.l #6000,d1", "  OS9 I$Write",
+        "  OS9 F$Wait", "  bra.s done",
+        "second:",
+        "  moveq #20,d0", "  OS9 F$Sleep",
+        "  moveq #1,d0", "  lea buf(a6),a0", "  moveq #1,d1", "  OS9 I$Write", "  bra.s done",
+        "myname: dc.b \"mpwr\",0", "bparm: dc.b \"B\",13",
+        "okm: dc.b \"PIPE WRITERS 6001\",13", "badm: dc.b \"PIPE WRITERS MISCOUNTED\",13",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "pipe: a writer parked on a full pipe keeps its place when another process writes"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        try? wrAsm.write(toFile: scratchDisk + "/mpwr.a", atomically: true, encoding: .utf8)
+        _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                 "r68 /h5/mpwr.a -o=/h5/mpwr.r", "l68 /h5/mpwr.r -o=/h5/mpwr"], timeout: 60)
+        let out = os9(["/h5/mpwr W ! /h5/mpwr"], timeout: 30)
+        if out.contains("PIPE WRITERS 6001") {
+            print("PASS: \(name)")
+            passed += 1
+        } else {
+            print("FAIL: \(name)")
+            let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("PIPE") || $0.contains("rror") }
+            print("      saw: \(seen)")
+            failed += 1
+        }
+        for item in ["mpwr.a", "mpwr.r", "mpwr"] { removeScratchItem(item) }
+    }
+}
+
 // An orphan's exit ended the whole emulator. A process whose parent has gone
 // has no one to hand the CPU back to, and the scheduler, starting its search
 // from that empty slot, took "back where I began" for "nothing can ever run"
