@@ -152,7 +152,9 @@ Files and devices:
   signal ends a blocked pipe read; two writers' lines no longer interleave on one terminal.
   `SS_Size` on a pipe is refused rather than answered with the buffer's size, so `less` pages
   piped input to the end instead of stopping after 4K. `^C`, `^E` and XON act even behind a full
-  type-ahead buffer (typed or pasted text beyond it waits rather than being lost); an echo
+  type-ahead buffer (typed or pasted text beyond it waits rather than being lost), and while a
+  program computes without system calls: `^E` ends it and `^C` sends it to the background, as the
+  manual says, where before the keys went nowhere and it could not be stopped from the keyboard; an echo
   waiting behind `^S` no longer keeps a core busy; a signal ends a write parked on a terminal with
   the signal as its error; `I$WritLn` to a terminal ends the record at its own end-of-record
   character; a `/tN` that takes part of a line ending gets the rest once, not twice; a write to a

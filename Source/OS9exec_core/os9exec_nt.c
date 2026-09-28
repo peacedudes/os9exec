@@ -2378,6 +2378,24 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
         cp->vector= 0;
         cp->func  = 0;
         arbitrate = true; /* someone else's turn */
+
+        /* A signal sent outside a system call -- a typed Ctrl-C or Ctrl-E,
+         * above all -- waits in the queue, and the system-call arm below is
+         * where the queue is let out. A process computing without calls never
+         * gets there, so while it ran, the key's target (the shell waiting on
+         * it) was never woken and the machine could not be stopped from the
+         * keyboard. The tick is the other point where a process stops between
+         * two of its own instructions, so the queue is let out here as well,
+         * with the same guard and the same hand-over to the signal's target. */
+        if (async_pending && cp->masklevel<=0) {
+          async_area= true;
+          sig_mask( cpid, 0 );
+          async_area= false;
+          if (cp->way_to_icpt && cp->icpt_pid!=currentpid) {
+            cp->way_to_icpt= false;   /* the target runs its intercept next */
+            currentpid     = cp->icpt_pid;
+          }
+        }
       }
       else if (cp->vector!=0) {
         if (!TCALL_or_Exception( cp, crp, cpid )) continue;

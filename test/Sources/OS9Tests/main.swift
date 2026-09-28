@@ -15336,6 +15336,110 @@ if runXoffInput && !containerized {
     }
 }
 
+// -- an abort key reaches a shell whose child computes without system calls --
+// A key's signal is sent outside any system call, so it waits in the signal
+// queue, and that queue was flushed only after the CURRENT process made a
+// call. A child computing with no calls never makes one, so Ctrl-E and Ctrl-C
+// went nowhere: the shell (the terminal's last writer, whom the key signals)
+// was never woken, and the machine could not be stopped from the keyboard --
+// measured on macOS with the tick on, on this build and the release before.
+// The tick now flushes the queue when it ends a slice. What each key then does
+// is the shell's business, as the manual describes: Ctrl-E kills the child,
+// Ctrl-C moves one that has written nothing to the background. Either way the
+// shell takes the next command, which is what is checked -- a witness file
+// written by a command typed after the key. The child loops forever, so a
+// build that drops the key fails outright rather than by timing. Needs the
+// tick: with it off nothing takes the CPU from the child at all.
+func abortReachesShellOfComputingChild(key: UInt8, witnessName: String) -> Bool? {
+    guard let (master, slave, _) = makePTY() else { return nil }
+    let spinAsm = ["  psect kspin,$0101,$8001,0,512,start", "start:", "  bra.s start", "  ends", ""]
+        .joined(separator: "\r")
+    let witness = scratchDisk + "/" + witnessName
+    try? spinAsm.write(toFile: scratchDisk + "/kspin.a", atomically: true, encoding: .utf8)
+    for stale in [witnessName, "kbuilt", "kready"] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + stale)
+    }
+
+    let collector = BackpressureCollector()
+    let stopped   = DispatchSemaphore(value: 0)
+    _ = startDrainThread(master, collector, stopped)
+
+    let process = Process()
+    process.executableURL       = execURL
+    process.arguments           = ["-r", shellArg]
+    process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
+    process.environment         = ["OS9DISK": diskPath,
+                                   "OS9H\(scratchDev.dropFirst())": scratchDisk].merging(inheritedByChildren) { mine, _ in mine }
+    let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
+    process.standardInput  = slaveHandle
+    process.standardOutput = slaveHandle
+    process.standardError  = slaveHandle
+
+    var reached = false
+    if (try? process.run()) != nil {
+        func send(_ s: String) { var b = Array(s.utf8); _ = write(master, &b, b.count) }
+        // Each step is known finished by a marker the shell writes after it:
+        // a module file exists before its linker is done, and a key typed while
+        // l68 still runs kills l68 instead (it writes, so it is the last writer)
+        // -- which made the first draft of this test pass on a broken build.
+        func waitFor(_ marker: String) {
+            for _ in 0..<150 where !FileManager.default.fileExists(atPath: scratchDisk + "/" + marker) {
+                usleep(100_000)
+            }
+        }
+        // Nothing is typed before the first prompt: setting the terminal up
+        // flushes pending input (TCSAFLUSH), so earlier keystrokes are lost.
+        for _ in 0..<100 where !String(decoding: collector.snapshot(), as: UTF8.self).contains("$ ") {
+            usleep(100_000)
+        }
+        send("chx \(sdkCmds)\nload \(sdkCmds)/r68 \(sdkCmds)/l68\n")
+        send("r68 \(scratch)/kspin.a -o=\(scratch)/kspin.r\nl68 \(scratch)/kspin.r -o=\(scratch)/kspin\n")
+        send("echo built >\(scratch)/kbuilt\n")
+        waitFor("kbuilt")
+        send("echo ready >\(scratch)/kready; \(scratch)/kspin\n")
+        waitFor("kready")
+        usleep(1_000_000)
+        var k = key; _ = write(master, &k, 1)
+        usleep(500_000)
+        send("echo reached >\(scratch)/\(witnessName)\n")
+        for _ in 0..<50 where !reached {
+            if let a = try? FileManager.default.attributesOfItem(atPath: witness),
+               let sz = a[.size] as? Int, sz > 0 { reached = true }
+            else { usleep(100_000) }
+        }
+        send("\u{05}")                                // a backgrounded child is still spinning
+        process.terminate()
+        process.waitUntilExit()
+    }
+    collector.requestStop(); stopped.wait()
+    close(master); close(slave)
+    for leftover in ["kspin.a", "kspin.r", "kspin", "kbuilt", "kready", witnessName] {
+        try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+    }
+    return reached
+}
+
+for (keyName, key) in [("Ctrl-E", UInt8(0x05)), ("Ctrl-C", UInt8(0x03))] {
+    let name = "console: \(keyName) reaches the shell while its child computes without calls"
+    guard filter.isEmpty || name.localizedCaseInsensitiveContains(filter) else { continue }
+    if containerized {
+        print("SKIP: \(name) (needs a pty on the host)")
+    } else if (ProcessInfo.processInfo.environment["OS9_FLAGS"] ?? "").contains("-q") {
+        print("SKIP: \(name) (the system tick is off, so nothing takes the CPU from the child)")
+    } else if let reached = abortReachesShellOfComputingChild(key: key, witnessName: "abortwit") {
+        if reached {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [a command typed after the key never ran: the shell was not woken]")
+            failed += 1
+        }
+    } else {
+        print("FAIL: console: could not create a pty for the \(keyName) test")
+        failed += 1
+    }
+}
+
 // -- the console's own ^S/^Q belong to OS-9, not to the host tty -------------
 // setup_term() turned off ICANON, ECHO, ISIG and OPOST but left IXON on, so the
 // HOST tty consumed ^S before os9exec ever read it and stopped accepting output.
