@@ -1827,7 +1827,7 @@ os9err OS9_F_SetSys( regs_type *rp, ushort cpid )
         /* Gestalt( gestaltNativeCPUtype,   &v ); not all defs visible for MPW ... */
            Gestalt( FOUR_CHAR_CODE('cput'), &v );
         #else
-           v= 4; /* just a fix value for 68040 */
+           v= 2; /* the 68k core is a 68020 (+68881): as SYSID_MPU and init say */
         #endif
         
         switch ( v ) {
