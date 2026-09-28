@@ -83,6 +83,10 @@ void    hostterm_poll     ( void );
    against a real serial line. */
 void    hostterm_setspeed ( int term_id, ulong bps );
 
+/* Apply the path's PD_PAR -- parity, bits per character and stop bits -- to
+   the bound host fd, as hostterm_setspeed does for PD_BAU. The same no-ops. */
+void    hostterm_setformat( int term_id, byte par );
+
 /* Record the process that just wrote to <term_id> as that terminal's
    last writer, so an abort character typed ON that terminal has a target.
    KeyToBuffer reads the target from the device's own syspath

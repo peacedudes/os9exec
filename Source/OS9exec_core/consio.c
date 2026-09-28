@@ -857,7 +857,8 @@ os9err pCopen( ushort pid, syspath_typ* spP, _modeP_, const char* name )
        table -- and _sgs_bau with it -- is not populated yet there. */
     if (hostterm_bound( id )) {
         struct _sgs* ot= &spP->opt;
-        hostterm_setspeed( id, baud_bps( ot->_sgs_bau ) );
+        hostterm_setspeed ( id, baud_bps( ot->_sgs_bau ) );
+        hostterm_setformat( id, ot->_sgs_par );
     }
 
     debugprintf( dbgTerminal,dbgDetail,("# pCopen (%s): successful, pid=%d\n",
@@ -2074,10 +2075,12 @@ os9err pCsetopt( _pid_, syspath_typ* spP, byte* buffer )
           memcpy( &sp->opt, buffer, OPTSECTSIZE );
   }
 
-  /* SS_Opt is how `tmode baud=` reaches us, so a live port retunes. */
+  /* SS_Opt is how `tmode baud=` and `par=`/`cs=`/`stop=` reach us, so a
+     live port retunes. */
   if (hostterm_bound( spP->term_id )) {
       struct _sgs* ot= &spP->opt;
-      hostterm_setspeed( spP->term_id, baud_bps( ot->_sgs_bau ) );
+      hostterm_setspeed ( spP->term_id, baud_bps( ot->_sgs_bau ) );
+      hostterm_setformat( spP->term_id, ot->_sgs_par );
   }
 
   return 0;

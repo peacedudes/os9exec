@@ -577,6 +577,39 @@ void hostterm_setspeed( int term_id, ulong bps )
                  ( "# hostterm: /t%d speed %lu\n", term_id, bps ) );
 } /* hostterm_setspeed */
 
+/* PD_PAR, as the Technical I/O Manual (SCF, page 3-9) lays it out: bits 0-1
+   parity (0 none, 1 odd, 3 even; 2 is not assigned), bits 2-3 bits per
+   character (0 8, 1 7, 2 6, 3 5), bits 4-5 stop bits (0 one, 1 one and a
+   half, 2 two), bits 6-7 reserved. termios has no one-and-a-half: CSTOPB is
+   what a UART turns into 1.5 at five bits, so 1 and 2 both set it. A code the
+   manual does not assign (parity 2, stop bits 3) leaves that part alone. */
+void hostterm_setformat( int term_id, byte par )
+{
+    static const tcflag_t size[4]= { CS8, CS7, CS6, CS5 };
+    hostterm_typ*  h;
+    struct termios t;
+    int            parity= par & 0x03;
+    int            stops = (par>>4) & 0x03;
+
+    hostterm_init();
+    if (!hostterm_bound( term_id )) return;
+
+    h= &hostterms[ term_id ];
+    if (tcgetattr( h->fd,&t )!=0) return;
+
+    t.c_cflag= (t.c_cflag & (tcflag_t)~CSIZE) | size[ (par>>2) & 0x03 ];
+    if      (parity==0) t.c_cflag &= (tcflag_t)~( PARENB|PARODD );
+    else if (parity==1) t.c_cflag |=               PARENB|PARODD;
+    else if (parity==3) t.c_cflag  = (t.c_cflag | PARENB) & (tcflag_t)~PARODD;
+    if      (stops==0)  t.c_cflag &= (tcflag_t)~CSTOPB;
+    else if (stops!=3)  t.c_cflag |=               CSTOPB;
+
+    tcsetattr( h->fd,TCSANOW, &t );
+
+    debugprintf( dbgTerminal,dbgNorm,
+                 ( "# hostterm: /t%d format $%02X\n", term_id, par ) );
+} /* hostterm_setformat */
+
 void hostterm_note_writer( int term_id )
 {
     hostterm_typ* h;
@@ -638,6 +671,8 @@ Boolean hostterm_ready( int term_id, long* cnt )
 void hostterm_poll( void ) { } /* nothing to poll on this platform */
 
 void hostterm_setspeed( int term_id, ulong bps ) { (void)term_id; (void)bps; }
+
+void hostterm_setformat( int term_id, byte par ) { (void)term_id; (void)par; }
 
 void hostterm_note_writer( int term_id ) { (void)term_id; }
 

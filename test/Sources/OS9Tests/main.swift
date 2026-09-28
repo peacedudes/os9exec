@@ -13850,6 +13850,46 @@ if runHostSpeedTmode && !containerized {
     }
 }
 
+// -- Serial format: a bound /tN follows the path's PD_PAR --------------------
+// Parity, bits per character and stop bits, laid out in PD_PAR (Technical I/O
+// Manual, SCF, page 3-9), were never applied to the host port: only the speed
+// was. A pty stores them as it stores the speed, so they read back through the
+// master. Two runs: the default (8 bits, no parity, one stop bit -- the pty is
+// first set to something else, so the check cannot pass by leaving it alone)
+// and `tmode par=even cs=7 stop=2`, which exercises every field at once.
+let hostFormatName = "hostterm: host port parity, bits and stop bits follow PD_PAR"
+let runHostFormat  = filter.isEmpty || hostFormatName.localizedCaseInsensitiveContains(filter)
+
+if runHostFormat && !containerized {
+    func formatAfter(_ commands: [String]) -> tcflag_t? {
+        guard let (master, slave, slaveName) = makePTY() else { return nil }
+        var t = termios()
+        tcgetattr( slave, &t )
+        t.c_cflag = (t.c_cflag & ~tcflag_t(CSIZE)) | tcflag_t(CS5 | PARENB | PARODD | CSTOPB)
+        tcsetattr( slave, TCSANOW, &t )
+        _ = os9(commands, env: ["OS9T1": slaveName])
+        tcgetattr( master, &t )
+        close( master ); close( slave )
+        return t.c_cflag & tcflag_t(CSIZE | PARENB | PARODD | CSTOPB)
+    }
+    let want8N1 = tcflag_t(CS8)
+    let want7E2 = tcflag_t(CS7 | PARENB | CSTOPB)
+    if let plain = formatAfter(["echo x >/t1"]),
+       let tuned = formatAfter(["tmode </t1 par=even cs=7 stop=2"]) {
+        if plain == want8N1 && tuned == want7E2 {
+            print("PASS: \(hostFormatName)"); passed += 1
+        } else {
+            print("FAIL: \(hostFormatName)")
+            print("      [default: want \(String(want8N1, radix: 16)), got \(String(plain, radix: 16));" +
+                  " 7E2: want \(String(want7E2, radix: 16)), got \(String(tuned, radix: 16))]")
+            failed += 1
+        }
+    } else {
+        print("FAIL: hostterm: could not create a pty pair for the format test")
+        failed += 1
+    }
+}
+
 // -- the retired OS9T wildcard, and the refusal it was bolted onto -----------
 // A bare "OS9T" once meant "any /tN not named individually", auto-allocating a
 // pty on first open. It was retired on 2026-09-20 (rdoggett) once `iterm`

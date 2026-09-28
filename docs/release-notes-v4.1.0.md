@@ -157,7 +157,8 @@ Files and devices:
   manual says, where before the keys went nowhere and it could not be stopped from the keyboard; an echo
   waiting behind `^S` no longer keeps a core busy; a signal ends a write parked on a terminal with
   the signal as its error; `I$WritLn` to a terminal ends the record at its own end-of-record
-  character; a `/tN` that takes part of a line ending gets the rest once, not twice; a write to a
+  character; a `/tN` bound to a host serial port takes its parity, bits per character and stop
+  bits from the path (`tmode par= cs= stop=`), as it already took its speed; a `/tN` that takes part of a line ending gets the rest once, not twice; a write to a
   `/tN` whose far end has gone ends with `E$Write` instead of waiting for ever. A built-in
   command held by `^S` that nobody lifts waits 10 seconds once and then writes, in order; it used
   to stop the whole emulator for two minutes per character. After `F$RTE`, a write resumes behind
