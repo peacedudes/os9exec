@@ -1087,6 +1087,14 @@ check("internal: iquit -? explains itself instead of arming the quit",
       contains: "Syntax:   iquit", "iquit -?")
 check("internal: icrash -? explains itself instead of crashing",
       contains: "Syntax:   icrash", "icrash -?")
+// stop -? stopped the emulator: asking for help ended the session.
+check("internal: stop -? explains itself instead of stopping",
+      contains: "STILL RUNNING", "stop -?", "echo STILL RUNNING")
+// The rest ran, or refused -? as an argument, instead of explaining themselves.
+for command in ["pwd", "cd", "iprocs", "imdir", "iunused", "ihit", "iterm"] {
+    check("internal: \(command) -? explains itself",
+          contains: "Syntax:   \(command)", "\(command) -?")
+}
 
 // A copy that fails part way leaves nothing behind. icopy onto an image too
 // small for the file left a short copy under the name -- attributes and all,

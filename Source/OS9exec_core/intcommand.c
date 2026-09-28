@@ -231,10 +231,24 @@ char *icmname; /* current internal command's name = argv[0] */
   } /* int_debugger */
 #endif
 
-static os9err int_stop( ushort pid, _argc_, _argv_ )
+/* Defined with the other usage helpers further down. */
+static Boolean no_args_usage( int argc, char** argv, const char* function );
+
+/* True if <arg> asks for a command's usage: -? or -h, as every internal
+   command answers them (the sign-on says so). */
+static Boolean asks_usage( const char* arg )
+{
+    return arg[0]=='-' && (arg[1]=='?' || tolower((unsigned char)arg[1])=='h');
+} /* asks_usage */
+
+static os9err int_stop( ushort pid, int argc, char** argv )
 /* "stop/shutdown": exit from the OS9exec emulator */
 {
     char *envstop;
+
+    /* `stop -?` used to stop: a request for help that ended the session */
+    if (no_args_usage( argc, argv,
+                       "Exit os9exec (the super user, or anyone when OS9STOP is set)" )) return 0;
 
     envstop= getenv( "OS9STOP" );
     if (is_super(pid) || envstop) {
@@ -471,7 +485,8 @@ static os9err int_debughalt( ushort pid, int argc, char** argv )
 } /* int_debughalt */
 
 /* show procs */
-static os9err int_procs( _pid_, _argc_, _argv_ ) { 
+static os9err int_procs( _pid_, int argc, char** argv ) {
+  if (no_args_usage( argc, argv, "Print os9exec's own process table" )) return 0;
   show_processes(); return 0;
 } /* int_procs */
 
@@ -479,6 +494,12 @@ static os9err int_procs( _pid_, _argc_, _argv_ ) {
 static os9err int_mdir( _pid_, int argc, char **argv )
 {
   char*         cmp= NULL;
+  if (argc>1 && asks_usage( argv[ 1 ] )) {
+    upe_printf( "Syntax:   %s [<name>]\n", argv[ 0 ] );
+    upe_printf( "Function: Print os9exec's module directory, or the modules <name> matches\n" );
+    upe_printf( "Options:  None.\n" );
+    return 0;
+  } // if
   if (argc>1)   cmp= argv[ 1 ];
   show_modules( cmp ); return 0;
 } /* int_mdir */
@@ -586,8 +607,9 @@ static os9err int_mem( _pid_, int argc, char** argv )
    compiled under exactly the same condition -- it was commented out while the
    table entry was left behind, which breaks any -DREUSE_MEM build. */
 #ifdef REUSE_MEM
-static os9err int_unused( _pid_, _argc_, _argv_ )
-{  show_unused(); return 0;
+static os9err int_unused( _pid_, int argc, char** argv )
+{  if (no_args_usage( argc, argv, "Print os9exec's list of unused memory blocks" )) return 0;
+   show_unused(); return 0;
 }
 #endif
 
@@ -742,6 +764,13 @@ static os9err int_iterm( _pid_, int argc, char** argv )
 
     for (h=1; h<argc; h++) {
         p= argv[h];
+        if (asks_usage( p )) {
+            upe_printf( "Syntax:   %s [tN [pty|<device>]]\n", argv[0] );
+            upe_printf( "Function: Make /tN a terminal while running: a new pty, or a host\n" );
+            upe_printf( "          terminal device you name; alone, list the bound ones\n" );
+            upe_printf( "Options:  None.\n" );
+            return 0;
+        } // if
         if (*p=='-') return _errmsg( 1,"unknown option '%s' -- usage: iterm [tN [pty|<device>]]\n", p );
         if (nargc>=ITERM_MAXARGS) return _errmsg( 1,"too many arguments\n" );
         av[ nargc++ ]= p;
@@ -1717,10 +1746,12 @@ Boolean Plugin_Possible( Boolean hardCheck )
   } // native_calls
 #endif
 
-static os9err int_hit( _pid_, _argc_, _argv_ ) 
+static os9err int_hit( _pid_, int argc, char** argv )
 {
   const int NBlk= 4;
   const int MaxL= MAXDIRHIT / NBlk;
+
+  if (no_args_usage( argc, argv, "Print the hit rate of os9exec's file name hash" )) return 0;
 
   int i, j, hi, n= 0, iLast= 0, diff= 0;
   char s[ 10 ];
@@ -2143,7 +2174,8 @@ static ushort cd_target( ushort pid )
 /* `pwd`: what OS-9 calls `pd`. */
 static os9err int_pwd( _pid_, int argc, char** argv )
 {
-    if (argc>1) return _errmsg( 1,"%s takes no arguments\n", argv[0] );
+    if (no_args_usage( argc, argv,
+                       "Print the current data directory (OS-9 spells it pd)" )) return 0;
 
     print_datadir( cd_target( pid ) );
     return 0;
@@ -2165,6 +2197,13 @@ static os9err int_cd( _pid_, int argc, char** argv )
     ptype_typ    type;
     os9err       err;
 
+    if (argc==2 && asks_usage( argv[1] )) {
+        upe_printf( "Syntax:   %s [<directory>]\n", argv[0] );
+        upe_printf( "Function: Change the current data directory, as chd does; alone,\n" );
+        upe_printf( "          print it\n" );
+        upe_printf( "Options:  None.\n" );
+        return 0;
+    } // if
     if (argc>2) return _errmsg( 1,"usage: %s [<directory>]\n", argv[0] );
 
     if (argc<2) { print_datadir( target ); return 0; }
@@ -2172,7 +2211,7 @@ static os9err int_cd( _pid_, int argc, char** argv )
     strncpy( path, argv[1], OS9PATHLEN-1 ); path[OS9PATHLEN-1]= NUL;
 
         type= IO_Type( target, path, mode );
-    if (type==fNone) return _errmsg( E_BPNAM,"bad directory name \"%s\"\n", path );
+    if (type==fNone) return _errmsg( no_device_error( path ),"can't change to \"%s\"\n", path );
 
         err= change_dir( target, type, path, mode );
     if (err) return _errmsg( err,"can't change to \"%s\"\n", path );
