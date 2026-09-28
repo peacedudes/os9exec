@@ -15517,10 +15517,26 @@ if runXoffInput && !containerized {
 // written by a command typed after the key. The child loops forever, so a
 // build that drops the key fails outright rather than by timing. Needs the
 // tick: with it off nothing takes the CPU from the child at all.
-func abortReachesShellOfComputingChild(key: UInt8, witnessName: String) -> Bool? {
+let silentSpinAsm = ["  psect kspin,$0101,$8001,0,512,start", "start:", "  bra.s start", "  ends", ""]
+
+// Writes a line (so it, not the shell, is the terminal's last writer and the
+// key's target), then spins with no calls until its intercept routine has run,
+// and exits. BASIC09 is this shape: a FOR loop, and Ctrl-C meaning BREAK.
+let catchingSpinAsm = [
+    "F$Exit equ $06", "F$Icpt equ $09", "F$RTE equ $1E", "I$WritLn equ $8C",
+    "  psect kspin,$0101,$8001,0,512,start", "  vsect", "flag: ds.b 1", "  ends",
+    "start:", "  lea icpt(pc),a0", "  trap #0", "  dc.w F$Icpt",
+    "  moveq #1,d0", "  lea msg(pc),a0", "  moveq #9,d1", "  trap #0", "  dc.w I$WritLn",
+    "spin:", "  tst.b flag(a6)", "  beq.s spin",
+    "  moveq #0,d1", "  trap #0", "  dc.w F$Exit",
+    "icpt:", "  st flag(a6)", "  trap #0", "  dc.w F$RTE",
+    "msg: dc.b \"spinning\",13", "  ends", ""
+]
+
+func abortReachesShellOfComputingChild(key: UInt8, witnessName: String,
+                                       program: [String] = silentSpinAsm) -> Bool? {
     guard let (master, slave, _) = makePTY() else { return nil }
-    let spinAsm = ["  psect kspin,$0101,$8001,0,512,start", "start:", "  bra.s start", "  ends", ""]
-        .joined(separator: "\r")
+    let spinAsm = program.joined(separator: "\r")
     let witness = scratchDisk + "/" + witnessName
     try? spinAsm.write(toFile: scratchDisk + "/kspin.a", atomically: true, encoding: .utf8)
     for stale in [witnessName, "kbuilt", "kready"] {
@@ -15586,19 +15602,23 @@ func abortReachesShellOfComputingChild(key: UInt8, witnessName: String) -> Bool?
     return reached
 }
 
-for (keyName, key) in [("Ctrl-E", UInt8(0x05)), ("Ctrl-C", UInt8(0x03))] {
-    let name = "console: \(keyName) reaches the shell while its child computes without calls"
+for (keyName, key, program, what) in [
+    ("Ctrl-E", UInt8(0x05), silentSpinAsm,   "the shell while its child computes without calls"),
+    ("Ctrl-C", UInt8(0x03), silentSpinAsm,   "the shell while its child computes without calls"),
+    ("Ctrl-C", UInt8(0x03), catchingSpinAsm, "a computing program's own intercept routine")] {
+    let name = "console: \(keyName) reaches \(what)"
     guard filter.isEmpty || name.localizedCaseInsensitiveContains(filter) else { continue }
     if containerized {
         print("SKIP: \(name) (needs a pty on the host)")
     } else if (ProcessInfo.processInfo.environment["OS9_FLAGS"] ?? "").contains("-q") {
         print("SKIP: \(name) (the system tick is off, so nothing takes the CPU from the child)")
-    } else if let reached = abortReachesShellOfComputingChild(key: key, witnessName: "abortwit") {
+    } else if let reached = abortReachesShellOfComputingChild(key: key, witnessName: "abortwit",
+                                                              program: program) {
         if reached {
             print("PASS: \(name)"); passed += 1
         } else {
             print("FAIL: \(name)")
-            print("      [a command typed after the key never ran: the shell was not woken]")
+            print("      [a command typed after the key never ran: the key's target was not woken]")
             failed += 1
         }
     } else {

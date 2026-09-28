@@ -160,8 +160,10 @@ Files and devices:
   `SS_Size` on a pipe is refused rather than answered with the buffer's size, so `less` pages
   piped input to the end instead of stopping after 4K. `^C`, `^E` and XON act even behind a full
   type-ahead buffer (typed or pasted text beyond it waits rather than being lost), and while a
-  program computes without system calls: `^E` ends it and `^C` sends it to the background, as the
-  manual says, where before the keys went nowhere and it could not be stopped from the keyboard; an echo
+  program computes without system calls, where before the keys went nowhere and it could not be
+  stopped from the keyboard: a program with an intercept routine gets the key (BASIC09 stops at
+  `BREAK` in a loop), and from the shell `^E` ends one without and `^C` sends one that has
+  written nothing to the background, as the manual says; an echo
   waiting behind `^S` no longer keeps a core busy; a signal ends a write parked on a terminal with
   the signal as its error; `I$WritLn` to a terminal ends the record at its own end-of-record
   character; a `/tN` bound to a host serial port takes its parity, bits per character and stop
