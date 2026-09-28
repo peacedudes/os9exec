@@ -1229,12 +1229,13 @@ static ulong idle_deadline_us( void )
 } /* idle_deadline_us */
 #endif
 
-/* Only the select() path calls this, and only UNIX-not-MINGW has one: left
-   unguarded it is a function nobody calls on the Windows legs, which is a
-   warning there and a clean compile here. -fsyntax-only does not show it --
-   -Wunused-function needs a real build -- so `make warnings` building every
-   leg rather than syntax-checking them is what caught it. */
-#if defined UNIX && !defined MINGW
+/* Called wherever host input can end an idle wait: select() on UNIX, the
+   console wait on MINGW, and a keystroke queued by the browser page. Guarded
+   so that a build with none of those does not carry a function nobody calls,
+   a warning there. -fsyntax-only does not show it -- -Wunused-function needs
+   a real build -- so `make warnings` building every leg rather than
+   syntax-checking them is what caught it once. */
+#if defined UNIX
 /* Something arrived from the host. Whoever is parked waiting to read or write
    is exactly who it arrived for, so retry them on the NEXT arbitration pass
    instead of making them wait out their rota.
@@ -1294,14 +1295,21 @@ void DoWait( void )
     ulong cap;
     long  delay_ns;
     /* Is anything actually WATCHING host input during the wait? Only the
-       select() below does, and only for an interactive stdin. MINGW has no
-       select over fd 0 at all (Winsock only), and with stdin a pipe -- the
-       test harness, any non-interactive driver -- select on it would return
-       readable at EOF forever. One source of truth for both decisions. */
+       waits below do, and only for an interactive stdin: select() on a tty,
+       and on Windows a wait on the console handle, which is signalled while
+       input is waiting in it. With stdin a pipe -- the test harness, any
+       non-interactive driver -- select would return readable at EOF
+       forever, and Windows has nothing to wait on. One source of truth for
+       both decisions. */
     Boolean watching= false;
     #if defined __EMSCRIPTEN__
       watching= true;   /* the page queues keys while we sleep (see below) */
-    #elif !defined MINGW
+    #elif defined MINGW
+      {
+          DWORD mode;
+          watching= (GetConsoleMode( hStdin, &mode )!=0);
+      }
+    #else
       watching= (isatty( STDIN_FILENO )!=0);
     #endif
 
@@ -1344,7 +1352,17 @@ void DoWait( void )
        * via CheckInputBuffers below, takes it. */
       emscripten_sleep( (unsigned int)(delay_us/1000UL) );
       waited= true;
-    #elif !defined MINGW
+    #elif defined MINGW
+      /* Windows' select() is for sockets only, but a console handle can be
+         waited on directly, so a keystroke ends the wait just as it does on
+         a UNIX tty. It used to be a blind 1ms nap, which is also how late a
+         key was seen. */
+      if (watching) {
+          if (WaitForSingleObject( hStdin, (DWORD)(delay_us/1000UL) )==WAIT_OBJECT_0)
+              retry_parked_now();
+          waited= true;
+      }
+    #else
       if (watching) {
           fd_set         rfds;
           struct timeval tv;
