@@ -1713,7 +1713,15 @@ void do_arbitrate( ushort allowedIntUtil )
     if (sprocess->state==pSleeping) {
       atLeast1= true;              /* at least one process is sleeping -> don't break ! */
 
-      if (sprocess->pW_age--<=0 || chkAll) {                     /* slow down also here */
+      /* Slow down also here -- but never past the sleeper's own deadline. The
+         rota counts arbitration rounds, and beside a process that computes
+         without calls a round is a tick, so every F$Sleep overran by up to 30
+         ticks: 0.3 s at 100 Hz, and over a second on a host whose timer runs
+         slower (GitHub's macOS runner, about 25 Hz, where CONF68K t115's
+         parent slept through its child's whole spin). Twenty 5-tick sleeps
+         beside a spinner took 8.1 s; one second is right. */
+      if (sprocess->pW_age--<=0 || chkAll ||
+          sprocess->wakeUpTick<=GetSystemTick()) {
           sprocess->pW_age= NewAge;
             
         // --------------------------------------------

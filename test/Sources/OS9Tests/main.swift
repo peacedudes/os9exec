@@ -10834,6 +10834,63 @@ do {
     }
 }
 
+// ── a sleeper beside a computing process wakes on time ─────────────────────────
+// The scheduler looked at a sleeping process only once every 30 arbitration
+// rounds. With another process computing, a round is a tick, so each F$Sleep
+// overran by up to 30 ticks -- 0.3 s here, and over a second on GitHub's macOS
+// runner, whose timer delivers about 25 ticks a second: CONF68K t115 failed
+// there because its parent's 10-tick sleep outlasted the whole spin. A program
+// sleeps 5 ticks twenty times beside a child spinning with no calls: one
+// second if sleeps end on time, about six with the old rota. Needs the tick.
+do {
+    let spinAsm = [
+        "  psect nspin,$0101,$8001,0,512,start", "start:", "  bra.s start", "  ends", ""
+    ].joined(separator: "\r")
+    let napAsm = [
+        "F$Fork equ $03", "F$Wait equ $04", "F$Exit equ $06", "F$Send equ $08", "F$Sleep equ $0A",
+        "  psect nnap,$0101,$8001,0,2048,start",
+        "start:",
+        "  lea child(pc),a0", "  lea parm(pc),a1", "  moveq #0,d0", "  moveq #0,d1", "  moveq #1,d2",
+        "  moveq #3,d3", "  moveq #0,d4", "  trap #0", "  dc.w F$Fork", "  bcs.s done", "  move.w d0,d7",
+        "  moveq #20,d6",
+        "nap:", "  moveq #5,d0", "  trap #0", "  dc.w F$Sleep", "  subq.w #1,d6", "  bne.s nap",
+        "  moveq #0,d0", "  move.w d7,d0", "  moveq #0,d1", "  trap #0", "  dc.w F$Send",
+        "  trap #0", "  dc.w F$Wait",
+        "done:", "  moveq #0,d1", "  trap #0", "  dc.w F$Exit",
+        "child: dc.b \"/h5/nspin\",0", "parm: dc.b $0D",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "tick: a sleeper beside a computing process wakes on time"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if (ProcessInfo.processInfo.environment["OS9_FLAGS"] ?? "").contains("-q") {
+            print("SKIP: \(name) (the system tick is off, so nothing pre-empts the child)")
+        } else {
+            try? spinAsm.write(toFile: scratchDisk + "/nspin.a", atomically: true, encoding: .utf8)
+            try? napAsm.write(toFile: scratchDisk + "/nnap.a", atomically: true, encoding: .utf8)
+            _ = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                     "r68 /h5/nspin.a -o=/h5/nspin.r", "l68 /h5/nspin.r -o=/h5/nspin",
+                     "r68 /h5/nnap.a -o=/h5/nnap.r", "l68 /h5/nnap.r -o=/h5/nnap"], timeout: 60)
+            let started = Date()
+            let out     = os9(["/h5/nnap", "echo NAPS DONE"], timeout: 60)
+            let seconds = Date().timeIntervalSince(started)
+            // The run includes the emulator's start and the shell (well under a
+            // second here); the old rota alone added about five.
+            if out.contains("NAPS DONE") && seconds < 3.0 {
+                print("PASS: \(name)"); passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      [twenty 5-tick sleeps took \(String(format: "%.1f", seconds)) s in all;" +
+                      " want under 3; finished: \(out.contains("NAPS DONE"))]")
+                failed += 1
+            }
+        }
+        for leftover in ["nspin.a", "nspin.r", "nspin", "nnap.a", "nnap.r", "nnap"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── the tick runs even when the launcher blocked SIGALRM ────────────────────────
 // A blocked signal mask survives exec, and GitHub's macOS runner starts
 // processes with SIGALRM blocked: the tick's handler was installed and never

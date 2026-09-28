@@ -105,7 +105,9 @@ System calls, now as the Technical Manual describes them:
 - CPU time: a process that computes without making system calls is charged for it, so the C
   library's `clock()` advances (the Whetstone benchmark used to divide by zero).
 - Permissions: `S$Kill`, `F$SPrior`, `F$SetSys` and `F$DExit` enforce the manual's rules.
-- Time: `F$Alarm` IDs, cycles and the 256ths-of-a-second interval form; an absolute alarm already
+- Time: `F$Sleep` ends on time beside a process that computes without system calls (it overran
+  by up to 30 ticks, and by seconds on a host with a slow timer); `F$Alarm` IDs, cycles and the
+  256ths-of-a-second interval form; an absolute alarm already
   past is sent; `F$Sleep` rounds up; `F$Julian` and `F$Gregor` use the Julian calendar before
   1582 and get the century leap years right.
 - New: `F$SchBit`, `F$AllBit`, `F$DelBit`, `F$SysID` (pre-3.0 form), and much more of `F$SetSys`.
