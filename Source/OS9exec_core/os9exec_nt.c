@@ -413,6 +413,8 @@
 
 #ifdef MINGW
   #include <windows.h>  /* SetConsoleCtrlHandler, CTRL_C_EVENT, BOOL/DWORD */
+  #include <io.h>       /* _setmode, _fileno: stdout in binary mode */
+  #include <fcntl.h>    /* _O_BINARY */
 #endif
 
 #ifdef PTOC_SUPPORT
@@ -2817,6 +2819,13 @@ ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
 
   #if defined windows32 || defined MINGW
     hStdin= GetStdHandle( STD_INPUT_HANDLE ); /* needed by HandleEvent() -- see telnetaccess.c */
+  #endif
+  #if defined MINGW
+    /* Guest output arrives with its line ends already made (CR LF), so a
+       text-mode stdout added a CR to every one: a redirected file got
+       CR CR LF where macOS and Linux write CR LF. Measured on Windows 11. */
+    _setmode( _fileno( stdout ), _O_BINARY );
+    _setmode( _fileno( stderr ), _O_BINARY );
   #endif
   #ifdef windows32
     WindowTitle    ( &title,false ); /* adapt title line of DOS window */

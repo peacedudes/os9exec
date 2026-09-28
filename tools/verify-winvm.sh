@@ -97,6 +97,39 @@ echo "$out"
 echo "-- same suite, OS9DISK spelled with backslashes --"
 out_bs=$(run_suite 'C:\verify\68k-conformance')
 echo "$out_bs"
+
+# The host's standard input, three ways, through test/68k-console's rdtoeof,
+# which copies stdin to stdout and writes END once a read fails. Only Windows
+# runs this code, and it had holes nothing else could see: a redirected FILE
+# was never read, and a PIPE never reached its end, so every filter hung; and
+# a Windows text file's CR LF reached the program as a stray LF on every line.
+# The input is written by Windows itself, so it has CR LF line ends. Output
+# goes to a file and is compared byte for byte (the console echoes each line,
+# hence two of each): a text-mode stdout once wrote CR CR LF for every line.
+# A case that does not finish is killed and reported, never waited on.
+scp -q -r $SSHOPTS -P 2222 "$REPO/test/68k-console" claude@localhost:C:/verify/ || exit 1
+out_in=$($SSH '$env:OS9DISK="C:/verify/68k-console"
+Set-Content C:\verify\in.txt -Value "one","two"
+$cases = [ordered]@{
+  file = "C:\verify\os9exec.exe -r /dd/CMDS/rdtoeof < C:\verify\in.txt > C:\verify\out.txt"
+  pipe = "type C:\verify\in.txt | C:\verify\os9exec.exe -r /dd/CMDS/rdtoeof > C:\verify\out.txt"
+  nul  = "C:\verify\os9exec.exe -r /dd/CMDS/rdtoeof < NUL > C:\verify\out.txt"
+}
+foreach ($name in $cases.Keys) {
+  $p = Start-Process cmd -ArgumentList "/c", $cases[$name] -NoNewWindow -PassThru
+  $h = $p.Handle
+  if (-not $p.WaitForExit(15000)) {
+    Get-Process os9exec -ErrorAction SilentlyContinue | Stop-Process -Force
+    "STDIN $name HUNG"; continue
+  }
+  $text = [System.IO.File]::ReadAllText("C:\verify\out.txt")
+  $want = if ($name -eq "nul") { "END`r`n" } else { "one`r`none`r`ntwo`r`ntwo`r`nEND`r`n" }
+  $verdict = if ($text.StartsWith($want)) { "exact" } else { "WRONG" }
+  $shown = ($text.ToCharArray() | ForEach-Object { ([int]$_).ToString("X2") }) -join " "
+  "STDIN $name $verdict $shown"
+}' 2>/dev/null | tr -d '\r')
+echo "-- host standard input: a file, a pipe, NUL --"
+echo "$out_in"
 # Shut the guest down FROM INSIDE, and never force it.
 #
 # `utmctl stop` defaults to --force, which is a power-off event -- pulling the
@@ -126,6 +159,11 @@ err=$(sed -n 's/^ERROR=//p'  <<<"$out")
 # A silent run is a failed run: if no module reported, the suite did not run.
 [ -n "$total" ] && [ "$total" -gt 0 ] || { echo "no RESULT lines came back"; exit 1; }
 [ "${fail:-1}" = 0 ] && [ "${err:-1}" = 0 ] || exit 1
+
+# All three stdin cases must have run and finished cleanly. Counted as well
+# as checked, so a probe that never ran cannot pass by printing nothing.
+[ "$(grep -c '^STDIN [a-z]* exact ' <<<"$out_in")" = 3 ] \
+  || { echo "host standard input is wrong on Windows (see above)"; exit 1; }
 
 # Both spellings must produce the same tally. Comparing the four counters
 # rather than TOTAL alone, so a run that reports the right NUMBER of modules

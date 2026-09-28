@@ -313,34 +313,51 @@ void HandleEvent( void )
        * UNIX branch below (ioctl FIONREAD + bounded read, feeding
        * KeyToBuffer()) using the Win32 pipe equivalent, PeekNamedPipe +
        * ReadFile. */
-      DWORD avail= 0;
-      int   room;
+      DWORD   avail= 0;
+      int     room;
+      Boolean drained= (main_mco.inBufUsed==0 && main_mco.aheadUsed==0);
+      static Boolean lastCR= false; /* the last byte taken was a CR */
 
-      if (PeekNamedPipe( hStdin, NULL,0, NULL, &avail, NULL ) && avail>0) {
-          KeysAhead( &main_mco );
-          room= KeyRoom( &main_mco );
+      /* Only a pipe can say "nothing yet": ask it how much is waiting, and a
+       * pipe whose writer has gone answers with an error, which is its EOF.
+       * A file (cmd's "< file") or the NUL device never blocks a read, so
+       * ask for what fits and let a read of nothing be the EOF. Both used to
+       * be missed -- a file was never read at all, and a pipe's end never
+       * arrived, so any filter hung (measured on Windows 11). As in the UNIX
+       * branch below, EOF is taken only once everything read is consumed. */
+      if (host_stdin_eof) return;
+      KeysAhead( &main_mco );
+      room= KeyRoom( &main_mco );
+      if (GetFileType( hStdin )==FILE_TYPE_PIPE) {
+          if (!PeekNamedPipe( hStdin, NULL,0, NULL, &avail, NULL )) {
+              if (drained) host_stdin_eof= true;
+              return;
+          }
           if ((int)avail>room) avail= (DWORD)room;
+      }
+      else avail= room>0 ? (DWORD)room : 0;
 
-          while (avail-->0) {
-              DWORD got= 0;
-              if (!ReadFile( hStdin, &c,1,&got,NULL ) || got!=1) break;
-              /* Unlike a real console's Enter key (already CR via
-               * ReadConsoleInput below, no translation needed), an
-               * automated caller writing to this pipe (the Swift test
-               * harness, any non-interactive driver) sends genuine
-               * LF-terminated lines. ConsGetc()'s MINGW branch (consio.c)
-               * deliberately skips the LF<->CR swap it does for Unix,
-               * assuming every MINGW byte already arrived as CR -- true
-               * only for the console path, not this one. Without the swap
-               * here, ConsRead's endchar==CR check (consio.c) never
-               * matches, so a piped command line is never recognized as
-               * complete and the shell never dispatches it. Mirror the
-               * swap ConsGetc() already does for genuine Unix terminals. */
-              if      (c==LF) c= CR;
-              else if (c==CR) c= LF;
-              if (c!=NUL) KeyAhead( &main_mco, c );
-          } // while
-      } // if
+      while (avail-->0) {
+          DWORD got= 0;
+          if (!ReadFile( hStdin, &c,1,&got,NULL ) || got!=1) {
+              if (drained) host_stdin_eof= true;
+              break;
+          }
+          drained= false;
+          /* Unlike a real console's Enter key (already CR via
+           * ReadConsoleInput below, no translation needed), a file or
+           * a pipe holds host text lines, and ConsGetc()'s MINGW branch
+           * (consio.c) does no line-end translation, assuming every byte
+           * arrived from the console. So it is done here: a Windows
+           * line end is CR LF, a Unix one LF, and either is ONE OS-9 CR.
+           * Swapping CR and LF, as for a Unix terminal, handed a program
+           * reading a Windows text file a stray LF on every line
+           * (measured on Windows 11). */
+          if (c==LF && lastCR) { lastCR= false; continue; }
+          lastCR= (c==CR);
+          if (c==LF) c= CR;
+          if (c!=NUL) KeyAhead( &main_mco, c );
+      } // while
       return;
   }
   if (n==0) return;

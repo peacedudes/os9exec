@@ -609,7 +609,7 @@ Boolean setup_term()
     #if defined UNIX && !defined MINGW
       struct termios modes;
 
-      if (!isatty(0)) return true; /* stdin is a pipe — skip terminal setup silently */
+      if (!isatty(0)) return true; /* stdin is a pipe -- skip terminal setup silently */
 
       reply = tcgetattr(0, &modes);           /* retrieve terminal attrs */
       if (reply == 0) {
@@ -665,13 +665,12 @@ Boolean setup_term()
        * consio.c already expects to see it on UNIX. */
       HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
 
-      if (!isatty(0)) return true; /* stdin is a pipe — skip terminal setup silently */
+      /* Not a console (a pipe, a file, NUL): nothing to set up. isatty()
+         cannot say so -- it is true for NUL, which then reported an error
+         reading terminal settings it never had. */
+      if (!GetConsoleMode(hIn, &savedConsoleMode)) return true;
 
-      if (!GetConsoleMode(hIn, &savedConsoleMode)) {
-          reply = 1;
-          upo_printf("Error reading initial terminal settings\n");
-      }
-      else {
+      {
           DWORD modes= savedConsoleMode
                        & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
           if (!SetConsoleMode(hIn, modes)) {
@@ -693,7 +692,7 @@ void restore_term()
       int reply;
       struct termios modes;
 
-      if (!isatty(0)) return; /* stdin is a pipe — nothing to restore */
+      if (!isatty(0)) return; /* stdin is a pipe -- nothing to restore */
 
       modes = savedmodes;
       reply = tcsetattr(0, TCSAFLUSH, &modes);
@@ -703,7 +702,9 @@ void restore_term()
     #elif defined MINGW
       HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
 
-      if (!isatty(0)) return; /* stdin is a pipe — nothing to restore */
+      DWORD  now;
+
+      if (!GetConsoleMode(hIn, &now)) return; /* not a console: nothing to restore */
 
       if (!SetConsoleMode(hIn, savedConsoleMode))
          upo_printf("Error restoring normal terminal operation\n");
