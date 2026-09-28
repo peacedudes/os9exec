@@ -143,6 +143,9 @@ Files and devices:
   open paths and current directories follow a rename; a listing no longer ends early once many
   other directories have been read; a raw path to a device no longer blocks deleting a file, and
   `SS_Attr` and `SS_FD` through one are refused rather than reaching the host directory.
+- A pathlist on a device that does not exist is `E$MNF` for every call, as OS-9 reports it when
+  it cannot link the device's descriptor; `chd`, `del` and `makdir` said `E$BPNam` where `dir`
+  said `E$MNF`.
 - `-6` also opens RBF disks without the OS-9/68000 format's "Cruz" mark, as 6809 (CoCo) disks
   are: the file system is the same RBF, and listing, reading and `dcheck` work. It is off by
   default, because that mark is what tells a 68000 disk from a 6809 one, so reading an unmarked

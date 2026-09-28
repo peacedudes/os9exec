@@ -2653,6 +2653,28 @@ do {
     }
 }
 
+// ── a device that does not exist: every call says so the same way ─────────────
+// OS-9 fails a pathlist on a device it has no descriptor for when it links the
+// descriptor, so the error is E$MNF whatever the call. os9exec's I$Open said
+// E$MNF, but I$ChgDir, I$Delete and I$MakDir said E$BPNam: `chd /zz` and
+// `dir /zz` disagreed about the same missing device. All four must say 221.
+do {
+    let name = "fs: a pathlist on a device that does not exist is E$MNF for every call"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9(["list /zz/x", "chd /zz", "del /zz/x", "makdir /zz/d"])
+        let lines = out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+        let mnf  = lines.filter { $0.contains("000:221") }.count
+        let bpn  = lines.filter { $0.contains("000:215") }.count
+        if mnf == 4 && bpn == 0 {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [want four E$MNF (221), no E$BPNam (215); got \(mnf) and \(bpn)]")
+            failed += 1
+        }
+    }
+}
+
 // ── RBF: a chd too deep for the path field is refused, not written past it ──────
 // The process's current path is a 255-byte field, and a relative chd appended to
 // it with no bound: a tree of 28-character directories nested ten deep, entered

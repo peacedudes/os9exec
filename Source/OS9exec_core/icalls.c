@@ -219,7 +219,7 @@ os9err OS9_I_Delete( regs_type *rp, ushort cpid )
 
     if (!guestName)                         os9_name= "";
     pastpath= nullterm(             os9_path,os9_name, OS9PATHLEN );
-    type    =  IO_Type( cpid,      os9_path,mode ); if (type==fNone) return E_BPNAM;
+    type    =  IO_Type( cpid,      os9_path,mode ); if (type==fNone) return no_device_error( os9_path );
     err     = delete_file( cpid,type, os9_path,mode );
 
     /* "(a0) = Updated past pathlist" (I$Delete, page 2-7), as I$Open returns it:
@@ -264,7 +264,7 @@ os9err OS9_I_MakDir( regs_type *rp, ushort cpid )
 
     pastpath= nullterm(            os9_path,os9_name, OS9PATHLEN );
     procs[cpid].fileAtt= (loword(rp->d[1]) & 0x7F) | 0x80;
-    type    =  IO_Type( cpid,      os9_path,mode ); if (type==fNone) return E_BPNAM;
+    type    =  IO_Type( cpid,      os9_path,mode ); if (type==fNone) return no_device_error( os9_path );
     err     =  make_dir( cpid,type, os9_path,mode );
 
     /* "(a0) = Updated past pathlist" (I$MakDir, page 2-15) */
@@ -302,7 +302,7 @@ os9err OS9_I_ChgDir( regs_type *rp, ushort cpid )
 
     if (!guestName)                         os9_name= ""; /* avoid problems without $HOME */
     pastpath= nullterm(            os9_path,os9_name, OS9PATHLEN );
-    type=      IO_Type( cpid,      os9_path,mode ); if (type==fNone) return E_BPNAM;
+    type=      IO_Type( cpid,      os9_path,mode ); if (type==fNone) return no_device_error( os9_path );
     err =   change_dir( cpid,type, os9_path,mode );
 
     /* "If the access mode is read, write, or update, the current data directory

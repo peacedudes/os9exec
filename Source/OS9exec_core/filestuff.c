@@ -1367,14 +1367,20 @@ os9err pNop_data  ( _pid_, _spP_, uint32_t* len, char* buffer )                 
 os9err pNop_buf   ( _pid_, _spP_, uint32_t* d, byte* buffer )                           { return 0; }
 os9err pNop_path  ( _pid_, _spP_, _modeP_, const char* pathname )                       { return 0; }
 
-/* unavailable 'open' function, as in OS-9 */
-os9err pNoModule  ( _pid_, _spP_, _modeP_, const char* pathname )
+os9err no_device_error( const char* pathname )
 /* No file manager for <pathname>. On a device that exists as a host directory
    that is a name the device does not have -- one whose host path leads out of
    every device, which IO_Type refuses before any manager sees it -- so
    E$PNNF, as for any other missing name. E$MNF only when there is no such
-   device. */
+   device, which is where OS-9 fails any call on it: linking the device's
+   descriptor. Shared by every call that finds no manager, so `chd /zz` and
+   `dir /zz` cannot disagree again (they did: E$BPNam against E$MNF). */
 {   return os9error( pathname!=NULL && HostDirDevicePath( pathname ) ? E_PNNF : E_MNF );
+}
+
+/* unavailable 'open' function, as in OS-9 */
+os9err pNoModule  ( _pid_, _spP_, _modeP_, const char* pathname )
+{   return no_device_error( pathname );
 }
 
 os9err pNotReady( _pid_, _spP_, uint32_t* n )

@@ -115,6 +115,7 @@ os9err pNop_data         ( ushort pid, syspath_typ*, uint32_t*, char* );
 os9err pNop_buf          ( ushort pid, syspath_typ*, uint32_t*, byte* );
 os9err pNop_path         ( ushort pid, syspath_typ*, ushort*, const char* );
 
+os9err no_device_error   ( const char* pathname );
 os9err pNoModule         ( ushort pid, syspath_typ*, ushort*, const char* );
 os9err pNotReady         ( ushort pid, syspath_typ*, uint32_t* );
 
