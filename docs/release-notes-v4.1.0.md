@@ -36,8 +36,8 @@ resumes when its data arrives, and a writer waiting on a full pipe no longer kee
 
 **Windows and the browser catch up.** The system tick now runs on Windows and in the browser
 too, where there is no timer signal to drive it, so a program that makes no system calls no
-longer keeps the machine to itself: other processes run, and the browser page keeps drawing
-and taking keys. On Windows, a program's standard input redirected from a file or a pipe is
+longer keeps the machine to itself: other processes run, Ctrl-C reaches it (checked by hand on
+Windows 11), and the browser page keeps drawing and taking keys. On Windows, a program's standard input redirected from a file or a pipe is
 read to its end (a file gave nothing, and a pipe never ended), and a Windows text file's CR LF
 is one line end rather than a line end and a stray LF. Output redirected to a file ends its
 lines CR LF as on macOS and Linux instead of CR CR LF, and an idle console wakes on a keystroke.
