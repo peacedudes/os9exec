@@ -32,3 +32,14 @@ extern struct uae_prefs currprefs;
 extern void   custom_reset(void);
 extern void   *xmalloc(size_t n);
 
+
+/* The system tick on hosts with no SIGALRM (Windows, a browser). There the
+   emulation loop reads the clock itself: every OS9_SOFT_TICK_INSTRS
+   instructions it calls os9_soft_tick() (os9_tick.c), which ends the run
+   exactly as the signal handler does elsewhere once a tick is due. One
+   definition of which hosts those are, shared by both sides. */
+#if defined _WIN32 || defined __EMSCRIPTEN__
+  #define OS9_SOFT_TICK
+  extern int os9_soft_budget; /* instructions left before the clock is read */
+  void       os9_soft_tick( void );
+#endif

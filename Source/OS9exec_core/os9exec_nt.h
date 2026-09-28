@@ -358,8 +358,16 @@
  */
 #define EXTRAEMUSTACK 2048
 
-/* number of ticks that must pass before SpinCursor is called */
-#define DEFAULTSPININTERVAL 15
+/* number of ticks that must pass before SpinCursor is called -- and with it
+ * CheckInputBuffers(), which is the only place a BUSY guest lets a browser
+ * page have its event loop (HandleEvent). At 15 ticks a spinning program held
+ * the page for 150-190ms at a time, measured under node; 3 ticks gives the
+ * 30ms that HandleEvent's own WEB_YIELD_MS intends. Native hosts keep 15. */
+#if defined __EMSCRIPTEN__
+  #define DEFAULTSPININTERVAL 3
+#else
+  #define DEFAULTSPININTERVAL 15
+#endif
 
 
 

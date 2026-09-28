@@ -1460,6 +1460,10 @@ unsigned long m68k_os9go(void)
 		#else
 		(*cpufunctbl[opcode])(opcode);
 		#endif
+		#if defined OS9_SOFT_TICK
+		/* no signal can clear os9_running on this host: look at the clock */
+		if (--os9_soft_budget<=0) os9_soft_tick();
+		#endif
 		if (m68k_disp)
 			upe_printf( "%8x %4x\n", regs.pc_p,opcode );
 		if (m68k_os9singlestep) {

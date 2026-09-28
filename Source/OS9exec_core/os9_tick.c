@@ -60,7 +60,11 @@
 #include "os9exec_incl.h"
 #include <signal.h>          /* sig_atomic_t is needed on every platform */
 
-#if defined UNIX && !defined MINGW
+#include "luzstuff.h"        /* OS9_SOFT_TICK: which hosts have no SIGALRM */
+
+#if defined OS9_SOFT_TICK && defined __EMSCRIPTEN__
+  #include <emscripten.h>    /* emscripten_get_now: the page's clock */
+#elif defined UNIX && !defined MINGW
   #include <sys/time.h>      /* setitimer: the tick itself is UNIX-only */
 #endif
 
@@ -78,7 +82,81 @@ extern int os9_timed_out; /* set by the tick, cleared once acted upon */
  * "-q" (or "-q0") turns it off again. */
 int  os9_tick_request= TICK_US_DEFAULT;
 
-#if defined UNIX && !defined MINGW
+#if defined OS9_SOFT_TICK
+
+/* Windows and the browser have no SIGALRM, so nothing can clear <os9_running>
+ * from outside the emulation loop -- and without that a loop that makes no
+ * system calls owns the machine: the shell never runs again, Ctrl-C is never
+ * read, and in a browser the whole page freezes. So the loop reads the clock
+ * itself, every OS9_SOFT_TICK_INSTRS instructions, and ends the run exactly
+ * as the handler below does once a tick is due. A deadline rather than a
+ * count of instructions, so the rate is the host's time and not its speed.
+ *
+ * The price is a decrement and a test per instruction, paid only on these
+ * hosts; the clock itself is read a few thousand times a second. What is
+ * guaranteed is unchanged: this runs between two guest instructions, and a
+ * system call is host C outside the loop, so it still cannot be cut in half. */
+
+#define OS9_SOFT_TICK_INSTRS 4096 /* well under a tick even on a slow host */
+
+int os9_soft_budget= 0; /* instructions left before the clock is read */
+
+static unsigned long long soft_due_us= 0; /* when the next tick is due */
+
+static unsigned long long soft_now_us( void )
+/* A monotonic clock in microseconds, from whatever this host offers. */
+{
+  #if defined __EMSCRIPTEN__
+    return (unsigned long long)(emscripten_get_now()*1000.0);
+  #else
+    /* Split so that count*1000000 cannot overflow after a long uptime. */
+    static LARGE_INTEGER freq= { 0 };
+    LARGE_INTEGER        now;
+    if (freq.QuadPart==0) QueryPerformanceFrequency( &freq );
+    QueryPerformanceCounter( &now );
+    return (unsigned long long)(now.QuadPart/freq.QuadPart)*1000000ULL
+         + (unsigned long long)(now.QuadPart%freq.QuadPart)*1000000ULL
+                                                  /(unsigned long long)freq.QuadPart;
+  #endif
+} /* soft_now_us */
+
+void os9_soft_tick( void )
+/* Called by the emulation loop when its budget runs out: refill it, and if a
+ * tick is due, do what the signal handler does on other hosts. */
+{
+    unsigned long long now;
+
+    os9_soft_budget= OS9_SOFT_TICK_INSTRS;
+    if (os9_tick_us==0) return; /* clock switched off with -q */
+
+    now= soft_now_us();
+    if (now<soft_due_us) return;
+
+    /* From now, not from when it was due: a host that stalled (a debugger, a
+       page in a background tab) gets one tick, not a burst to catch up. */
+    soft_due_us  = now + (unsigned long long)os9_tick_us;
+    os9_timed_out= 1;
+    os9_running  = 0;
+} /* os9_soft_tick */
+
+void os9_tick_start( void )
+/* Start the clock, once. Calling it again is harmless. */
+{
+    if (os9_tick_request==0) return; /* clock switched off with -q */
+    if (os9_tick_us       !=0) return; /* already running */
+
+    os9_tick_us= os9_tick_request;
+    soft_due_us= soft_now_us() + (unsigned long long)os9_tick_us;
+} /* os9_tick_start */
+
+void os9_tick_stop( void )
+/* Take the clock away again; see the UNIX version for why nothing calls it. */
+{
+    os9_tick_us  = 0;
+    os9_timed_out= 0;
+} /* os9_tick_stop */
+
+#elif defined UNIX && !defined MINGW
 
 static void os9_tick_arm( void );
 
@@ -159,7 +237,8 @@ void os9_tick_stop( void )
 
 #else
 
-/* No tick on platforms without setitimer: OS9exec behaves as it always has. */
+/* No tick on platforms with neither setitimer nor a soft tick: OS9exec
+   behaves as it always has. */
 void os9_tick_start( void ) {}
 void os9_tick_stop ( void ) {}
 

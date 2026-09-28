@@ -18,8 +18,10 @@
 # publish a build/web made from one. The CONF68K image is ours to ship.
 #
 # Differences from tools/wasm-build.sh (node): keys come from the page, not
-# stdin; the idle wait and a busy guest both yield to the page (Asyncify);
-# and the system tick is off (-q), since a browser has no SIGALRM.
+# stdin; and the idle wait and a busy guest both yield to the page
+# (Asyncify). The system tick is on, as everywhere else: a browser has no
+# SIGALRM, so the emulation loop reads the clock itself (os9_tick.c), and a
+# program that makes no system calls no longer freezes the page.
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 OUT="$REPO/build/web"
@@ -126,7 +128,7 @@ Module.os9h1 = {
 };
 JS
 
-args='"-q"'; for a in "${BOOT[@]}"; do args="$args, \"$a\""; done
+args=''; for a in "${BOOT[@]}"; do args="$args${args:+, }\"$a\""; done
 sed -e "s|OS9_ARGUMENTS|[$args]|" \
     "$REPO/tools/wasm-web/index.html" > "$OUT/index.html"
 
