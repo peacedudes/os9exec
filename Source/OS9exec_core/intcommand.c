@@ -2227,7 +2227,7 @@ cmdtable_typ commandtable[] =
   { "devs/idevs",    int_devs,       "shows OS9exec's devices" },
   { "iterm",         int_iterm,      "makes a /tN terminal at runtime (like mount for /hX)" },
   { "idbg/debughalt",int_debughalt,  "sets debug options/enters OS9exec's debug menu" },
-  { "icrash",        int_crash,      "accesses an invalid address: 0xCE00BEFO" },
+  { "icrash",        int_crash,      "accesses an invalid address: 0xCE00BEF0" },
   { "iquit",         int_quit,       "quit at the next debugger entry (F$SysDbg)" },
   { "dch/diskcache", int_ignored,    "simply ignored, because not supported by OS9exec" },
 
