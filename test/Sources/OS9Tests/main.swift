@@ -10834,6 +10834,54 @@ do {
     }
 }
 
+// ── the tick runs even when the launcher blocked SIGALRM ────────────────────────
+// A blocked signal mask survives exec, and GitHub's macOS runner starts
+// processes with SIGALRM blocked: the tick's handler was installed and never
+// called, so nothing pre-empted anything and CONF68K t115 failed there alone.
+// Launched here the same way, through perl blocking SIGALRM before it execs,
+// t115 (a spinning child must lose the CPU to its parent) has to pass. Local
+// only, and only where perl is: the point is the host's signal mask.
+do {
+    let name = "tick: pre-emption survives a launcher that blocked SIGALRM"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let perl = "/usr/bin/perl"
+        if containerized || !FileManager.default.isExecutableFile(atPath: perl) {
+            print("SKIP: \(name) (needs the host and \(perl))")
+        } else if (ProcessInfo.processInfo.environment["OS9_FLAGS"] ?? "").contains("-q") {
+            print("SKIP: \(name) (the system tick is off)")
+        } else {
+            let process = Process()
+            let pipe    = Pipe()
+            process.executableURL  = URL(fileURLWithPath: perl)
+            process.arguments      = ["-MPOSIX", "-e",
+                                      "sigprocmask(SIG_BLOCK, POSIX::SigSet->new(SIGALRM)) or die; exec @ARGV",
+                                      execURL.path, "-r", "/dd/CMDS/t115slice"]
+            process.environment    = ["OS9DISK": repoRoot.appendingPathComponent("test/68k-conformance").path]
+                                         .merging(inheritedByChildren) { mine, _ in mine }
+            process.standardInput  = FileHandle.nullDevice
+            process.standardOutput = pipe
+            process.standardError  = pipe
+            var said = ""
+            if (try? process.run()) != nil {
+                let deadline = Date().addingTimeInterval(60)
+                while process.isRunning && Date() < deadline { usleep(50_000) }
+                if process.isRunning { process.terminate() }
+                process.waitUntilExit()
+                said = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            }
+            let result = said.replacingOccurrences(of: "\r", with: "\n")
+                .split(separator: "\n").first { $0.hasPrefix("RESULT t115") } ?? "no RESULT line"
+            if result.contains(" PASS ") {
+                print("PASS: \(name)"); passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      [\(result)]")
+                failed += 1
+            }
+        }
+    }
+}
+
 // ── idle: a writer waiting on a full pipe does not keep a core busy ─────────────
 // A pipe request parked as a system task was tried again on every pass of the
 // scheduler, so a writer waiting for a slow reader to make room spun the host

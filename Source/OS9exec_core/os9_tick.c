@@ -198,8 +198,19 @@ static void os9_tick_arm( void )
 void os9_tick_start( void )
 /* Start the clock, once. Calling it again is harmless. */
 {
+    sigset_t alrm;
+
     if (os9_tick_request==0) return; /* clock switched off with -q */
     if (os9_tick_us       !=0) return; /* already running */
+
+    /* A blocked signal mask is inherited across exec, and some launchers
+       block SIGALRM -- GitHub's macOS runner does. The handler was installed
+       but never called, so there was no tick at all and nothing said so:
+       CONF68K t115 failed there alone. Measured here by starting os9exec with
+       SIGALRM blocked: t115 obs 55, as on the runner. */
+    sigemptyset( &alrm );
+    sigaddset  ( &alrm, SIGALRM );
+    sigprocmask( SIG_UNBLOCK, &alrm, NULL );
 
     os9_tick_us= os9_tick_request;
     os9_tick_arm();

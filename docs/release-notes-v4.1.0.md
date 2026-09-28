@@ -100,6 +100,8 @@ System calls, now as the Technical Manual describes them:
   stepped too, and crawled). A signal
   handler that waits on a pipe no longer freezes the whole emulator (it did in v4.0.0), and
   `F$RTE` goes back to the request the signal interrupted.
+- The system tick runs even when os9exec is started with SIGALRM blocked, as some launchers
+  (GitHub's macOS runner among them) start programs; it used to be silently absent there.
 - CPU time: a process that computes without making system calls is charged for it, so the C
   library's `clock()` advances (the Whetstone benchmark used to divide by zero).
 - Permissions: `S$Kill`, `F$SPrior`, `F$SetSys` and `F$DExit` enforce the manual's rules.
