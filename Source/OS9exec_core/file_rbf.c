@@ -2318,8 +2318,12 @@ static void mount_usage( char* name, _pid_ )
     upe_printf( "    -b=<scsibus> specify  SCSI bus\n" );
     #endif
     
+    /* SCSI is reached only on the classic Mac and the old MSVC Windows
+       build (filescsi.c); anywhere else these options could only fail. */
+    #if defined USE_CLASSIC || defined windows32
     upe_printf( "    -s=<scsiID>  connect to SCSI ID\n" );
     upe_printf( "    -l=<lun>     connect to LUN (default=0)\n" );
+    #endif
     upe_printf( "    -r=<size>    create RAM disk with size (in kBytes)\n" );
     upe_printf( "    -n=<bytes>   sector  size in bytes     for RAM disk\n" );
     upe_printf( "    -c=<num>     cluster size (default: 1) for RAM disk\n" );
@@ -2652,6 +2656,11 @@ os9err int_mount( ushort pid, int argc, char** argv )
                            break;
                 #endif
                             
+                #if !(defined USE_CLASSIC || defined windows32)
+                case 'l' :
+                case 's' : upe_printf( "mount: this build has no SCSI support (-%c)\n", *p );
+                           return E_UNKSVC;
+                #else
                 case 's' : if (*(p+1)=='=') p+=2;
                            else { k++; /* next arg */
                              if  (k>=argc) break;
@@ -2668,6 +2677,7 @@ os9err int_mount( ushort pid, int argc, char** argv )
                            
                            sscanf( p,"%hd", &scsiLUN );
                            break;
+                #endif
 
                 case 'r' : if (*(p+1)=='=') p+=2;
                            else { k++; /* next arg */

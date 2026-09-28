@@ -1087,6 +1087,10 @@ check("internal: iquit -? explains itself instead of arming the quit",
       contains: "Syntax:   iquit", "iquit -?")
 check("internal: icrash -? explains itself instead of crashing",
       contains: "Syntax:   icrash", "icrash -?")
+// mount offered SCSI options that only the classic Mac and old MSVC builds can
+// use; anywhere else -s ended in a bare "can't mount device".
+check("internal: mount -s says this build has no SCSI support",
+      contains: "no SCSI support", "mount -s=1 img hc")
 // stop -? stopped the emulator: asking for help ended the session.
 check("internal: stop -? explains itself instead of stopping",
       contains: "STILL RUNNING", "stop -?", "echo STILL RUNNING")
