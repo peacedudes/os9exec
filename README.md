@@ -504,8 +504,9 @@ never leaves your machine: the page has no network code.
 "try it" link uses. It is typed, not run: the reader presses Enter.
 
 What this build does not have: sockets, so nothing networked runs (a browser
-cannot open TCP at all, and socket paths say so); host directories, so a disk
-must be an image; and the system tick, which is off.
+cannot open TCP at all, and socket paths say so); and host directories, so a
+disk must be an image. The system tick is on, as everywhere else, so a program
+that computes without system calls does not freeze the page.
 
 </details>
 
@@ -547,7 +548,7 @@ container run -it -v /path/to/your/os9:/dd os9exec:apple /dd/CMDS/shell
 
 - **macOS:** `make` (requires Xcode Command Line Tools)
 - **Linux:** `make` (requires build-essential, clang/gcc)
-- **Windows x86_64:** native build via [mingw-w64](https://www.mingw-w64.org/) - `make OS=Windows_NT CC=x86_64-w64-mingw32-gcc` (cross-compile from macOS/Linux, or run the same command natively in a Windows shell with mingw-w64 installed). Produces `os9exec.exe`. Docker and WSL2 remain available too.
+- **Windows x86_64:** native build via [mingw-w64](https://www.mingw-w64.org/) - `make OS=Windows_NT CC=x86_64-w64-mingw32-gcc` (cross-compile from macOS/Linux, or run the same command natively in a Windows shell with mingw-w64 installed). Produces `os9exec.exe`. Docker and WSL2 remain available too. What the Windows build does not have: networking (socket paths answer `E$Unit`) and host terminals for `/tN`; for either, use Docker or WSL2. Everything else is the same, the system tick included, and it is tested on Windows 11: the conformance suite, and standard input redirected from a file, a pipe and `NUL`.
 - **Windows ARM64 (native, not emulated x64):** confirmed working with two common clang-based toolchains, both requiring zero source changes - `make CC=clang` from an [MSYS2](https://www.msys2.org/) `CLANGARM64` shell (`pacman -S mingw-w64-clang-aarch64-toolchain make`), or the standalone [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) distribution (`make CC=aarch64-w64-mingw32-clang`). Visual Studio's `clang-cl`/MSVC toolchain does **not** currently work - it needs a `dirent`/`termios` compatibility layer against Win32 that doesn't exist yet (the codebase had one once, `msdir.c`/`msdir.h`, removed before this branch).
 - **Windows 32-bit (x86):** `make OS=Windows_NT CC=i686-w64-mingw32-gcc`. Built warning-clean on every `make warnings` run, and now run as well: the conformance suite passes on it (44 modules, 0 failures), executed on Windows 11 ARM64 through its x86 emulation. The 32-bit toolchain catches things the 64-bit one cannot - it found a pointer-width bug and a `__stdcall` bug the day it was added.
 - **Linux 32-bit:** `docker build -f Dockerfile.linux32 -t os9exec:linux32 .`

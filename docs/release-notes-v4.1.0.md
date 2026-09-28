@@ -8,7 +8,7 @@ of community software on one disk image. Nearly every fix here was found by runn
 
 Nearly every fix listed here has a test that fails on the build before it and passes on this
 one. The suite runs on macOS and on Linux (x86-64, i386 and big-endian s390x), and the
-conformance suite (below) on every one of them.
+conformance suite (below) on every one of them, on Windows 11 and in WebAssembly.
 
 ## Highlights
 
@@ -29,9 +29,18 @@ authors' names whatever program it starts. It has no network and no host directo
 README.
 
 **Idle is idle.** An os9exec whose processes are all waiting now sleeps until something is due
-instead of polling: about 0.1% of a core, down from about 1.6%. A waiting reader or writer
+instead of polling: about 0.1% of a core on macOS and Linux, down from about 1.6% (on Windows
+about 1%, down from 2 to 4%). A waiting reader or writer
 resumes when its data arrives, and a writer waiting on a full pipe no longer keeps a core busy
 (in v4.0.0 it spun until its reader caught up).
+
+**Windows and the browser catch up.** The system tick now runs on Windows and in the browser
+too, where there is no timer signal to drive it, so a program that makes no system calls no
+longer keeps the machine to itself: other processes run, and the browser page keeps drawing
+and taking keys. On Windows, a program's standard input redirected from a file or a pipe is
+read to its end (a file gave nothing, and a pipe never ended), and a Windows text file's CR LF
+is one line end rather than a line end and a stray LF. Output redirected to a file ends its
+lines CR LF as on macOS and Linux instead of CR CR LF, and an idle console wakes on a keystroke.
 
 **A check for stray writes.** `-W` makes a program's write outside its own memory (its data
 area, the blocks it requested, loaded modules) a bus error, and names the address and the
@@ -64,6 +73,8 @@ A few fixes change behaviour that a script could have come to rely on:
   and that key is not passed on to the program. It used to stream on and eat the next key typed.
 - A host directory refuses to create a name longer than 28 characters (`E$BPNam`).
 - The browser page's `?run=` link no longer presses Enter.
+- The CPU is reported as a 68020, which is what is emulated (with a 68881) and what `F$SysID`
+  already said. `D_MPUTyp` and the `init` module said 68040.
 
 ## Compatibility
 
@@ -165,7 +176,7 @@ Files and devices:
 os9exec is built from the manuals, and where the manuals leave room it has had to make a
 reading. The conformance suite, CONF68K, turns those readings into tests with the manual's
 words beside each, and it runs on real OS-9 as well as here. This release attaches it as
-a single disk image, `conf68k.dsk`: 114 standalone tests, hand-written assembly, no Microware
+a single disk image, `conf68k.dsk`: 115 standalone tests, hand-written assembly, no Microware
 software on it. Put it on a disk device and, as the super user, `chd` to it, `chx CMDS`, and
 type `runall >>+RESULTS/errors`. Each test prints one line with what it observed and what the
 manual led us to expect. Where a claim is our inference rather than the manual's plain
@@ -184,6 +195,8 @@ is the one thing an emulator cannot tell us for itself. The disk's readme has th
   a descriptor by name (`xmode /term`, `dmode`) report it missing. Loading one from
   `/dd/CMDS/BOOTOBJS` works around it.
 - The browser build has no networking and no host directories.
+- The Windows build has no networking (socket paths answer `E$Unit`) and no host terminals
+  for `/tN`.
 
 ## Downloads
 
