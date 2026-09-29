@@ -1068,6 +1068,28 @@ static void WaitDone( syspath_typ* spP )
     spP->u.rbf.waitUntil= 0;
 } /* WaitDone */
 
+uint32_t RBF_WaitDeadline( ushort pid )
+/* The tick at which an SS_Ticks limit on one of <pid>'s waits runs out, the
+ * earliest if there are several; 0 if it has none. WaitExpired can only say
+ * "time's up" when the waiter is run again, and nothing ran a waiter because
+ * its deadline had come: only the NewAge rota, or some other event, did. On
+ * Windows that left SS_Ticks 1 waiting past CONF68K's 60-tick rescue in 6
+ * runs of 20 (t21, t116: obs=901), and 0 of 20 once the scheduler asks this,
+ * as it asks a sleeper's wakeUpTick, and the idle wait does too. On macOS it
+ * already came back within 10 ticks, before and after. */
+{
+    uint32_t best= 0;
+    int      k;
+
+    for (k=0; k<MAXSYSPATHS; k++) {
+        const syspath_typ* spK= &syspaths[k];
+        if (spK->type!=fRBF || spK->u.rbf.waitPid!=pid) continue;
+        if (spK->u.rbf.waitUntil==0)                     continue;
+        if (best==0 || spK->u.rbf.waitUntil<best) best= spK->u.rbf.waitUntil;
+    } // for
+    return best;
+} /* RBF_WaitDeadline */
+
 static void WakeOnFile( syspath_typ* spP )
 /* start every path asleep on this file -- all of them, not one: each looks
  * again for itself, and what it finds is its own business */

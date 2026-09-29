@@ -1177,6 +1177,8 @@ static void wait_for_signal( ushort pid )
    compiler never sees the difference, which is what `make warnings` is for. */
 #ifdef UNIX
 
+uint32_t RBF_WaitDeadline( ushort pid ); /* file_rbf.c */
+
 /* How long the idle wait may sleep, in microseconds, before something the
  * emulator promised comes due: the next baud-pacing drain, the next sleeper's
  * wakeUpTick, the next alarm. ULONG_MAX when nothing at all is pending.
@@ -1204,17 +1206,25 @@ static ulong idle_deadline_us( void )
     for (k=1; k<MAXPROCESSES; k++) {
         process_typ* cp= &procs[k];
         ulong        us, ticks;
+        uint32_t     when;
 
-        if (cp->state!=pSleeping)       continue;
-        if (cp->wakeUpTick>=MAX_SLEEP)  continue; /* sleeping until signalled */
-        /* Zero is not a deadline, it is a field nobody set: the kernel process
-           (pid 1) is parked in pSleeping for its whole life to be compliant
-           with real OS-9, and never had a wake time. Read as "due at tick 0"
-           it makes every idle wait return instantly -- measured, 94% of a core
-           where the old fixed nap cost 1.6%. */
-        if (cp->wakeUpTick==0)          continue;
+        if (cp->state==pWaitRead || cp->state==pWaitWrite) {
+            when= RBF_WaitDeadline( k );  /* a record wait with an SS_Ticks limit */
+            if (when==0)                continue;
+        }
+        else {
+            if (cp->state!=pSleeping)       continue;
+            if (cp->wakeUpTick>=MAX_SLEEP)  continue; /* sleeping until signalled */
+            /* Zero is not a deadline, it is a field nobody set: the kernel process
+               (pid 1) is parked in pSleeping for its whole life to be compliant
+               with real OS-9, and never had a wake time. Read as "due at tick 0"
+               it makes every idle wait return instantly -- measured, 94% of a core
+               where the old fixed nap cost 1.6%. */
+            if (cp->wakeUpTick==0)          continue;
+            when= cp->wakeUpTick;
+        }
 
-        ticks= (cp->wakeUpTick>now) ? (ulong)(cp->wakeUpTick-now) : 0;
+        ticks= (when>now) ? (ulong)(when-now) : 0;
         us   = (ticks>=IDLE_FAR_TICKS) ? IDLE_FAR_US : ticks*10000UL;
         if (us<best) best= us;
     } /* for */
@@ -1704,7 +1714,8 @@ void do_arbitrate( ushort allowedIntUtil )
 
     if    (sprocess->state==pWaitRead ||
            sprocess->state==pWaitWrite) {        /* only every nth time for this mode */
-      if  (sprocess->pW_age--<=0) {
+      uint32_t lockDue= RBF_WaitDeadline( spid ); /* and when its SS_Ticks runs out */
+      if  (sprocess->pW_age--<=0 || (lockDue!=0 && lockDue<=GetSystemTick())) {
            sprocess->pW_age= NewAge;  break;
       } // if
       done= false;

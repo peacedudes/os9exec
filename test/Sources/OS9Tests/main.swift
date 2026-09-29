@@ -11204,6 +11204,88 @@ do {
     }
 }
 
+// ── an SS_Ticks limit on a record wait expires on time ──────────────────────────
+// A read blocked by another process's record lock gives up with E$Lock once
+// the path's SS_Ticks limit runs out. Neither the scheduler nor the idle wait
+// ran the waiter because its deadline had come, and on Windows CONF68K t21
+// and t116 saw the holder let go first in 6 runs of 20 (0 of 20 after). On
+// macOS this already passed before the fix: it guards the contract here, and
+// the evidence for the fix is the repeated Windows run in verify-winvm.sh.
+// The holder locks the whole file and naps a second; the waiter times its own
+// E$Lock with F$Time and exits 100+ticks, which the holder passes on, so the
+// shell's error line carries the measurement.
+do {
+    let holdAsm = [
+        "F$Fork equ $03", "F$Wait equ $04", "F$Exit equ $06", "F$Sleep equ $0A",
+        "I$Create equ $83", "I$Write equ $8A", "I$SetStt equ $8E",
+        "  psect nlkhold,$0101,$8001,0,1024,start",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  move.w #$1B,d1", "  moveq #0,d2",
+        "  trap #0", "  dc.w I$Create", "  bcs.s fail", "  move.w d0,d7",
+        "  lea start(pc),a0", "  moveq #100,d1", "  moveq #0,d0", "  move.w d7,d0",
+        "  trap #0", "  dc.w I$Write", "  bcs.s fail",
+        "  moveq #0,d0", "  move.w d7,d0", "  move.w #$11,d1", "  moveq #-1,d2",
+        "  trap #0", "  dc.w I$SetStt", "  bcs.s fail",
+        "  moveq #0,d0", "  moveq #0,d1", "  moveq #1,d2", "  moveq #3,d3", "  moveq #0,d4",
+        "  lea cname(pc),a0", "  lea parm(pc),a1", "  trap #0", "  dc.w F$Fork", "  bcs.s fail",
+        "  moveq #100,d0", "  trap #0", "  dc.w F$Sleep",
+        "  moveq #0,d0", "  move.w d7,d0", "  move.w #$11,d1", "  moveq #0,d2",
+        "  trap #0", "  dc.w I$SetStt",
+        "  trap #0", "  dc.w F$Wait",
+        "fail:", "  trap #0", "  dc.w F$Exit",
+        "fname: dc.b \"/h7/lk.dat\",0", "cname: dc.b \"/h5/nlkwait\",0", "parm: dc.b $0D",
+        "  ends", ""
+    ].joined(separator: "\r")
+    let waitAsm = [
+        "F$Exit equ $06", "F$Time equ $15", "I$Open equ $84", "I$Read equ $89", "I$SetStt equ $8E",
+        "  psect nlkwait,$0101,$8001,0,1024,start", "  vsect", "buf: ds.b 16", "  ends",
+        "start:",
+        "  lea fname(pc),a0", "  moveq #3,d0", "  trap #0", "  dc.w I$Open", "  bcs.s fail",
+        "  move.w d0,d7",
+        "  moveq #0,d0", "  move.w d7,d0", "  move.w #$10,d1", "  moveq #1,d2",
+        "  trap #0", "  dc.w I$SetStt", "  bcs.s fail",
+        "  moveq #3,d0", "  trap #0", "  dc.w F$Time", "  move.l d0,d5", "  move.l d3,d6",
+        "  moveq #0,d0", "  move.w d7,d0", "  lea buf(a6),a0", "  moveq #10,d1",
+        "  trap #0", "  dc.w I$Read", "  bcc.s wrong", "  cmpi.w #252,d1", "  bne.s wrong",
+        "  moveq #3,d0", "  trap #0", "  dc.w F$Time",
+        "  sub.l d5,d0", "  move.l d3,d4", "  swap d4", "  mulu d4,d0",
+        "  moveq #0,d2", "  move.w d3,d2", "  add.l d2,d0",
+        "  moveq #0,d2", "  move.w d6,d2", "  sub.l d2,d0",
+        "  addi.l #100,d0", "  cmpi.l #255,d0", "  bls.s say", "  move.l #255,d0",
+        "say:", "  move.l d0,d1", "  trap #0", "  dc.w F$Exit",
+        "wrong:", "  moveq #99,d1",
+        "fail:", "  trap #0", "  dc.w F$Exit",
+        "fname: dc.b \"/h7/lk.dat\",0",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "rbf: an SS_Ticks limit on a locked record expires on time"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        removeScratchItem("h7")
+        try? holdAsm.write(toFile: scratchDisk + "/nlkhold.a", atomically: true, encoding: .utf8)
+        try? waitAsm.write(toFile: scratchDisk + "/nlkwait.a", atomically: true, encoding: .utf8)
+        let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                       "r68 /h5/nlkhold.a -o=/h5/nlkhold.r", "l68 /h5/nlkhold.r -o=/h5/nlkhold",
+                       "r68 /h5/nlkwait.a -o=/h5/nlkwait.r", "l68 /h5/nlkwait.r -o=/h5/nlkwait",
+                       "mount -k=100K h7", "/h5/nlkhold"], timeout: 90)
+        // the holder exits with the waiter's status: 100 + the ticks E$Lock took
+        let errorLine = try? Regex<(Substring, Substring)>("#000:([0-9]{3})")
+        let code = errorLine.flatMap { out.firstMatch(of: $0) }.flatMap { Int($0.1) }
+        let ticks = code.map { $0 - 100 }
+        if let ticks, ticks >= 0, ticks <= 10 {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [SS_Ticks 1: want E$Lock within 10 ticks; exit code \(code.map(String.init) ?? "none")" +
+                  " (100+ticks; 99 = the read was not refused)]")
+            failed += 1
+        }
+        for leftover in ["nlkhold.a", "nlkhold.r", "nlkhold", "nlkwait.a", "nlkwait.r", "nlkwait", "h7"] {
+            removeScratchItem(leftover)
+        }
+    }
+}
+
 // ── the tick runs even when the launcher blocked SIGALRM ────────────────────────
 // A blocked signal mask survives exec, and GitHub's macOS runner starts
 // processes with SIGALRM blocked: the tick's handler was installed and never
