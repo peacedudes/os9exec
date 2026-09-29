@@ -25,7 +25,8 @@ are two reference collections for Microware OS-9 on the 6809 and the 68000:
 BASIC09, Microware C, assembly, the shell and its utilities, modules, system
 calls, error codes, and, below the application line, device drivers, file
 managers and kernel internals. Each claim says where it came from, and many
-were checked by running them under os9exec. They are plain Markdown, for a
+were checked by running them: 68000 programs under os9exec, 6809 programs on
+NitrOS-9 under XRoar. They are plain Markdown, for a
 person to read or for [Claude Code](https://claude.com/claude-code) to load as
 skills.
 
