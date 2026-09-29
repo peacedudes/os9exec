@@ -149,6 +149,20 @@ Manual's RBF SetStat list names an access mode the path must have, so nothing
 refuses it. CONF68K t110 reports what the system does, marked as an inference:
 `E$BMode` from real hardware would mean os9exec should refuse.
 
+### SS_Lock from a path in any mode -- Reversed later: no longer refused
+
+os9exec refused an explicit `SS_Lock` from a path not open for update, with
+`E$FNA`, extending the Record Locking chapter's rule ("Read and ReadLine cause
+lock out of records only if the file is open in update mode"). That rule is
+about the automatic lock a read takes; the I$SetStt SS_Lock entry names no
+mode. nethack3, a released OS-9 port, whole-file-locks its log through a
+write-only path at every quit: refused, it retried for 75 seconds and gave up
+without writing the log. Any path may lock now. CONF68K t116 reports what the
+system does with a write-only lock, marked as an inference.
+
+**Cost accepted:** a path that only reads can now hold up writers, as the
+manual allows.
+
 ### The EOF lock survives a seek -- Kept, as the manual words it
 
 The Record Locking chapter says the end of file stays locked "until a read or

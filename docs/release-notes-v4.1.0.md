@@ -136,7 +136,8 @@ System calls, now as the Technical Manual describes them:
 Files and devices:
 
 - RBF disk images: record and end-of-file locking now follow the manual, including a reader
-  following a writer and a writer that moves away from the end; two paths writing one sector
+  following a writer and a writer that moves away from the end, and `SS_Lock` from a path in
+  any mode (nethack3 locks its log through a write-only path); two paths writing one sector
   no longer lose each other's bytes; a file that another path has open cannot be deleted;
   directory permissions, the single-user bit, `SS_Size`, `SS_Attr`, `SS_FD` and `SS_Ticks`
   behave as documented; relative `../..` works; 28-character names work.
@@ -201,7 +202,7 @@ Files and devices:
 os9exec is built from the manuals, and where the manuals leave room it has had to make a
 reading. The conformance suite, CONF68K, turns those readings into tests with the manual's
 words beside each, and it runs on real OS-9 as well as here. This release attaches it as
-a single disk image, `conf68k.dsk`: 115 standalone tests, hand-written assembly, no Microware
+a single disk image, `conf68k.dsk`: 116 standalone tests, hand-written assembly, no Microware
 software on it. Put it on a disk device and, as the super user, `chd` to it, `chx CMDS`, and
 type `runall >>+RESULTS/errors`. At the end it says in plain words whether there is anything to
 send: only a test that fails is news, and then it asks you to open an issue with

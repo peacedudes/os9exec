@@ -437,7 +437,7 @@ See [CMDS.md](CMDS.md) for the full list of known OS-9 commands with status note
 ## The conformance disk: check os9exec, or a real OS-9 machine
 
 `conf68k.dsk`, attached to each [release](https://github.com/peacedudes/os9exec/releases),
-holds 115 small tests of OS-9/68000 behaviour, each tied to a passage in
+holds 116 small tests of OS-9/68000 behaviour, each tied to a passage in
 Microware's manuals. They are hand-written 68000 assembly with no Microware
 software on the disk, so it can go anywhere.
 
@@ -604,7 +604,7 @@ container run -it -v /path/to/your/os9:/dd os9exec:apple /dd/CMDS/shell
 - **Linux:** `make` (requires build-essential, clang/gcc)
 - **Windows x86_64:** native build via [mingw-w64](https://www.mingw-w64.org/) - `make OS=Windows_NT CC=x86_64-w64-mingw32-gcc` (cross-compile from macOS/Linux, or run the same command natively in a Windows shell with mingw-w64 installed). Produces `os9exec.exe`. Docker and WSL2 remain available too. What the Windows build does not have: networking (socket paths answer `E$Unit`) and host terminals for `/tN`; for either, use Docker or WSL2. Everything else is the same, the system tick included, and it is tested on Windows 11: the conformance suite, and standard input redirected from a file, a pipe and `NUL`.
 - **Windows ARM64 (native, not emulated x64):** confirmed working with two common clang-based toolchains, both requiring zero source changes - `make CC=clang` from an [MSYS2](https://www.msys2.org/) `CLANGARM64` shell (`pacman -S mingw-w64-clang-aarch64-toolchain make`), or the standalone [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) distribution (`make CC=aarch64-w64-mingw32-clang`). Visual Studio's `clang-cl`/MSVC toolchain does **not** currently work - it needs a `dirent`/`termios` compatibility layer against Win32 that doesn't exist yet (the codebase had one once, `msdir.c`/`msdir.h`, removed before this branch).
-- **Windows 32-bit (x86):** `make OS=Windows_NT CC=i686-w64-mingw32-gcc`. Built warning-clean on every `make warnings` run, and now run as well: the conformance suite passes on it (all 115 tests from `conf68k.dsk`: 114 pass, and the last skips only because `load` is Microware's and not on the disk), executed on Windows 11 ARM64 through its x86 emulation. The 32-bit toolchain catches things the 64-bit one cannot - it found a pointer-width bug and a `__stdcall` bug the day it was added.
+- **Windows 32-bit (x86):** `make OS=Windows_NT CC=i686-w64-mingw32-gcc`. Built warning-clean on every `make warnings` run, and now run as well: the conformance suite passes on it (all 116 tests from `conf68k.dsk`: 115 pass, and the last skips only because `load` is Microware's and not on the disk), executed on Windows 11 ARM64 through its x86 emulation. The 32-bit toolchain catches things the 64-bit one cannot - it found a pointer-width bug and a `__stdcall` bug the day it was added.
 - **Linux 32-bit:** `docker build -f Dockerfile.linux32 -t os9exec:linux32 .`
 
 For an optimised build: `make prod`.

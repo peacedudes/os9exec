@@ -4685,12 +4685,13 @@ os9err pRlock( ushort pid, syspath_typ* spP, uint32_t* d0, uint32_t* d1, uint32_
     (void)d0; (void)d1; /* path and setstat code; the size is in d2 */
     if (spP->rawMode) return 0;
 
-    /* One rule, the same one the automatic lock follows: locking belongs to
-     * update-mode opens. A path that cannot modify what it reads has nothing
-     * to protect, and letting it take a lock anyway would give it a way to
-     * hold up writers -- which is exactly the lockout this design avoids.
-     * A release is always allowed: it can only ever let something go. */
-    if (*d2!=0 && !rbf->updMode) return os9error( E_FNA );
+    /* Any path may lock, whatever its mode. The update-mode rule belongs to
+     * the AUTOMATIC lock a read takes ("Read and ReadLine cause lock out of
+     * records only if the file is open in update mode", page 7-9); the
+     * SS_Lock entry names no mode at all. os9exec once refused a lock from a
+     * path not open for update, E$FNA, by extending that rule on its own
+     * argument: nethack3 whole-file-locks its log through a write-only path
+     * at every quit, retried for 75 seconds, and gave up without writing it. */
 
     if (*d2==0) { /* release */
         LockDrop  ( spP );
