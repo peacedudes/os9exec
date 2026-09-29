@@ -82,7 +82,9 @@ overwrites() { python3 -c 'import re,sys; d=open(sys.argv[1],"rb").read(); sys.e
 # $1 label, $2 file holding one run's screen
 judge_screen() {
     if ! grep -q "Nothing to send" "$2"; then
-        bad "$1" "$(tr '\r' '\n' <"$2" | grep -E 'CONF68K totals|Please tell us' | tr '\n' ' ')"
+        why=$(tr '\r' '\n' <"$2" | grep -E 'CONF68K totals|Please tell us' | tr '\n' ' ')
+        [ -n "$why" ] || why=$(tr '\r' '\n' <"$2" | grep -v '^[[:space:]]*$' | head -1)
+        bad "$1" "${why:-no output at all}"
     elif overwrites "$2"; then
         bad "$1" "a line of the verdict overwrites another (bare CR)"
     else
@@ -111,8 +113,12 @@ linux_leg() {   # $1 label, $2 binary, $3 image, $4 platform
         grep -q "OS9exec $want " <<<"$v" && ok "version $want" || bad "version $want" "says: $v"
     fi
     for i in $(seq 1 "$RUNS"); do
-        rm -rf "$W/lx"; mkdir -p "$W/lx"; cp "$F/conf68k.dsk" "$W/lx/c.dsk"
-        docker run --rm -t --platform "$4" -v "$F:/r:ro" -v "$W/lx:/w" -e OS9DISK=/w/c.dsk \
+        # A new directory every run, never one deleted and made again: on
+        # macOS Docker a host-side delete of a bind-mounted path is invisible
+        # to the NEXT container, which then finds no disk ("E_MNF /dd/CMDS/run"
+        # in 2 runs of 6 the first time this ran).
+        lx="$W/lx.$2.$i"; mkdir -p "$lx"; cp "$F/conf68k.dsk" "$lx/c.dsk"
+        docker run --rm -t --platform "$4" -v "$F:/r:ro" -v "$lx:/w" -e OS9DISK=/w/c.dsk \
             "$3" /r/"$2" -r /dd/CMDS/run </dev/null >"$W/$2.$i" 2>&1
         judge_screen "run $i of $RUNS" "$W/$2.$i"
     done
