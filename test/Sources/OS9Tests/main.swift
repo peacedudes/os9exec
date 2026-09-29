@@ -11025,6 +11025,72 @@ do {
     }
 }
 
+// ── F$RTE gives back the condition codes the signal found ──────────────────────
+// After F$RTE restored the interrupted program's registers, the dispatcher
+// wrote F$RTE's own "no error" over them -- carry cleared -- as for any call.
+// A program interrupted between setting a flag and testing it resumed with
+// the wrong one. The child sets carry, then spins on instructions that leave
+// the flags alone (bcc, movea, jmp) until its intercept routine redirects the
+// loop, and tests carry again where it lands, since the signal may arrive
+// after the spin's own test; the parent signals it. Needs the tick, so the
+// parent runs at all.
+do {
+    let childAsm = [
+        "F$Exit equ $06", "F$Icpt equ $09", "F$RTE equ $1E", "I$WritLn equ $8C",
+        "  psect ncarry,$0101,$8001,0,512,start", "  vsect", "vec: ds.l 1", "  ends",
+        "start:",
+        "  lea spin(pc),a1", "  move.l a1,vec(a6)",
+        "  lea icpt(pc),a0", "  trap #0", "  dc.w F$Icpt",
+        "  ori.b #1,ccr",
+        "spin:", "  bcc.s lost", "  movea.l vec(a6),a1", "  jmp (a1)",
+        "kept:", "  bcc.s lost", "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "lost:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  trap #0", "  dc.w I$WritLn", "  moveq #0,d1", "  trap #0", "  dc.w F$Exit",
+        "icpt:", "  lea kept(pc),a1", "  move.l a1,vec(a6)", "  trap #0", "  dc.w F$RTE",
+        "mok: dc.b \"CARRY KEPT\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"CARRY LOST\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+    let parentAsm = [
+        "F$Fork equ $03", "F$Wait equ $04", "F$Exit equ $06", "F$Send equ $08", "F$Sleep equ $0A",
+        "  psect ncarrypa,$0101,$8001,0,512,start",
+        "start:",
+        "  moveq #0,d0", "  moveq #0,d1", "  moveq #1,d2", "  moveq #3,d3", "  moveq #0,d4",
+        "  lea name(pc),a0", "  lea parm(pc),a1", "  trap #0", "  dc.w F$Fork", "  bcs.s done",
+        "  move.w d0,d7",
+        "  moveq #10,d0", "  trap #0", "  dc.w F$Sleep",
+        "  moveq #0,d0", "  move.w d7,d0", "  move.w #300,d1", "  trap #0", "  dc.w F$Send",
+        "  trap #0", "  dc.w F$Wait",
+        "done:", "  moveq #0,d1", "  trap #0", "  dc.w F$Exit",
+        "name: dc.b \"/h5/ncarry\",0", "parm: dc.b $0D", "  ends", ""
+    ].joined(separator: "\r")
+
+    let name = "signals: F$RTE gives back the carry flag the signal found"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if (ProcessInfo.processInfo.environment["OS9_FLAGS"] ?? "").contains("-q") {
+            print("SKIP: \(name) (the system tick is off, so the parent never runs)")
+        } else {
+            try? childAsm.write(toFile: scratchDisk + "/ncarry.a", atomically: true, encoding: .utf8)
+            try? parentAsm.write(toFile: scratchDisk + "/ncarrypa.a", atomically: true, encoding: .utf8)
+            let out = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                           "r68 /h5/ncarry.a -o=/h5/ncarry.r", "l68 /h5/ncarry.r -o=/h5/ncarry",
+                           "r68 /h5/ncarrypa.a -o=/h5/ncarrypa.r", "l68 /h5/ncarrypa.r -o=/h5/ncarrypa",
+                           "/h5/ncarrypa"], timeout: 60)
+            if out.contains("CARRY KEPT") && !out.contains("CARRY LOST") {
+                print("PASS: \(name)"); passed += 1
+            } else {
+                print("FAIL: \(name)")
+                let seen = out.split(whereSeparator: \.isNewline).filter { $0.contains("CARRY") || $0.contains("Error") }
+                print("      saw: \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+        }
+        for leftover in ["ncarry.a", "ncarry.r", "ncarry", "ncarrypa.a", "ncarrypa.r", "ncarrypa"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── the tick runs even when the launcher blocked SIGALRM ────────────────────────
 // A blocked signal mask survives exec, and GitHub's macOS runner starts
 // processes with SIGALRM blocked: the tick's handler was installed and never
@@ -15667,8 +15733,43 @@ let catchingSpinAsm = [
     "msg: dc.b \"spinning\",13", "  ends", ""
 ]
 
+// A parent that is the terminal's last writer (it prints first), with an
+// intercept routine that counts signals and takes about half a second over
+// each, waiting on a silent spinning copy of itself. It exits only once it
+// has counted two. Two Ctrl-Cs typed a fifth of a second apart reach it at
+// the tick, the second while its intercept still runs: that one must be
+// queued (the intercept runs masked) and delivered after F$RTE. Handed over
+// without the mask, the second found a signal still being processed and was
+// dropped, and the parent waited for ever (review, 2026-09-29).
+let twoSignalWaiterAsm = [
+    "F$Fork equ $03", "F$Wait equ $04", "F$Exit equ $06", "F$Send equ $08", "F$Icpt equ $09",
+    "F$RTE equ $1E", "I$WritLn equ $8C",
+    "  psect kspin,$0101,$8001,0,2048,start", "  vsect", "count: ds.l 1", "  ends",
+    "start:",
+    "  tst.l d5", "  beq.s parent", "  cmpi.b #'C',(a5)", "  bne.s parent",
+    "spin:", "  bra.s spin",
+    "parent:",
+    "  lea icpt(pc),a0", "  trap #0", "  dc.w F$Icpt",
+    "  moveq #1,d0", "  lea msg(pc),a0", "  moveq #msgl,d1", "  trap #0", "  dc.w I$WritLn",
+    "  moveq #0,d0", "  moveq #0,d1", "  moveq #1,d2", "  moveq #3,d3", "  moveq #0,d4",
+    "  lea me(pc),a0", "  lea cparm(pc),a1", "  trap #0", "  dc.w F$Fork", "  bcs.s done",
+    "  move.w d0,d7",
+    "wait:", "  trap #0", "  dc.w F$Wait",
+    "  cmpi.l #2,count(a6)", "  blt.s wait",
+    "  moveq #0,d0", "  move.w d7,d0", "  moveq #0,d1", "  trap #0", "  dc.w F$Send",
+    "  trap #0", "  dc.w F$Wait",
+    "done:", "  moveq #0,d1", "  trap #0", "  dc.w F$Exit",
+    "icpt:", "  addq.l #1,count(a6)", "  move.l #50000000,d1",
+    "slow:", "  subq.l #1,d1", "  bne.s slow",
+    "  trap #0", "  dc.w F$RTE",
+    "me: dc.b \"kspin\",0", "cparm: dc.b \"C\",$0D",
+    "msg: dc.b \"waiting for two signals\",$0D", "msgl equ *-msg",
+    "  ends", ""
+]
+
 func abortReachesShellOfComputingChild(key: UInt8, witnessName: String,
-                                       program: [String] = silentSpinAsm) -> Bool? {
+                                       program: [String] = silentSpinAsm,
+                                       keys: [UInt8]? = nil) -> Bool? {
     guard let (master, slave, _) = makePTY() else { return nil }
     let spinAsm = program.joined(separator: "\r")
     let witness = scratchDisk + "/" + witnessName
@@ -15716,7 +15817,10 @@ func abortReachesShellOfComputingChild(key: UInt8, witnessName: String,
         send("echo ready >\(scratch)/kready; \(scratch)/kspin\n")
         waitFor("kready")
         usleep(1_000_000)
-        var k = key; _ = write(master, &k, 1)
+        for (n, one) in (keys ?? [key]).enumerated() {
+            if n > 0 { usleep(200_000) }
+            var k = one; _ = write(master, &k, 1)
+        }
         usleep(500_000)
         send("echo reached >\(scratch)/\(witnessName)\n")
         for _ in 0..<50 where !reached {
@@ -15734,6 +15838,30 @@ func abortReachesShellOfComputingChild(key: UInt8, witnessName: String,
         try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
     }
     return reached
+}
+
+do {
+    let name = "console: a second Ctrl-C during an intercept is queued, not lost"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        if containerized {
+            print("SKIP: \(name) (needs a pty on the host)")
+        } else if (ProcessInfo.processInfo.environment["OS9_FLAGS"] ?? "").contains("-q") {
+            print("SKIP: \(name) (the system tick is off, so the parent never runs)")
+        } else if let reached = abortReachesShellOfComputingChild(key: 0x03, witnessName: "twosig",
+                                                                  program: twoSignalWaiterAsm,
+                                                                  keys: [0x03, 0x03]) {
+            if reached {
+                print("PASS: \(name)"); passed += 1
+            } else {
+                print("FAIL: \(name)")
+                print("      [the parent never counted a second signal: it was dropped]")
+                failed += 1
+            }
+        } else {
+            print("FAIL: console: could not create a pty for the two-signal test")
+            failed += 1
+        }
+    }
 }
 
 for (keyName, key, program, what) in [

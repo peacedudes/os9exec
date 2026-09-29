@@ -2191,6 +2191,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
   ushort       cpid;
   process_typ* cp;
   Boolean      cwti, cwti_svd;
+  Boolean      wasRTE= false; // the call just dispatched was F$RTE
 //Boolean      ncwti;
   regs_type*   crp;
   save_type*   svd;
@@ -2422,9 +2423,28 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
           async_area= true;
           sig_mask( cpid, 0 );
           async_area= false;
-          if (cp->way_to_icpt && cp->icpt_pid!=currentpid) {
-            cp->way_to_icpt= false;   /* the target runs its intercept next */
-            currentpid     = cp->icpt_pid;
+          /* The hand-over, done as the system-call arm below does it. cwti
+             is what keeps the loop from arbitrating the target away before
+             it runs, and the target enters its intercept masked, with the
+             signal in d1 and the queued count in d0: a second Ctrl-C during
+             the intercept is then queued, not lost (review, 2026-09-29). */
+              cwti= cp->way_to_icpt;
+          if (cwti) {
+            spid= cp->icpt_pid;
+            sigp= &procs[spid];
+            if (spid!=currentpid) {
+              cp->way_to_icpt= false;   /* the target runs its intercept next */
+              currentpid     = spid;
+            }
+            if (cp->icpt_signal!=S_Wake && sigp->state!=pDead) {
+              sigp->masklevel   = 1;
+              sigp->os9regs.d[1]= cp->icpt_signal;
+              sigp->os9regs.d[0]= IcptQueued( spid );
+              if (sigp->state==pWaiting && sigp->pd._sigvec!=0) {
+                set_os9_state( spid, pActive, "tick signal" );
+                sigp->rtestate= pActive;
+              }
+            }
           }
         }
       }
@@ -2435,6 +2455,7 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
         // TRAP0 = OS-9 system call called
         arbitrate= false; // disallow arbitration by default
         debug_comein( crp,      cpid );
+        wasRTE= (cp->func==F_RTE); /* F$RTE replaces the registers: see below */
         exec_syscall( cp->func, cpid, crp, false );
           
         // analyze result
@@ -2485,9 +2506,16 @@ void os9exec_loop( unsigned short xErr, Boolean fromIntUtil )
           } // if
         } // if cwti
 
-        if (cp->state==pActive    ||
+        /* Not after F$RTE: it has just put back the registers the signal
+           found -- the condition codes of a program cut off mid-computation,
+           or the error it set for an interrupted read -- and writing its own
+           "no error" over them cleared that program's carry (review of the
+           tick-time signal delivery; OS9Tests "signals: F$RTE gives back the
+           carry flag the signal found"). */
+        if (!wasRTE &&
+           (cp->state==pActive    ||
             cp->state==pWaitRead  ||
-            cp->state==pWaitWrite || cp->oerr) {
+            cp->state==pWaitWrite || cp->oerr)) {
           // report errors to OS9 programm
           if (!cp->oerr) crp->sr &= ~CARRY;
           else {
