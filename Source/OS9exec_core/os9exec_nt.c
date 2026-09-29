@@ -648,6 +648,7 @@ Boolean pluginActive  = false;
 Boolean ptocThread    = false;
 Boolean fullArb       = false;
 int     withTitle     = true; 
+Boolean briefTitle    = false; /* -l: sign on with one line */
 
 Boolean logtiming     = true; /* syscall loging, used by int cmd "systime" */
 Boolean logtiming_disp= false;
@@ -2944,7 +2945,18 @@ ushort os9exec_nt( const char* toolname, int argc, char **argv, char **envp,
        clutter, so it always signs on with the original authors' names. */
     withTitle= true;
   #endif
-    
+
+  /* -l: one line that still says what is running and whose it is, for a
+     page that embeds a small terminal (the freeware catalogue's man pages),
+     where twelve lines of sign-on were most of what the reader saw. Clearing
+     withTitle then quiets everything else keyed on it -- the platform lines,
+     the emulator core's CPU-table lines (newcpu.c), the ihelp hint and the
+     farewell -- so nothing else needs to know about -l. */
+  if (withTitle && briefTitle) {
+    upho_printf( "%s, (C) Lukas Zeller / Beat Forster, GPL\n", OS9exec_Name() );
+    withTitle= false;
+  }
+
   /* Sign-on message */
   if (withTitle) {
      upo_printf( "\n" );

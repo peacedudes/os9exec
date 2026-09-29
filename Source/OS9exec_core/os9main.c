@@ -570,6 +570,7 @@ static void os9_usage(char *name)
     upho_printf("   -u          user defined option\n" );
     upho_printf("   -v          ctrl-C will stop OS9exec immediately\n" );
     upho_printf("   -r          run terminal output full speed (no baud-rate pacing)\n" );
+    upho_printf("   -l          sign on with one line instead of the full banner\n" );
     upho_printf("   -6          also open RBF disks without the OS-9/68000 \"Cruz\" mark,\n" );
     upho_printf("               as 6809 (CoCo) disks are (off by default)\n" );
     upho_printf("   -W          debugging aid: a user-state write outside the process's\n" );
@@ -975,6 +976,7 @@ void os9_main( int argc, char **argv, char **envp )
                       } // if
                       break;
 
+          case 'l' :  briefTitle= true;  break;
           case 'x' :  ulp=&screenW;      goto getlnum;
           case 'y' :  ulp=&screenH;      goto getlnum;
           case 'w' :  if (optRaw=='W') { os9_write_check= 1; break; } // refuse writes outside own memory

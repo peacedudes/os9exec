@@ -295,6 +295,7 @@ that on all addresses, and on Linux the host has to allow low ports for users
 | `-d[n] msk` | Set diagnostic trace mask (see `idbg` → `dh` for bit values) |
 | `-q[ms]` | Turn the 100Hz system tick off (`-q`), or retune it (`-q<ms>`) |
 | `-r` | Run terminal output at full speed (disable baud-rate pacing) |
+| `-l` | Sign on with one line (name, version, authors) instead of the full banner, e.g. for a page that embeds a small terminal |
 | `-6` | Also open RBF disks without the OS-9/68000 format's "Cruz" mark, as 6809 (CoCo) disks are; off by default |
 | `-W` | Debugging aid: a program's write outside its own memory (data area, requested blocks, loaded modules) is a bus error that names the address and instruction, as OS-9's SSM makes it on real hardware; off by default |
 | `-h` | Full option list |

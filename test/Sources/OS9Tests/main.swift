@@ -1087,6 +1087,23 @@ check("internal: iquit -? explains itself instead of arming the quit",
       contains: "Syntax:   iquit", "iquit -?")
 check("internal: icrash -? explains itself instead of crashing",
       contains: "Syntax:   icrash", "icrash -?")
+// -l signs on with one line, for a page embedding a small terminal: the name
+// and the original authors stay, the platform and CPU-table lines go.
+do {
+    let name = "internal: -l signs on with one line that still names the authors"
+    if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
+        let out = os9(["echo x"], flags: ["-l"])
+        let signOn = out.replacingOccurrences(of: "\r", with: "\n")
+            .split(separator: "\n").filter { $0.hasPrefix("# ") }
+        if signOn.count == 1 && signOn[0].contains("Lukas Zeller / Beat Forster") {
+            print("PASS: \(name)"); passed += 1
+        } else {
+            print("FAIL: \(name)")
+            print("      [sign-on lines: \(signOn.count); \(signOn.prefix(3).joined(separator: " | "))]")
+            failed += 1
+        }
+    }
+}
 // mount offered SCSI options that only the classic Mac and old MSVC builds can
 // use; anywhere else -s ended in a bare "can't mount device".
 check("internal: mount -s says this build has no SCSI support",

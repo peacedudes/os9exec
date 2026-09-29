@@ -1671,6 +1671,7 @@ extern Boolean pluginActive;
 extern Boolean ptocThread;
 extern Boolean fullArb;
 extern int     withTitle;
+extern Boolean briefTitle;
 
 extern Boolean logtiming;
 extern Boolean logtiming_disp;
