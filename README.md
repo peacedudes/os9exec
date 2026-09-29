@@ -8,9 +8,10 @@ The original authors' last release was V3.39, in 2007, when 32-bit hosts were
 still the ordinary case. V4.0.0 (2026) brought it to 64-bit hosts: it builds and
 runs on 32- and 64-bit machines, big-endian and little-endian alike.
 
-**The current release is V4.1.0**: OS-9 networking programs reach the real
+**The current release is V4.1.1**: OS-9 networking programs reach the real
 network, os9exec runs in a web browser, and a long list of fixes brings it
-closer to the manuals. [What's new in V4.1.0](docs/release-notes-v4.1.0.md).
+closer to the manuals. [What's new in V4.1](docs/release-notes-v4.1.0.md), and
+the [two fixes in V4.1.1](docs/release-notes-v4.1.1.md).
 
 **See it running, right now:
 [open a live OS-9 system in your browser](https://peacedudes.github.io/osk-freeware/try/).**
