@@ -2248,6 +2248,7 @@ os9err OS9_F_Fork( regs_type *rp, ushort cpid )
   if (np->state!=pDead) {
     /* -- save exit code */
     close_usrpaths( newpid );
+    free_mem      ( newpid ); /* a refusal after prepData (E$Permit, E$ModBsy) left its data area */
     set_os9_state ( newpid, pUnused, "OS9_F_Fork" ); /* unused again because of error */
   //np->exiterr= err;
   } // if
@@ -2421,6 +2422,7 @@ os9err OS9_F_DFork( regs_type *rp, ushort cpid )
 
     if (np->state != pDead) {
         close_usrpaths(newpid);
+        free_mem(newpid); /* as F$Fork */
         set_os9_state(newpid, pUnused, "OS9_F_DFork");
     }
     return err;

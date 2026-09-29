@@ -1964,14 +1964,18 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
        shell's job, not the kernel's (Using Professional OS-9, shell). */
     { ushort tylan= os9_word( theModule->_mh._mtylan );
       if ((tylan>>BpB)!=MT_PROGRAM || (tylan & 0xFF)!=ML_OBJECT) {
-          unlink_module( mid ); return os9error(E_NEMOD);
+          /* and forget it: F$Chain's failure path kills this process, and
+             kill_process unlinks cp->mid -- a second unlink for the one
+             link F$Chain made, so a module still in use could be freed */
+          unlink_module( mid ); cp->mid= MAXMODULES; return os9error(E_NEMOD);
       }
     }
 
     /* -- prepare data area */
     debugprintf(dbgProcess,dbgDetail,("# prepFork: extra memory=%u (= paramsiz:%u + memplus:%u)\n",
                                     memplus+paramsiz, paramsiz,memplus));
-    err= prepData( newpid,theModule,memplus+paramsiz, &memsiz, &mp ); if (err) return err; /* no room for data */
+    err= prepData( newpid,theModule,memplus+paramsiz, &memsiz, &mp );
+    if (err) { unlink_module( mid ); cp->mid= MAXMODULES; return err; } /* no room for data; as below */
 
     /* -- copy parameter area */
     p= paramptr;        p2= mp+memsiz-paramsiz;
@@ -1993,7 +1997,7 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
     else if (module_busy_for( newpid, mid ))             err= E_MODBSY; /* the same link's other rule */
     else                                                 err= os9exec_compatible( theModule ); 
 
-    if (err) { unlink_module( mid ); return err; }
+    if (err) { unlink_module( mid ); cp->mid= MAXMODULES; return err; } /* as above */
 
     debugprintf(dbgProcess,dbgNorm,("# prepFork: Module mid=%d, address=%p\n",mid,(void*)theModule));
 

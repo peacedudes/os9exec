@@ -10961,20 +10961,38 @@ do {
         "mbad: dc.b \"FORK SAYS SOMETHING ELSE\",$0D", "mbadl equ *-mbad",
         "  ends", ""
     ].joined(separator: "\r")
+    // F$Chain to the same module fails the same way -- and its failure path
+    // kills the chainer, which unlinked the module a second time: a module
+    // loaded once lost its last link and was freed while still resident.
+    let chainAsm = [
+        "F$Chain equ $05", "F$Exit equ $06",
+        "  psect nchainer,$0101,$8001,0,512,start",
+        "start:",
+        "  moveq #0,d0", "  moveq #0,d1", "  moveq #1,d2", "  moveq #3,d3", "  moveq #0,d4",
+        "  lea name(pc),a0", "  lea parm(pc),a1", "  trap #0", "  dc.w F$Chain",
+        "  trap #0", "  dc.w F$Exit",
+        "name: dc.b \"nicode\",0", "parm: dc.b $0D", "  ends", ""
+    ].joined(separator: "\r")
     let basicSrc = ["PROCEDURE npacked", "PRINT \"PACKED RAN UNDER RUNB\"", "END", ""]
         .joined(separator: "\r")
 
     let forkName   = "fork: F$Fork of a module that is not object code is E$NEMod"
+    let chainName  = "fork: a failed F$Chain to a non-object module keeps its link count"
     let launchName = "launch: a packed BASIC09 module named to os9exec runs under RunB"
     let runFork    = filter.isEmpty || forkName.localizedCaseInsensitiveContains(filter)
+    let runChain   = filter.isEmpty || chainName.localizedCaseInsensitiveContains(filter)
     let runLaunch  = !containerized && (filter.isEmpty || launchName.localizedCaseInsensitiveContains(filter))
-    if runFork || runLaunch {
+    if runFork || runChain || runLaunch {
         try? icodeAsm.write(toFile: scratchDisk + "/nicode.a", atomically: true, encoding: .utf8)
         try? forkAsm.write(toFile: scratchDisk + "/nforker.a", atomically: true, encoding: .utf8)
+        try? chainAsm.write(toFile: scratchDisk + "/nchainer.a", atomically: true, encoding: .utf8)
         try? basicSrc.write(toFile: scratchDisk + "/npacked.src", atomically: true, encoding: .utf8)
         let built = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
                          "r68 /h5/nicode.a -o=/h5/nicode.r", "l68 /h5/nicode.r -o=/h5/nicode",
                          "r68 /h5/nforker.a -o=/h5/nforker.r", "l68 /h5/nforker.r -o=/h5/nforker",
+                         "r68 /h5/nchainer.a -o=/h5/nchainer.r", "l68 /h5/nchainer.r -o=/h5/nchainer",
+                         // the chain check first, on a module loaded exactly once
+                         "load /h5/nicode", "/h5/nchainer", "mdir -e nicode", "unlink nicode",
                          "/h5/nforker",
                          "chd /h5", "basic #32k", "load npacked.src", "chx /h5", "pack npacked", "bye",
                          "chx /dd/CMDS"], timeout: 90)
@@ -10985,6 +11003,19 @@ do {
                 print("FAIL: \(forkName)")
                 let seen = built.split(whereSeparator: \.isNewline).filter { $0.contains("FORK SAYS") || $0.contains("Error") }
                 print("      saw: \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+        }
+        if runChain {
+            // mdir -e's link count is the column before the name
+            let row = built.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+                .map { $0.split(separator: " ") }.first { $0.last == "nicode" && $0.count >= 8 }  // a table row, not the echoed command
+            let links = row.map { String($0[$0.count - 2]) } ?? "gone"
+            if links == "1" {
+                print("PASS: \(chainName)"); passed += 1
+            } else {
+                print("FAIL: \(chainName)")
+                print("      [loaded once, then a failed F$Chain: want link count 1, got \(links)]")
                 failed += 1
             }
         }
@@ -11019,8 +11050,90 @@ do {
             }
         }
         for leftover in ["nicode.a", "nicode.r", "nicode", "nforker.a", "nforker.r", "nforker",
+                         "nchainer.a", "nchainer.r", "nchainer",
                          "npacked.src", "npacked"] {
             try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
+// ── a refused F$Fork gives back what it took ──────────────────────────────────
+// F$Fork builds the child's data area before it asks whether the module may
+// be run, so a refusal there (E$ModBsy, E$Permit) left the area allocated:
+// 64 refused forks asking for 1M each filled the 32M arena, and the refusals
+// turned into E$NoRAM. A fork refused for want of room kept the module link it
+// had taken, so a module loaded once showed two links. And on a 32-bit host
+// (the i386 leg) that near-2G request, once anything had been freed, was
+// handed a small free block and cleared 2G from it: a bus error, here.
+do {
+    let busyAsm = ["  psect nbusy,$0101,$0001,0,256,start", "start:", "  moveq #0,d1",
+                   "  trap #0", "  dc.w $06", "  ends", ""].joined(separator: "\r")
+    let roomAsm = ["  psect nroom,$0101,$8001,0,256,start", "start:", "  moveq #0,d1",
+                   "  trap #0", "  dc.w $06", "  ends", ""].joined(separator: "\r")
+    let hogAsm = [
+        "F$Link equ $00", "F$Fork equ $03", "F$Exit equ $06", "I$WritLn equ $8C",
+        "  psect nfhog,$0101,$8001,0,512,start",
+        "start:",
+        // first, so its link count is measured whatever the loop below does
+        "  moveq #0,d0", "  move.l #$7FFFFF00,d1", "  moveq #1,d2", "  moveq #3,d3", "  moveq #0,d4",
+        "  lea room(pc),a0", "  lea parm(pc),a1", "  trap #0", "  dc.w F$Fork", "  bcc.s wrong",
+        // our own link makes us nbusy's holder, so every fork of it is refused
+        "  moveq #0,d0", "  lea busy(pc),a0", "  trap #0", "  dc.w F$Link", "  bcs.s wrong",
+        "  moveq #63,d6",
+        "again:",
+        "  moveq #0,d0", "  move.l #$100000,d1", "  moveq #1,d2", "  moveq #3,d3", "  moveq #0,d4",
+        "  lea busy(pc),a0", "  lea parm(pc),a1", "  trap #0", "  dc.w F$Fork",
+        "  bcc.s wrong", "  cmpi.w #209,d1", "  bne.s wrong",
+        "  dbra d6,again",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "wrong:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  trap #0", "  dc.w I$WritLn", "  moveq #0,d1", "  trap #0", "  dc.w F$Exit",
+        "busy: dc.b \"nbusy\",0", "room: dc.b \"nroom\",0", "parm: dc.b $0D",
+        "mok: dc.b \"BUSY EVERY TIME\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"REFUSED SOME OTHER WAY\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+
+    let memName  = "fork: a fork refused after its data area was built gives the memory back"
+    let linkName = "fork: a fork refused for want of room keeps its link count"
+    let runMem   = filter.isEmpty || memName.localizedCaseInsensitiveContains(filter)
+    let runLink  = filter.isEmpty || linkName.localizedCaseInsensitiveContains(filter)
+    if runMem || runLink {
+        for (name, text) in [("nbusy", busyAsm), ("nroom", roomAsm), ("nfhog", hogAsm)] {
+            try? text.write(toFile: scratchDisk + "/\(name).a", atomically: true, encoding: .utf8)
+        }
+        let built = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                         "r68 /h5/nbusy.a -o=/h5/nbusy.r", "l68 /h5/nbusy.r -o=/h5/nbusy",
+                         "r68 /h5/nroom.a -o=/h5/nroom.r", "l68 /h5/nroom.r -o=/h5/nroom",
+                         "r68 /h5/nfhog.a -o=/h5/nfhog.r", "l68 /h5/nfhog.r -o=/h5/nfhog",
+                         "load /h5/nbusy /h5/nroom", "/h5/nfhog", "mdir -e nroom"], timeout: 90)
+        if runMem {
+            if built.contains("BUSY EVERY TIME") {
+                print("PASS: \(memName)"); passed += 1
+            } else {
+                print("FAIL: \(memName)")
+                print("      [64 refused 1M forks in a 32M arena: want E$ModBsy each time; saw" +
+                      " \(built.contains("REFUSED SOME OTHER WAY") ? "another answer" : "no verdict")]")
+                failed += 1
+            }
+        }
+        if runLink {
+            // mdir -e's link count is the column before the name
+            let row = built.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
+                .map { $0.split(separator: " ") }.first { $0.last == "nroom" && $0.count >= 8 }  // a table row
+            let links = row.map { String($0[$0.count - 2]) } ?? "gone"
+            if links == "1" {
+                print("PASS: \(linkName)"); passed += 1
+            } else {
+                print("FAIL: \(linkName)")
+                print("      [loaded once, then a fork too big to build: want link count 1, got \(links)]")
+                failed += 1
+            }
+        }
+        for name in ["nbusy", "nroom", "nfhog"] {
+            for leftover in [name + ".a", name + ".r", name] {
+                try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+            }
         }
     }
 }
