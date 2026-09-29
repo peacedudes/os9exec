@@ -46,6 +46,22 @@ Everything since V3.39 is ours - as is any bug you may find in it.
 
 Any OS-9/68k software will do.
 
+Have none? Start with the
+[OS-9/68000 freeware collection](https://github.com/peacedudes/osk-freeware).
+Its image is a complete disk of its own, with bash to log in to and over a
+thousand programs to run. Download `osk-freeware.dd.gz` from its
+[Releases](https://github.com/peacedudes/osk-freeware/releases), then:
+
+```sh
+gunzip osk-freeware.dd.gz
+OS9DISK=$PWD/osk-freeware.dd OS9H0=$PWD/osk-freeware.dd os9exec -r bash /dd/SYS/login
+```
+
+Its [catalogue](https://peacedudes.github.io/osk-freeware/) has a card for
+every program, and starts it in your web browser, on this emulator, with
+nothing to install. Some programs want parts of a licensed OS-9 (its shell,
+runb or compiler); the collection's README says how to attach yours.
+
 The preferred format is an RBF disk image: a single binary file. A straight copy
 of your normal boot disk is ideal, though a boot disk is not required - os9exec
 does not boot. It is an ordinary C program, with no ROM, no device drivers and
@@ -418,6 +434,32 @@ Run `idbg` from the OS-9 shell to enter the emulator's own built-in debugger - s
 
 See [CMDS.md](CMDS.md) for the full list of known OS-9 commands with status notes.
 
+## The conformance disk: check os9exec, or a real OS-9 machine
+
+`conf68k.dsk`, attached to each [release](https://github.com/peacedudes/os9exec/releases),
+holds 115 small tests of OS-9/68000 behaviour, each tied to a passage in
+Microware's manuals. They are hand-written 68000 assembly with no Microware
+software on the disk, so it can go anywhere.
+
+- **Under os9exec, on any platform, with no OS-9 system disk:**
+
+  ```sh
+  OS9DISK=/full/path/to/conf68k.dsk os9exec -r /dd/CMDS/run
+  ```
+
+  On Windows: `set OS9DISK=C:/full/path/to/conf68k.dsk`, then
+  `os9exec -r /dd/CMDS/run`.
+- **On real OS-9/68000 hardware:** put the image on a disk, and as the super
+  user `chd` to it, `chx` to its `CMDS`, and run `runall >>+RESULTS/errors`.
+
+At the end it says in plain words whether there is anything to send. Only a
+failure is news: it then asks you to
+[open an issue](https://github.com/peacedudes/os9exec/issues) with
+`RESULTS/report` (and `RESULTS/errors`, if there is one). A SKIP is not a
+failure; it means that claim cannot be checked on your system or disk. A failure on real hardware is the most useful
+report this project can receive, because it is the one thing an emulator
+cannot tell us for itself. The disk's `readme` has the details.
+
 ## Checking a build
 
 One command runs every gate this project has and prints one verdict:
@@ -618,6 +660,7 @@ overrides.
 Original project: <http://www.synthesis.ch/os9exec>  
 Their final release: **V3.39**, 11 May 2007 - archived at <https://sourceforge.net/projects/os9exec/> (historical; this fork does not publish there)  
 This continuation: <https://github.com/peacedudes/os9exec> - Robert Doggett, with Claude (Anthropic)  
+Its siblings: the [OS-9/68000 freeware collection](https://github.com/peacedudes/osk-freeware), whose programs found nearly every fix in V4.1.0, and the [OS-9 development skills](https://github.com/peacedudes/os9-dev-skill), whose 68000 examples were checked by running them under os9exec  
 License: GNU General Public License v2 or later (see source file headers)
 
 Work in this fork: ports to Apple Silicon, modern Linux and native Windows; verification on riscv64 and on big-endian s390x and sparc64; a 68k conformance suite run against the published manuals; and fixes across the syscall surface, RBF record locking, terminal I/O and the scheduler. About 1,250 commits on top of V3.39 - see [What else changed](#what-else-changed) and the [V4.1.0 release notes](docs/release-notes-v4.1.0.md). Why things are the way they are, including what was deliberately left alone, is in [`docs/decisions.md`](docs/decisions.md).

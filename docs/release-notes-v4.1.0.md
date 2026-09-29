@@ -95,15 +95,22 @@ System calls, now as the Technical Manual describes them:
   and records its creator.
 - Memory: `F$Mem` resizes the data area in place, and what it adds is always clean;
   `F$SRqMem` with -1 allocates the largest free block; a request near 4 GB is `E$NoRAM` on every
-  host; a process may hold 8192 blocks; `F$GBlkMp` reports the free map; a zero-byte block
-  can be given back without crashing the emulator.
+  host, and one near 2 GB no longer clears memory it was never given on a 32-bit host;
+  a process may hold 8192 blocks; `F$GBlkMp` reports the free map; a zero-byte block can be given
+  back without crashing the emulator.
 - Processes and signals: `F$STrap` handlers get the PC in a0 and run on their own stack, for
   every vector the manual lists; signals queued while masked reach the intercept routine in
   order, with the count in d0; the mask level stops at 255; a process's own `S$Wake` wakes it;
   `F$DExec` single-steps system calls, resumes from the debugger's register buffer, and steps
   only its own child (a program running beside a debugged one that waited at the terminal was
   stepped too, and crawled). A signal handler that waits on a pipe no longer freezes the whole
-  emulator (it did in v4.0.0), and `F$RTE` goes back to the request the signal interrupted.
+  emulator (it did in v4.0.0), and `F$RTE` goes back to the request the signal interrupted,
+  with the condition codes it found. A program computing without system calls gets its signal
+  at the next tick, and a second signal waits its turn instead of being lost.
+- `F$Fork` and `F$Chain` run only program object code, and refuse anything else with `E$NEMod`
+  (a packed BASIC09 module was "bad module ID"). `os9exec <module>` does what a shell does and
+  hands a packed BASIC09 module to RunB. A refused fork gives back its data area and its module
+  link, and a failed `F$Chain` no longer unlinks its module twice.
 - The system tick runs even when os9exec is started with SIGALRM blocked, as some launchers
   (GitHub's macOS runner among them) start programs; it used to be silently absent there.
 - CPU time: a process that computes without making system calls is charged for it, so the C
