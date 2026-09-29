@@ -19,6 +19,16 @@ with source for most of it, ready to mount beside your system disk. It is also
 how V4.1.0 was made: running that collection under os9exec found nearly every
 fix since V4.0.0.
 
+**Writing or porting OS-9 software?** The
+[OS-9 development skills](https://github.com/peacedudes/os9-dev-skill) (coming soon)
+are two reference collections for Microware OS-9 on the 6809 and the 68000:
+BASIC09, Microware C, assembly, the shell and its utilities, modules, system
+calls, error codes, and, below the application line, device drivers, file
+managers and kernel internals. Each claim says where it came from, and many
+were checked by running them under os9exec. They are plain Markdown, for a
+person to read or for [Claude Code](https://claude.com/claude-code) to load as
+skills.
+
 ### A continuation of the original authors' work
 
 OS9exec was written by **Lukas Zeller** and **Beat Forster**. They both know of
