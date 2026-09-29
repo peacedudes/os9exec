@@ -69,7 +69,7 @@ echo "== 2. the suite runs from the image =="
 # program relative to the host working directory (a real defect, recorded in
 # ROADMAP-68k.md). tools/conformance.sh works around it the same way.
 printf 'RUN prebuilt\r' > "$SUITE/RESULTS/report"
-mods=$(ls "$SUITE/CMDS" | grep -vE '^(tally|mark|load|cio)$' | sort)
+mods=$(ls "$SUITE/CMDS" | grep -vE '^(tally|mark|run|load|cio)$' | sort)
 for m in $mods; do
     line=$( cd "$OUT" && $TIMEOUT 60 env OS9DISK="$IMG" "$EXE" -r "/dd/CMDS/$m" \
             </dev/null 2>&1 | tr '\r' '\n' | grep -a '^RESULT ' )

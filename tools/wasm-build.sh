@@ -72,7 +72,7 @@ command -v node >/dev/null || { echo "no node -- built but not verified"; exit 0
 # Prove it runs OS-9 code rather than merely starting. Anything less than the
 # whole suite would not distinguish "boots" from "works".
 pass=0; fail=0; skip=0; none=0
-for m in $(ls "$REPO/test/68k-conformance/CMDS" | grep -avE '^(tally|mark|load|cio)$' | sort); do
+for m in $(ls "$REPO/test/68k-conformance/CMDS" | grep -avE '^(tally|mark|run|load|cio)$' | sort); do
     line=$( cd "$OUT" && OS9DISK=/conf68k.dsk node os9exec.js -r "/dd/CMDS/$m" 2>/dev/null \
             | tr '\r' '\n' | grep -a '^RESULT ' | head -1 )
     case "$line" in

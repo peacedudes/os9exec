@@ -17,7 +17,7 @@ TIMEOUT=$(command -v gtimeout || command -v timeout)
 
 echo "== CONF68K, self-contained disk: $(basename "$IMG") =="
 printf 'RUN prebuilt\r' > "$SUITE/RESULTS/report"
-for m in $(ls "$SUITE/CMDS" | grep -vE '^(tally|mark)$' | sort); do
+for m in $(ls "$SUITE/CMDS" | grep -vE '^(tally|mark|run)$' | sort); do
     # cd to the image's own directory -- see verify-image.sh for why.
     line=$( cd "$(dirname "$IMG")" && $TIMEOUT 60 env OS9DISK="$IMG" "$EXE" \
             -r "/dd/CMDS/$m" </dev/null 2>&1 | tr '\r' '\n' | grep -a '^RESULT ' )

@@ -70,7 +70,7 @@ scp -q -r $SSHOPTS -P 2222 "$REPO/test/68k-conformance" claude@localhost:C:/veri
 # -match ignores case, so t85's PASS line ("...ends a blocked read with error
 # 2") was also counted as an ERROR. Every non-PASS line is listed, SKIPs too,
 # so the run can be held against the Unix --noshell leg's SKIPs.
-ps_body='$mods = Get-ChildItem CMDS | Where-Object { $_.Name -ne "tally" -and $_.Name -ne "mark" } | Sort-Object Name
+ps_body='$mods = Get-ChildItem CMDS | Where-Object { $_.Name -ne "tally" -and $_.Name -ne "mark" -and $_.Name -ne "run" } | Sort-Object Name
 $res=@(); foreach ($m in $mods) {
   $o = (C:\verify\os9exec.exe -r ("/dd/CMDS/" + $m.Name) 2>&1 | Out-String)
   $res += (($o -replace "`r","`n") -split "`n" | Where-Object { $_ -match "^RESULT " })
@@ -130,6 +130,16 @@ foreach ($name in $cases.Keys) {
 }' 2>/dev/null | tr -d '\r')
 echo "-- host standard input: a file, a pipe, NUL --"
 echo "$out_in"
+
+# The route the conformance readme gives a Windows user: the single-disk
+# image as OS9DISK and the suite's own shell-less runner. It has to end with
+# tally's all-clear, which is what that user is told to look for.
+scp -q $SSHOPTS -P 2222 "$REPO/build/selfhost68k/conf68k.dsk" claude@localhost:C:/verify/conf68k.dsk || exit 1
+out_run=$($SSH '$env:OS9DISK="C:/verify/conf68k.dsk"
+cd C:\verify
+& C:\verify\os9exec.exe -r /dd/CMDS/run 2>&1 | Out-String' 2>/dev/null | tr -d '\r')
+echo "-- the conformance runner from conf68k.dsk --"
+grep -E "CONF68K totals|Nothing to send|Please tell us" <<<"$out_run"
 # Shut the guest down FROM INSIDE, and never force it.
 #
 # `utmctl stop` defaults to --force, which is a power-off event -- pulling the
@@ -164,6 +174,8 @@ err=$(sed -n 's/^ERROR=//p'  <<<"$out")
 # as checked, so a probe that never ran cannot pass by printing nothing.
 [ "$(grep -c '^STDIN [a-z]* exact ' <<<"$out_in")" = 3 ] \
   || { echo "host standard input is wrong on Windows (see above)"; exit 1; }
+grep -q "Nothing to send" <<<"$out_run" \
+  || { echo "the conformance runner did not give the all-clear on Windows"; exit 1; }
 
 # Both spellings must produce the same tally. Comparing the four counters
 # rather than TOTAL alone, so a run that reports the right NUMBER of modules
