@@ -1954,6 +1954,20 @@ os9err prepFork( ushort newpid,   char*  mpath,    ushort mid,
        is garbage.  This shouldn't normally be reached, but catch it defensively. */
     if (os9modules[mid].isBuiltIn) return os9error(E_MNF);
 
+    /* "To be loaded, the module must be program object code" (F$Fork, v2.4
+       Technical Reference Manual, page 1-30), else E$NEMod. Checked before the
+       data area is built, which reads a program's initialised-data table: a
+       packed BASIC09 module ($0202, Subroutine, I-code) has none, and failed there as a
+       "bad module ID" instead; a Program in any language but object code would
+       have been run as 68000 code, since only the type was checked, further
+       down. Handing I-code to RunB is the
+       shell's job, not the kernel's (Using Professional OS-9, shell). */
+    { ushort tylan= os9_word( theModule->_mh._mtylan );
+      if ((tylan>>BpB)!=MT_PROGRAM || (tylan & 0xFF)!=ML_OBJECT) {
+          unlink_module( mid ); return os9error(E_NEMOD);
+      }
+    }
+
     /* -- prepare data area */
     debugprintf(dbgProcess,dbgDetail,("# prepFork: extra memory=%u (= paramsiz:%u + memplus:%u)\n",
                                     memplus+paramsiz, paramsiz,memplus));

@@ -924,7 +924,37 @@ static os9err prepLaunch(char *toolname, char **argv, int argc, char **envp, ulo
   err= new_process( 0, &newpid,numpaths      ); if (err) return err;
   err= link_load  (     newpid,toolname,&mid ); if (err) return err;
 
+  /* A packed BASIC09 module named on os9exec's own command line runs under
+     RunB, as it would typed at a shell prompt: "If the load succeeds and the
+     module is BASIC I-code, execute Runb command. Command is an argument for
+     RunB" (Using Professional OS-9, the shell utility). F$Fork itself only
+     runs object code (E$NEMod otherwise), so this launch, which stands where
+     the shell would, does what the shell does; `os9exec hog` used to answer
+     "bad module ID". */
+  { ushort tylan= os9_word( os9mod(mid)->_mh._mtylan );
+    /* the language decides, as in the shell: PACK writes $0202 (Subroutine,
+       BASIC I-code), so a test for Program would never match */
+    if ((tylan & 0xFF)==ML_BASIC) {
+        char** rargv= (char**)malloc( sizeof(char*)*(size_t)(argc+1) );
+        int    k;
+        if (rargv==NULL) return os9error(E_NORAM);
+        /* RunB takes a bare module NAME, never a path (`runb /dd/CMDS/hog` is
+           its error 43), so it gets the module's own name, and the module
+           stays loaded for RunB's F$Link to find: `os9exec /dd/CMDS/hog` works
+           as `os9exec hog` does. */
+        rargv[0]= Mod_Name( os9mod(mid) );
+        for (k=0; k<argc; k++) rargv[k+1]= argv[k];
+        err= link_load( newpid,"runb",&mid );
+        if (!err) err= prepParams( os9mod(mid), rargv,argc+1, envp, &psiz, &pap );
+        free( rargv );
+        if (err) return err;
+        toolname= "runb";
+        goto params_ready;
+    }
+  }
+
   err= prepParams( os9mod(mid), argv,argc, envp, &psiz, &pap ); if (err) return err;
+  params_ready:
 	
 										  /* group/user 0.0 are set for the first process */
   err= prepFork( newpid,toolname, mid,pap,psiz,memplus,numpaths, 0,0, prior );

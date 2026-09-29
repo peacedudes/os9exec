@@ -1252,7 +1252,7 @@ void get_error_strings(os9err err, char **nameP, char **descP)
         case E_KWNMOD   : name="E_KWNMOD";  desc="Known Module"; break;
         case E_BMCRC    : name="E_BMCRC";   desc="Bad Module CRC"; break;
         case E_SIGNAL   : name="E_SIGNAL";  desc="Signal Error (replaces E_USIGP)"; break;
-        case E_NEMOD    : name="E_NEMOD";   desc="Non Existing Module"; break;
+        case E_NEMOD    : name="E_NEMOD";   desc="Non Executable Module"; break;
         case E_BNAM     : name="E_BNAM";    desc="Bad Name"; break;
         case E_BMHP     : name="E_BMHP";    desc="bad module header parity"; break;
         case E_NORAM    : name="E_NORAM";   desc="No Ram Available"; break;

@@ -10933,6 +10933,98 @@ do {
     }
 }
 
+// ── only object code is forked; the shell, and os9exec's launch, run I-code ─────
+// "To be loaded, the module must be program object code" (F$Fork, v2.4
+// Technical Reference Manual, page 1-30). A packed BASIC09 module ($0202,
+// Subroutine, I-code) failed a direct F$Fork as "bad module ID": its missing
+// data table was read before its type was looked at. It is E$NEMod. Handing
+// I-code to RunB is the SHELL's job ("If the load succeeds and the module is
+// BASIC I-code, execute Runb command", Using Professional OS-9), and os9exec's
+// own launch, which stands where a shell would, now does the same, by name or
+// by path; `os9exec <packed module>` used to fail. The direct fork uses a
+// module that only CLAIMS to be I-code: the header is all the kernel reads.
+do {
+    let icodeAsm = ["  psect nicode,$0202,$8001,0,256,start", "start:", "  rts", "  ends", ""]
+        .joined(separator: "\r")
+    let forkAsm = [
+        "F$Fork equ $03", "F$Exit equ $06", "I$WritLn equ $8C",
+        "  psect nforker,$0101,$8001,0,512,start",
+        "start:",
+        "  moveq #0,d0", "  moveq #0,d1", "  moveq #1,d2", "  moveq #3,d3", "  moveq #0,d4",
+        "  lea name(pc),a0", "  lea parm(pc),a1", "  trap #0", "  dc.w F$Fork",
+        "  bcc.s wrong", "  cmpi.w #234,d1", "  bne.s wrong",
+        "  lea mok(pc),a0", "  moveq #mokl,d1", "  bra.s say",
+        "wrong:", "  lea mbad(pc),a0", "  moveq #mbadl,d1",
+        "say:", "  moveq #1,d0", "  trap #0", "  dc.w I$WritLn", "  moveq #0,d1", "  trap #0", "  dc.w F$Exit",
+        "name: dc.b \"/h5/nicode\",0", "parm: dc.b $0D",
+        "mok: dc.b \"FORK SAYS NEMOD\",$0D", "mokl equ *-mok",
+        "mbad: dc.b \"FORK SAYS SOMETHING ELSE\",$0D", "mbadl equ *-mbad",
+        "  ends", ""
+    ].joined(separator: "\r")
+    let basicSrc = ["PROCEDURE npacked", "PRINT \"PACKED RAN UNDER RUNB\"", "END", ""]
+        .joined(separator: "\r")
+
+    let forkName   = "fork: F$Fork of a module that is not object code is E$NEMod"
+    let launchName = "launch: a packed BASIC09 module named to os9exec runs under RunB"
+    let runFork    = filter.isEmpty || forkName.localizedCaseInsensitiveContains(filter)
+    let runLaunch  = !containerized && (filter.isEmpty || launchName.localizedCaseInsensitiveContains(filter))
+    if runFork || runLaunch {
+        try? icodeAsm.write(toFile: scratchDisk + "/nicode.a", atomically: true, encoding: .utf8)
+        try? forkAsm.write(toFile: scratchDisk + "/nforker.a", atomically: true, encoding: .utf8)
+        try? basicSrc.write(toFile: scratchDisk + "/npacked.src", atomically: true, encoding: .utf8)
+        let built = os9(["load /dd/CMDS/r68 /dd/CMDS/l68",
+                         "r68 /h5/nicode.a -o=/h5/nicode.r", "l68 /h5/nicode.r -o=/h5/nicode",
+                         "r68 /h5/nforker.a -o=/h5/nforker.r", "l68 /h5/nforker.r -o=/h5/nforker",
+                         "/h5/nforker",
+                         "chd /h5", "basic #32k", "load npacked.src", "chx /h5", "pack npacked", "bye",
+                         "chx /dd/CMDS"], timeout: 90)
+        if runFork {
+            if built.contains("FORK SAYS NEMOD") {
+                print("PASS: \(forkName)"); passed += 1
+            } else {
+                print("FAIL: \(forkName)")
+                let seen = built.split(whereSeparator: \.isNewline).filter { $0.contains("FORK SAYS") || $0.contains("Error") }
+                print("      saw: \(seen.joined(separator: " | "))")
+                failed += 1
+            }
+        }
+        if runLaunch {
+            // Straight from the host: os9exec is the launcher here, no shell.
+            func launch(_ target: String) -> String {
+                let process = Process()
+                let pipe    = Pipe()
+                process.executableURL  = execURL
+                process.arguments      = ["-r", target]
+                process.environment    = ["OS9DISK": diskPath,
+                                          "OS9H\(scratchDev.dropFirst())": scratchDisk]
+                                             .merging(inheritedByChildren) { mine, _ in mine }
+                process.currentDirectoryURL = URL(fileURLWithPath: scratchDisk)
+                process.standardInput  = FileHandle.nullDevice
+                process.standardOutput = pipe
+                process.standardError  = pipe
+                guard (try? process.run()) != nil else { return "" }
+                let deadline = Date().addingTimeInterval(30)
+                while process.isRunning && Date() < deadline { usleep(50_000) }
+                if process.isRunning { process.terminate() }
+                process.waitUntilExit()
+                return String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            }
+            let byPath = launch("/h5/npacked")
+            if byPath.contains("PACKED RAN UNDER RUNB") {
+                print("PASS: \(launchName)"); passed += 1
+            } else {
+                print("FAIL: \(launchName)")
+                print("      saw: \(byPath.split(whereSeparator: \.isNewline).suffix(3).joined(separator: " | "))")
+                failed += 1
+            }
+        }
+        for leftover in ["nicode.a", "nicode.r", "nicode", "nforker.a", "nforker.r", "nforker",
+                         "npacked.src", "npacked"] {
+            try? FileManager.default.removeItem(atPath: scratchDisk + "/" + leftover)
+        }
+    }
+}
+
 // ── the tick runs even when the launcher blocked SIGALRM ────────────────────────
 // A blocked signal mask survives exec, and GitHub's macOS runner starts
 // processes with SIGALRM blocked: the tick's handler was installed and never
