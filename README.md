@@ -12,15 +12,23 @@ runs on 32- and 64-bit machines, big-endian and little-endian alike.
 network, os9exec runs in a web browser, and a long list of fixes brings it
 closer to the manuals. [What's new in V4.1.0](docs/release-notes-v4.1.0.md).
 
+**See it running, right now:
+[open a live OS-9 system in your browser](https://peacedudes.github.io/osk-freeware/try/).**
+That is os9exec, compiled to WebAssembly, booted from the freeware collection's
+disk and waiting at a shell prompt. Nothing to install: type `dir`, or a
+program's name - `rain`, `fortune`, `phoon`. Or open it with
+[`banner1 -d -s OS-9` already typed](https://peacedudes.github.io/osk-freeware/try/?run=banner1%20-d%20-s%20OS-9),
+or with [`rain`](https://peacedudes.github.io/osk-freeware/try/?run=rain), and press Enter.
+
 **Looking for software to run?** The
-[OS-9/68000 freeware collection](https://github.com/peacedudes/osk-freeware) (coming soon) is
+[OS-9/68000 freeware collection](https://github.com/peacedudes/osk-freeware) is
 three decades of community software for OS-9/68000 gathered on one disk image,
 with source for most of it, ready to mount beside your system disk. It is also
 how V4.1.0 was made: running that collection under os9exec found nearly every
 fix since V4.0.0.
 
 **Writing or porting OS-9 software?** The
-[OS-9 development skills](https://github.com/peacedudes/os9-dev-skill) (coming soon)
+[OS-9 development skills](https://github.com/peacedudes/os9-dev-skill)
 are two reference collections for Microware OS-9 on the 6809 and the 68000:
 BASIC09, Microware C, assembly, the shell and its utilities, modules, system
 calls, error codes, and, below the application line, device drivers, file
@@ -92,6 +100,10 @@ where they live on an SDK installation.
 ---
 
 ## Quick start
+
+Nothing to install at all:
+[run it in your browser](https://peacedudes.github.io/osk-freeware/try/). To run it on
+your own machine:
 
 ```sh
 git clone https://github.com/peacedudes/os9exec.git
