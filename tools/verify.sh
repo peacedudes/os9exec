@@ -110,6 +110,7 @@ stage "CONF68K, real RBF image"          tools/conformance.sh 68k --noshell --rb
 stage "live-verification corpus"         make live-verify
 stage "RBF integrity hammer (gate)"      make hammer
 stage "self-contained CONF68K disk"      tools/selfhost68k/verify-image.sh
+stage "CONF68K verdict, as a terminal shows it" tools/terminal-view.sh
 
 if [ "$want_docker" = yes ]; then
     echo "-- other operating systems"

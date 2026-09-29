@@ -134,12 +134,24 @@ echo "$out_in"
 # The route the conformance readme gives a Windows user: the single-disk
 # image as OS9DISK and the suite's own shell-less runner. It has to end with
 # tally's all-clear, which is what that user is told to look for.
-scp -q $SSHOPTS -P 2222 "$REPO/build/selfhost68k/conf68k.dsk" claude@localhost:C:/verify/conf68k.dsk || exit 1
-out_run=$($SSH '$env:OS9DISK="C:/verify/conf68k.dsk"
+#
+# RUNS times, each from a fresh copy of the image, and every one must give the
+# all-clear. Once was not enough: v4.1.0 shipped with 6 runs in 20 on Windows
+# ending in "Please tell us" (an SS_Ticks timeout that fired late, t21/t116),
+# and a single run passed often enough to hide it.
+RUNS=${WINVM_RUNS:-5}
+scp -q $SSHOPTS -P 2222 "$REPO/build/selfhost68k/conf68k.dsk" claude@localhost:C:/verify/pristine.dsk || exit 1
+echo "-- the conformance runner from conf68k.dsk, $RUNS runs --"
+out_run=""
+for i in $(seq 1 "$RUNS"); do
+    one=$($SSH 'Copy-Item C:\verify\pristine.dsk C:\verify\conf68k.dsk -Force
+$env:OS9DISK="C:/verify/conf68k.dsk"
 cd C:\verify
 & C:\verify\os9exec.exe -r /dd/CMDS/run 2>&1 | Out-String' 2>/dev/null | tr -d '\r')
-echo "-- the conformance runner from conf68k.dsk --"
-grep -E "CONF68K totals|Nothing to send|Please tell us" <<<"$out_run"
+    echo "run $i: $(grep -E "CONF68K totals" <<<"$one")"
+    grep -q "Nothing to send" <<<"$one" || out_run="$out_run$one"$'\n'"RUN $i DID NOT GIVE THE ALL-CLEAR"$'\n'
+done
+[ -n "$out_run" ] && grep -E "Please tell us|DID NOT" <<<"$out_run"
 # Shut the guest down FROM INSIDE, and never force it.
 #
 # `utmctl stop` defaults to --force, which is a power-off event -- pulling the
@@ -174,8 +186,8 @@ err=$(sed -n 's/^ERROR=//p'  <<<"$out")
 # as checked, so a probe that never ran cannot pass by printing nothing.
 [ "$(grep -c '^STDIN [a-z]* exact ' <<<"$out_in")" = 3 ] \
   || { echo "host standard input is wrong on Windows (see above)"; exit 1; }
-grep -q "Nothing to send" <<<"$out_run" \
-  || { echo "the conformance runner did not give the all-clear on Windows"; exit 1; }
+[ -z "$out_run" ] \
+  || { echo "the conformance runner did not give the all-clear on Windows, every run"; exit 1; }
 
 # Both spellings must produce the same tally. Comparing the four counters
 # rather than TOTAL alone, so a run that reports the right NUMBER of modules
