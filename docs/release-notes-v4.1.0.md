@@ -4,7 +4,7 @@ The first update since v4.0.0. It makes os9exec a good deal more faithful to the
 manuals, lets OS-9 networking programs reach the real network, adds a browser build, and fixes
 a long list of things found by running a large collection of real OS-9 software under it:
 the [OS-9/68000 freeware collection](https://github.com/peacedudes/osk-freeware) (coming soon), three decades
-of community software on one disk image. Nearly every fix here was found by running it.
+of community software on one disk image. Most of what is fixed here was found by running it.
 
 Nearly every fix listed here has a test that fails on the build before it and passes on this
 one. The suite runs on macOS and on Linux (x86-64, i386 and big-endian s390x), and the
@@ -30,17 +30,18 @@ terminal. It has no network and no host directories. See the README.
 
 **Idle is idle.** An os9exec whose processes are all waiting now sleeps until something is due
 instead of polling: about 0.1% of a core on macOS and Linux, down from about 1.6% (on Windows
-about 1%, down from 2 to 4%). A waiting reader or writer
-resumes when its data arrives, and a writer waiting on a full pipe no longer keeps a core busy
-(in v4.0.0 it spun until its reader caught up).
+about 1%, down from 2 to 4%). A waiting reader or writer resumes when its data arrives, and a
+writer waiting on a full pipe no longer keeps a core busy (in v4.0.0 it spun until its reader
+caught up).
 
 **Windows and the browser catch up.** The system tick now runs on Windows and in the browser
 too, where there is no timer signal to drive it, so a program that makes no system calls no
-longer keeps the machine to itself: other processes run, Ctrl-C reaches it (checked by hand on
-Windows 11), and the browser page keeps drawing and taking keys. On Windows, a program's standard input redirected from a file or a pipe is
-read to its end (a file gave nothing, and a pipe never ended), and a Windows text file's CR LF
-is one line end rather than a line end and a stray LF. Output redirected to a file ends its
-lines CR LF as on macOS and Linux instead of CR CR LF, and an idle console wakes on a keystroke.
+longer keeps the machine to itself: other processes run, Ctrl-C and Ctrl-E reach it (checked
+by hand on Windows 11), and the browser page keeps drawing and taking keys. On Windows, a
+program's standard input redirected from a file or a pipe is read to its end (a file gave
+nothing, and a pipe never ended), and a Windows text file's CR LF is one line end rather than a
+line end and a stray LF. Output redirected to a file ends its lines CR LF as on macOS and Linux
+instead of CR CR LF, and an idle console wakes on a keystroke.
 
 **A check for stray writes.** `-W` makes a program's write outside its own memory (its data
 area, the blocks it requested, loaded modules) a bus error, and names the address and the
@@ -49,8 +50,9 @@ our own test programs once wrote 32K past their data for months, and it showed o
 utility looping in one session layout.
 
 **Built-in commands.** They are neither files nor modules, so `dir` and `mdir` cannot show them;
-the sign-on now ends by pointing at `ihelp`, which lists them, and every one answers `-?`. New: `pwd` and `cd`, and `iterm`, which makes a `/tN` terminal at runtime
-the way `mount` makes an `/hX` disk. `devs` now lists host directories as well, says who is using
+the sign-on now ends by pointing at `ihelp`, which lists them, and every one answers `-?`
+(`stop -?` used to stop). New: `pwd` and `cd`, and `iterm`, which makes a `/tN` terminal at
+runtime the way `mount` makes an `/hX` disk. `devs` now lists host directories as well, says who is using
 each device and how to attach to a terminal, and fits 80 columns. `mount <image> hX` now attaches
 an existing disk image while running.
 
@@ -97,19 +99,18 @@ System calls, now as the Technical Manual describes them:
   order, with the count in d0; the mask level stops at 255; a process's own `S$Wake` wakes it;
   `F$DExec` single-steps system calls, resumes from the debugger's register buffer, and steps
   only its own child (a program running beside a debugged one that waited at the terminal was
-  stepped too, and crawled). A signal
-  handler that waits on a pipe no longer freezes the whole emulator (it did in v4.0.0), and
-  `F$RTE` goes back to the request the signal interrupted.
+  stepped too, and crawled). A signal handler that waits on a pipe no longer freezes the whole
+  emulator (it did in v4.0.0), and `F$RTE` goes back to the request the signal interrupted.
 - The system tick runs even when os9exec is started with SIGALRM blocked, as some launchers
   (GitHub's macOS runner among them) start programs; it used to be silently absent there.
 - CPU time: a process that computes without making system calls is charged for it, so the C
   library's `clock()` advances (the Whetstone benchmark used to divide by zero).
 - Permissions: `S$Kill`, `F$SPrior`, `F$SetSys` and `F$DExit` enforce the manual's rules.
-- Time: `F$Sleep` ends on time beside a process that computes without system calls (it overran
-  by up to 30 ticks, and by seconds on a host with a slow timer); `F$Alarm` IDs, cycles and the
-  256ths-of-a-second interval form; an absolute alarm already
-  past is sent; `F$Sleep` rounds up; `F$Julian` and `F$Gregor` use the Julian calendar before
-  1582 and get the century leap years right.
+- Time: `F$Sleep` rounds up, and ends on time beside a process that computes without system
+  calls (it overran by up to 30 ticks, and by seconds on a host with a slow timer); `F$Alarm`
+  IDs, cycles and the 256ths-of-a-second interval form work; an absolute alarm already past is
+  sent; `F$Julian` and `F$Gregor` use the Julian calendar before 1582 and get the century leap
+  years right.
 - New: `F$SchBit`, `F$AllBit`, `F$DelBit`, `F$SysID` (pre-3.0 form), and much more of `F$SetSys`.
 - The 68000 core: `MOVE from SR` is user-legal; `NEG`, `NBCD` and `SUB` set X; the 68881
   emulation stores doubles exactly (results were sometimes one bit off) and reports infinities,
@@ -137,8 +138,8 @@ Files and devices:
   took; a write that runs out of disk shortening the file; a file whose segment list fills
   keeping sectors it had just given back; and a directory whose only entry was still unwritten
   counting as empty, so it could be deleted. A file just created reports its own attributes. An
-  image claiming a sector size os9exec cannot read
-  is refused, and a `chd` deeper than a path can record is refused with `E$BPNam`.
+  image claiming a sector size os9exec cannot read is refused, and a `chd` deeper than a path
+  can record is refused with `E$BPNam`.
 - Host directories: files can be renamed and moved by rewriting their entry, as OS-9's `move`
   does; directory entries keep their positions across a deletion; a symlink cannot lead out of
   the device; paths with spaces work, and so do host names longer than 28 characters in the
@@ -158,20 +159,22 @@ Files and devices:
   512-byte line buffer); the status codes the manuals give SCF and pipes are implemented; a
   signal ends a blocked pipe read; two writers' lines no longer interleave on one terminal.
   `SS_Size` on a pipe is refused rather than answered with the buffer's size, so `less` pages
-  piped input to the end instead of stopping after 4K. `^C`, `^E` and XON act even behind a full
-  type-ahead buffer (typed or pasted text beyond it waits rather than being lost), and while a
-  program computes without system calls, where before the keys went nowhere and it could not be
-  stopped from the keyboard: a program with an intercept routine gets the key (BASIC09 stops at
-  `BREAK` in a loop), and from the shell `^E` ends one without and `^C` sends one that has
-  written nothing to the background, as the manual says; an echo
-  waiting behind `^S` no longer keeps a core busy; a signal ends a write parked on a terminal with
-  the signal as its error; `I$WritLn` to a terminal ends the record at its own end-of-record
-  character; a `/tN` bound to a host serial port takes its parity, bits per character and stop
-  bits from the path (`tmode par= cs= stop=`), as it already took its speed; a `/tN` that takes part of a line ending gets the rest once, not twice; a write to a
-  `/tN` whose far end has gone ends with `E$Write` instead of waiting for ever. A built-in
-  command held by `^S` that nobody lifts waits 10 seconds once and then writes, in order; it used
-  to stop the whole emulator for two minutes per character. After `F$RTE`, a write resumes behind
-  one that began while its intercept routine ran, instead of inside it.
+  piped input to the end instead of stopping after 4K. An echo waiting behind `^S` no longer
+  keeps a core busy; a signal ends a write parked on a terminal with the signal as its error;
+  `I$WritLn` to a terminal ends the record at its own end-of-record character. A built-in
+  command held by `^S` that nobody lifts waits 10 seconds once and then writes, in order; it
+  used to stop the whole emulator for two minutes per character. After `F$RTE`, a write resumes
+  behind one that began while its intercept routine ran, instead of inside it.
+- Keyboard: `^C`, `^E` and XON act even behind a full type-ahead buffer (typed or pasted text
+  beyond it waits rather than being lost), and while a program computes without system calls,
+  where before the keys went nowhere and it could not be stopped from the keyboard. A program
+  with an intercept routine gets the key (BASIC09 stops at `BREAK` in a loop); from the shell,
+  `^E` ends one without, and `^C` sends one that has written nothing to the background, as the
+  manual says.
+- `/tN` terminals: one bound to a host serial port takes its parity, bits per character and stop
+  bits from the path (`tmode par= cs= stop=`), as it already took its speed; one that takes part
+  of a line ending gets the rest once, not twice; a write to one whose far end has gone ends with
+  `E$Write` instead of waiting for ever.
 - Sockets: a send cut short by a signal no longer makes the next send from the same buffer skip
   bytes.
 - `-d` tracing and the debugger talk to you, never into the program's own output. The debugger's
@@ -190,12 +193,14 @@ reading. The conformance suite, CONF68K, turns those readings into tests with th
 words beside each, and it runs on real OS-9 as well as here. This release attaches it as
 a single disk image, `conf68k.dsk`: 115 standalone tests, hand-written assembly, no Microware
 software on it. Put it on a disk device and, as the super user, `chd` to it, `chx CMDS`, and
-type `runall >>+RESULTS/errors`. Each test prints one line with what it observed and what the
-manual led us to expect. Where a claim is our inference rather than the manual's plain
-statement, the claim says so. The report describes the machine it ran on by itself, and a test
-that disagrees prints the values it saw, so one run answers everything. If your hardware
-disagrees with us anywhere, please open an issue with RESULTS/report and RESULTS/errors: that
-is the one thing an emulator cannot tell us for itself. The disk's readme has the details.
+type `runall >>+RESULTS/errors`. At the end it says in plain words whether there is anything to
+send: only a test that fails is news, and then it asks you to open an issue with
+RESULTS/report. A SKIP is not a failure; it means that claim cannot be checked on your system.
+Where a claim is our inference rather than the manual's plain statement, the claim says so.
+
+The same disk runs under os9exec with no OS-9 system disk at all, on any platform:
+`OS9DISK=/path/to/conf68k.dsk os9exec -r /dd/CMDS/run`. There every test passes (the one
+SKIP is `load`, which is Microware's and not on the disk).
 
 ## Known limitations
 

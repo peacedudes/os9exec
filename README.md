@@ -551,7 +551,7 @@ container run -it -v /path/to/your/os9:/dd os9exec:apple /dd/CMDS/shell
 - **Linux:** `make` (requires build-essential, clang/gcc)
 - **Windows x86_64:** native build via [mingw-w64](https://www.mingw-w64.org/) - `make OS=Windows_NT CC=x86_64-w64-mingw32-gcc` (cross-compile from macOS/Linux, or run the same command natively in a Windows shell with mingw-w64 installed). Produces `os9exec.exe`. Docker and WSL2 remain available too. What the Windows build does not have: networking (socket paths answer `E$Unit`) and host terminals for `/tN`; for either, use Docker or WSL2. Everything else is the same, the system tick included, and it is tested on Windows 11: the conformance suite, and standard input redirected from a file, a pipe and `NUL`.
 - **Windows ARM64 (native, not emulated x64):** confirmed working with two common clang-based toolchains, both requiring zero source changes - `make CC=clang` from an [MSYS2](https://www.msys2.org/) `CLANGARM64` shell (`pacman -S mingw-w64-clang-aarch64-toolchain make`), or the standalone [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) distribution (`make CC=aarch64-w64-mingw32-clang`). Visual Studio's `clang-cl`/MSVC toolchain does **not** currently work - it needs a `dirent`/`termios` compatibility layer against Win32 that doesn't exist yet (the codebase had one once, `msdir.c`/`msdir.h`, removed before this branch).
-- **Windows 32-bit (x86):** `make OS=Windows_NT CC=i686-w64-mingw32-gcc`. Built warning-clean on every `make warnings` run, and now run as well: the conformance suite passes on it (44 modules, 0 failures), executed on Windows 11 ARM64 through its x86 emulation. The 32-bit toolchain catches things the 64-bit one cannot - it found a pointer-width bug and a `__stdcall` bug the day it was added.
+- **Windows 32-bit (x86):** `make OS=Windows_NT CC=i686-w64-mingw32-gcc`. Built warning-clean on every `make warnings` run, and now run as well: the conformance suite passes on it (all 115 tests from `conf68k.dsk`: 114 pass, and the last skips only because `load` is Microware's and not on the disk), executed on Windows 11 ARM64 through its x86 emulation. The 32-bit toolchain catches things the 64-bit one cannot - it found a pointer-width bug and a `__stdcall` bug the day it was added.
 - **Linux 32-bit:** `docker build -f Dockerfile.linux32 -t os9exec:linux32 .`
 
 For an optimised build: `make prod`.
@@ -609,7 +609,7 @@ Their final release: **V3.39**, 11 May 2007 - archived at <https://sourceforge.n
 This continuation: <https://github.com/peacedudes/os9exec> - Robert Doggett, with Claude (Anthropic)  
 License: GNU General Public License v2 or later (see source file headers)
 
-Work in this fork: ports to Apple Silicon, modern Linux and native Windows; verification on riscv64 and on big-endian s390x and sparc64; a 68k conformance suite run against the published manuals; and fixes across the syscall surface, RBF record locking, terminal I/O and the scheduler. About 1,160 commits on top of V3.39 - see [What else changed](#what-else-changed) and the [V4.1.0 release notes](docs/release-notes-v4.1.0.md).
+Work in this fork: ports to Apple Silicon, modern Linux and native Windows; verification on riscv64 and on big-endian s390x and sparc64; a 68k conformance suite run against the published manuals; and fixes across the syscall surface, RBF record locking, terminal I/O and the scheduler. About 1,250 commits on top of V3.39 - see [What else changed](#what-else-changed) and the [V4.1.0 release notes](docs/release-notes-v4.1.0.md).
 
 ### Reference
 
