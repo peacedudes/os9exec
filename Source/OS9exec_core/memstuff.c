@@ -861,9 +861,12 @@ static void* get_mem_once( ulong memsz )
       for (k= MAX_MEMALLOC-1; k>=0; k--) { /* try to get it from the free list */
             f= &freeinfo.f[ k ];      
         if (f->base!=NULL) {
+              /* never 2*memsz or memsz+8*MBlk: on a 32-bit host a request near
+                 2 GB wrapped them small, a small free block "fitted", and the
+                 memset below cleared 2 GB from it */
               cond= f->size==  memsz ||
-                    f->size>=2*memsz ||
-                    f->size>=  memsz+8*MBlk;
+                    f->size/2>=memsz ||
+                    (f->size>=8*MBlk && f->size-8*MBlk>=memsz);
           if (cond) {     
                     pp= f->base;
             memset( pp, 0, memsz ); /* some programs need a clean block !!! */
