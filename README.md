@@ -620,7 +620,7 @@ Their final release: **V3.39**, 11 May 2007 - archived at <https://sourceforge.n
 This continuation: <https://github.com/peacedudes/os9exec> - Robert Doggett, with Claude (Anthropic)  
 License: GNU General Public License v2 or later (see source file headers)
 
-Work in this fork: ports to Apple Silicon, modern Linux and native Windows; verification on riscv64 and on big-endian s390x and sparc64; a 68k conformance suite run against the published manuals; and fixes across the syscall surface, RBF record locking, terminal I/O and the scheduler. About 1,250 commits on top of V3.39 - see [What else changed](#what-else-changed) and the [V4.1.0 release notes](docs/release-notes-v4.1.0.md).
+Work in this fork: ports to Apple Silicon, modern Linux and native Windows; verification on riscv64 and on big-endian s390x and sparc64; a 68k conformance suite run against the published manuals; and fixes across the syscall surface, RBF record locking, terminal I/O and the scheduler. About 1,250 commits on top of V3.39 - see [What else changed](#what-else-changed) and the [V4.1.0 release notes](docs/release-notes-v4.1.0.md). Why things are the way they are, including what was deliberately left alone, is in [`docs/decisions.md`](docs/decisions.md).
 
 ### Reference
 
