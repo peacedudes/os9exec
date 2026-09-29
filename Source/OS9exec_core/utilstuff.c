@@ -3754,6 +3754,16 @@ ptype_typ IO_Type(ushort pid, char* os9path, ushort mode)
          * resolves within a configured device root -- e.g. a new file
          * being created inside an existing device, which is legitimate
          * and already reaches here with a genuine host path underneath. */
+        /* A two-letter device (/zz, /zz/x) that is not an image (OS9_Device
+         * said no) and has no host folder behind it does not exist. Asked
+         * here, before the escape test below: parsepath's fallback for an
+         * unknown device is a folder beside the start directory, and when
+         * that lay inside some OTHER device's folder the name counted as a
+         * missing file there -- E$PNNF instead of E$MNF, depending only on
+         * where os9exec was started (the Linux test container showed it). */
+        if (os9path[0]==PSEP && os9path[1]!=NUL && os9path[2]!=NUL &&
+           (os9path[3]==PSEP || os9path[3]==NUL) &&
+           !HostDirDevicePath( os9path ))                { type= fNone; break; }
         if (OS9PathEscapesDeviceRoot( os9path )) { type= fNone; break; }
 
         if (IsDir(mode)) type= fDir;

@@ -2690,15 +2690,28 @@ do {
 do {
     let name = "fs: a pathlist on a device that does not exist is E$MNF for every call"
     if filter.isEmpty || name.localizedCaseInsensitiveContains(filter) {
-        let out = os9(["list /zz/x", "chd /zz", "del /zz/x", "makdir /zz/d"])
+        // Twice: as the suite normally runs, and with another device (/h6)
+        // whose folder CONTAINS the emulator's start folder. An unknown
+        // device falls back to a folder beside the start folder, and when
+        // that fallback lay inside some device the answer was E$PNNF -- which
+        // is how the Linux container, started inside its own /h5, saw it.
+        let parent: String = {
+            let up = (scratchDisk as NSString).deletingLastPathComponent
+            guard let r = realpath(up, nil) else { return up }
+            defer { free(r) }
+            return String(cString: r)
+        }()
+        let commands = ["list /zz/x", "chd /zz", "del /zz/x", "makdir /zz/d"]
+        let out = os9(commands) + os9(commands, env: ["OS9H6": parent])
         let lines = out.replacingOccurrences(of: "\r", with: "\n").split(separator: "\n")
         let mnf  = lines.filter { $0.contains("000:221") }.count
         let bpn  = lines.filter { $0.contains("000:215") }.count
-        if mnf == 4 && bpn == 0 {
+        if mnf == 8 && bpn == 0 {
             print("PASS: \(name)"); passed += 1
         } else {
             print("FAIL: \(name)")
-            print("      [want four E$MNF (221), no E$BPNam (215); got \(mnf) and \(bpn)]")
+            print("      [want eight E$MNF (221), no E$BPNam (215); got \(mnf) and \(bpn)]")
+            print("      saw: \(lines.suffix(8).joined(separator: " | "))")
             failed += 1
         }
     }
