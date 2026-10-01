@@ -28,16 +28,14 @@ with source for most of it, ready to mount beside your system disk. It is also
 how V4.1.0 was made: running that collection under os9exec found nearly every
 fix since V4.0.0.
 
-**Writing or porting OS-9 software?** The
-[OS-9 development skills](https://github.com/peacedudes/os9-dev-skill)
-are two reference collections for Microware OS-9 on the 6809 and the 68000:
-BASIC09, Microware C, assembly, the shell and its utilities, modules, system
-calls, error codes, and, below the application line, device drivers, file
-managers and kernel internals. Each claim says where it came from, and many
-were checked by running them: 68000 programs under os9exec, 6809 programs on
-NitrOS-9 under XRoar. They are plain Markdown, for a
-person to read or for [Claude Code](https://claude.com/claude-code) to load as
-skills.
+**Writing or porting OS-9 software with an AI assistant?** The
+[OS-9 skills for AI coding assistants](https://github.com/peacedudes/os9-dev-skill)
+are two agent skills that teach an assistant to work on Microware OS-9 for the
+6809 and the 68000: BASIC09, Microware C, assembly, the shell and its
+utilities, modules, system calls, error codes, and, below the application
+line, device drivers, file managers and kernel internals. Each claim says
+where it came from, and many were checked by running them: 68000 programs
+under os9exec, 6809 programs on NitrOS-9 under XRoar.
 
 ### A continuation of the original authors' work
 
@@ -673,7 +671,7 @@ overrides.
 Original project: <http://www.synthesis.ch/os9exec>  
 Their final release: **V3.39**, 11 May 2007 - archived at <https://sourceforge.net/projects/os9exec/> (historical; this fork does not publish there)  
 This continuation: <https://github.com/peacedudes/os9exec> - Robert Doggett, with Claude (Anthropic)  
-Its siblings: the [OS-9/68000 freeware collection](https://github.com/peacedudes/osk-freeware), whose programs found nearly every fix in V4.1.0, and the [OS-9 development skills](https://github.com/peacedudes/os9-dev-skill), whose 68000 examples were checked by running them under os9exec  
+Its siblings: the [OS-9/68000 freeware collection](https://github.com/peacedudes/osk-freeware), whose programs found nearly every fix in V4.1.0, and the [OS-9 skills for AI coding assistants](https://github.com/peacedudes/os9-dev-skill), whose 68000 examples were checked by running them under os9exec  
 License: GNU General Public License v2 or later (see source file headers)
 
 Work in this fork: ports to Apple Silicon, modern Linux and native Windows; verification on riscv64 and on big-endian s390x and sparc64; a 68k conformance suite run against the published manuals; and fixes across the syscall surface, RBF record locking, terminal I/O and the scheduler. About 1,250 commits on top of V3.39 - see [What else changed](#what-else-changed) and the [V4.1.0 release notes](docs/release-notes-v4.1.0.md). Why things are the way they are, including what was deliberately left alone, is in [`docs/decisions.md`](docs/decisions.md).
