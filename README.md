@@ -124,18 +124,26 @@ your own machine:
 git clone https://github.com/peacedudes/os9exec.git
 cd os9exec
 make
-OS9DISK=/path/to/your/os9disk ./os9exec shell
+curl -LO https://github.com/peacedudes/osk-freeware/releases/latest/download/osk-freeware.dd.gz
+gunzip osk-freeware.dd.gz
+OS9DISK=$PWD/osk-freeware.dd OS9H0=$PWD/osk-freeware.dd ./os9exec -r bash /dd/SYS/login
+```
+
+That logs you in on the freeware collection's disk, with bash:
+
+```
+os9$ ls
+os9$ echo hello
+os9$ fortune
+os9$ exit
 ```
 
 `OS9DISK` points at an RBF disk image or a directory holding a `CMDS` folder of
 OS-9 binaries. From within OS-9, that volume is known as `/dd`, the default drive.
-
-```
-$ dir /dd/CMDS
-$ echo hello
-$ procs
-$ exit
-```
+With an OS-9 disk of your own, point `OS9DISK` at it and run its shell:
+`OS9DISK=/path/to/your/os9disk ./os9exec shell`. The collection does not carry
+Microware's `shell`, so on its disk that line stops with `E_PNNF`, and with
+no disk at all it stops with `E_MNF` or `E_UNIT`.
 
 For a prebuilt binary, Docker, or Apple Container, see
 [Other ways to run it](#other-ways-to-run-it).
