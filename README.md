@@ -13,6 +13,21 @@ network, os9exec runs in a web browser, and a long list of fixes brings it
 closer to the manuals. [What's new in V4.1](docs/release-notes-v4.1.0.md), and
 the [two fixes in V4.1.1](docs/release-notes-v4.1.1.md).
 
+**To install it**, download a binary for macOS (Apple silicon), Linux or
+Windows from [Releases](https://github.com/peacedudes/os9exec/releases/latest),
+or build it from source. Building needs only a C compiler and make (the Xcode
+Command Line Tools on macOS, `build-essential` on Linux):
+
+```sh
+git clone https://github.com/peacedudes/os9exec.git
+cd os9exec
+make
+```
+
+If you downloaded the ZIP from GitHub instead, unzip it, `cd os9exec-master`
+and run `make`. When it starts, the banner should say `OS9exec V4.11`; an older
+version number means an older copy.
+
 **See it running, right now:
 [open a live OS-9 system in your browser](https://peacedudes.github.io/osk-freeware/try/).**
 That is os9exec, compiled to WebAssembly, booted from the freeware collection's
@@ -43,7 +58,8 @@ OS9exec was written by **Lukas Zeller** and **Beat Forster**. They both know of
 this work, and are pleased to see os9exec given a new life on today's computers.
 The emulator is their work: the [original project page](http://www.synthesis.ch/os9exec)
 is still online, and V3.39 is still on [SourceForge](https://sourceforge.net/projects/os9exec/)
-where they published it.
+where they published it. Both are the 2007 version; to install the current
+one, see above.
 
 Everything since V3.39 is ours - as is any bug you may find in it.
 
