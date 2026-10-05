@@ -25,8 +25,8 @@ make
 ```
 
 If you downloaded the ZIP from GitHub instead, unzip it, `cd os9exec-master`
-and run `make`. When it starts, the banner should say `OS9exec V4.11`; an older
-version number means an older copy.
+and run `make`. To check which version you have, run `./os9exec -h`: near the
+end it says `OS9exec V4.11`, and an older number means an older copy.
 
 **See it running, right now:
 [open a live OS-9 system in your browser](https://peacedudes.github.io/osk-freeware/try/).**
