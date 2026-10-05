@@ -77,7 +77,7 @@ thousand programs to run. Download `osk-freeware.dd.gz` from its
 
 ```sh
 gunzip osk-freeware.dd.gz
-OS9DISK=$PWD/osk-freeware.dd OS9H0=$PWD/osk-freeware.dd os9exec -r bash /dd/SYS/login
+OS9DISK=$PWD/osk-freeware.dd OS9H0=$PWD/osk-freeware.dd os9exec bash /dd/SYS/login
 ```
 
 Its [catalogue](https://peacedudes.github.io/osk-freeware/) has a card for
@@ -126,7 +126,7 @@ cd os9exec
 make
 curl -LO https://github.com/peacedudes/osk-freeware/releases/latest/download/osk-freeware.dd.gz
 gunzip osk-freeware.dd.gz
-OS9DISK=$PWD/osk-freeware.dd OS9H0=$PWD/osk-freeware.dd ./os9exec -r bash /dd/SYS/login
+OS9DISK=$PWD/osk-freeware.dd OS9H0=$PWD/osk-freeware.dd ./os9exec bash /dd/SYS/login
 ```
 
 That logs you in on the freeware collection's disk, with bash:
@@ -138,9 +138,12 @@ os9$ fortune
 os9$ exit
 ```
 
-`OS9DISK` points at an RBF disk image or a directory holding a `CMDS` folder of
-OS-9 binaries. From within OS-9, that volume is known as `/dd`, the default drive.
-With an OS-9 disk of your own, point `OS9DISK` at it and run its shell:
+`OS9DISK` points at an RBF disk image, or at a directory that holds a `CMDS`
+folder of OS-9 binaries (the directory above `CMDS`, not `CMDS` itself). From
+within OS-9, that volume is known as `/dd`, the default drive. Give it on the
+same line as `os9exec`, as above, or `export` it first: set on a line of its
+own without `export`, it never reaches os9exec. With an OS-9 disk of your
+own, point `OS9DISK` at it and run its shell:
 `OS9DISK=/path/to/your/os9disk ./os9exec shell`. The collection does not carry
 Microware's `shell`, so on its disk that line stops with `E_PNNF`, and with
 no disk at all it stops with `E_MNF` or `E_UNIT`.
